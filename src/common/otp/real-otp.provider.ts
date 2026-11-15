@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { nationalMobileDigits, vendorMobileNumber } from '../phone/indian-mobile';
 import { OtpProvider, OtpSendOptions, OtpSendResult } from './otp.interface';
 import { otpSessionPhoneHash } from './otp-phone-hash';
+import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { decryptCallRoutingPhone, encryptCallRoutingPhone } from '../../modules/staff/call-routing-key';
 
@@ -161,7 +162,7 @@ export class RealOtpProvider implements OtpProvider {
 
       const requestId =
         data.request_id ||
-        `req_sms_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+        `req_sms_${Date.now()}_${randomBytes(16).toString('hex')}`;
 
       if (!this.prisma) throw new Error('PrismaService is required for the real OTP provider');
       await this.prisma.otpSession.create({

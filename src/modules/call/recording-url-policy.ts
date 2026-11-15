@@ -1,5 +1,5 @@
 import { lookup as dnsLookup } from 'node:dns';
-import { isIP } from 'node:net';
+import { BlockList, isIP } from 'node:net';
 
 /**
  * IN-4: the call-status webhook names a recording address that the server then
@@ -43,51 +43,39 @@ export function hostAllowed(host: string, allowList: readonly string[]): boolean
   });
 }
 
-function ipv4Parts(ip: string): number[] | null {
-  const parts = ip.split('.').map(Number);
-  return parts.length === 4 && parts.every((p) => Number.isInteger(p) && p >= 0 && p <= 255) ? parts : null;
-}
+/** IPv4 ranges that are not the public internet. */
+const PRIVATE_V4 = new BlockList();
+for (const [net, prefix] of [
+  ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12],
+  ['192.0.0.0', 24], ['192.0.2.0', 24], ['192.88.99.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15],
+  ['198.51.100.0', 24], ['203.0.113.0', 24], ['224.0.0.0', 4], ['240.0.0.0', 4],
+] as const) PRIVATE_V4.addSubnet(net, prefix, 'ipv4');
 
-/** False for every address that is not on the public internet. */
-export function isPublicAddress(ip: string): boolean {
+/** IPv6 global unicast (2000::/3) is the only public IPv6 space. */
+const GLOBAL_V6 = new BlockList();
+GLOBAL_V6.addSubnet('2000::', 3, 'ipv6');
+/** Inside 2000::/3, ranges that are not plain public hosts (or that wrap an IPv4 address). */
+const SPECIAL_V6 = new BlockList();
+for (const [net, prefix] of [
+  ['2001::', 32], // Teredo (wraps an IPv4 address)
+  ['2001:2::', 48], // benchmarking
+  ['2001:10::', 28], ['2001:20::', 28], // ORCHID
+  ['2001:db8::', 32], // documentation
+  ['2002::', 16], // 6to4 (wraps an IPv4 address)
+  ['3fff::', 20], // documentation
+] as const) SPECIAL_V6.addSubnet(net, prefix, 'ipv6');
+
+/**
+ * False for every address that is not on the public internet. Checked with
+ * net.BlockList, which reads every spelling of an address (L4): IPv6 forms
+ * such as ::7f00:1, 0::1, ::ffff:0:7f00:1 or ::ffff:127.0.0.1 are outside
+ * 2000::/3 and refused, and so is any IPv6 range that wraps an IPv4 address.
+ */
+export function isPublicAddress(raw: string): boolean {
+  const ip = raw.trim().replace(/^\[|\]$/g, '').split('%')[0]!;
   const family = isIP(ip);
-  if (family === 4) {
-    const [a, b, c] = ipv4Parts(ip)!;
-    if (a === 0 || a === 10 || a === 127) return false; // this network, private, loopback
-    if (a === 100 && b >= 64 && b <= 127) return false; // carrier-grade NAT
-    if (a === 169 && b === 254) return false; // link-local, cloud metadata
-    if (a === 172 && b >= 16 && b <= 31) return false; // private
-    if (a === 192 && b === 168) return false; // private
-    if (a === 192 && b === 0 && (c === 0 || c === 2)) return false; // IETF, TEST-NET-1
-    if (a === 192 && b === 88 && c === 99) return false; // 6to4 relay
-    if (a === 198 && (b === 18 || b === 19)) return false; // benchmarking
-    if (a === 198 && b === 51 && c === 100) return false; // TEST-NET-2
-    if (a === 203 && b === 0 && c === 113) return false; // TEST-NET-3
-    if (a >= 224) return false; // multicast, reserved, broadcast
-    return true;
-  }
-  if (family === 6) {
-    const lower = ip.toLowerCase();
-    if (lower === '::' || lower === '::1') return false;
-    // IPv4-mapped / -compatible (::ffff:10.0.0.1, ::ffff:a00:1): judge the IPv4 address.
-    const mapped = /^::(?:ffff:)?(\d+\.\d+\.\d+\.\d+)$/.exec(lower);
-    if (mapped) return isPublicAddress(mapped[1]);
-    const hexMapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(lower);
-    if (hexMapped) {
-      const hi = parseInt(hexMapped[1], 16);
-      const lo = parseInt(hexMapped[2], 16);
-      return isPublicAddress(`${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`);
-    }
-    const first = parseInt(lower.split(':')[0] || '0', 16);
-    if ((first & 0xfe00) === 0xfc00) return false; // unique local fc00::/7
-    if ((first & 0xffc0) === 0xfe80) return false; // link-local fe80::/10
-    if ((first & 0xffc0) === 0xfec0) return false; // site-local (deprecated)
-    if ((first & 0xff00) === 0xff00) return false; // multicast
-    if (lower.startsWith('64:ff9b:')) return false; // NAT64 can reach internal IPv4
-    if (lower.startsWith('2001:db8:') || lower.startsWith('2001:0db8:')) return false; // documentation
-    if (lower.startsWith('2002:')) return false; // 6to4 wraps an IPv4 address
-    return true;
-  }
+  if (family === 4) return !PRIVATE_V4.check(ip, 'ipv4');
+  if (family === 6) return GLOBAL_V6.check(ip, 'ipv6') && !SPECIAL_V6.check(ip, 'ipv6');
   return false;
 }
 

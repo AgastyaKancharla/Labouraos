@@ -81,6 +81,14 @@ describe('Phase 8 Task 7: Database Backup and Disaster Recovery Procedure', () =
   it('2. Restores backup into a scratch database and passes full sanity check', () => {
     expect(backupFile).toBeTruthy();
 
+    // L5: an encrypted backup without its checksum file is refused.
+    const lonely = `${backupFile.replace(/\.sql\.gz\.enc$/, '')}-copy.sql.gz.enc`;
+    fs.copyFileSync(backupFile, lonely);
+    try {
+      expect(() => execSync(`./scripts/restore.sh "${lonely}" "${scratchDbName}_nochecksum"`, { encoding: 'utf-8', stdio: 'pipe', env: scriptEnv })).toThrow(/checksum/);
+    } finally {
+      fs.unlinkSync(lonely);
+    }
     // The wrong key restores nothing.
     expect(() => execSync(`./scripts/restore.sh "${backupFile}" "${scratchDbName}_wrongkey"`, {
       encoding: 'utf-8', stdio: 'pipe', env: { ...scriptEnv, BACKUP_ENCRYPTION_KEY: 'a-different-key-that-is-at-least-32-chars-long' },

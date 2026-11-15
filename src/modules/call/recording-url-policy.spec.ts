@@ -53,11 +53,14 @@ describe('Recording download address rules (IN-4, SSRF)', () => {
     '0.0.0.0', '10.0.0.1', '100.64.0.1', '127.0.0.1', '169.254.169.254', '172.16.0.1', '172.31.255.255', '192.168.1.1',
     '192.0.2.1', '198.18.0.1', '224.0.0.1', '255.255.255.255', '::', '::1', 'fc00::1', 'fd12:3456::1', 'fe80::1',
     '::ffff:10.0.0.1', '::ffff:127.0.0.1', '::ffff:a9fe:a9fe', 'ff02::1', '64:ff9b::a00:1', '2002:a00:1::1', 'not-an-ip',
+    // L4: every spelling of loopback and of IPv4 inside IPv6.
+    '::7f00:1', '0::1', '0:0:0:0:0:0:0:1', '::ffff:0:7f00:1', '0:0:0:0:0:ffff:7f00:1', '[::1]', '::127.0.0.1',
+    '::ffff:8.8.8.8', '2001::5efe:7f00:1', '2001:db8::1', '3fff::1', '240.0.0.1', '198.19.255.255',
   ])('%s is not a public address', (ip) => {
     expect(isPublicAddress(ip)).toBe(false);
   });
 
-  it.each(['8.8.8.8', '1.1.1.1', '172.32.0.1', '100.128.0.1', '2606:4700:4700::1111'])('%s is public', (ip) => {
+  it.each(['8.8.8.8', '1.1.1.1', '172.32.0.1', '100.128.0.1', '2606:4700:4700::1111', '2001:4860:4860::8888', '2a00:1450:4001::200e'])('%s is public', (ip) => {
     expect(isPublicAddress(ip)).toBe(true);
   });
 
@@ -101,7 +104,7 @@ describe('Recording download address rules (IN-4, SSRF)', () => {
       const lookup = publicOnlyLookup();
       const bytes = await new HttpRecordingDownloader(env, get, lookup).download('https://recordings.vendor.example/a.mp3');
       expect(bytes.toString()).toBe('audio');
-      expect(get).toHaveBeenCalledWith(expect.any(URL), lookup);
+      expect(get).toHaveBeenCalledWith(expect.any(URL), lookup, expect.any(AbortSignal));
     });
 
     it('checks every redirect: an allowed host may not bounce the server to an internal or other host', async () => {
@@ -131,6 +134,21 @@ describe('Recording download address rules (IN-4, SSRF)', () => {
     it('with the real https client, an allow-listed name that resolves to loopback is refused at connect time', async () => {
       const downloader = new HttpRecordingDownloader({ RECORDING_URL_HOSTS: 'localhost' } as NodeJS.ProcessEnv);
       await expect(downloader.download('https://localhost/recording.mp3')).rejects.toThrow(/resolves to a private, loopback or link-local address/);
+    });
+
+    it('L4: the whole copy has a deadline, so a server that drips or stalls cannot hold the worker', async () => {
+      const stalled: AsyncIterable<Buffer> & { destroy: () => void } = {
+        destroy: jest.fn(),
+        async *[Symbol.asyncIterator]() {
+          yield Buffer.from('a');
+          await new Promise(() => undefined);
+        },
+      };
+      const drip: RecordingGet = jest.fn(async () => ({ status: 200, body: stalled }));
+      await expect(new HttpRecordingDownloader(env, drip, publicOnlyLookup(), 100).download('https://recordings.vendor.example/a.mp3')).rejects.toThrow(/did not finish within/);
+      expect(stalled.destroy).toHaveBeenCalled();
+      const hang: RecordingGet = jest.fn((_url, _lookup, signal) => new Promise((_, reject) => signal?.addEventListener('abort', () => reject(new Error('aborted')))));
+      await expect(new HttpRecordingDownloader(env, hang, publicOnlyLookup(), 100).download('https://recordings.vendor.example/a.mp3')).rejects.toThrow(/did not finish within/);
     });
 
     it('stops a recording larger than 50 MB', async () => {

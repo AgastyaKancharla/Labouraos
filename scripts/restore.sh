@@ -4,7 +4,8 @@ set -euo pipefail
 # ==============================================================================
 # Laboura Database Restore Script
 # Restores an encrypted (.sql.gz.enc, from backup.sh) or plain compressed
-# (.sql.gz, older) SQL dump into a target database (default: scratch DB).
+# (.sql.gz, older) SQL dump into a target database (default: scratch DB), in
+# one transaction that stops at the first error (nothing half-restored).
 # Needs BACKUP_ENCRYPTION_KEY for an encrypted file and DB_PASSWORD for host
 # psql (no defaults).
 # ==============================================================================
@@ -42,8 +43,17 @@ dump_sql() {
 echo "=== [Laboura Restore] Starting restore into '${TARGET_DB}' ==="
 START_TIME=$(date +%s)
 
-# Verify checksum if .sha256 file exists
+# Verify checksum if .sha256 file exists. An encrypted backup must have one (L5):
+# without it a swapped or damaged file would be decrypted and run.
 CHECKSUM_FILE="${BACKUP_FILE}.sha256"
+case "${BACKUP_FILE}" in
+  *.enc)
+    if [ ! -f "${CHECKSUM_FILE}" ]; then
+      echo "Error: '${CHECKSUM_FILE}' is missing. An encrypted backup is restored only next to the checksum backup.sh wrote." >&2
+      exit 2
+    fi
+    ;;
+esac
 if [ -f "${CHECKSUM_FILE}" ]; then
   EXPECTED_CHECKSUM=$(cat "${CHECKSUM_FILE}")
   ACTUAL_CHECKSUM=$(sha256sum "${BACKUP_FILE}" | awk '{print $1}')
@@ -60,7 +70,7 @@ if command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' | grep -
   docker exec -i laboura-postgres psql -U "${DB_USER}" -c "CREATE DATABASE ${TARGET_DB};" 2>/dev/null || true
   
   echo "Streaming backup into target database..."
-  dump_sql | docker exec -i laboura-postgres psql -U "${DB_USER}" -d "${TARGET_DB}" -q
+  dump_sql | docker exec -i laboura-postgres psql -U "${DB_USER}" -d "${TARGET_DB}" -q -1 -v ON_ERROR_STOP=1
 elif command -v psql >/dev/null 2>&1; then
   if [ -z "${DB_PASSWORD:-}" ]; then
     echo "Error: set DB_PASSWORD in the environment (there is no default password)." >&2
@@ -70,7 +80,7 @@ elif command -v psql >/dev/null 2>&1; then
   PGPASSWORD="${DB_PASSWORD}" psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USER}" -c "CREATE DATABASE ${TARGET_DB};" 2>/dev/null || true
 
   echo "Streaming backup into target database..."
-  dump_sql | PGPASSWORD="${DB_PASSWORD}" psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USER}" -d "${TARGET_DB}" -q
+  dump_sql | PGPASSWORD="${DB_PASSWORD}" psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USER}" -d "${TARGET_DB}" -q -1 -v ON_ERROR_STOP=1
 else
   echo "Error: neither docker container 'laboura-postgres' nor host psql found." >&2
   exit 1

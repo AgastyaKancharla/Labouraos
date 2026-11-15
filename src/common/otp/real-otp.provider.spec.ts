@@ -260,6 +260,17 @@ describe('Phase 7 Task 1: Real OTP/SMS Vendor Provider & TRAI DLT Compliance', (
       await expect(provider.isVerified(res.requestId, '9876543210')).resolves.toBe(false);
     });
 
+    it('L6: when the vendor gives no request id, the fallback id is from node:crypto (never Math.random)', async () => {
+      const noId = (async () => ({ ok: true, status: 200, json: async () => ({ type: 'success' }), text: async () => '' })) as unknown as typeof fetch;
+      const provider = new RealOtpProvider({ fetchFn: noId, timeProvider: () => new Date('2026-10-25T05:30:00.000Z') });
+      attachSessionStore(provider);
+      const spy = jest.spyOn(Math, 'random');
+      const res = await provider.sendOtp('9876543210');
+      expect(res.requestId).toMatch(/^req_sms_\d+_[0-9a-f]{32}$/);
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+    });
+
     it('handles vendor HTTP errors cleanly with informative message', async () => {
       const failingFetch = (async () => {
         return {
