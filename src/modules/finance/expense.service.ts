@@ -10,7 +10,7 @@ import { PayrollService } from './payroll.service';
 import { assertUtrUnused } from '../../common/money/utr-registry';
 import { HEARD_FROM_VALUES } from '../job-seeker/job-seeker.validator';
 import { DateRange, RECEIVED_STATUSES, PAYOUT_TYPES, contains, sumPaise } from '../ceo-portal/ceo-common';
-import { MONEY_IN_TYPES, withBypassCharges } from '../ceo-portal/ceo-money.service';
+import { isFeePaymentType, MONEY_IN_TYPES, withBypassCharges } from '../ceo-portal/ceo-money.service';
 import {
   AUTO_EXPENSE_CATEGORIES,
   EXPENSE_CATEGORIES,
@@ -532,7 +532,7 @@ export class ExpenseService {
     ]);
     const received = await withBypassCharges(this.prisma, receivedRows);
     const activation = received.filter((p) => p.type === 'activation' || p.type === 'reactivation');
-    const fees = received.filter((p) => p.type === 'placement_fee');
+    const fees = received.filter((p) => isFeePaymentType(p.type));
     // Paid no-bypass charges: fee + penalty is revenue, their GST is GST collected (as on FN-Tax).
     const bypass = received.filter((p) => p.type === 'bypass_charge' && p.bypass);
     const activationPaise = sumPaise(activation.map((p) => p.amount));

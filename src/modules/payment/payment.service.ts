@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional, UnauthorizedException } from '@nestjs/common';
+import { isFeePaymentType } from './fee-payment-types';
 import { Payment, PayoutAccount, Prisma, TdsReceivable } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -596,7 +597,7 @@ export class PaymentService {
       // TDS rate is not fixed in code, so Finance confirms it and records the short
       // amount as "TDS deducted" (POST /payments/:id/confirm with tdsDeductedPaise).
       const reason =
-        matchedPayment.type === 'placement_fee' && amountPaise < expectedAmount
+        isFeePaymentType(matchedPayment.type) && amountPaise < expectedAmount
           ? 'short_possible_tds'
           : 'amount_mismatch';
       await this.reviewFlagService.raise({
@@ -997,12 +998,12 @@ export class PaymentService {
     if (!wantsTds) {
       throw new BadRequestException(
         `Amount mismatch: payment expected ${expectedPaise} paise but credit has ${receivedPaise} paise` +
-          (payment.type === 'placement_fee' && receivedPaise < expectedPaise
+          (isFeePaymentType(payment.type) && receivedPaise < expectedPaise
             ? `. If the business deducted TDS, record the short ${expectedPaise - receivedPaise} paise as TDS deducted (tdsDeductedPaise and tdsNote).`
             : ''),
       );
     }
-    if (payment.type !== 'placement_fee' || !payment.placementId) {
+    if (!isFeePaymentType(payment.type) || !payment.placementId) {
       throw new BadRequestException('TDS deducted can only be recorded on a placement fee payment');
     }
     const shortBy = expectedPaise - receivedPaise;

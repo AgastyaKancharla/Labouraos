@@ -60,6 +60,19 @@ describe('Customer app notification hooks on existing events', () => {
     ]);
   });
 
+  it('a paid replacement salary-upgrade difference (D3) sends the receipt and the joining confirmation too', async () => {
+    const { hooks, notify } = build({
+      payment: {
+        type: 'replacement_upgrade',
+        status: 'succeeded',
+        confirmedBy: 'bank_feed',
+        placement: { id: 'pl-2', businessId: 'bz-1', jobSeekerId: 'js-2', joiningDate: new Date(), vacancy: { branchId: null } },
+      },
+    });
+    await hooks.placementFeePaid('pay-up');
+    expect(notify.mock.calls.map((c) => c[1])).toEqual(expect.arrayContaining(['fee_paid', 'joining_confirmed']));
+  });
+
   it.each([
     ['refund', { jobSeekerId: 'js-1' }, { jobSeekerId: 'js-1' }, 'refund_approved', 'refund_paid'],
     ['refund', { businessId: 'bz-1', subjectType: 'placement' }, { businessId: 'bz-1' }, 'refund_approved', 'refund_paid'],

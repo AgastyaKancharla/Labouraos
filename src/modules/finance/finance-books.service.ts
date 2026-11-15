@@ -585,7 +585,7 @@ export class FinanceBooksService {
             },
             orderBy: { paidAt: 'desc' },
             take: 2000,
-            include: { business: { select: { id: true, code: true, name: true } }, vacancy: { select: { id: true } }, tdsReceivables: true, payments: { where: { type: 'placement_fee' }, select: { id: true, amount: true, status: true } } },
+            include: { business: { select: { id: true, code: true, name: true } }, vacancy: { select: { id: true } }, tdsReceivables: true, payments: { where: { type: { in: ['placement_fee', 'replacement_upgrade'] } }, select: { id: true, amount: true, status: true } } },
           }),
       filters.type === 'activation'
         ? Promise.resolve([])
@@ -593,7 +593,7 @@ export class FinanceBooksService {
             where: { status: 'awaiting_payment', ...(s ? { OR: [{ code: contains(s) }, { business: { name: contains(s) } }] } : {}) },
             orderBy: { selectedAt: 'asc' },
             take: 2000,
-            include: { business: { select: { id: true, code: true, name: true } }, payments: { where: { type: 'placement_fee' }, orderBy: { createdAt: 'desc' }, take: 1, select: { id: true, amount: true, status: true } } },
+            include: { business: { select: { id: true, code: true, name: true } }, payments: { where: { type: { in: ['placement_fee', 'replacement_upgrade'] } }, orderBy: { createdAt: 'desc' }, take: 1, select: { id: true, amount: true, status: true } } },
           }),
       filters.type === 'placement_fee'
         ? Promise.resolve([])

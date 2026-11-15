@@ -17,7 +17,7 @@ import {
   countBy,
   median,
 } from './ceo-common';
-import { gstDueDates, summariseReceived, withBypassCharges } from './ceo-money.service';
+import { gstDueDates, MONEY_IN_TYPES, summariseReceived, withBypassCharges } from './ceo-money.service';
 import { placementStage } from './ceo-placements.service';
 import { CeoJobSeekersService, NearRefundRow } from './ceo-job-seekers.service';
 import { CeoPortalController } from './ceo-portal.controller';
@@ -109,6 +109,18 @@ describe('CEO portal helpers', () => {
       netPaise: 899900,
       receivedInclGstPaise: 1102800,
     });
+  });
+
+  it('counts a paid replacement salary-upgrade difference (D3) like a placement fee: fee in gross, GST with the GST', () => {
+    const totals = summariseReceived(
+      [
+        { type: 'placement_fee', amount: 1003000, placement: { placementFee: 850000, gstAmount: 153000 } },
+        { type: 'replacement_upgrade', amount: 118000, placement: { placementFee: 100000, gstAmount: 18000 } },
+      ],
+      [],
+    );
+    expect(totals).toMatchObject({ placementFeePaise: 950000, placementCount: 2, gstPaise: 171000, grossPaise: 950000 });
+    expect(MONEY_IN_TYPES).toContain('replacement_upgrade');
   });
 
   it('counts a paid no-bypass charge: fee + penalty in gross and net, its GST with the GST, as FN-Tax and the books do', () => {

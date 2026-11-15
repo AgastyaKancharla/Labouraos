@@ -88,7 +88,8 @@ export class CustomerNotificationHooks {
         },
       });
       const placement = payment?.placement;
-      if (!payment || payment.type !== 'placement_fee' || payment.status !== 'succeeded' || !placement) return;
+      // A replacement's salary-upgrade difference (D3) releases the joining like a placement fee.
+      if (!payment || !['placement_fee', 'replacement_upgrade'].includes(payment.type) || payment.status !== 'succeeded' || !placement) return;
       await this.notifications.notify(
         { businessId: placement.businessId },
         'fee_paid',
