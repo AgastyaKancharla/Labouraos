@@ -17,7 +17,7 @@ export class PaymentReceiptGuard implements CanActivate {
   private readonly rbacGuard: RbacGuard;
 
   constructor(reflector: Reflector, prisma: PrismaService) {
-    this.jwtGuard = new JwtAuthGuard(reflector);
+    this.jwtGuard = new JwtAuthGuard();
     this.rbacGuard = new RbacGuard(reflector, prisma);
   }
 

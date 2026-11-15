@@ -17,6 +17,8 @@ import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { ActionButton } from '../../ceo/_kit/actions';
 import { roleWord } from '../_kit/kit';
+import { PasswordResetHistory, PendingResetCards, usePendingResets } from '../../shared/staffAccess';
+import { useT } from '../../../i18n/I18nProvider';
 
 interface Pending {
   id: string;
@@ -43,6 +45,7 @@ function givenBy(c: Codes['codes'][number]): string {
 }
 
 function RequestCard({ request }: { request: Pending }) {
+  const t = useT();
   const now = useNow();
   const toast = useToast();
   const qc = useQueryClient();
@@ -61,7 +64,8 @@ function RequestCard({ request }: { request: Pending }) {
         <StaffAvatar name={request.staff.name} photoUrl={request.staff.photoUrl} size="lg" noPhotoLabel="No photo" />
         <div className="mg-code-card">
           <div>
-            <div style={{ fontWeight: 700 }}>{request.staff.name}</div>
+            <StatusPill tone="blue">{t('access.card.loginKind')}</StatusPill>
+            <div style={{ fontWeight: 700, marginTop: 6 }}>{request.staff.name}</div>
             <div className="ceo-cell-sub">
               {request.staff.code} · {roleWord(request.staff.role)}
             </div>
@@ -98,13 +102,16 @@ function RequestCard({ request }: { request: Pending }) {
 }
 
 /**
- * Login codes — design MG-LoginCodes.dc.html: code requests from the Manager's
- * Team Leads, and from agents when their Team Lead is away (GET
- * /login-codes/pending, already scoped to the Manager's tree), and every code
- * given in the period (GET /manager/login-codes). Nobody sees their own code.
+ * Login codes — design MG-LoginCodes.dc.html: code requests from agents in
+ * the Manager's teams when their Team Lead is away (GET /login-codes/pending,
+ * already scoped to the Manager's tree; Team Leads use their own
+ * authenticator since rev 174–175), red PASSWORD RESET requests from people
+ * below Manager in their teams, every code given in the period (GET
+ * /manager/login-codes) and the reset history. Nobody sees their own code.
  */
 export default function ManagerLoginCodes() {
   const to = useScreenPath();
+  const resets = usePendingResets();
   const now = useNow();
   const [period, setPeriod] = useState<Period>(() => periodFor('today', now));
   const range = periodToUtcRange(period);
@@ -121,15 +128,16 @@ export default function ManagerLoginCodes() {
 
   return (
     <div className="lb-page">
-      <TopBar back={{ to: to('MG-Home'), label: 'Command Center' }} title="Login codes" subtitle="Code requests from your Team Leads, and from agents when their Team Lead is away." period={period} onPeriodChange={setPeriod} />
+      <TopBar back={{ to: to('MG-Home'), label: 'Command Center' }} title="Login codes" subtitle="Code requests from agents when their Team Lead is away, and password resets (red) for your teams." period={period} onPeriodChange={setPeriod} />
       <StatGrid>
         <StatTile label="Waiting for a code" value={pending.data?.length ?? c?.summary.waiting ?? '—'} tone="gold" loading={pending.isPending} />
         <StatTile label="Codes given today" value={c?.summary.codesToday ?? '—'} tone="royal" loading={codes.isPending} />
         <StatTile label="Accounts locked" value={c?.summary.locked ?? '—'} tone="red" loading={codes.isPending} to={to('MG-Staff')} />
       </StatGrid>
+      <PendingResetCards />
       {pending.error ? (
         <ErrorState error={pending.error} onRetry={() => void pending.refetch()} />
-      ) : pending.data && pending.data.length === 0 ? (
+      ) : pending.data && pending.data.length === 0 && !resets.data?.length ? (
         <Card>
           <EmptyState title="Nobody is waiting for a login code right now." />
         </Card>
@@ -142,8 +150,9 @@ export default function ManagerLoginCodes() {
       )}
       <div className="panel" style={{ padding: '6px 18px 14px' }}>
         <DataTable columns={columns} rows={c?.codes} rowKey={(r) => r.id} caption="Codes given" loading={codes.isPending} error={codes.error} onRetry={() => void codes.refetch()} download="login-codes" emptyTitle="No codes given in this period." />
-        <div className="ceo-note">You give codes to Team Leads and to anyone below Manager when their Team Lead is away · nobody sees their own code</div>
+        <div className="ceo-note">You give codes to agents in your teams when their Team Lead is away, and approve password resets for people below Manager in your teams · Team Leads use their own authenticator · nobody sees their own code</div>
       </div>
+      <PasswordResetHistory />
     </div>
   );
 }

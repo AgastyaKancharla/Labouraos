@@ -126,6 +126,17 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
     test: 'common/rbac/service-scoped-routes.e2e.spec.ts',
     proof: '// POST /login-codes/:id/refuse: TL from another team is refused (403)',
   },
+  'PasswordResetApprovalController.reveal': {
+    reason:
+      "A reset code is revealed only by someone allowed to approve that person's reset (PasswordResetService.assertMayApprove): a Team Lead for their own agents, a Manager below Manager in their tree, a CEO for anyone else; never one's own.",
+    test: 'modules/staff/password-reset.spec.ts',
+    proof: "// POST /password-resets/:id/reveal: another team's Team Lead is refused (403)",
+  },
+  'PasswordResetApprovalController.refuse': {
+    reason: 'Same rule as reveal (PasswordResetService.assertMayApprove).',
+    test: 'modules/staff/password-reset.spec.ts',
+    proof: "// POST /password-resets/:id/refuse: another team's Team Lead is refused (403)",
+  },
   'StaffController.setCallRoutingPhone': {
     reason: 'Oneself, management, or the Team Lead of that person (StaffService.setCallRoutingPhone).',
     test: 'modules/staff/hidden-numbers.spec.ts',

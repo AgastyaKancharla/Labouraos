@@ -1,6 +1,11 @@
-import { Controller, Get, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Header, HttpException, HttpStatus, Req, UseGuards } from '@nestjs/common';
+import { Request } from 'express';
 import { HealthService, ScheduleCheckStatus, WorkerHeartbeatStatus } from './health.service';
 import { Public } from '../common/rbac/public.decorator';
+import { JwtAuthGuard } from '../common/auth/jwt-auth.guard';
+import { RbacGuard } from '../common/rbac/rbac.guard';
+import { RequireRoles } from '../common/rbac/roles.decorator';
+import { ProxyCheck, proxyCheckFor } from '../common/http/proxy-check';
 
 @Controller('health')
 export class HealthController {
@@ -60,5 +65,20 @@ export class HealthController {
       ...(result.worker ? { worker: result.worker } : {}),
       ...(result.schedules ? { schedules: result.schedules } : {}),
     };
+  }
+
+  /**
+   * CEO only: is TRUST_PROXY_HOPS right? (DEPLOY.md step F11, a gate before
+   * going live.) Answers only how many X-Forwarded-For entries this request
+   * carried, the TRUST_PROXY_HOPS value, and whether the address the server
+   * took as the visitor's is public (right) or a private/proxy address (the
+   * value is too low). Never an address itself.
+   */
+  @Get('proxy-check')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequireRoles('ceo')
+  @Header('Cache-Control', 'no-store')
+  proxyCheck(@Req() req: Request): ProxyCheck {
+    return proxyCheckFor(req.headers['x-forwarded-for'], req.ip, req.app?.get('trust proxy'));
   }
 }

@@ -213,9 +213,10 @@ describe('Phase 10 Task 3: Login codes', () => {
       await expect(codes.verify(manual.id, '000000')).rejects.toThrow(/refused/);
     });
 
-    it('hides an approver from their own request and limits a Team Lead to their team', async () => {
+    it('hides an approver from their own request and limits a Team Lead to their team; a Team Lead never gets a login code (own authenticator, rev 174–175)', async () => {
       const other = await codes.create(agent2Id, device2Id, '203.0.113.20');
-      const own = await codes.create(teamLead1Id, leadDeviceId, '203.0.113.21');
+      await expect(codes.create(teamLead1Id, leadDeviceId, '203.0.113.21')).rejects.toThrow('Login codes are only for call agents and field agents');
+      const mine = await codes.create(agent1Id, device1Id, '203.0.113.21');
 
       const leadList = await request(app.getHttpServer())
         .get('/login-codes/pending')
@@ -224,13 +225,10 @@ describe('Phase 10 Task 3: Login codes', () => {
       const leadStaff = leadList.body.map((row: { staffId: string }) => row.staffId);
       expect(leadStaff).not.toContain(teamLead1Id);
       expect(leadStaff).not.toContain(agent2Id);
+      expect(leadStaff).toContain(agent1Id);
 
       await request(app.getHttpServer())
         .post(`/login-codes/${other.id}/reveal`)
-        .set('Authorization', `Bearer ${teamLead1Token}`)
-        .expect(403);
-      await request(app.getHttpServer())
-        .post(`/login-codes/${own.id}/reveal`)
         .set('Authorization', `Bearer ${teamLead1Token}`)
         .expect(403);
 
@@ -238,20 +236,19 @@ describe('Phase 10 Task 3: Login codes', () => {
         .get('/login-codes/pending')
         .set('Authorization', `Bearer ${managerToken}`)
         .expect(200);
-      expect(managerList.body.map((row: { staffId: string }) => row.staffId)).toContain(
-        teamLead1Id,
-      );
+      expect(managerList.body.map((row: { staffId: string }) => row.staffId)).toContain(agent1Id);
+      expect(managerList.body.map((row: { staffId: string }) => row.staffId)).not.toContain(teamLead1Id);
       expect(managerList.body.map((row: { id: string }) => row.id)).not.toContain(managerId);
 
       const shown = await request(app.getHttpServer())
-        .post(`/login-codes/${own.id}/reveal`)
+        .post(`/login-codes/${mine.id}/reveal`)
         .set('Authorization', `Bearer ${managerToken}`)
         .expect(200);
       expect(shown.body.code).toMatch(/^\d{6}$/);
       expect(shown.body.revealedByStaffId).toBe(managerId);
 
       const again = await request(app.getHttpServer())
-        .post(`/login-codes/${own.id}/reveal`)
+        .post(`/login-codes/${mine.id}/reveal`)
         .set('Authorization', `Bearer ${ceoToken}`)
         .expect(200);
       expect(again.body.code).toBe(shown.body.code);

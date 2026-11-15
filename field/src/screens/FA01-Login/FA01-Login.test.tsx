@@ -146,12 +146,34 @@ describe('FA02 login code', () => {
     expect(store.get()).toMatchObject({ sessionId: 'sess-9', staff: { code: 'FA-00017' } });
   });
 
+  it('names the Team Lead for an agent', async () => {
+    await toCodeScreen((url) => (url.endsWith('/auth/login') ? { status: 200, body: { ...awaiting, codeFrom: 'team_lead' } } : undefined));
+    expect(screen.getByText('Call your Team Lead for your code')).toBeTruthy();
+    expect(screen.queryByText('Call a CEO for your code')).toBeNull();
+  });
+
+  it('names a CEO for an owner account that reports to a CEO', async () => {
+    await toCodeScreen((url) => (url.endsWith('/auth/login') ? { status: 200, body: { ...awaiting, codeFrom: 'ceo' } } : undefined));
+    expect(screen.getByText('Call a CEO for your code')).toBeTruthy();
+    expect(screen.getByText(/A CEO sees your request/)).toBeTruthy();
+    expect(screen.queryByText('Call your Team Lead for your code')).toBeNull();
+  });
+
   it('says when the code is wrong and clears it', async () => {
     await toCodeScreen((url) =>
       url.endsWith('/auth/login') ? { status: 200, body: awaiting } : { status: 401, body: { message: 'Login code is not valid' } },
     );
     await fireEvent.changeText(screen.getByTestId('login-code'), '111111');
     await waitFor(() => expect(screen.getByTestId('code-error')).toHaveTextContent(/not right/));
+  });
+
+  it('a wrong code names the CEO for an owner account that reports to a CEO', async () => {
+    await toCodeScreen((url) =>
+      url.endsWith('/auth/login') ? { status: 200, body: { ...awaiting, codeFrom: 'ceo' } } : { status: 401, body: { message: 'Login code is not valid' } },
+    );
+    await fireEvent.changeText(screen.getByTestId('login-code'), '111111');
+    await waitFor(() => expect(screen.getByTestId('code-error')).toHaveTextContent(/Check it with the CEO who read it out/));
+    expect(screen.getByTestId('code-error')).not.toHaveTextContent(/Team Lead/);
   });
 
   it('offers to start again once the 5 minutes are up', async () => {

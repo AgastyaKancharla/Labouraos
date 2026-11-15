@@ -1,3 +1,4 @@
+import { AUTHENTICATOR_ROLES } from '../../common/auth/sign-in-roles';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
@@ -168,7 +169,8 @@ export class CeoCommandCenterService {
       this.prisma.staff.findMany({ where: { status: { not: 'deactivated' } }, select: { status: true, role: true, totpEnabled: true } }),
       this.prisma.staffSession.findMany({ where: { revokedAt: null, endedReason: null, expiresAt: { gt: now } }, distinct: ['staffId'], select: { staffId: true } }),
     ]);
-    const management = staff.filter((s) => ['ceo', 'manager', 'finance'].includes(s.role) && s.status === 'active');
+    // Everyone who signs in with an authenticator: CEO, Manager, Finance and Team Lead (rev 174–175).
+    const management = staff.filter((s) => AUTHENTICATOR_ROLES.includes(s.role) && s.status === 'active');
     const business = withCeo.filter((w) => w.placementId);
     return {
       jobSeekers: { activeInPool: seekerSummary.activeInPool, nearRefund: seekerSummary.withinFiveDaysOfRefund, atTwoHits: seekerSummary.atTwoOfThreeHits, waitingOnKyc: seekerSummary.waitingOnKyc },

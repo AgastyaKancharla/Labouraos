@@ -5,7 +5,7 @@ import { payslipEn } from '../screens/call-agent/CA14g-Payslip/i18n';
 import { attendanceEn } from '../attendance/i18n';
 import { workerLeftEn } from '../claims/i18n';
 import { registrationEn } from './registration';
-import { staffInviteEn } from './staffInvite';
+import { staffAccessEn } from './staffAccess';
 import { referralTermsEn } from './referralTerms';
 import { referralPartnerEn } from './referralPartner';
 import { staffPhotoEn } from './staffPhoto';
@@ -326,20 +326,15 @@ export const en = {
   "auth.totp.body": "Open the authenticator app on your phone and type the 6-digit code for Laboura.",
   "auth.code.title": "Ask for your login code",
   "auth.code.titleTeamLead": "Ask your Team Lead for your code",
-  "auth.code.titleManager": "Ask a Manager for your code",
   "auth.code.body": "Your Team Lead, a Manager or the CEO sees your request and reads the code out.",
   "auth.code.bodyTeamLead": "Your Team Lead now sees your request on their screen. They tap Show code and read it out to you.",
-  "auth.code.bodyManager": "A Manager or the CEO sees your request and reads the code out.",
+  "auth.code.titleCeo": "Ask a CEO for your code",
+  "auth.code.bodyCeo": "A CEO now sees your request on their screen. They tap Show code and read it out to you.",
   "auth.code.note": "The code works once, for 5 minutes. Nobody can see their own code. You stay logged in while you work; after 60 minutes idle or 2 hours in total you sign in again.",
   "auth.code.expiresIn": "Code request expires in {time}",
   "auth.code.expired": "This code request has expired. Sign in again to get a new one.",
   "auth.code.label": "Login code",
   "auth.startAgain": "Start again",
-  "auth.enrol.title": "Set up your authenticator",
-  "auth.enrol.body": "Scan this with an authenticator app on your phone, then type the 6-digit code it shows.",
-  "auth.enrol.secret": "Or type this key in the app: {secret}",
-  "auth.enrol.turnOn": "Turn on",
-  "auth.enrol.done": "Authenticator is on. Sign in again with a code from the app.",
   "auth.signedOut.idle": "You were signed out after 60 minutes without activity.",
   "auth.signedOut.max_length": "Every sign-in lasts at most 2 hours. Please sign in again.",
   "auth.signedOut.revoked": "Your session was ended — you signed in somewhere else, or the account was locked.",
@@ -362,13 +357,6 @@ export const en = {
   "auth.fieldAgent.title": "Use the Laboura Field app",
   "auth.fieldAgent.body": "Field agents work from the Laboura Field app on their approved phone.",
   "auth.fieldAgent.open": "Open Laboura Field",
-  "auth.forgot.link": "Forgot password?",
-  "auth.forgot.title": "Forgot password",
-  "auth.forgot.body": "CEO, Managers and Finance: type your company email and we send a link to set a new password. It works once, for 1 hour. You still need your authenticator code to sign in.",
-  "auth.forgot.agents": "Agents and Team Leads: ask your Team Lead, a Manager or the CEO to tap Reset for you.",
-  "auth.forgot.email": "Company email",
-  "auth.forgot.send": "Send the link",
-  "auth.forgot.back": "Back to sign in",
   "placeholder.body": "This screen is being built from its approved design.",
   "placeholder.design": "Design: {id}",
   "placeholder.variants": "Also covers: {ids}",
@@ -594,7 +582,7 @@ export const en = {
   "screen.P05b-PayFee": "Pay the fee",
   "screen.P06-DidTheyOffer": "Did they offer you the job?",
   ...registrationEn,
-  ...staffInviteEn,
+  ...staffAccessEn,
   ...referralTermsEn,
   ...referralPartnerEn,
   ...aadhaarQrEn,

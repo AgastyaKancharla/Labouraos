@@ -1,8 +1,10 @@
 export class CreateStaffDto {
   name!: string;
-  email!: string;
+  /** Optional for every role (rev 174–175). */
+  email?: string;
   role!: string;
   teamLeadId?: string; // call_agent / field_agent only; written to reportsToId as well
+  /** The boss: active or not signed in yet. An owner agent account may report to a CEO. */
   reportsToId?: string;
   /** Call and field agents only: an intern carries the same targets as paid agents. */
   intern?: boolean;

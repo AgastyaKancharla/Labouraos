@@ -5,7 +5,7 @@ import { attendanceHi } from '../attendance/i18n';
 import { workerLeftHi } from '../claims/i18n';
 import type { Messages } from './en';
 import { registrationHi } from './registration';
-import { staffInviteHi } from './staffInvite';
+import { staffAccessHi } from './staffAccess';
 import { referralTermsHi } from './referralTerms';
 import { referralPartnerHi } from './referralPartner';
 import { staffPhotoHi } from './staffPhoto';
@@ -326,20 +326,15 @@ export const hi: Messages = {
   "auth.totp.body": "अपने फ़ोन पर ऑथेंटिकेटर ऐप खोलें और Laboura का 6 अंकों का कोड डालें।",
   "auth.code.title": "अपना लॉगिन कोड माँगें",
   "auth.code.titleTeamLead": "अपने टीम लीड से कोड माँगें",
-  "auth.code.titleManager": "किसी मैनेजर से कोड माँगें",
   "auth.code.body": "आपका टीम लीड, कोई मैनेजर या CEO आपका अनुरोध देखकर कोड बताएँगे।",
   "auth.code.bodyTeamLead": "आपके टीम लीड को अब अपनी स्क्रीन पर आपका अनुरोध दिख रहा है। वे Show code दबाकर आपको कोड बताएँगे।",
-  "auth.code.bodyManager": "कोई मैनेजर या CEO आपका अनुरोध देखकर कोड बताएँगे।",
+  "auth.code.titleCeo": "किसी CEO से अपना कोड माँगें",
+  "auth.code.bodyCeo": "CEO को अब अपनी स्क्रीन पर आपका अनुरोध दिख रहा है। वे Show code दबाकर आपको कोड बताएँगे।",
   "auth.code.note": "कोड एक बार, 5 मिनट के लिए चलता है। कोई भी अपना कोड खुद नहीं देख सकता। काम करते समय आप लॉग इन रहते हैं; 60 मिनट बिना काम या कुल 2 घंटे बाद फिर से साइन इन करें।",
   "auth.code.expiresIn": "कोड अनुरोध {time} में ख़त्म होगा",
   "auth.code.expired": "यह कोड अनुरोध ख़त्म हो गया। नया कोड पाने के लिए फिर से साइन इन करें।",
   "auth.code.label": "लॉगिन कोड",
   "auth.startAgain": "फिर से शुरू करें",
-  "auth.enrol.title": "अपना ऑथेंटिकेटर सेट करें",
-  "auth.enrol.body": "अपने फ़ोन के ऑथेंटिकेटर ऐप से इसे स्कैन करें, फिर ऐप में दिखा 6 अंकों का कोड डालें।",
-  "auth.enrol.secret": "या ऐप में यह की डालें: {secret}",
-  "auth.enrol.turnOn": "चालू करें",
-  "auth.enrol.done": "ऑथेंटिकेटर चालू हो गया। ऐप के कोड से फिर से साइन इन करें।",
   "auth.signedOut.idle": "60 मिनट तक कोई काम न होने पर आप साइन आउट हो गए।",
   "auth.signedOut.max_length": "हर साइन इन ज़्यादा से ज़्यादा 2 घंटे चलता है। फिर से साइन इन करें।",
   "auth.signedOut.revoked": "आपका सेशन बंद कर दिया गया — आपने कहीं और साइन इन किया, या खाता बंद किया गया।",
@@ -362,13 +357,6 @@ export const hi: Messages = {
   "auth.fieldAgent.title": "Laboura Field ऐप इस्तेमाल करें",
   "auth.fieldAgent.body": "फ़ील्ड एजेंट अपने मंज़ूर फ़ोन पर Laboura Field ऐप से काम करते हैं।",
   "auth.fieldAgent.open": "Laboura Field खोलें",
-  "auth.forgot.link": "पासवर्ड भूल गए?",
-  "auth.forgot.title": "पासवर्ड भूल गए",
-  "auth.forgot.body": "CEO, मैनेजर और फाइनेंस: अपना कंपनी ईमेल लिखें, हम नया पासवर्ड सेट करने का लिंक भेजेंगे। यह एक ही बार, 1 घंटे तक काम करता है। साइन इन के लिए आपका ऑथेंटिकेटर कोड फिर भी चाहिए।",
-  "auth.forgot.agents": "एजेंट और टीम लीड: अपने टीम लीड, किसी मैनेजर या CEO से Reset दबाने को कहें।",
-  "auth.forgot.email": "कंपनी ईमेल",
-  "auth.forgot.send": "लिंक भेजें",
-  "auth.forgot.back": "साइन इन पर वापस जाएँ",
   "placeholder.body": "यह स्क्रीन इसके मंज़ूर डिज़ाइन से बनाई जा रही है।",
   "placeholder.design": "डिज़ाइन: {id}",
   "placeholder.variants": "इसमें ये भी: {ids}",
@@ -594,7 +582,7 @@ export const hi: Messages = {
   "screen.P05b-PayFee": "फ़ीस भरें",
   "screen.P06-DidTheyOffer": "क्या उन्होंने आपको नौकरी ऑफ़र की?",
   ...registrationHi,
-  ...staffInviteHi,
+  ...staffAccessHi,
   ...referralTermsHi,
   ...referralPartnerHi,
   ...aadhaarQrHi,

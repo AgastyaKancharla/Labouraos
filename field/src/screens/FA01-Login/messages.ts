@@ -15,6 +15,7 @@ export function loginErrorKey(error: unknown): MessageKey {
   // Laboura Field is for field agents only (owner decision 14 Nov).
   if (m.includes('this app is for field agents')) return 'fa01.notForThisApp';
   if (m.includes('waiting for approval')) return 'fa01.devicePending';
+  if (m.includes('temporary password has expired')) return 'fa01.tempExpired';
   if (m.includes('locked')) return 'fa01.locked';
   if (m.includes('not active') || m.includes('cannot log in')) return 'fa01.accountInactive';
   if (m.includes('invalid staff code or password') || m.includes('not a login identifier')) return 'fa01.invalidCredentials';

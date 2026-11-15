@@ -195,32 +195,34 @@ Settings that Render creates by itself, and that you never type, are `JWT_SECRET
 When the app first starts, no staff accounts exist. A one-time "bootstrap" request creates the CEO. You send it from **Laboura's own set-up page**, so no terminal is needed.
 
 > [!IMPORTANT]
-> **Never type the bootstrap secret, the CEO password or a login token into any other website** (for example online "API testers" such as ReqBin or Postman's web version). Those sites pass what you type through their own servers. Use only the page below, on your own Laboura address.
+> **Never type the bootstrap secret, the temporary password or a login token into any other website** (for example online "API testers" such as ReqBin or Postman's web version). Those sites pass what you type through their own servers. Use only the page below, on your own Laboura address.
 
 1. **Copy the bootstrap secret.** In Render, open **`laboura-api`** (on the free tier: `laboura-test`), then **Environment**. Find `STAFF_BOOTSTRAP_SECRET` and click the eye icon to show it. Copy it.
 2. **Open the set-up page on your own Laboura address:** `https://<your laboura-api address>/setup`. Check that the address bar shows your own Laboura address (for example `https://laboura-api.onrender.com/setup`) before typing anything.
    - **CEO name**, for example `Sanket`.
-   - **CEO email**, for example `ceo@laboura.in`.
-   - **Password** (twice): at least 12 characters. Save it in your password manager first.
+   - **CEO email** (optional), for example `ceo@laboura.in`.
    - **Bootstrap secret**: paste the value from 1.
-   - Click **Create the CEO account**. The page shows the staff code, for example `CEO-00001`. Write it down. The page works only while no staff account exists; after that it answers that set-up is already done.
+   - Click **Create the CEO account**. The page shows the **staff code** (for example `CEO-00001`) and a **temporary password** (for example `K7M4-Q2PX`), shown only this once and valid for 24 hours. Write both down. The page works only while no staff account exists; after that it answers that set-up is already done.
 
    *If the set-up page does not open*, use the browser console on your own Laboura address instead (still nothing goes through another website): open `https://<your laboura-api address>/health` in Chrome, press **Ctrl+Shift+J** (Mac: **Cmd+Option+J**), paste this with your own values, and press **Enter**:
    ```js
    fetch('/staff/bootstrap', {
      method: 'POST',
      headers: { 'Content-Type': 'application/json' },
-     body: JSON.stringify({ name: 'Sanket', email: 'ceo@laboura.in', password: 'A-long-password', secret: 'THE-BOOTSTRAP-SECRET' }),
+     body: JSON.stringify({ name: 'Sanket', secret: 'THE-BOOTSTRAP-SECRET' }),
    }).then((r) => r.json()).then(console.log);
    ```
-   The answer includes `"code": "CEO-00001"`. Close the console afterwards.
-3. **Set up the authenticator app on the first login.** Open `https://<your laboura-api address>/login`.
-   - Log in with the **staff code** (for example `CEO-00001`) and the password. Not the email.
-   - The page shows a QR code and a secret key (shown only this once). Scan it, or type the key, in Google Authenticator, Microsoft Authenticator or Authy.
-   - Type the 6-digit code from the app and click **Turn on**.
-   - Log in again with the staff code, the password and a fresh 6-digit code. That login also approves this browser as the CEO's device, and opens the CEO Command Center (`/ceo`).
+   The answer includes the staff code (`"code": "CEO-00001"`) and `"tempPassword"`. Close the console afterwards.
+3. **Set your password and the authenticator app on the first login.** Open `https://<your laboura-api address>/login`.
+   - Sign in with the **staff code** (for example `CEO-00001`) and the **temporary password** (capitals or small letters, with or without the dash). Not the email.
+   - Take the live selfie. It is required: if this computer has no camera, sign in with the staff code and temporary password on a phone or laptop that has one and do the set-up there.
+   - Type your own password twice (at least 8 characters; not the temporary one).
+   - The page shows a QR code and a secret key (shown only this once). Scan it, or type the key, in Google Authenticator, Microsoft Authenticator or Authy, and type the 6-digit code from the app. Click **Set password**.
+   - The page says **Password set — sign in**. Sign in again with the staff code, your new password and a fresh 6-digit code. That sign-in also approves this browser as the CEO's device, and opens the CEO Command Center (`/ceo`).
 
-Managers and Finance also use an authenticator app. Team Leads and agents instead wait on the "Ask your Team Lead for your code" page until someone reveals their code on the Login codes screen.
+Managers, Finance and Team Leads also use their own authenticator app, set up the same way at their first sign-in. Call agents and field agents instead wait on the "Ask your Team Lead for your code" page until someone reveals their code on the Login codes screen.
+
+Everyone you add gets a staff code and a temporary password (shown once on **Team & access**, with **Copy**; for call agents and field agents also **Share on WhatsApp**). For a Manager, Finance or a Team Lead there is no WhatsApp button: read the temporary password to them on a call. There are no invite links. Someone who forgets their password taps **Forgot password?** on the sign-in page: a red **PASSWORD RESET** card appears on their senior's Login codes screen, and the senior calls them back and reads out a reset code.
 
 Staff log in from any network: there is no office-network rule (owner decision 14 Nov). Every login already needs a one-time code from a senior or the authenticator code.
 
@@ -231,9 +233,9 @@ Staff log in from any network: there is no office-network rule (owner decision 1
 Do this straight after Step 7. If the only CEO phone is lost before a second CEO exists, nobody can get back in through the software.
 
 1. Log in at `/login` as the first CEO.
-2. In **Team & access** (`/ceo/team`), click **+ Invite staff** and invite a second CEO-level account (for example `ceo2@laboura.in`).
-3. On a **different phone**, open the invitation link, set the password and add the authenticator code on that phone.
-4. Log in once with the second account to check it works.
+2. In **Team & access** (`/ceo/team`), click **+ Add staff**, choose **Co-founder (CEO-level)** and add the second CEO. Write down the staff code and the temporary password shown.
+3. The second CEO signs in at `/login` with that staff code and temporary password, sets their own password and sets up the authenticator app **on a different phone**.
+4. Log in once with the second account to check it works. From now on each CEO can reset the other's sign-in (**Reset sign-in completely** on Team & access) if a phone is lost.
 
 ---
 
@@ -277,7 +279,7 @@ Up to here the system may hold only made-up test data. Tick every line before a 
 > 3. Copy the application's **Audience (AUD) tag**.
 > 4. Ask Claude to change `CLOUDFLARE_ACCESS_ENFORCED` to `"true"` in `render.yaml` (a value written in that file is put back on every sync, so changing it only in the dashboard does not last).
 > 5. In Render, `laboura-api`, **Environment**: set `CLOUDFLARE_ACCESS_TEAM_DOMAIN` (like `laboura.cloudflareaccess.com`) and `CLOUDFLARE_ACCESS_AUD` (the tag from step 3). Click **Save Changes**. With enforcement on and either value missing, the server refuses to start, so set both.
-> 6. Once Cloudflare sits in front of Render, ask Claude to change `TRUST_PROXY_HOPS` from `1` to `2`.
+> 6. Once Cloudflare sits in front of Render, ask Claude to change `TRUST_PROXY_HOPS` from `1` to `2`, then check `/health/proxy-check` again as in step F11 (it must pass before going live).
 
 #### UPI details
 
@@ -316,26 +318,19 @@ Database backups do not include uploaded files (photos, agreements, recordings).
 
 ---
 
-### Step 11: Emergency recovery (Agastya only)
+### Step 11: Break-glass: a locked-out CEO when there is only one CEO
 
-Only if every CEO login and every authenticator phone is lost at once. Done by **Agastya only**, written down and recorded in the incident log afterwards.
+Only when the **only** CEO has lost their password or authenticator phone and nobody else can reset them (with two CEOs, the other CEO uses **Reset sign-in completely** on Team & access instead; the command refuses while another active CEO exists). This is a command on the server, never a web page. Write down what you did and why in the incident log afterwards.
 
-1. In Supabase, open `laboura-production`, then **SQL Editor**.
-2. Run, with the right email:
-   ```sql
-   UPDATE "Staff"
-   SET "status" = 'active',
-       "totpSecret" = NULL,
-       "totpEnabled" = false
-   WHERE "email" = 'ceo@laboura.in';
+1. **Add the break-glass secret.** In Render, open **`laboura-api`** (free tier: `laboura-test`), then **Environment**, **Add Environment Variable**: key `BREAK_GLASS_SECRET`, value a new random password of 40 letters and numbers from your password manager. Click **Save Changes** and wait for the restart.
+2. **Open the server's shell.** In the same service, click **Shell** (left menu). A black box with a blinking cursor opens.
+3. **Run the command.** Type this line, putting the same secret between the quotes and the CEO's staff code at the end, then press **Enter**:
+   ```sh
+   BREAK_GLASS_CONFIRM='THE-SAME-SECRET' npm run break-glass:ceo -- CEO-00001
    ```
-3. Then end that person's open sessions:
-   ```sql
-   DELETE FROM "StaffSession"
-   WHERE "staffId" IN (SELECT "id" FROM "Staff" WHERE "email" = 'ceo@laboura.in');
-   ```
-4. The CEO logs in at `/login` with the staff code and the password and is taken through the authenticator set-up again.
-5. Record what was done and why in the incident log.
+   It prints a **temporary password** for that CEO (shown only this once, valid 24 hours). It removes the CEO's authenticator, ends every session and puts the account back to "Not signed in yet"; approved devices stay. An audit row (actor `break_glass`) and a password reset history row are written.
+4. The CEO signs in at `/login` with the staff code and the temporary password and sets a new password and a new authenticator (as in Step 7, part 3).
+5. **Remove the secret again**: Environment, delete `BREAK_GLASS_SECRET`, **Save Changes**.
 
 ---
 
@@ -453,14 +448,21 @@ So during a free-tier deploy the two copies hold about **4** of the ~50. (Before
 
 This does three things: the web service never sleeps (it sleeps after 15 minutes without a visitor), so the nightly jobs can run at their times; Supabase sees daily use, so it does not pause the project; and you get an email when the database, the queue, the worker or the job schedules fail. One always-on free web service fits inside Render's 750 free hours a month; a second free web service would not.
 
-**F11. Check the visitor address (`TRUST_PROXY_HOPS`) — on the first deploy.** Rate limits need the real address of each visitor.
-1. Log in as the CEO, open **Team & Access**, then **Devices & logins**, and look at the address shown for your own login.
-2. In another tab, search the web for "what is my IP" and note your public address.
-3. If they match, nothing to do. If the app shows an address starting with `10.` or one that is not yours, open `laboura-test`, **Environment**, change `TRUST_PROXY_HOPS` from `1` to `2`, click **Save Changes**, wait for the restart, log in again and compare. Raise it by one until the addresses match (a Render community report needed `3`). Write the final number down.
+**F11. Check the visitor address (`TRUST_PROXY_HOPS`) — on the first deploy. This is a hard gate: do not go live until it passes.** Rate limits (sign-in, set-up, Forgot password) count per visitor address, so the app must see each visitor's real address, not Render's.
+1. Log in as the CEO on a phone using **mobile data** (not the office Wi-Fi).
+2. In the same browser, open `https://laboura-test.onrender.com/health/proxy-check`. It shows three things and never an address:
+   - `forwardedForEntries`: how many addresses Render passed along;
+   - `trustProxyHops`: the `TRUST_PROXY_HOPS` the app runs with;
+   - `clientAddress`: `public` or `private_or_proxy`.
+3. **Pass:** `clientAddress` is `public` **and** `trustProxyHops` is not bigger than `forwardedForEntries`. Write the number down; on the paid setup (`render.yaml` sets `TRUST_PROXY_HOPS`) tell Claude the number and check this page again there before any real data.
+4. **`clientAddress` is `private_or_proxy`:** the app is taking a Render address as the visitor's. Open `laboura-test`, **Environment**, raise `TRUST_PROXY_HOPS` by one, **Save Changes**, wait for the restart, log in again and reload the page. Repeat until it passes (a Render community report needed `3`).
+5. **`trustProxyHops` is bigger than `forwardedForEntries`:** the value is too high (a visitor could then pick their own address). Lower it by one and check again.
+6. If it never passes, stop and tell Claude before any real data.
+7. Afterwards, **Team & Access**, then **Devices & logins**, shows your own login with the address the app saw: it should be your phone's public address, not one starting with `10.`.
 
 **F12. Test OTP steps with the on-screen test code.** Every vendor is in `mock` mode, so no SMS is sent. Instead, whenever a screen asks for an OTP, a yellow banner **"Test mode code: 123456"** shows the code (and the server log shows it too). This test mode turns off by itself when `OTP_PROVIDER_MODE` is `real`, and is never shown when `NODE_ENV` is `production` with any live vendor.
 
-**F12b. Forgot password (CEO, Managers, Finance) in test mode.** No email vendor is chosen yet (`EMAIL_PROVIDER_MODE` is `mock`, the default), so no email goes out. The screen always gives the same answer; the reset link is written to the server log next to a masked address (`p***@laboura.in`). Test mode turns off when `EMAIL_PROVIDER_MODE` is `real` (which also needs `EMAIL_API_URL`, `EMAIL_API_KEY` and `EMAIL_FROM`) or when `NODE_ENV` is `production` with any live vendor.
+**F12b. Forgot password.** No email is involved (Master Guide rev 174–175). On the sign-in page tap **Forgot password?** and type the staff code: a red **PASSWORD RESET** card appears on the senior's Login codes screen; they tap **Reveal reset code** and read it out; type it with the new password (CEO, Managers, Finance and Team Leads also type a code from their authenticator).
 
 **F13. Open the field app on a phone.** Open `https://laboura-test.onrender.com/field` on an iPhone in Safari, then **Share**, **Add to Home Screen**. (Once laboura.com is connected, use `https://field.laboura.com` instead: see "Connect laboura.com at Hostinger".)
 
@@ -553,7 +555,7 @@ If something does not open: wait an hour (the Hostinger change may still be spre
 | `GOOGLE_NONCE_REQUIRED` | `off` (empty) until the customer app sends a nonce | `on` refuses Google sign-ins without a nonce (replay protection). The app does not send one yet |
 | `APPLE_CLIENT_ID_IOS`, `APPLE_CLIENT_ID_WEB` | From the Apple developer account (the iPhone app's bundle id; the web Services ID) | Turns on "Sign in with Apple" in the customer app. Empty: Apple sign-in is off and refused |
 | `GOOGLE_CLIENT_ID_ANDROID`, `GOOGLE_CLIENT_ID_IOS`, `GOOGLE_CLIENT_ID_WEB` | From the Laboura Firebase project (Project settings, then Your apps; for Android the client id appears once the app's SHA-1 fingerprint is added) | Turns on "Continue with Google" in the customer app. Leave all three empty and the app shows mobile + OTP only. Changing them needs no redeploy of the app, only a restart of `laboura-api` |
-| `PUBLIC_APP_URL` | `https://app.laboura.com` (the onrender.com address until the domain is connected) | The public web address of the app. Every link the software sends (invites, password resets, the public `/p/...` pages, receipts) starts with it; required to start. Links are never built from the address a visitor happened to use. |
+| `PUBLIC_APP_URL` | `https://app.laboura.com` (the onrender.com address until the domain is connected) | The public web address of the app. Every link the software sends (the public `/p/...` pages, receipts) starts with it; required to start. Links are never built from the address a visitor happened to use. |
 | `FIELD_HOST` | `field.laboura.com` (empty until connected) | The address that opens Laboura Field at its root. Every other address opens the office app, with Laboura Field also at `/field` |
 | `CANDIDATE_PHOTO_STORAGE_MODE`, `BUSINESS_PHOTO_STORAGE_MODE`, `AGREEMENT_STORAGE_MODE`, `RECORDING_STORAGE_MODE` | `supabase` on both services (fixed) | Keeps uploads in Supabase Storage; production refuses to start otherwise. `CANDIDATE_PHOTO_STORAGE_MODE` also covers referral partner selfies and staff photos |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Step 3 | Lets the app read and write the four private buckets |

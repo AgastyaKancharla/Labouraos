@@ -14,7 +14,9 @@ const logo = require('../../../assets/logo-mark.png');
 
 /**
  * FA01 — Field agent sign in. Staff code + password on the approved phone,
- * then FA02 for the code read out by the Team Lead. Laboura Field is for field
+ * then FA02 for the code read out by the Team Lead. The temporary password
+ * (first login) opens FA01b "Set your password"; "Forgot password?" opens
+ * FA01c (a reset code from a senior). Laboura Field is for field
  * agents only (owner decision 14 Nov): the server refuses every other role
  * ("This app is for field agents. Please sign in at app.laboura.com.") before
  * any device or code request is made. The CEO no longer uses Laboura Field;
@@ -41,6 +43,8 @@ export default function LoginScreen() {
     try {
       const result = await startLogin(staffCode, password);
       if (result.kind === 'awaiting_code') router.push(routes.loginCode);
+      // First login: the temporary password was recognised (Master Guide rev 174–175).
+      else if (result.kind === 'setup_required') router.push(routes.setup);
       else router.replace(routes.home);
     } catch (error) {
       const message = isApiError(error) ? error.message : '';
@@ -111,6 +115,7 @@ export default function LoginScreen() {
               testID="sign-in"
             />
           </Card>
+          <Button label={t('access.forgot.link')} variant="secondary" onPress={() => router.push(routes.forgotPassword)} testID="forgot-password" />
           <Text variant="muted">{t('fa01.approvedPhoneNote')}</Text>
         </View>
       </Screen>

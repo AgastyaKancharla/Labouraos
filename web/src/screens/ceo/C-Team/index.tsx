@@ -6,7 +6,6 @@ import { Button } from '../../../components/Button';
 import { Card } from '../../../components/Card';
 import { DataTable, type Column } from '../../../components/DataTable';
 import { ErrorState } from '../../../components/ErrorState';
-import { Modal } from '../../../components/Modal';
 import { StatusPill, type StatusTone } from '../../../components/Badge';
 import { DateField, SelectField, TextField } from '../../../components/fields';
 import { TopBar } from '../../../components/TopBar';
@@ -17,7 +16,8 @@ import { useScreenPath } from '../../../portals/PortalContext';
 import { formatDateIST } from '../../../lib/format/date';
 import { FormAction } from '../../finance/_kit/kit';
 import { ActionButton } from '../_kit/actions';
-import { PasswordResetButton } from '../_kit/passwordReset';
+import { NewTempPasswordButton, ReactivateButton, ResetSignInButton, TempPasswordModal, type TempPasswordResult } from '../../shared/staffAccess';
+import { useT } from '../../../i18n/I18nProvider';
 import { roleLabel } from '../_kit/format';
 import { TeamTabs } from '../_kit/tabs';
 import '../_kit/ceo.css';
@@ -55,12 +55,13 @@ interface TeamResponse {
     teamLeads: { id: string; name: string; team: string | null; manager: string | null; callAgents: number; fieldAgents: number }[];
     finance: { id: string; name: string }[];
   };
-  reportsToOptions: { id: string; name: string; role: string; team: string | null }[];
+  /** Bosses: active or not signed in yet (labelled); never deactivated. */
+  reportsToOptions: { id: string; name: string; role: string; team: string | null; notSignedInYet?: boolean }[];
 }
 
 const STATE: Record<TeamRow['state'], { label: string; tone: StatusTone }> = {
   active: { label: 'Active', tone: 'good' },
-  invite_pending: { label: 'Invite not accepted', tone: 'warn' },
+  invite_pending: { label: 'Not signed in yet', tone: 'warn' },
   locked: { label: 'Locked', tone: 'danger' },
   deactivated: { label: 'Deactivated', tone: 'muted' },
 };
@@ -70,7 +71,7 @@ export const OWNER_ACCOUNT_EXPLANATION = 'Owner account: their work counts in th
 
 /** Why a change can be refused (the API checks it): a month is never split between paid agent and owner account. */
 const OWNER_ACCOUNT_TIMING =
-  'Best set when inviting them: it can only change while they have no salary and no finished attendance in a month whose salaries are not approved yet.';
+  'Best set when adding them: it can only change while they have no salary and no finished attendance in a month whose salaries are not approved yet.';
 
 const isAgentRole = (role: string) => role === 'call_agent' || role === 'field_agent';
 
@@ -94,6 +95,18 @@ export function bossRoleFor(role: string): string | null {
   return null;
 }
 
+/** Who can be someone's boss: an owner agent account may also report straight to a CEO (rev 174–175). */
+export function bossRolesFor(role: string, ownerAccount: boolean): string[] {
+  const main = bossRoleFor(role);
+  if (!main) return [];
+  return ownerAccount && isAgentRole(role) ? [main, 'ceo'] : [main];
+}
+
+/** "Asha · Team Lead · Team South (not signed in yet)". */
+export function bossLabel(o: { name: string; role: string; team: string | null; notSignedInYet?: boolean }, notSignedIn: string): string {
+  return `${o.name} · ${roleLabel(o.role)}${o.team ? ` · ${o.team}` : ''}${o.notSignedInYet ? ` ${notSignedIn}` : ''}`;
+}
+
 function stateLabel(r: TeamRow) {
   const s = STATE[r.state];
   return r.state === 'active' && r.authenticator ? `${s.label} · authenticator` : s.label;
@@ -104,6 +117,7 @@ export function useTeam() {
 }
 
 export default function Team() {
+  const t = useT();
   const to = useScreenPath();
   const team = useTeam();
   const d = team.data;
@@ -111,8 +125,8 @@ export default function Team() {
   const languages = useStaffLanguages();
 
   const bossChoices = (r: TeamRow) => {
-    const role = bossRoleFor(r.role);
-    return options.filter((o) => o.role === role && o.id !== r.id).map((o) => ({ value: o.id, label: `${o.name} · ${roleLabel(o.role)}${o.team ? ` · ${o.team}` : ''}` }));
+    const roles = bossRolesFor(r.role, Boolean(r.ownerAccount));
+    return options.filter((o) => roles.includes(o.role) && o.id !== r.id).map((o) => ({ value: o.id, label: bossLabel(o, t('access.boss.notSignedIn')) }));
   };
 
   const columns: Column<TeamRow>[] = [
@@ -202,8 +216,8 @@ export default function Team() {
           {languages.loaded && r.state !== 'deactivated' && (
             <SpokenLanguagesButton key={(languages.byId.get(r.id) ?? []).join(',')} id={r.id} name={r.name} current={languages.byId.get(r.id) ?? []} options={languages.options} />
           )}
-          {r.state === 'invite_pending' && <ResendInvite row={r} />}
-          {(r.state === 'active' || r.state === 'locked') && <PasswordResetButton id={r.id} name={r.name} />}
+          {r.state !== 'deactivated' && <NewTempPasswordButton id={r.id} name={r.name} />}
+          {(r.state === 'active' || r.state === 'locked') && <ResetSignInButton id={r.id} name={r.name} />}
           {r.state === 'active' && r.role !== 'ceo' && !r.photoRetakeRequested && (
             <ActionButton
               label="Ask for a new photo"
@@ -239,7 +253,7 @@ export default function Team() {
               success={`${r.name} is deactivated`}
             />
           )}
-          {r.state === 'deactivated' && <ReactivateButton row={r} />}
+          {r.state === 'deactivated' && <ReactivateButton id={r.id} name={r.name} />}
           {r.role !== 'ceo' && (
             <FormAction
               label={r.joinedOn ? `Joined ${formatDateIST(`${r.joinedOn}T00:00:00+05:30`)}` : 'Joining date'}
@@ -264,7 +278,7 @@ export default function Team() {
         subtitle="Your organisation, every account and what each role can see."
         actions={
           <Button variant="primary" onClick={() => document.querySelector<HTMLInputElement>('input[name="new-staff-name"]')?.focus()}>
-            + Invite staff
+            + Add staff
           </Button>
         }
       />
@@ -344,109 +358,36 @@ export default function Team() {
   );
 }
 
-function ResendInvite({ row }: { row: TeamRow }) {
-  const [shown, setShown] = useState<{ code: string; token: string } | null>(null);
-  return (
-    <>
-      <ActionButton
-        label="Resend"
-        title={`Resend ${row.name}'s invite`}
-        description="A fresh one-time invite replaces the old one. Give it to them so they set a password."
-        run={async () => {
-          const res = await api.post<{ staff: { code: string }; inviteToken: string }>(`/staff/${row.id}/reissue-invite`);
-          setShown({ code: res.staff.code, token: res.inviteToken });
-          return res;
-        }}
-        success="New invite ready"
-      />
-      <InviteShown shown={shown} name={row.name} onClose={() => setShown(null)} />
-    </>
-  );
-}
-
-function ReactivateButton({ row }: { row: TeamRow }) {
-  const [shown, setShown] = useState<{ code: string; token: string } | null>(null);
-  return (
-    <>
-      <ActionButton
-        label="Reactivate"
-        title={`Reactivate ${row.name}`}
-        description="They get a fresh invite to set a new password."
-        run={async () => {
-          const res = await api.post<{ staff: { code: string }; inviteToken?: string }>(`/staff/${row.id}/reactivate`);
-          if (res.inviteToken) setShown({ code: res.staff.code, token: res.inviteToken });
-          return res;
-        }}
-        success={`${row.name} is reactivated`}
-      />
-      <InviteShown shown={shown} name={row.name} onClose={() => setShown(null)} />
-    </>
-  );
-}
-
-function InviteShown({ shown, name, onClose }: { shown: { code: string; token: string } | null; name: string; onClose: () => void }) {
-  const toast = useToast();
-  return (
-    <Modal
-      open={Boolean(shown)}
-      onClose={onClose}
-      title={`Give these to ${name}`}
-      footer={
-        <Button variant="primary" onClick={onClose}>
-          Done
-        </Button>
-      }
-    >
-      <p style={{ marginTop: 0 }}>The invite is shown only this once. They use it to set their own password; nobody else ever sees it.</p>
-      <div className="kv">
-        <span>Staff code</span>
-        <span className="code">{shown?.code}</span>
-        <span>One-time invite</span>
-        <span className="code" style={{ wordBreak: 'break-all' }}>
-          {shown?.token}
-        </span>
-      </div>
-      <div style={{ marginTop: 12 }}>
-        <Button
-          onClick={() => {
-            void navigator.clipboard?.writeText(`${shown?.code ?? ''} ${shown?.token ?? ''}`);
-            toast.success('Copied');
-          }}
-        >
-          Copy both
-        </Button>
-      </div>
-    </Modal>
-  );
-}
-
 function AddStaff({ options }: { options: TeamResponse['reportsToOptions'] }) {
+  const t = useT();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('call_agent');
   const [boss, setBoss] = useState('');
   const [joinedOn, setJoinedOn] = useState('');
   const [ownerAccount, setOwnerAccount] = useState(false);
-  const [shown, setShown] = useState<{ code: string; token: string } | null>(null);
+  const [shown, setShown] = useState<TempPasswordResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
   const qc = useQueryClient();
   const bossRole = bossRoleFor(role);
-  const choices = options.filter((o) => o.role === bossRole).map((o) => ({ value: o.id, label: `${o.name} · ${roleLabel(o.role)}${o.team ? ` · ${o.team}` : ''}` }));
+  // An owner agent account may report straight to a CEO; bosses not signed in yet can be chosen.
+  const bossRoles = bossRolesFor(role, ownerAccount);
+  const choices = options.filter((o) => bossRoles.includes(o.role)).map((o) => ({ value: o.id, label: bossLabel(o, t('access.boss.notSignedIn')) }));
   const effectiveBoss = choices.some((c) => c.value === boss) ? boss : (choices[0]?.value ?? '');
-  const needsEmail = role === 'manager' || role === 'finance' || role === 'ceo';
   const add = useMutation({
     mutationFn: () =>
-      api.post<{ staff: { code: string; name: string }; inviteToken: string }>('/staff', {
+      api.post<TempPasswordResult>('/staff', {
         name: name.trim(),
-        email: email.trim(),
+        // Optional for every role (rev 174–175).
+        email: email.trim() || undefined,
         role,
         reportsToId: bossRole ? effectiveBoss || undefined : undefined,
         joinedOn: joinedOn || undefined,
         ...(ownerAccount && isAgentRole(role) ? { ownerAccount: true } : {}),
       }),
     onSuccess: (res) => {
-      setShown({ code: res.staff.code, token: res.inviteToken });
+      setShown(res);
       toast.success(`${res.staff.name} added · staff code ${res.staff.code}`);
       setName('');
       setEmail('');
@@ -457,7 +398,7 @@ function AddStaff({ options }: { options: TeamResponse['reportsToOptions'] }) {
     },
     onError: (e) => setError(e instanceof ApiError ? e.message : 'Could not add. Try again.'),
   });
-  const missing = !name.trim() || (needsEmail && !email.trim()) || (bossRole !== null && !effectiveBoss);
+  const missing = !name.trim() || (bossRole !== null && !effectiveBoss);
   return (
     <Card icon="jobSeekers" tone="good" title="Add a staff member">
       <form
@@ -478,7 +419,7 @@ function AddStaff({ options }: { options: TeamResponse['reportsToOptions'] }) {
             options={choices.length ? choices : [{ value: '', label: `No ${roleLabel(bossRole)} yet — add one first` }]}
           />
         )}
-        <TextField label={needsEmail ? 'Email (for the authenticator)' : 'Email (optional)'} value={email} onChange={setEmail} required={needsEmail} type="email" />
+        <TextField label="Email (optional)" value={email} onChange={setEmail} type="email" />
         <DateField label="Joining date" value={joinedOn} onChange={setJoinedOn} hint="Pay starts on it · empty = first login" name="new-staff-joined" />
         {isAgentRole(role) && (
           <label className="ceo-check" title={OWNER_ACCOUNT_EXPLANATION}>
@@ -490,7 +431,7 @@ function AddStaff({ options }: { options: TeamResponse['reportsToOptions'] }) {
         )}
         <div style={{ alignSelf: 'flex-end' }}>
           <Button variant="primary" type="submit" loading={add.isPending} disabled={missing}>
-            Add · send staff code
+            Add · get temporary password
           </Button>
         </div>
       </form>
@@ -499,8 +440,10 @@ function AddStaff({ options }: { options: TeamResponse['reportsToOptions'] }) {
           {error}
         </p>
       )}
-      <p className="ceo-note">Agents must report to a Team Lead, Team Leads to a Manager, Managers to the CEO. Their requests, targets, login codes and reports follow this line automatically.</p>
-      <InviteShown shown={shown} name="the new staff member" onClose={() => setShown(null)} />
+      <p className="ceo-note">
+        Agents report to a Team Lead (an owner account may report to a CEO), Team Leads to a Manager, Managers to the CEO; someone not signed in yet can already be chosen. Their requests, targets, login codes and reports follow this line automatically. You get their staff code and a temporary password (24 hours, shown once) to give them.
+      </p>
+      <TempPasswordModal result={shown} onClose={() => setShown(null)} />
     </Card>
   );
 }

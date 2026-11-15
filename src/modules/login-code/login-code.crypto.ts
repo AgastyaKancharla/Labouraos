@@ -6,7 +6,8 @@ export const ODD_HOUR_START_IST = 22;
 /** Exclusive end of the odd-hours window, 24-hour clock in Asia/Kolkata. */
 export const ODD_HOUR_END_IST = 6;
 
-export const LOGIN_CODE_ROLES = ['team_lead', 'call_agent', 'field_agent'] as const;
+/** Call agents and field agents (the shared list; Team Leads use their authenticator since rev 174–175). */
+export { LOGIN_CODE_ROLES } from '../../common/auth/sign-in-roles';
 
 export function loginCodeFor(requestId: string, secret = getLoginCodeSecret()): string {
   const digest = createHmac('sha256', secret).update(requestId).digest('hex');

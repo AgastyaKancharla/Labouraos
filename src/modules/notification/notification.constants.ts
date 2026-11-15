@@ -51,6 +51,8 @@ export const NOTIFICATION_KINDS = [
   'new_match_registered',
   // An agent behind pace on a monthly target, for their Team Lead, Manager and the CEO (guide, Monthly targets; CEO added 12 Nov).
   'behind_pace',
+  // Someone's password was reset (rev 174–175): for their boss and the CEO.
+  'password_reset',
 ] as const;
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
@@ -59,7 +61,7 @@ export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
  * Kinds that tell someone something rather than ask them to do something.
  * Reading them is the work: marking one as seen clears it.
  */
-export const INFORMATIONAL_KINDS: readonly NotificationKind[] = ['request_decided', 'hit_reversed', 'stuck_work_reminder', 'agent_reminder', 'payslip_ready', 'weekly_report', 'fee_unpaid_reminder', 'new_match_registered'];
+export const INFORMATIONAL_KINDS: readonly NotificationKind[] = ['request_decided', 'hit_reversed', 'stuck_work_reminder', 'agent_reminder', 'payslip_ready', 'weekly_report', 'fee_unpaid_reminder', 'new_match_registered', 'password_reset'];
 
 /** Kinds that carry rupee amounts. They only ever go to the CEO or Finance. */
 export const MONEY_KINDS: readonly NotificationKind[] = [
@@ -159,6 +161,7 @@ const LINKS: Record<NotificationKind, LinkTable> = {
   fee_unpaid_reminder: { call_agent: '', field_agent: '' },
   new_match_registered: { field_agent: '' },
   behind_pace: { team_lead: 'agents/:id', manager: 'agents/:id', ceo: 'targets' },
+  password_reset: { team_lead: 'login-codes', manager: 'login-codes', ceo: 'login-codes' },
 };
 
 /**

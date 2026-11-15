@@ -6,8 +6,9 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { applyTrustProxy } from '../../common/http/trust-proxy';
 import { seed } from '../../../prisma/seed';
+import { takeSetupSelfie } from '../../test-support/setup-selfie';
 
-describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
+describe('Phase 8 Task 10 (rev 174–175): First-admin bootstrap with a temporary password', () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
@@ -24,7 +25,9 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
     await prisma.jobSeeker.updateMany({ data: { registeredByStaffId: null } });
     await prisma.placement.updateMany({ data: { createdByStaffId: null } });
     await prisma.vacancy.updateMany({ data: { capturedByStaffId: null } });
-    await prisma.staff.updateMany({ data: { teamLeadId: null } });
+    await prisma.staff.updateMany({ data: { teamLeadId: null, reportsToId: null, tempPasswordIssuedByStaffId: null } });
+    await prisma.passwordResetRequest.deleteMany({});
+    await prisma.staffPasswordReset.deleteMany({});
     await prisma.auditLog.deleteMany({});
     await prisma.staff.deleteMany({});
   }
@@ -87,19 +90,19 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
       expect(res.body.message).toContain('A valid email is required');
     });
 
-    it('rejects password shorter than 12 characters with 400', async () => {
+    it('takes no password and no email is needed: the CEO gets a temporary password instead', async () => {
       const res = await request(app.getHttpServer())
         .post('/staff/bootstrap')
         .set('X-Forwarded-For', freshIp())
         .set('x-bootstrap-secret', BOOTSTRAP_SECRET)
-        .send({
-          name: 'First CEO',
-          email: 'ceo@laboura.local',
-          password: 'Short123!',
-        });
-
-      expect(res.status).toBe(400);
-      expect(res.body.message).toContain('at least 12 characters');
+        .send({ name: 'First CEO', password: 'ignored-anyway' });
+      expect(res.status).toBe(201);
+      expect(res.body.staff.email).toBeNull();
+      expect(res.body.tempPassword).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+      const row = await prisma.staff.findUniqueOrThrow({ where: { id: res.body.staff.id } });
+      // The password typed in the request was never stored.
+      const bcrypt = await import('bcrypt');
+      expect(await bcrypt.compare('ignored-anyway', row.passwordHash)).toBe(false);
     });
   });
 
@@ -124,7 +127,8 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
       expect(res.status).toBe(201);
       expect(res.body.staff).toBeDefined();
       expect(res.body.staff.role).toBe('ceo');
-      expect(res.body.staff.status).toBe('active');
+      expect(res.body.staff.status).toBe('pending_invite');
+      expect(res.body.tempPassword).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
       expect(res.body.staff.email).toBe('founder@laboura.local');
       expect(res.body.staff.name).toBe('First CEO');
       expect(res.body.staff.code).toMatch(/^CEO-\d{5}$/);
@@ -168,63 +172,37 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
       expect(totalStaff).toBe(1);
     });
 
-    it('allows bootstrapped CEO to log in with password and complete 2FA enrolment on first login', async () => {
+    it('the bootstrapped CEO signs in with the temporary password, sets the password and authenticator in set-up, then logs in fully', async () => {
       const bootstrapRes = await request(app.getHttpServer())
         .post('/staff/bootstrap')
         .set('X-Forwarded-For', freshIp())
         .set('x-bootstrap-secret', BOOTSTRAP_SECRET)
-        .send({
-          name: 'First CEO',
-          email: 'ceo.login.test@laboura.local',
-          password: 'SuperSecurePassword2026!',
-        });
+        .send({ name: 'First CEO', email: 'ceo.login.test@laboura.local' });
       expect(bootstrapRes.status).toBe(201);
 
-      // 1. Password only -> 200 with totp_setup scope
-      const passwordLogin = await request(app.getHttpServer())
+      const first = await request(app.getHttpServer())
         .post('/auth/login')
         .set('X-Forwarded-For', freshIp())
-        .send({
-          staffCode: bootstrapRes.body.staff.code,
-          password: 'SuperSecurePassword2026!',
-          deviceId: 'bootstrap-ceo-device',
-        });
-      expect(passwordLogin.status).toBe(200);
-      expect(passwordLogin.body.totpEnrollmentRequired).toBe(true);
-      const setupToken = passwordLogin.body.accessToken as string;
-
-      // 2. Setup and enable 2FA
-      const setupRes = await request(app.getHttpServer())
-        .post('/staff/2fa/setup')
-        .set('Authorization', `Bearer ${setupToken}`)
-        .set('X-Forwarded-For', freshIp())
-        .send();
+        .send({ staffCode: bootstrapRes.body.staff.code, password: bootstrapRes.body.tempPassword, deviceId: 'bootstrap-ceo-device' });
+      expect(first.status).toBe(200);
+      expect(first.body.status).toBe('setup_required');
+      const ticket = { setupTicket: first.body.setupTicket, deviceId: 'bootstrap-ceo-device' };
+      await takeSetupSelfie(app, first.body, 'bootstrap-ceo-device');
+      const setupRes = await request(app.getHttpServer()).post('/auth/setup/authenticator').set('X-Forwarded-For', freshIp()).send(ticket);
       expect(setupRes.status).toBe(200);
       const secret = setupRes.body.secret as string;
-      const validTotpCode = await stableTotpCode(secret);
-
-      const enableRes = await request(app.getHttpServer())
-        .post('/staff/2fa/enable')
-        .set('Authorization', `Bearer ${setupToken}`)
+      await request(app.getHttpServer())
+        .post('/auth/setup/complete')
         .set('X-Forwarded-For', freshIp())
-        .send({ totpCode: validTotpCode });
-      expect(enableRes.status).toBe(200);
+        .send({ ...ticket, newPassword: 'SuperSecurePassword2026!', totpCode: await stableTotpCode(secret) })
+        .expect(200);
 
-      // 3. Password + the next valid TOTP code -> 200 and issues full token. The code
-      // that switched the authenticator on can't be used again (security check L9).
-      const loginTotpCode = await stableTotpCode(secret);
       const successLogin = await request(app.getHttpServer())
         .post('/auth/login')
         .set('X-Forwarded-For', freshIp())
-        .send({
-          staffCode: bootstrapRes.body.staff.code,
-          password: 'SuperSecurePassword2026!',
-          deviceId: 'bootstrap-ceo-device',
-          totpCode: loginTotpCode,
-        });
+        .send({ staffCode: bootstrapRes.body.staff.code, password: 'SuperSecurePassword2026!', deviceId: 'bootstrap-ceo-device', totpCode: await stableTotpCode(secret) });
       expect(successLogin.status).toBe(200);
       expect(successLogin.body.accessToken).toBeDefined();
-      expect(successLogin.body.totpEnrollmentRequired).toBeUndefined();
     });
 
     it('handles concurrent calls on an empty table: exactly one succeeds, the other gets 403', async () => {
@@ -272,7 +250,7 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
           .send({
             name: 'Throttle Test',
             email: fixedEmail,
-            password: 'short', // 400 validation error, still hits throttle guard
+            name2: 'x', // the throttle guard counts every call, whatever the answer
           });
       }
 
@@ -284,7 +262,6 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
         .send({
           name: 'Throttle Test',
           email: fixedEmail,
-          password: 'short',
         });
 
       expect(throttled.status).toBe(429);

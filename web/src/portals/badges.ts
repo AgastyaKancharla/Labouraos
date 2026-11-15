@@ -9,7 +9,14 @@ import type { BadgeSource, SidebarConfig } from './types';
  * returns the count to show (0 hides the badge).
  */
 const FETCHERS: Partial<Record<BadgeSource, () => Promise<number>>> = {
-  'login-codes': async () => (await api.get<unknown[]>('/login-codes/pending')).length,
+  // Login code requests plus red password reset requests waiting for this senior.
+  'login-codes': async () => {
+    const [codes, resets] = await Promise.all([
+      api.get<unknown[]>('/login-codes/pending'),
+      api.get<unknown[]>('/password-resets/pending').catch(() => [] as unknown[]),
+    ]);
+    return codes.length + resets.length;
+  },
   'review-flags': async () => (await api.get<unknown[]>('/review-flags', { query: { status: 'open' } })).length,
   'refunds-due': async () => (await api.get<unknown[]>('/refunds/due')).length,
   // Requests waiting for this Team Lead or Manager (GET /requests/waiting, scoped by the reporting line).

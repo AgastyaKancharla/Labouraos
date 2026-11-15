@@ -38,7 +38,7 @@ export function assertLiveCameraPhoto(photo: { buffer: Buffer; mimetype?: string
 
 /**
  * Staff photo (guide, "The login code screen", 14 Nov): a live camera selfie
- * taken when the person sets up their account from the invite link, so the
+ * taken when the person sets up their account at the first sign-in, so the
  * senior giving a login code can see who is asking. It also shows on staff
  * lists and profiles. Someone without one (older accounts) is asked at their
  * next login before going on; the CEO can ask anyone for a retake. Kept in
@@ -66,7 +66,7 @@ export class StaffPhotoService {
    * retake request. Two saves at once: the first wins, the second is refused.
    * Audited.
    */
-  async save(staffId: string, photo: { buffer: Buffer; contentType: SelfieImageType }, actorId: string, how: 'invite' | 'login', now: Date = new Date()) {
+  async save(staffId: string, photo: { buffer: Buffer; contentType: SelfieImageType }, actorId: string, how: 'setup' | 'login', now: Date = new Date()) {
     const staff = await this.prisma.staff.findUnique({
       where: { id: staffId },
       select: { id: true, code: true, city: true, photoStoragePath: true, photoTakenAt: true, photoRetakeRequestedAt: true },
@@ -95,7 +95,7 @@ export class StaffPhotoService {
       before: { hadPhoto: Boolean(staff.photoStoragePath), photoTakenAt: staff.photoTakenAt?.toISOString() ?? null, retakeRequested: Boolean(staff.photoRetakeRequestedAt) },
       after: { hadPhoto: true, photoTakenAt: now.toISOString(), retakeRequested: false },
       changedFields: ['photoStoragePath', 'photoTakenAt', 'photoRetakeRequestedAt'],
-      reason: how === 'invite' ? 'Live camera selfie taken while setting up the account from the invite link' : 'Live camera selfie taken at login',
+      reason: how === 'setup' ? 'Live camera selfie taken while setting up the account at the first sign-in' : 'Live camera selfie taken at login',
       city: staff.city,
     });
     return { photoTakenAt: now, photoUrl: await this.signed(path) };

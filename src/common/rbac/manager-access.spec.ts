@@ -406,7 +406,7 @@ describe('Access matches the Master Guide (Managers, CEO, audit, receipts)', () 
       // Re-issue is rate limited per route, so it is checked on two outsiders only.
       for (const person of [agentB, finance]) {
         await request(server())
-          .post(`/staff/${person.id}/reissue-invite`)
+          .post(`/staff/${person.id}/reset-sign-in`)
           .set('Authorization', `Bearer ${mgr}`)
           .expect(403);
       }
@@ -422,7 +422,7 @@ describe('Access matches the Master Guide (Managers, CEO, audit, receipts)', () 
         .set('Authorization', `Bearer ${mgr}`)
         .expect(200);
       await request(server())
-        .post(`/staff/${inside.id}/reissue-invite`)
+        .post(`/staff/${inside.id}/reset-sign-in`)
         .set('Authorization', `Bearer ${mgr}`)
         .expect(200);
       await request(server())

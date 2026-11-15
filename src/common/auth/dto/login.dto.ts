@@ -3,7 +3,7 @@ export class LoginDto {
   password?: string;
   /** Required for every role. */
   deviceId?: string;
-  /** Management accounts only. */
+  /** CEO, Manager, Finance and Team Lead: the code from their own authenticator. */
   totpCode?: string;
   /**
    * The app signing in: 'office' (app.laboura.com) or 'field' (Laboura Field).
@@ -36,8 +36,11 @@ export class LoginResponseDto {
    * reopened, through POST /auth/field/refresh. Single use; rotated on refresh.
    */
   refreshToken?: string;
-  /** True when the token is limited to TOTP enrolment (management, not enrolled yet). */
-  totpEnrollmentRequired?: boolean;
+  /**
+   * Shown once, at the first sign-in after a password reset: "Your password
+   * was reset on … approved by …".
+   */
+  passwordResetNotice?: PasswordResetNotice;
   staff!: {
     id: string;
     code: string;
@@ -47,16 +50,49 @@ export class LoginResponseDto {
   };
 }
 
-/** Non-management login, after the device and office checks. No token yet. */
+export interface PasswordResetNotice {
+  /** When the reset finished (ISO time). */
+  at: string;
+  /** Who approved it (gave the temporary password or revealed the reset code); null for the server command. */
+  byName: string | null;
+  byRole: string | null;
+  /** temp_password, full_reset, reactivation, break_glass or senior_code. */
+  how: string;
+}
+
+/**
+ * First sign-in with a temporary password (rev 174–175): no session. The
+ * set-up ticket opens the set-up steps only (selfie, new password twice,
+ * authenticator for authenticator roles), for 15 minutes, on this device.
+ */
+export class SetupRequiredResponseDto {
+  status!: 'setup_required';
+  setupTicket!: string;
+  expiresAt!: Date;
+  staff!: { code: string; name: string; role: string };
+  /** No staff photo yet (or the CEO asked for a new one): a live selfie first. */
+  photoRequired!: boolean;
+  /** CEO, Manager, Finance or Team Lead without an authenticator yet: set it up in this step. */
+  authenticatorSetupRequired!: boolean;
+  /** Authenticator already on (a reset that keeps it): type a code from it to finish. */
+  authenticatorCodeRequired!: boolean;
+  passwordRules!: { minLength: number; maxBytes: number };
+  /** Field agents sign in on Laboura Field; everyone else on the web sign-in. */
+  signInAt!: 'field_app' | 'web';
+}
+
+/** Call agents and field agents, after the device check. No token yet. */
 export class AwaitingCodeResponseDto {
   status!: 'awaiting_code';
   loginRequestId!: string;
   /** Send back with the code, with the same deviceId: the code works only for this device and sign-in. */
   loginRequestProof!: string;
   expiresAt!: Date;
+  /** Who reads the code out: the agent's Team Lead, or a CEO for an owner account that reports to a CEO. */
+  codeFrom!: 'team_lead' | 'ceo';
 }
 
-export type LoginResult = LoginResponseDto | AwaitingCodeResponseDto;
+export type LoginResult = LoginResponseDto | AwaitingCodeResponseDto | SetupRequiredResponseDto;
 
 export class FieldRefreshDto {
   sessionId?: string;

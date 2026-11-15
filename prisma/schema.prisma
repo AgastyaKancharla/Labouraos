@@ -918,6 +918,28 @@ model Staff {
   /// SHA-256 of the last invite token that was redeemed, so the invite page can
   /// say "already used" instead of "not valid". Never a usable credential.
   inviteUsedTokenHash String?        @unique
+  /// Temporary password (Master Guide rev 174–175): issued when the account is
+  /// made, by "New temporary password", "Reset sign-in completely", on
+  /// reactivation and by the break-glass command. bcrypt hash of the normalised
+  /// form only (capitals, no dash); never logged. Valid 24 hours, works once:
+  /// cleared when the person finishes setting their own password.
+  tempPasswordHash  String?
+  tempPasswordExpiresAt DateTime?
+  tempPasswordIssuedByStaffId String?
+  tempPasswordIssuedBy Staff?        @relation("TempPasswordIssuedBy", fields: [tempPasswordIssuedByStaffId], references: [id], onDelete: SetNull)
+  tempPasswordsIssued Staff[]        @relation("TempPasswordIssuedBy")
+  /// First-login set-up ticket: SHA-256 of a one-time random value handed to
+  /// the device that signed in with the temporary password. Not a session: it
+  /// only opens the set-up steps (selfie, new password, authenticator), for
+  /// 15 minutes, on that device id.
+  setupTicketHash   String?          @unique
+  setupTicketDeviceId String?
+  setupTicketExpiresAt DateTime?
+  /// Wrong authenticator codes typed with the current set-up ticket (5 end it).
+  setupTicketWrongCodes Int @default(0)
+  /// Shown once at the next sign-in after a password reset ("Your password was
+  /// reset on … approved by …"): { at, byName, byRole, how }. Cleared once shown.
+  passwordResetNotice Json?
   deactivatedAt     DateTime?
   /// Staff photo (guide, login codes, 14 Nov): a live camera selfie taken when
   /// the person sets up their account from the invite link, shown on login code
@@ -931,6 +953,9 @@ model Staff {
   sessions          StaffSession[]
   passwordResets    StaffPasswordReset[] @relation("PasswordResetFor")
   passwordResetsIssued StaffPasswordReset[] @relation("PasswordResetIssuedBy")
+  passwordResetRequests PasswordResetRequest[] @relation("PasswordResetRequestFor")
+  passwordResetRequestsRevealed PasswordResetRequest[] @relation("PasswordResetRequestRevealedBy")
+  passwordResetRequestsRefused PasswordResetRequest[] @relation("PasswordResetRequestRefusedBy")
   coachingNotes     StaffCoachingNote[] @relation("CoachingNoteAbout")
   coachingNotesWritten StaffCoachingNote[] @relation("CoachingNoteAuthor")
   companyPlansSet   CompanyPlan[]    @relation("CompanyPlanSetBy")
@@ -949,6 +974,7 @@ model Staff {
   @@index([teamLeadId])
   @@index([reportsToId])
   @@index([lockedByStaffId])
+  @@index([tempPasswordIssuedByStaffId])
 }
 
 model Payment {
@@ -2235,18 +2261,22 @@ model OwnerFavourite {
   @@index([jobSeekerId])
 }
 
-/// A password reset issued by a Team Lead (own agents), a Manager (own tree)
-/// or the CEO. Works like a new invite link: the person sets a new password
-/// on the invite page; the old password keeps working until the link is used.
-/// Kept so the CEO's audit can see who reset whom. Only the SHA-256 of the
-/// token is stored.
+/// A temporary password a senior gave an existing account (rev 174–175):
+/// kind temp_password ("New temporary password"), full_reset ("Reset sign-in
+/// completely"), reactivation, or break_glass (the server command; no
+/// issuer). Rows of kind link are the older reset links (no longer issued).
+/// Kept so the CEO's audit can see who reset whom. The temporary password
+/// itself is only on the Staff row, as a bcrypt hash.
 model StaffPasswordReset {
   id              String    @id @default(uuid())
   staffId         String
   staff           Staff     @relation("PasswordResetFor", fields: [staffId], references: [id], onDelete: Cascade)
-  issuedByStaffId String
-  issuedBy        Staff     @relation("PasswordResetIssuedBy", fields: [issuedByStaffId], references: [id], onDelete: Restrict)
-  tokenHash       String    @unique
+  issuedByStaffId String?
+  issuedBy        Staff?    @relation("PasswordResetIssuedBy", fields: [issuedByStaffId], references: [id], onDelete: SetNull)
+  /// link (older reset links), temp_password, full_reset, reactivation, break_glass.
+  kind            String    @default("link")
+  /// Older reset links only: SHA-256 of the link token.
+  tokenHash       String?   @unique
   expiresAt       DateTime
   usedAt          DateTime?
   /// Set when a newer reset replaced this one, or the account was deactivated.
@@ -2255,6 +2285,43 @@ model StaffPasswordReset {
 
   @@index([staffId, createdAt])
   @@index([issuedByStaffId])
+}
+
+/// "Forgot password" on the login page (rev 174–175): the person asks with
+/// their staff code; the request shows as a red PASSWORD RESET card on the
+/// code screens of the seniors allowed to approve it, who call them back and
+/// reveal a 6-digit reset code. The code is never stored (HMAC of the id with
+/// its own label), works once, for 15 minutes after it is revealed, only on
+/// the device and sign-in that asked; 5 wrong tries end the request.
+model PasswordResetRequest {
+  id                String    @id @default(uuid())
+  staffId           String
+  staff             Staff     @relation("PasswordResetRequestFor", fields: [staffId], references: [id], onDelete: Cascade)
+  /// The device id the request came from; the code works only there.
+  deviceId          String
+  /// True when that device is one of the person's approved devices ("usual phone").
+  knownDevice       Boolean   @default(false)
+  /// office or field.
+  app               String?
+  ipAddress         String?
+  /// pending, revealed, used, expired, refused, cancelled
+  status            String    @default("pending")
+  createdAt         DateTime  @default(now())
+  expiresAt         DateTime
+  revealedByStaffId String?
+  revealedBy        Staff?    @relation("PasswordResetRequestRevealedBy", fields: [revealedByStaffId], references: [id], onDelete: SetNull)
+  revealedAt        DateTime?
+  failedAttempts    Int       @default(0)
+  usedAt            DateTime?
+  refusedByStaffId  String?
+  refusedBy         Staff?    @relation("PasswordResetRequestRefusedBy", fields: [refusedByStaffId], references: [id], onDelete: SetNull)
+  refusedAt         DateTime?
+  refusedReason     String?
+
+  @@index([staffId, status])
+  @@index([createdAt])
+  @@index([revealedByStaffId])
+  @@index([refusedByStaffId])
 }
 
 /// Coaching notes and written warnings about a staff member (Manager portal,
