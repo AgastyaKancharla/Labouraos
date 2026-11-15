@@ -809,9 +809,11 @@ notifySafely(...)   // same, never throws (for calls from other services)
   "send now" kick). **A push or in-app message is never a contact attempt** and
   never counts toward a hit (C17): no `ContactAttempt` is written and the log's
   subject is never the job seeker.
-- Rules: quiet hours 9 PM to 9 AM IST (non-urgent held until 9 AM; urgent and
-  `selfAction` receipts go at once); at most 3 non-urgent pushes a day per
-  account (over the cap the message stays in the inbox without a push); Service
+- Rules: quiet hours 9 PM to 9 AM IST: everything waits until 9 AM, urgent
+  pushes included, except sign-in codes (SMS, never through here) and
+  `selfAction` receipts for something the person just did, which go at once
+  (Q21); at most 3 non-urgent pushes a day per account (urgent ones and receipts
+  never count, also when they go out at 9 AM) (over the cap the message stays in the inbox without a push); Service
   off = inbox only; `job_updates` and `promotions` events (or `promotional: true`)
   only with the switch on **and** the job seeker's matching consent.
 - `CustomerNotificationHooks` turns existing events into notifications (payment
