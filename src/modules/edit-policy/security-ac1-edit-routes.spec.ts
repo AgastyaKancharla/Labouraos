@@ -184,7 +184,7 @@ describe('Security AC-1: edit routes write only their allowlisted columns', () =
       expect([saved.suspendedAt, saved.pausedAt, saved.accountAgentId]).toEqual([null, null, null]);
     });
 
-    it('a paid placement’s agreed salary: Manager refused (403), CEO allowed', async () => {
+    it('a placement’s agreed salary: Manager refused (403), CEO allowed (M1: CEO only, paid or not)', async () => {
       await prisma.placement.update({ where: { id: placementId }, data: { paidAt: new Date(), status: 'confirmed' } });
       const byManager = await patch(tokens.manager, `/placements/${placementId}`, { agreedSalary: 2000000, reason: 'raise' });
       expect(byManager.status).toBe(403);
