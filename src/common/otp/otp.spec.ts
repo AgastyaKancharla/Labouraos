@@ -137,6 +137,10 @@ describe('OTP Provider and Mock Implementation', () => {
         jobSeeker: { findFirst: jest.fn().mockResolvedValue({ id: 'seeker-1', code: 'JS-01042', registeredByStaffId: 'agent-1' }) },
         business: { findFirst: jest.fn() },
         referral: { findFirst: jest.fn() },
+        // Security L1: the "Already registered" answer is counted as a full-number search.
+        auditLog: { count: jest.fn().mockResolvedValue(0) },
+        $executeRaw: jest.fn().mockResolvedValue(1),
+        $transaction: jest.fn((fn: (tx: unknown) => unknown) => fn(prisma)),
         staff: { findUnique: jest.fn(), findFirst: jest.fn() },
       } as unknown as PrismaService;
       const auditLog = jest.fn().mockResolvedValue(undefined);
@@ -158,6 +162,10 @@ describe('OTP Provider and Mock Implementation', () => {
         jobSeeker: { findFirst: jest.fn().mockResolvedValue({ id: 'seeker-1', code: 'JS-01042', registeredByStaffId: 'other-agent' }) },
         business: { findFirst: jest.fn() },
         referral: { findFirst: jest.fn() },
+        // Security L1: the "Already registered" answer is counted as a full-number search.
+        auditLog: { count: jest.fn().mockResolvedValue(0) },
+        $executeRaw: jest.fn().mockResolvedValue(1),
+        $transaction: jest.fn((fn: (tx: unknown) => unknown) => fn(prisma)),
         staff: {
           findUnique: jest.fn().mockResolvedValue({ id: 'lead-1', role: 'team_lead' }),
           // other-agent is on another team (OwnTeam reads lead-1's team).

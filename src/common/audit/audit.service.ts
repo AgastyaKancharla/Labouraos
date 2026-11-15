@@ -147,7 +147,8 @@ export class AuditService {
     private readonly idService: IdService,
   ) {}
 
-  async log(params: CreateAuditLogParams) {
+  /** `client`: pass a transaction to write the row inside it (Security L2). */
+  async log(params: CreateAuditLogParams, client: Prisma.TransactionClient | PrismaService = this.prisma) {
     const code = await this.idService.generateCode('audit_log');
     const changedFieldsSet = new Set<string>(params.changedFields ?? []);
 
@@ -176,7 +177,7 @@ export class AuditService {
 
     const device = await this.currentDevice();
 
-    return this.prisma.auditLog.create({
+    return client.auditLog.create({
       data: {
         code,
         deviceId: device.deviceId,

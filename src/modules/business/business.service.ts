@@ -46,6 +46,7 @@ import { EditPolicyService, EditActor, pickEditableFields } from '../../common/e
 import { AnonymisationService } from '../../common/anonymisation/anonymisation.service';
 import { AgentViewer, agentViewerFor, businessForViewer } from './business-agent-view';
 import { areaAutoFillMaxMeters, areaRequiredError, DEFAULT_AREA_AUTO_FILL_MAX_METERS } from './area-auto-fill';
+import { recordFullNumberSearch } from '../../common/phone/full-number-search';
 
 /**
  * The only columns PATCH /businesses/:id writes (security AC-1). Not here, on
@@ -284,6 +285,10 @@ export class BusinessService {
       where: { phone: { in: mobileLookupValues(phone) } },
     });
     if (existing) {
+      // Security L1: the 409 tells a staff member the number is ours: a full-number search (audited, 30 an hour).
+      if (!options.selfRegisteredByAccountId) {
+        await recordFullNumberSearch(this.prisma, this.auditService, { id: actorId }, 'business_create', phone);
+      }
       throw new ConflictException({
         statusCode: 409,
         error: 'Conflict',

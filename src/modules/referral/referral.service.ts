@@ -18,6 +18,7 @@ import { EditPolicyService, EditActor, pickEditableFields } from '../../common/e
 import { mobileLookupValues, requireIndianMobile } from '../../common/phone/indian-mobile';
 import { sendPhoneChangedNotice } from '../../common/phone/phone-change-notice';
 import { MessagingService } from '../message/messaging.service';
+import { recordFullNumberSearch } from '../../common/phone/full-number-search';
 
 /**
  * The only columns PATCH /referrals/:id writes (security AC-1). Not here, on
@@ -240,6 +241,10 @@ export class ReferralService {
       where: { phone: { in: mobileLookupValues(phone) } },
     });
     if (existing) {
+      // Security L1: the 409 tells a staff member the number is ours: a full-number search (audited, 30 an hour).
+      if (!options.selfRegisteredByAccountId) {
+        await recordFullNumberSearch(this.prisma, this.auditService, { id: actorId }, 'referral_create', phone);
+      }
       throw new ConflictException({
         statusCode: 409,
         error: 'Conflict',

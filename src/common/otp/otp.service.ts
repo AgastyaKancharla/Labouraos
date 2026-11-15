@@ -6,6 +6,7 @@ import { RBAC_MATRIX, Role } from '../rbac/rbac.types';
 import { mobileLookupValues, phoneLast4, requireIndianMobile } from '../phone/indian-mobile';
 import { OTP_PROVIDER, OtpProvider, OtpSendOptions, OtpSendResult } from './otp.interface';
 import { publicPageOtpPurpose } from './public-page-otp';
+import { assertFullNumberSearchAllowed, recordFullNumberSearch } from '../phone/full-number-search';
 
 export const OTP_PURPOSES = [
   'job_seeker',
@@ -57,8 +58,14 @@ export class OtpService {
     const last4 = phoneLast4(phone);
     const staffId = actorId;
     if (staffId && !requestId && !CONFIRMATION_PURPOSES.includes(purpose)) {
+      // Security L1: an "Already registered" answer tells the staff member the
+      // number is ours, so it counts as a full-number search (audited, 30 an
+      // hour). At the limit every fresh send is refused, so a number that is ours
+      // and one that is not get the same answer.
+      await assertFullNumberSearchAllowed(this.prisma, staffId);
       const duplicate = await this.findDuplicate(phone);
       if (duplicate) {
+        await recordFullNumberSearch(this.prisma, this.auditService, { id: staffId, role: actorRole }, 'otp_send', phone);
         const visible = await this.canSeeRecord(duplicate, staffId, actorRole);
         const response = visible
           ? { alreadyRegistered: true as const, type: duplicate.type, code: duplicate.code }

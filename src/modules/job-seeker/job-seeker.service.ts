@@ -74,6 +74,7 @@ import { PublicLinkStoreService } from '../../common/public-link-store.service';
 import { MessagingService } from '../message/messaging.service';
 import { sendPhoneChangedNotice } from '../../common/phone/phone-change-notice';
 import { publicPageLink } from '../../common/public-pages';
+import { recordFullNumberSearch } from '../../common/phone/full-number-search';
 import {
   mobileLookupValues,
   optionalIndianMobile,
@@ -257,6 +258,10 @@ export class JobSeekerService {
     if (existing) {
       // Guide (Forms): a number already registered shows "Already registered — open it"
       // instead of creating a second record, so the answer names the existing record.
+      // Security L1: the 409 tells a staff member the number is ours: a full-number search (audited, 30 an hour).
+      if (!options.selfRegisteredByAccountId) {
+        await recordFullNumberSearch(this.prisma, this.auditService, { id: actorId }, 'job_seeker_create', phone);
+      }
       throw new ConflictException({
         statusCode: 409,
         error: 'Conflict',
