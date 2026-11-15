@@ -618,6 +618,7 @@ An older version of the setup used a Redis service outside Render for the queue,
 Nothing to set on Render. People may notice these, once, right after the deploy:
 
 - **Login and reset codes revealed just before the deploy stop working** (AUTH-1: the 6-digit codes are now uniform, so the same request gives a different code). The senior reveals the code again on the code screen; the request itself still works.
+- **Receipt and invoice links sent before the deploy stop working** (AC-5: links now carry a 90-day expiry). Finance or the CEO send a fresh one if someone asks; staff screens already make fresh links.
 - **Registration, agreement, partner and payout links:** a code an agent sends (staff "Send OTP") no longer opens or completes a person's own link (AC-3). The person taps "Send code" on their link. Staff screens that send a link no longer show its token.
 
 ---

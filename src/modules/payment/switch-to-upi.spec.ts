@@ -14,8 +14,8 @@ import { calculatePlacementFee, calculateGst } from '../../common/money/money';
 import { EditPolicyService } from '../../common/edit-policy/edit-policy.service';
 import { AnonymisationService } from '../../common/anonymisation/anonymisation.service';
 import { TradeService } from '../trade/trade.service';
-import { receiptToken } from './receipt-link';
-import { invoiceToken } from '../placement/invoice-link';
+import { isValidReceiptToken } from './receipt-link';
+import { isValidInvoiceToken } from '../placement/invoice-link';
 
 type MockPrisma = {
   payment: Record<string, jest.Mock>;
@@ -281,10 +281,13 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
           subjectType: 'job_seeker',
           subjectId: 'js-1',
           variables: {
-            link: `https://app.laboura.in/payments/pay-1/receipt?token=${receiptToken('pay-1')}`,
+            // The token carries its own expiry (AC-5): checked below rather than by exact text.
+            link: expect.stringMatching(/^https:\/\/app\.laboura\.in\/payments\/pay-1\/receipt\?token=[0-9a-z]+\.[\w-]+$/),
           },
         }),
       );
+      const receiptSent = (messagingService.send as jest.Mock).mock.calls.map(([m]) => m).find((m) => m.template === 'payment_receipt');
+      expect(isValidReceiptToken('pay-1', new URL(receiptSent.variables.link).searchParams.get('token'))).toBe(true);
     });
 
     it('re-registration after 3 hits resets hit count and creates UPI request with reactivation: true', async () => {
@@ -490,11 +493,13 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
           subjectId: 'biz-1',
           variables: {
             // The business's own signed, read-only invoice copy — not the staff-only route.
-            link: `https://app.laboura.in/placements/pl-1/invoice/copy?token=${invoiceToken('pl-1')}`,
+            link: expect.stringMatching(/^https:\/\/app\.laboura\.in\/placements\/pl-1\/invoice\/copy\?token=[0-9a-z]+\.[\w-]+$/),
             invoiceCode: 'INV-00001',
           },
         }),
       );
+      const invoiceSent = (messagingService.send as jest.Mock).mock.calls.map(([m]) => m).find((m) => m.template === 'placement_invoice');
+      expect(isValidInvoiceToken('pl-1', new URL(invoiceSent.variables.link).searchParams.get('token'))).toBe(true);
 
       // Candidate received joining confirmation
       expect(messagingService.send).toHaveBeenCalledWith(
