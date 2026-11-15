@@ -40,7 +40,7 @@ export default function DeleteAccount() {
         <AppHeader title={t('delete.title')} />
         <Screen>
           <Banner tone="ok" title={t('delete.doneTitle')} message={t('delete.done')} />
-          <Card title={t('delete.keptTitle')}>
+          <Card title={t('delete.keptTitle')} accent="navy">
             {kept.map((item) => (
               <Text key={item}>• {t(`kept.${item}`)}</Text>
             ))}
@@ -78,7 +78,7 @@ export default function DeleteAccount() {
             <Checkbox label={t('delete.guaranteeTick')} checked={accepted} onChange={setAccepted} testID="delete-accept" />
           </View>
         ) : null}
-        <Card>
+        <Card accent="red" testID="delete-card">
           <View style={styles.gap}>
             <Text>{t('delete.what')}</Text>
             <Text variant="muted">{t('delete.keptNote')}</Text>
@@ -89,6 +89,7 @@ export default function DeleteAccount() {
               submit={submit}
               sendLabel={t('delete.sendOtp', { last4: account?.phoneLast4 ?? '' })}
               submitLabel={t('delete.confirm')}
+              submitVariant="danger"
               sentText={t('otp.sentTo', { last4: account?.phoneLast4 ?? '' })}
             />
           </View>

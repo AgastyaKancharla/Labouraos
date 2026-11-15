@@ -41,7 +41,7 @@ export default function VerifyPhone() {
     <View style={styles.flex} testID="verify-phone">
       <AppHeader title={t('verifyPhone.title')} />
       <Screen>
-        <Card>
+        <Card accent="royal">
           <View style={styles.gap}>
             {account?.name ? <Text variant="h2">{t('verifyPhone.hello', { name: account.name.split(' ')[0] })}</Text> : null}
             <Text>{t('verifyPhone.why')}</Text>

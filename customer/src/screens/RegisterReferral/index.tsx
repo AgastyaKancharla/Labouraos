@@ -105,7 +105,7 @@ export default function RegisterReferral() {
       {header}
       <Screen>
         <Banner tone="info" message={t('referral.howItWorks', { amount: rupees(REWARD_PAISE) })} />
-        <Card>
+        <Card accent="good">
           <View style={styles.gap}>
             <TextField label={t('referral.name')} value={draft.name} onChangeText={(v) => set('name', v)} error={err('name')} testID="ref-name" />
             <RadioGroup

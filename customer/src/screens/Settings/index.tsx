@@ -22,7 +22,7 @@ export default function Settings() {
     <View style={styles.flex} testID="settings">
       <AppHeader title={t('settings.title')} onBack={() => router.back()} showAccountActions={status === 'signed_in'} />
       <Screen>
-        <Card title={t('settings.language')}>
+        <Card title={t('settings.language')} accent="cyan" emoji="🌐">
           <RadioGroup
             value={language}
             onChange={(code) => {
@@ -33,7 +33,7 @@ export default function Settings() {
             testID="settings-language"
           />
         </Card>
-        <Card title={t('settings.about')}>
+        <Card title={t('settings.about')} accent="navy" emoji="ℹ️">
           <Text testID="settings-version">{t('settings.version', { version: Constants.expoConfig?.version ?? '—' })}</Text>
           {apiMode() === 'mock' ? <Text variant="muted">{t('settings.mockMode')}</Text> : null}
         </Card>

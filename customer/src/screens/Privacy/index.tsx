@@ -20,14 +20,14 @@ export default function Privacy() {
     <View style={styles.flex} testID="privacy">
       <AppHeader title={t('privacy.title')} onBack={() => router.back()} showAccountActions />
       <Screen>
-        <Card title={t('privacy.whatTitle')}>
+        <Card title={t('privacy.whatTitle')} accent="good" emoji="🔒">
           <View style={styles.gap}>
             <Text>{t('privacy.what')}</Text>
             <Text>{t('privacy.never')}</Text>
             <Text>{t('privacy.consents')}</Text>
           </View>
         </Card>
-        <Card title={t('privacy.grievanceTitle')}>
+        <Card title={t('privacy.grievanceTitle')} accent="gold" emoji="📮">
           <Text testID="privacy-grievance">{account?.grievanceContact || t('privacy.grievanceFallback')}</Text>
         </Card>
         <Button label={t('privacy.policy')} variant="secondary" onPress={() => void Linking.openURL(PRIVACY_URL)} testID="privacy-policy" />

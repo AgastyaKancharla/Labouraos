@@ -173,6 +173,16 @@ describe('push: InboxScreen', () => {
     expect(router.push).toHaveBeenCalledWith(routes.home);
   });
 
+  it('colours each notification type; an urgent one gets the red "Urgent" chip', async () => {
+    const api = fakePushApi({
+      inbox: jest.fn(async () => ({ items: [message(), message({ id: 'm-3', kind: 'interview_booked', priority: 'urgent' })], nextCursor: null, unreadCount: 2 })),
+    });
+    await renderWithApp(<InboxScreen api={api} />, { account: account({ profiles: [jsProfile] }) });
+    expect(await screen.findByTestId('inbox-icon-m-1-royal', { includeHiddenElements: true })).toBeTruthy();
+    expect(screen.getByTestId('inbox-icon-m-3-orange', { includeHiddenElements: true })).toBeTruthy();
+    expect(screen.getByTestId('inbox-urgent-m-3')).toHaveTextContent(PUSH_STRINGS.en['inbox.urgent']);
+  });
+
   it('marks all read', async () => {
     const api = fakePushApi({ inbox: jest.fn(async () => ({ items: [message()], nextCursor: null, unreadCount: 1 })) });
     await renderWithApp(<InboxScreen api={api} />, { account: account({ profiles: [jsProfile] }) });

@@ -37,9 +37,11 @@ export default function Home() {
   if (!activeProfile) return <Redirect href={routes.role} />;
 
   const count = account?.profiles.length ?? 0;
+  const roleLine = `${t(`kind.${activeProfile.kind}`)}${activeProfile.code ? ` · ${activeProfile.code}` : ''}`;
+  const hero = { eyebrow: roleLine, title: activeProfile.displayName };
   return (
     <View style={styles.flex} testID="home">
-      <AppHeader title={activeProfile.displayName} subtitle={`${t(`kind.${activeProfile.kind}`)}${activeProfile.code ? ` · ${activeProfile.code}` : ''}`} showAccountActions />
+      <AppHeader title={activeProfile.displayName} subtitle={roleLine} showAccountActions />
       <Screen onRefresh={() => void refetch()} refreshing={home.isRefetching}>
         <Pressable
           accessibilityRole="button"
@@ -51,9 +53,9 @@ export default function Home() {
         </Pressable>
         {home.isLoading ? <LoadingState /> : null}
         {home.isError ? <ErrorState error={home.error} onRetry={() => void refetch()} /> : null}
-        {home.data?.kind === 'job_seeker' ? <JobSeekerHomeView profileId={profileId} home={home.data} /> : null}
-        {home.data?.kind === 'business' ? <BusinessHomeView profileId={profileId} home={home.data} /> : null}
-        {home.data?.kind === 'referral_partner' ? <ReferralHomeView profileId={profileId} home={home.data} /> : null}
+        {home.data?.kind === 'job_seeker' ? <JobSeekerHomeView profileId={profileId} home={home.data} hero={hero} /> : null}
+        {home.data?.kind === 'business' ? <BusinessHomeView profileId={profileId} home={home.data} hero={hero} /> : null}
+        {home.data?.kind === 'referral_partner' ? <ReferralHomeView profileId={profileId} home={home.data} hero={hero} /> : null}
         <View style={styles.links}>
           {(
             [

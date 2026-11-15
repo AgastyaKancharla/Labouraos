@@ -21,7 +21,7 @@ export function RegisterOtpStep({ submit, onBack, testID }: { submit: (otp: OtpP
   return (
     <View style={styles.gap} testID={testID}>
       <Banner tone="info" title={t('register.otpTitle')} message={t('register.otpWhy')} />
-      <Card>
+      <Card accent="royal">
         <OtpCodeCard
           testID={`${testID}-otp`}
           send={(resendOf) => api.sendStepUp('register', resendOf)}

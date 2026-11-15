@@ -45,6 +45,22 @@ describe('Job seeker Home', () => {
     await waitFor(() => expect(api.home).toHaveBeenCalledTimes(2)); // refreshed after the sheet
   });
 
+  it('colourful Home: blue hero card with name and next step; each step its own colour, done ticks, next step highlighted', async () => {
+    await renderHome(jsHome());
+    const hero = await screen.findByTestId('js-home-hero');
+    expect(hero).toHaveTextContent(/Job seeker · JS-1234/);
+    expect(within(hero).getByTestId('js-home-hero-next')).toHaveTextContent(/Finish your registration/);
+    const tile = (key: string, accent: string) => screen.getByTestId(`js-step-${key}-tile-${accent}`, { includeHiddenElements: true });
+    expect(tile('phone', 'royal')).toBeTruthy();
+    expect(tile('profile', 'navy')).toBeTruthy();
+    expect(tile('consent', 'cyan')).toBeTruthy();
+    expect(tile('selfie', 'gold')).toBeTruthy();
+    expect(tile('idCheck', 'orange')).toBeTruthy();
+    expect(tile('payment', 'good')).toBeTruthy();
+    expect(screen.getByTestId('js-step-profile-tick')).toBeTruthy();
+    expect(screen.queryByTestId('js-step-consent-tick')).toBeNull();
+  });
+
   it('paid but not matched with the bank yet: "Paid — confirming"', async () => {
     await renderHome(
       jsHome({
@@ -132,6 +148,23 @@ describe('Business Home', () => {
     expect(screen.queryByTestId('biz-home-after-visit')).toBeNull();
     expect(screen.queryByTestId('biz-home-sign')).toBeNull();
     expect(allText()).not.toMatch(/\d{10}/);
+    expect(screen.getByTestId('biz-stat-interviews')).toHaveTextContent(/2.*Interviews coming up/);
+    expect(screen.getByTestId('biz-stat-placements')).toHaveTextContent(/1.*People hired/);
+    expect(screen.getByTestId('biz-hero-agreement-green')).toBeTruthy();
+    expect(screen.getByTestId('biz-hero-approval-green')).toBeTruthy();
+  });
+
+  it('hero chips colour agreement / visit / approval; stat tiles royal / cyan / green', async () => {
+    await renderHome(bizHome(), [bizProfile]);
+    expect(await screen.findByTestId('biz-home-hero')).toHaveTextContent(/Business/);
+    expect(screen.getByTestId('biz-hero-agreement-amber')).toHaveTextContent('Sign the agreement');
+    expect(screen.getByTestId('biz-hero-agreement-amber').props.accessibilityLabel).toBe('Agreement signed: Not started');
+    expect(screen.getByTestId('biz-hero-visit-amber')).toHaveTextContent('Verification visit: In progress');
+    expect(screen.getByTestId('biz-hero-approval-neutral')).toHaveTextContent('Laboura approval: Not started');
+    expect(screen.getByTestId('biz-stat-vacancies')).toHaveTextContent(/2.*Vacancies/);
+    expect(screen.getByTestId('biz-stat-vacancies-bar-royal')).toBeTruthy();
+    expect(screen.getByTestId('biz-stat-interviews-bar-cyan')).toBeTruthy();
+    expect(screen.getByTestId('biz-stat-placements-bar-good')).toBeTruthy();
   });
 
   it('booked visit says who comes and when', async () => {
@@ -160,6 +193,11 @@ describe('Referral partner Home', () => {
     expect(allText()).not.toMatch(/\d{10}/);
     expect(screen.getByTestId('ref-home-due')).toHaveTextContent(/₹200/);
     expect(screen.getByTestId('ref-home-paid')).toHaveTextContent(/₹200/);
+    expect(screen.getByTestId('ref-home-referred-count')).toHaveTextContent(/2.*People you referred/);
+    expect(screen.getByTestId('ref-home-referred-count-bar-cyan')).toBeTruthy();
+    expect(screen.getByTestId('ref-home-due-bar-gold')).toBeTruthy();
+    expect(screen.getByTestId('ref-home-paid-bar-good')).toBeTruthy();
+    expect(screen.getByTestId('ref-home-share-accent-gold')).toBeTruthy();
     expect(screen.getByTestId('ref-home-payout-po-1')).toHaveTextContent(/UPI ref UPI-TEST-1/);
     await fireEvent.press(screen.getByTestId('ref-home-doc-consent'));
     await waitFor(() => expect(api.sheetLink).toHaveBeenCalledWith('p-ref', 'document', 'doc-consent'));

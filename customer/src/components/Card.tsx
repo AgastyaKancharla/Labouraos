@@ -1,21 +1,36 @@
 import { StyleSheet, View, type ViewProps } from 'react-native';
-import { colors, radius, shadow } from '@/theme';
+import { accents, colors, radius, shadow, type Accent } from '@/theme';
 import { Text } from './Text';
 
 interface Props extends ViewProps {
   /** Small upper-case heading (`.lbl`), e.g. "Today", "Alerts". */
   title?: string;
   compact?: boolean;
+  /**
+   * A short bar in one palette colour above the title (the Command Center's
+   * `.bar-top`), so each section card gets its own colour.
+   */
+  accent?: Accent;
+  /** A friendly picture before the title (decoration; never the only meaning). */
+  emoji?: string;
 }
 
 /** `.card`: white, 16 px corners, thin border. */
-export function Card({ title, compact, style, children, ...rest }: Props) {
+export function Card({ title, compact, accent, emoji, style, children, ...rest }: Props) {
   return (
     <View style={[styles.card, compact && styles.compact, style]} {...rest}>
+      {accent ? <View style={[styles.bar, { backgroundColor: accents[accent].raw }]} testID={rest.testID ? `${rest.testID}-accent-${accent}` : undefined} /> : null}
       {title ? (
-        <Text variant="label" style={styles.title} accessibilityRole="header">
-          {title}
-        </Text>
+        <View style={styles.titleRow}>
+          {emoji ? (
+            <Text style={styles.emoji} accessibilityElementsHidden importantForAccessibility="no">
+              {emoji}
+            </Text>
+          ) : null}
+          <Text variant="label" style={styles.titleText} accessibilityRole="header">
+            {title}
+          </Text>
+        </View>
       ) : null}
       {children}
     </View>
@@ -33,5 +48,8 @@ const styles = StyleSheet.create({
     ...shadow.card,
   },
   compact: { paddingVertical: 12, paddingHorizontal: 12 },
-  title: { marginBottom: 6 },
+  bar: { width: 28, height: 4, borderRadius: radius.pill, marginBottom: 10 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  titleText: { flexShrink: 1 },
+  emoji: { fontSize: 16, lineHeight: 20 },
 });

@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { errorText } from '@/api/errorText';
 import type { OtpProof, OtpSent } from '@/api/types';
-import { Banner, Button, CodeInput, Text } from '@/components';
+import { Banner, Button, CodeInput, Text, type ButtonVariant } from '@/components';
 import { useI18n } from '@/i18n';
 import { formatCountdown } from '@/lib/format';
 
@@ -16,6 +16,8 @@ interface Props {
   submit: (proof: OtpProof) => Promise<void>;
   sendLabel: string;
   submitLabel: string;
+  /** The confirm button's look; `danger` (red) for a destructive action such as deleting the account. */
+  submitVariant?: ButtonVariant;
   /** "Code sent to the number ending 4321." */
   sentText: string;
   /** Checked before the first send; return an error message to stop. */
@@ -35,7 +37,7 @@ interface Props {
  * Resend unlocks after 30 seconds, at most 3 times. Errors in the person's
  * language from the contract's codes.
  */
-export function OtpCodeCard({ send, submit, sendLabel, submitLabel, sentText, beforeSend, children, onChangeNumber, disabled, testID }: Props) {
+export function OtpCodeCard({ send, submit, sendLabel, submitLabel, submitVariant = 'primary', sentText, beforeSend, children, onChangeNumber, disabled, testID }: Props) {
   const { t } = useI18n();
   const [sent, setSent] = useState<OtpSent | null>(null);
   const [code, setCode] = useState('');
@@ -102,7 +104,7 @@ export function OtpCodeCard({ send, submit, sendLabel, submitLabel, sentText, be
         <>
           <Text variant="muted">{sentText}</Text>
           <CodeInput label={t('otp.code')} value={code} onChange={setCode} onComplete={(value) => void doVerify(value)} autoFocus testID={`${testID}-code`} />
-          <Button label={submitLabel} onPress={() => void doVerify()} loading={busy === 'verify'} disabled={disabled} testID={`${testID}-verify`} />
+          <Button label={submitLabel} variant={submitVariant} onPress={() => void doVerify()} loading={busy === 'verify'} disabled={disabled} testID={`${testID}-verify`} />
           <View style={styles.row}>
             {resendsLeft > 0 ? (
               <Button

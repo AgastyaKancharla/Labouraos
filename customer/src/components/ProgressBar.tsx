@@ -1,11 +1,16 @@
 import { StyleSheet, View } from 'react-native';
 import { colors } from '@/theme';
 
-/** `.bar`: thin progress bar, value 0–1. */
-export function ProgressBar({ value, color = colors.blue }: { value: number; color?: string }) {
+/** `.bar`: thin progress bar, value 0–1. `trackColor` for use on the hero gradient. */
+export function ProgressBar({ value, color = colors.blue, trackColor, testID }: { value: number; color?: string; trackColor?: string; testID?: string }) {
   const pct = Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0)) * 100;
   return (
-    <View style={styles.track} accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: 100, now: Math.round(pct) }}>
+    <View
+      style={[styles.track, trackColor ? { backgroundColor: trackColor } : null]}
+      accessibilityRole="progressbar"
+      accessibilityValue={{ min: 0, max: 100, now: Math.round(pct) }}
+      testID={testID}
+    >
       <View style={[styles.fill, { width: `${pct}%`, backgroundColor: color }]} />
     </View>
   );
