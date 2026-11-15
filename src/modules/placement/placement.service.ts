@@ -1,4 +1,5 @@
 import { OwnTeam, businessesOwnedBy } from '../../common/rbac/own-team';
+import { queryText } from '../../common/http/plain-query';
 import { isBusinessSuspended } from '../business/business-candidate-access';
 import { chainRefundOf } from './chain-refund';
 import { claimPausedMs, claimRefundPause, resumeEndedSuspensions } from './claim-clock';
@@ -2452,7 +2453,7 @@ export class PlacementService {
     const where: Prisma.PlacementWhereInput = {};
 
     if (query.status) {
-      where.status = query.status;
+      where.status = queryText(query.status, 'status');
     }
 
     if (query.locality) {

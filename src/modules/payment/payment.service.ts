@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional, UnauthorizedException } from '@nestjs/common';
+import { queryText } from '../../common/http/plain-query';
 import { claimRefundPause } from '../placement/claim-clock';
 import { isFeePaymentType } from './fee-payment-types';
 import { Payment, PayoutAccount, Prisma, TdsReceivable } from '@prisma/client';
@@ -1131,8 +1132,8 @@ export class PaymentService {
   /** TDS businesses deducted from placement fees: Finance collects each certificate. */
   async listTdsReceivables(query?: { status?: string; placementId?: string }) {
     const where: Prisma.TdsReceivableWhereInput = {};
-    if (query?.status) where.status = query.status;
-    if (query?.placementId) where.placementId = query.placementId;
+    if (query?.status) where.status = queryText(query.status, 'status');
+    if (query?.placementId) where.placementId = queryText(query.placementId, 'placementId');
     return this.prisma.tdsReceivable.findMany({
       where,
       orderBy: { recordedAt: 'desc' },
@@ -1360,7 +1361,7 @@ export class PaymentService {
   async listBankCredits(query?: { status?: string }) {
     const where: Prisma.BankCreditWhereInput = {};
     if (query?.status) {
-      where.status = query.status;
+      where.status = queryText(query.status, 'status');
     }
     return this.prisma.bankCredit.findMany({
       where,
@@ -2453,11 +2454,11 @@ export class PaymentService {
     const where: Prisma.PaymentWhereInput = {};
 
     if (filters?.type) {
-      where.type = filters.type;
+      where.type = queryText(filters.type, 'type');
     }
 
     if (filters?.status) {
-      where.status = filters.status;
+      where.status = queryText(filters.status, 'status');
     }
 
     const from = filters?.fromDate ?? filters?.startDate;
