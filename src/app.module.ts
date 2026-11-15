@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
+import { FormulaTextInterceptor } from './common/http/formula-text.interceptor';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { IdModule } from './common/id/id.module';
@@ -61,9 +63,8 @@ import { CustomerAccountModule } from './modules/customer-account/customer-accou
 import { CustomerAppModule } from './modules/customer-app/customer-app.module';
 import { CustomerNotificationModule } from './modules/customer-notification/customer-notification.module';
 import { SignupTrackerModule } from './modules/signup-tracker/signup-tracker.module';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_GUARD } from '@nestjs/core';
 import { PublicRateLimitGuard } from './common/http/public-rate-limit.guard';
-import { FormulaTextInterceptor } from './common/http/formula-text.interceptor';
 
 @Module({
   imports: [
@@ -133,10 +134,10 @@ import { FormulaTextInterceptor } from './common/http/formula-text.interceptor';
     SignupTrackerModule,
   ],
   providers: [
-    // M4: one per-address limit across every @Public() route.
-    { provide: APP_GUARD, useClass: PublicRateLimitGuard },
     // INF-6: names and localities may not start with = + - @ (CSV formula injection).
     { provide: APP_INTERCEPTOR, useClass: FormulaTextInterceptor },
+    // M4: one per-address limit across every @Public() route.
+    { provide: APP_GUARD, useClass: PublicRateLimitGuard },
   ],
 })
 export class AppModule {}
