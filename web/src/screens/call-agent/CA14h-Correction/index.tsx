@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ToneTile } from '../../../components/ToneTile';
 import { Link } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAttendance } from '../../../attendance/AttendanceProvider';
@@ -80,7 +81,10 @@ export default function RequestCorrection() {
     return (
       <div className="lb-page lb-att-page lb-att-page--narrow">
         <TopBar title={t('att.corr.title')} titleHidden />
-        <h2 className="h1">{t('att.corr.title')}</h2>
+        <h2 className="h1 lb-h-tile">
+          <ToneTile icon="attendance" tone="orange" />
+          {t('att.corr.title')}
+        </h2>
         <div className="lb-att-ok" role="status">
           {t('att.corr.sent', { date: dayLabel(r.date ?? date), from: r.startAt ? hhmm(r.startAt) : from, to: r.endAt ? hhmm(r.endAt) : until })}
         </div>
@@ -107,7 +111,10 @@ export default function RequestCorrection() {
   return (
     <div className="lb-page lb-att-page lb-att-page--narrow">
       <TopBar title={t('att.corr.title')} titleHidden />
-        <h2 className="h1">{t('att.corr.title')}</h2>
+        <h2 className="h1 lb-h-tile">
+          <ToneTile icon="attendance" tone="orange" />
+          {t('att.corr.title')}
+        </h2>
       <form
         className="lb-att-page"
         style={{ gap: 18 }}

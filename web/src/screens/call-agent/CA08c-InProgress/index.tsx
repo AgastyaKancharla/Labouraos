@@ -61,7 +61,7 @@ export default function RegistrationProgress() {
   if (status.isLoading) {
     return (
       <div className="reg">
-        <TopBar title={t('screen.CA08c-InProgress')} />
+        <TopBar icon="checkRegistrations" iconTone="cyan" title={t('screen.CA08c-InProgress')} />
         <SkeletonCard height={120} />
         <SkeletonCard height={320} />
       </div>
@@ -70,7 +70,7 @@ export default function RegistrationProgress() {
   if (status.error || !status.data) {
     return (
       <div className="reg">
-        <TopBar title={t('screen.CA08c-InProgress')} />
+        <TopBar icon="checkRegistrations" iconTone="cyan" title={t('screen.CA08c-InProgress')} />
         <ErrorState error={status.error} onRetry={() => void status.refetch()} />
       </div>
     );
@@ -139,7 +139,7 @@ export default function RegistrationProgress() {
 
   return (
     <div className="reg">
-      <TopBar title={t('screen.CA08c-InProgress')} />
+      <TopBar icon="checkRegistrations" iconTone="cyan" title={t('screen.CA08c-InProgress')} />
       {s.stage === 'active' ? (
         <div className="ok" role="status">
           ✓ {t('reg.status.complete', { name: s.name })}

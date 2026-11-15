@@ -235,14 +235,14 @@ export default function StaffAndAccess() {
 
   return (
     <div className="lb-page">
-      <TopBar back={{ to: to('MG-Home'), label: 'Command Center' }} title="Staff & access" subtitle="People in your teams, their devices and accounts." />
+      <TopBar icon="teamAndAccess" iconTone="navy" back={{ to: to('MG-Home'), label: 'Command Center' }} title="Staff & access" subtitle="People in your teams, their devices and accounts." />
       <div className="panel" style={{ padding: '6px 18px 14px' }}>
         <DataTable columns={columns} rows={d?.rows} rowKey={(r) => r.id} caption="Staff in your teams" loading={q.isPending} error={q.error} onRetry={() => void q.refetch()} download="staff" emptyTitle="Nobody in your teams yet." />
         <div className="ceo-note">
           Changing someone's Team Lead moves their requests, targets and open work to the new Team Lead · both Team Leads are told · you can't see salaries or create a Manager or CEO
         </div>
       </div>
-      <Card title="Add a staff member">
+      <Card icon="jobSeekers" tone="good" title="Add a staff member">
         <form onSubmit={submit} noValidate>
           <div className="ceo-form-row">
             <TextField label="Full name" value={name} onChange={setName} placeholder="Name" required />

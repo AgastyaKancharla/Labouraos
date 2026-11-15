@@ -1,4 +1,6 @@
 import { ErrorState } from '../../../components/ErrorState';
+import { ToneTile, type TileTone } from '../../../components/ToneTile';
+import type { NavIconName } from '../../../portals/navIcons';
 import { SkeletonCard } from '../../../components/Skeleton';
 import { TopBar } from '../../../components/TopBar';
 import { useT } from '../../../i18n/I18nProvider';
@@ -17,18 +19,21 @@ export default function MyTargets() {
   const month = d ? formatMonthIST(new Date(Date.UTC(d.year, d.month - 1, 15))) : '';
   return (
     <div className="lb-page lb-ca">
-      <TopBar title={d ? t('ca.tg.title', { month }) : t('screen.CA11-Targets')} />
+      <TopBar icon="targets" iconTone="gold" title={d ? t('ca.tg.title', { month }) : t('screen.CA11-Targets')} />
       {q.error && <ErrorState error={q.error} onRetry={() => void q.refetch()} />}
       {!d && !q.error && <SkeletonCard height={260} />}
       {d && (
         <>
           <div className="grid3">
-            <MetricCard label={t('ca.tg.activated')} note={t('ca.tg.activatedNote')} m={d.candidatesActivated} />
-            <MetricCard label={t('ca.tg.vacancies')} note={t('ca.tg.vacanciesNote')} m={d.vacanciesCaptured} />
-            <MetricCard label={t('ca.tg.refundRate')} note={t('ca.tg.refundNote')} m={d.refundRate} rate />
+            <MetricCard icon="jobSeekers" tone="cyan" label={t('ca.tg.activated')} note={t('ca.tg.activatedNote')} m={d.candidatesActivated} />
+            <MetricCard icon="vacancies" tone="gold" label={t('ca.tg.vacancies')} note={t('ca.tg.vacanciesNote')} m={d.vacanciesCaptured} />
+            <MetricCard icon="refundApprovals" tone="orange" label={t('ca.tg.refundRate')} note={t('ca.tg.refundNote')} m={d.refundRate} rate />
           </div>
           <div className="card">
-            <h2 className="h2" style={{ marginBottom: 6 }}>{t('ca.tg.board')}</h2>
+            <h2 className="h2 lb-h-tile" style={{ marginBottom: 6 }}>
+              <ToneTile icon="reports" tone="navy" size="sm" />
+              {t('ca.tg.board')}
+            </h2>
             {d.leaderboard.length === 0 && <p className="sub">{t('ca.tg.boardEmpty')}</p>}
             {d.leaderboard.map((row) => (
               <div className="row" key={row.staffCode}>
@@ -46,7 +51,7 @@ export default function MyTargets() {
   );
 }
 
-function MetricCard({ label, note, m, rate }: { label: string; note: string; m: MetricView; rate?: boolean }) {
+function MetricCard({ label, note, m, rate, icon, tone }: { label: string; note: string; m: MetricView; rate?: boolean; icon: NavIconName; tone: TileTone }) {
   const t = useT();
   const pct = (v: number | null) => (v === null ? '—' : `${Math.round(v * 100)}%`);
   const value = rate ? pct(m.achieved) : m.achieved ?? '—';
@@ -58,7 +63,10 @@ function MetricCard({ label, note, m, rate }: { label: string; note: string; m: 
   const fill = !rate && m.target ? Math.min(100, Math.round(((m.achieved ?? 0) / m.target) * 100)) : null;
   return (
     <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <span className="lbl">{label}</span>
+      <span className="lbl lb-h-tile">
+        <ToneTile icon={icon} tone={tone} size="sm" />
+        {label}
+      </span>
       <b style={{ fontFamily: 'var(--font-display)', fontSize: 26, color: 'var(--ink)' }}>
         {value} {target && <span className="sub" style={{ fontSize: 14 }}>{target}</span>}
       </b>

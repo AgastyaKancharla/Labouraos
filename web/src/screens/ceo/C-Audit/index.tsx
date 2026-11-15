@@ -72,7 +72,7 @@ export default function AuditLog() {
   ];
   return (
     <div className="lb-page">
-      <TopBar back={{ to: to('Main'), label: 'Command Center' }} title="Audit log" subtitle="Who did what, when." />
+      <TopBar icon="auditLog" iconTone="navy" back={{ to: to('Main'), label: 'Command Center' }} title="Audit log" subtitle="Who did what, when." />
       <AuditTabs />
       <FilterPanel>
         <SearchField value={search} onChange={setSearch} placeholder="Person, record or action" />

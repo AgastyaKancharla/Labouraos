@@ -32,9 +32,9 @@ export default function BookInterview() {
   const first = p?.name.split(/\s+/)[0] ?? '';
   return (
     <div className="lb-page lb-ca">
-      <TopBar title={p ? t('ca.book.title', { name: first }) : t('screen.CA06-BookInterview')} back={person ? { to: to('CA04-Profile', { id: person }), label: t('common.back') } : undefined} />
+      <TopBar icon="interviews" iconTone="gold" title={p ? t('ca.book.title', { name: first }) : t('screen.CA06-BookInterview')} back={person ? { to: to('CA04-Profile', { id: person }), label: t('common.back') } : undefined} />
       {profile.error && <ErrorState error={profile.error} onRetry={() => void profile.refetch()} />}
-      {!person && <EmptyState title={t('ca.book.pickPerson')} />}
+      {!person && <EmptyState emoji="👤" title={t('ca.book.pickPerson')} />}
       {person && !p && !profile.error && <SkeletonCard height={300} />}
       {p && (vacancy ? <BookJob profile={p} vacancyId={vacancy} /> : <BestJobs profile={p} />)}
     </div>
@@ -47,7 +47,7 @@ function BookJob({ profile, vacancyId }: { profile: SeekerProfile; vacancyId: st
   const job = jobs.data?.jobs.find((j) => j.vacancyId === vacancyId);
   if (jobs.error) return <ErrorState error={jobs.error} onRetry={() => void jobs.refetch()} />;
   if (!jobs.data) return <SkeletonCard height={300} />;
-  if (!job) return <EmptyState title={t('ca.book.notFound')}>{jobs.data.blockedReason ? t(`ca.jobs.blocked.${jobs.data.blockedReason}` as never) : null}</EmptyState>;
+  if (!job) return <EmptyState emoji="🔎" title={t('ca.book.notFound')}>{jobs.data.blockedReason ? t(`ca.jobs.blocked.${jobs.data.blockedReason}` as never) : null}</EmptyState>;
   return <BookForm profile={profile} job={job} />;
 }
 

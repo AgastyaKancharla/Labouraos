@@ -28,11 +28,11 @@ export default function TeamLeadTargets() {
   ];
   return (
     <div className="lb-page">
-      <TopBar showSearch={false} back={{ to: to('T-Home'), label: 'My team' }} title="Targets" subtitle="The team's month targets and where each agent will end at today's speed." />
-      <Card title={team.data?.teamName ?? 'Your team'}>
+      <TopBar icon="targets" iconTone="gold" showSearch={false} back={{ to: to('T-Home'), label: 'My team' }} title="Targets" subtitle="The team's month targets and where each agent will end at today's speed." />
+      <Card icon="teamAndAccess" tone="royal" title={team.data?.teamName ?? 'Your team'}>
         {targets.error ? <ErrorState error={targets.error} onRetry={() => void targets.refetch()} /> : t ? <TeamTargetsTable rows={t.team} month={t.month} daysInMonth={t.daysInMonth} /> : <SkeletonCard />}
       </Card>
-      <Card title="Each agent · main target" flush>
+      <Card icon="targets" tone="cyan" title="Each agent · main target" flush>
         <DataTable columns={columns} rows={t?.agents} rowKey={(r) => r.staff.id} caption="Each agent's main target" loading={targets.isPending} error={targets.error} emptyTitle="Nobody in your team yet." />
         <div className="tl-note" style={{ padding: '0 18px 14px' }}>
           Targets are set by {team.data?.manager ? `${firstName(team.data.manager.name)} (Manager)` : 'the Manager'} · ask them to change one from the agent's page

@@ -66,13 +66,13 @@ export default function RefundDetail() {
   const payable = Boolean(row && row.approval === 'within_limit' && (row.state === 'due' || row.state === 'to_pay'));
   return (
     <div className="lb-page">
-      <TopBar back={{ to: to('FN-Refunds'), label: 'Refunds' }} title={title} subtitle="One refund with every check, ready to pay." showSearch={false} />
+      <TopBar icon="refunds" iconTone="orange" back={{ to: to('FN-Refunds'), label: 'Refunds' }} title={title} subtitle="One refund with every check, ready to pay." showSearch={false} />
       {query.error && <ErrorState error={query.error} onRetry={() => void query.refetch()} />}
       {query.isPending && <SkeletonCard height={320} />}
       {d && (
         <>
           <div className="two-col fin-two">
-            <Card title="Refund">
+            <Card icon="refunds" tone="orange" title="Refund">
               <div className="fin-kv">
                 {d.kind === 'business' ? (
                   <>
@@ -114,7 +114,7 @@ export default function RefundDetail() {
                 )}
               </div>
             </Card>
-            <Card title="Checks done by the system">
+            <Card icon="checkRegistrations" tone="good" title="Checks done by the system">
               <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13.5 }}>
                 {d.checks.map((c) => (
                   <li key={c.text} className={c.ok ? 'fin-good' : 'fin-crit'}>
@@ -124,7 +124,7 @@ export default function RefundDetail() {
               </ul>
             </Card>
           </div>
-          <Card title="Pay it">
+          <Card icon="payouts" tone="royal" title="Pay it">
             {!row && <p className="fin-sub">{d.decided?.paidAt ? 'This refund is paid.' : 'This refund is not waiting for Finance.'}</p>}
             {row && row.approval !== 'within_limit' && (
               <p>

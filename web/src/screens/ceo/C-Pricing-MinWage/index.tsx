@@ -40,20 +40,20 @@ export default function MinimumWage() {
   const d = q.data;
   return (
     <div className="lb-page">
-      <TopBar back={{ to: to('C-Pricing'), label: 'Pricing & policy' }} title="Legal minimum wage" subtitle="Update these when the government revises them; every vacancy form checks against them." actions={<Button variant="primary" onClick={() => setOpen(true)} disabled={!d}>Update figures</Button>} />
+      <TopBar icon="salaries" iconTone="good" back={{ to: to('C-Pricing'), label: 'Pricing & policy' }} title="Legal minimum wage" subtitle="Update these when the government revises them; every vacancy form checks against them." actions={<Button variant="primary" onClick={() => setOpen(true)} disabled={!d}>Update figures</Button>} />
       <PricingTabs />
       {q.error ? (
         <ErrorState error={q.error} onRetry={() => void q.refetch()} />
       ) : (
         <div className="two-col">
-          <Card title={d ? `In force · Bengaluru (Zone 1) · from ${formatDateIST(d.effectiveFrom)}` : 'In force'}>
+          <Card icon="payments" tone="good" title={d ? `In force · Bengaluru (Zone 1) · from ${formatDateIST(d.effectiveFrom)}` : 'In force'}>
             <div className="kv">
               {LEVELS.map(([k, label], i) => (
                 <Pair key={k} k={label} v={d ? `${formatINR(d[k])}${i === 0 ? ' a month basic' : ''}` : '—'} />
               ))}
             </div>
           </Card>
-          <Card title="How it's used">
+          <Card icon="reports" tone="cyan" title="How it's used">
             <div className="kv">
               <span>Vacancy below the minimum</span>
               <span>Allowed with a warning · agent ticks "owner told" · marked for TL and Managers</span>

@@ -73,7 +73,7 @@ export default function TeamLeadFlags() {
   ];
   return (
     <div className="lb-page">
-      <TopBar showSearch={false} back={{ to: to('T-Home'), label: 'My team' }} title="Flags" subtitle={`Quality and fraud flags for ${team.data?.teamName ?? 'your team'}.`} />
+      <TopBar icon="flags" iconTone="red" showSearch={false} back={{ to: to('T-Home'), label: 'My team' }} title="Flags" subtitle={`Quality and fraud flags for ${team.data?.teamName ?? 'your team'}.`} />
       <Card flush>
         <DataTable columns={columns} rows={flags.data} rowKey={(f) => f.id} caption="Flags" loading={flags.isPending} error={flags.error} onRetry={() => void flags.refetch()} emptyTitle="No open flags for your team." />
         <div className="tl-note" style={{ padding: '0 18px 14px' }}>

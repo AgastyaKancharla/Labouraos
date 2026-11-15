@@ -63,7 +63,7 @@ export default function ApprovalLimits() {
     );
   return (
     <div className="lb-page">
-      <TopBar back={{ to: to('FN-Home'), label: 'Money today' }} title="Approval limits" subtitle="Who can approve and pay what, and when the CEO is needed." showSearch={false} />
+      <TopBar icon="approvalLimits" iconTone="navy" back={{ to: to('FN-Home'), label: 'Money today' }} title="Approval limits" subtitle="Who can approve and pay what, and when the CEO is needed." showSearch={false} />
       {query.isPending ? (
         <SkeletonCard height={320} />
       ) : query.isError ? (

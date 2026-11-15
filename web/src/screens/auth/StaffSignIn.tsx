@@ -214,7 +214,7 @@ export default function StaffSignIn() {
 
   return (
     <FamilyContext.Provider value="console">
-      <div className="console lb-center">
+      <div className="console lb-center lb-signin">
         <main id="main" className="card lb-auth-card">
           {step.kind === 'password' && (
             <form onSubmit={submitPassword} noValidate className="lb-stack">

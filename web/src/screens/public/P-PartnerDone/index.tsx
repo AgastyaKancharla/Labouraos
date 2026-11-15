@@ -19,7 +19,7 @@ export default function PartnerDonePage() {
 
   return (
     <>
-      <Ok>
+      <Ok emoji="🎉">
         <strong>{t('partner.done.title')}</strong>
       </Ok>
       <div className="card">

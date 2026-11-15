@@ -111,9 +111,9 @@ export default function MatchPayment() {
   if (!creditId) {
     return (
       <div className="lb-page">
-        <TopBar back={back} title="Match a payment" subtitle="Find what an unclaimed bank credit was for." showSearch={false} />
+        <TopBar icon="moneyIn" iconTone="cyan" back={back} title="Match a payment" subtitle="Find what an unclaimed bank credit was for." showSearch={false} />
         <Card>
-          <EmptyState title="Choose a bank credit to match.">Open Money in and press Match on a credit nobody claimed.</EmptyState>
+          <EmptyState emoji="🔎" title="Choose a bank credit to match.">Open Money in and press Match on a credit nobody claimed.</EmptyState>
           <ButtonLink to={`${to('FN-MoneyIn')}?status=not_matched`}>See credits not matched</ButtonLink>
         </Card>
       </div>
@@ -121,7 +121,7 @@ export default function MatchPayment() {
   }
   return (
     <div className="lb-page">
-      <TopBar back={back} title="Match a payment" subtitle="Find what an unclaimed bank credit was for." showSearch={false} />
+      <TopBar icon="moneyIn" iconTone="cyan" back={back} title="Match a payment" subtitle="Find what an unclaimed bank credit was for." showSearch={false} />
       {query.isPending ? (
         <SkeletonCard height={240} />
       ) : query.isError ? (
@@ -134,14 +134,14 @@ export default function MatchPayment() {
           </div>
           {d.credit.status !== 'unmatched' ? (
             <Card>
-              <EmptyState title={`This credit is already ${d.credit.status}.`}>{d.credit.returnedUtr ? `Returned with UTR ${d.credit.returnedUtr}.` : 'Nothing more to do here.'}</EmptyState>
+              <EmptyState emoji="✅" title={`This credit is already ${d.credit.status}.`}>{d.credit.returnedUtr ? `Returned with UTR ${d.credit.returnedUtr}.` : 'Nothing more to do here.'}</EmptyState>
             </Card>
           ) : (
             <>
-              <Card title="Possible matches" flush>
+              <Card icon="bank" tone="royal" title="Possible matches" flush>
                 <DataTable columns={columns} rows={d.candidates} rowKey={(c) => c.paymentId} caption="Possible matches" pageSize={10} emptyTitle="No waiting payment has this amount." />
               </Card>
-              <Card title="Nothing matches?">
+              <Card icon="flags" tone="orange" title="Nothing matches?">
                 <p style={{ marginTop: 0 }}>Return the money to the same UPI ID. Unclaimed money is never kept or matched by guess. If it is not Laboura’s money at all (a personal transfer, meant for another account), set it aside with the reason.</p>
                 <span className="fin-row-actions">
                   <ReturnMoney id={d.credit.id} amountPaise={d.credit.amountPaise} to={d.credit.payerVpaMasked} size="regular" />

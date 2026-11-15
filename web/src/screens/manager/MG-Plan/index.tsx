@@ -56,7 +56,7 @@ export default function PlanVsActual() {
 
   return (
     <div className="lb-page">
-      <TopBar
+      <TopBar icon="planVsActual" iconTone="royal"
         back={{ to: to('MG-Home'), label: 'Command Center' }}
         title="Plan vs actual"
         subtitle="This month's targets, how far we've got, and where we'll end at today's speed — for the whole team, each team and each week."
@@ -78,7 +78,7 @@ export default function PlanVsActual() {
         <ErrorState error={ov.error} onRetry={() => void ov.refetch()} />
       ) : (
         <>
-          <section className="panel mg-headline" aria-live="polite">
+          <section className="panel lb-hero-panel mg-headline" aria-live="polite">
             <div className="eyebrow">{o ? `${monthLong(o.month.month)} · day ${o.month.dayOfMonth} of ${o.month.daysInMonth} · ${o.month.daysLeft} days left` : '…'}</div>
             <h2>{o ? headlineTitle(o) : '…'}</h2>
             <p>{o ? headlineGap(o) : ''}</p>
@@ -88,9 +88,12 @@ export default function PlanVsActual() {
                 <StatusPill tone="danger">{`${o.headline.short} will fall short`}</StatusPill>
               </div>
             )}
+            <div className="swoosh lb-hero__swoosh" aria-hidden="true" />
           </section>
-          <PlanTable title="These bring in money" rows={o?.bringMoney} monthShort={mShort} daysLeft={o?.month.daysLeft ?? 0} loading={ov.isPending} />
+          <PlanTable icon="payments" tone="good" title="These bring in money" rows={o?.bringMoney} monthShort={mShort} daysLeft={o?.month.daysLeft ?? 0} loading={ov.isPending} />
           <PlanTable
+            icon="jobSeekers"
+            tone="cyan"
             title="These lead to money"
             rows={o?.leadToMoney}
             monthShort={mShort}
@@ -99,7 +102,7 @@ export default function PlanVsActual() {
             footnote={`At this speed = where we end on the last day of the month if we keep doing the same amount every day. ${planSourceText(o)}`}
           />
 
-          <Card title="By team">
+          <Card icon="teamAndAccess" tone="cyan" title="By team">
             <div className="scrollx">
               <table>
                 <thead>
@@ -144,7 +147,7 @@ export default function PlanVsActual() {
             <div className="mg-note">Team targets are the CEO's plan split by you on the Targets page · a team without a split shows the sum of its agents' targets</div>
           </Card>
 
-          <Card title="By week · done (target)">
+          <Card icon="reports" tone="gold" title="By week · done (target)">
             <div className="scrollx">
               <table>
                 <thead>
@@ -171,7 +174,7 @@ export default function PlanVsActual() {
             </div>
           </Card>
 
-          <Card title="Where we lose people" aside={<ButtonLink to={to('MG-Pipeline')}>Stuck work</ButtonLink>}>
+          <Card icon="pipeline" tone="orange" title="Where we lose people" aside={<ButtonLink to={to('MG-Pipeline')}>Stuck work</ButtonLink>}>
             <div className="scrollx">
               <table>
                 <thead>
@@ -195,7 +198,7 @@ export default function PlanVsActual() {
             <div className="mg-note">For the period picked above · every step we fix gives more placements from the same registrations</div>
           </Card>
 
-          <Card title="What to do about the gap">
+          <Card icon="targets" tone="good" title="What to do about the gap">
             <div className="mg-watch">
               {shortTeams.map((s) => (
                 <div key={`${s.teamLeadId}-${s.row.metric}`}>

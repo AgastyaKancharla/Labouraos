@@ -55,7 +55,7 @@ export default function Consent() {
   return (
     <>
       <StepsBar current={1} label={t('pub.consent.stepLabel')} />
-      <PageTitle>{t('pub.consent.title')}</PageTitle>
+      <PageTitle emoji="🤝">{t('pub.consent.title')}</PageTitle>
       <Muted>{t('pub.consent.intro')}</Muted>
       {PURPOSES.map((p) => (
         <Choice

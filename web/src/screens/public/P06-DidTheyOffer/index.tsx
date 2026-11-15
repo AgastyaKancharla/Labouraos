@@ -48,7 +48,7 @@ export default function DidTheyOffer() {
 
   return (
     <>
-      <PageTitle>{t('pub.check.title', { name: d.firstName })}</PageTitle>
+      <PageTitle emoji="🙋">{t('pub.check.title', { name: d.firstName })}</PageTitle>
       <p className="lb-pub-muted">{t('pub.check.intro', { day: dayLabel(d.slotStartsAt, language), business: d.businessName })}</p>
       <div className="card">
         <strong>{t('pub.check.question')}</strong>

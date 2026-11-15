@@ -50,14 +50,14 @@ export default function MyPayslips() {
   ) : undefined;
   return (
     <div className={portal.family === 'portal' ? 'lb-page' : 'lb-page lb-ca'} style={{ maxWidth: 900, margin: '0 auto', width: '100%' }}>
-      <TopBar title={t('payslip.title')} actions={actions} />
+      <TopBar icon="salaries" iconTone="good" title={t('payslip.title')} actions={actions} />
       {list.error && <ErrorState error={list.error} onRetry={() => void list.refetch()} />}
       {list.isPending && <SkeletonCard height={420} />}
-      {list.data && months.length === 0 && <EmptyState title={t('payslip.none')} />}
+      {list.data && months.length === 0 && <EmptyState emoji="🧾" title={t('payslip.none')} />}
       {slip.isPending && slip.fetchStatus !== 'idle' && <SkeletonCard height={420} />}
       {slip.error &&
         (slip.error instanceof ApiError && slip.error.status === 404 ? (
-          <EmptyState title={t('payslip.notReleased')} />
+          <EmptyState emoji="🧾" title={t('payslip.notReleased')} />
         ) : (
           <ErrorState error={slip.error} onRetry={() => void slip.refetch()} />
         ))}

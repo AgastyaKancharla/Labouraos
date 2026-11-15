@@ -68,7 +68,7 @@ export default function InterviewResult() {
   if (!d.awaitingResult) {
     return (
       <>
-        <PageTitle>{t('pub.result.title', { name })}</PageTitle>
+        <PageTitle emoji="💬">{t('pub.result.title', { name })}</PageTitle>
         <Warn>{t('pub.result.alreadyRecorded')}</Warn>
       </>
     );
@@ -103,7 +103,7 @@ export default function InterviewResult() {
 
   return (
     <>
-      <PageTitle>{t('pub.result.title', { name })}</PageTitle>
+      <PageTitle emoji="💬">{t('pub.result.title', { name })}</PageTitle>
       <span className="sub">
         {t('pub.result.sub', { day: dayLabel(d.slotStartsAt, language), business: d.businessName, time: timeLabel(d.resultDueAt, language) })}
       </span>

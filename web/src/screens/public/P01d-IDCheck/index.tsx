@@ -40,7 +40,7 @@ export default function IdCheck() {
     return (
       <>
         <StepsBar current={3} label={t('pub.id.stepLabel')} />
-        <PageTitle>{t('pub.id.title')}</PageTitle>
+        <PageTitle emoji="🆔">{t('pub.id.title')}</PageTitle>
         <Warn>
           <strong>{t('pub.id.under18Title')}</strong> {t(qrResult?.dateOfBirthUnreadable ? 'pub.id.dobUnreadable' : 'pub.id.under18Body')}
         </Warn>
@@ -97,7 +97,7 @@ export default function IdCheck() {
   return (
     <>
       <StepsBar current={3} label={t('pub.id.stepLabel')} />
-      <PageTitle>{t('pub.id.title')}</PageTitle>
+      <PageTitle emoji="🆔">{t('pub.id.title')}</PageTitle>
       <IdCheckPanel
         busy={busy}
         qrResult={qrResult}

@@ -60,7 +60,7 @@ export default function ReferralTerms() {
 
   return (
     <>
-      <PageTitle>{t('screen.P-ReferralTerms')}</PageTitle>
+      <PageTitle emoji="📄">{t('screen.P-ReferralTerms')}</PageTitle>
       <Muted>{t('rterms.intro')}</Muted>
       {SECTIONS.map((section) => (
         <section key={section.title} className="card lb-rterms">

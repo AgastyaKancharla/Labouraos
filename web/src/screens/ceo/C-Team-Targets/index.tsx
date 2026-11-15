@@ -52,7 +52,7 @@ export default function Targets() {
 
   return (
     <div className="lb-page">
-      <TopBar back={{ to: to('Main'), label: 'Command Center' }} title="Targets" subtitle="Every agent's monthly targets and how far along they are." actions={<MonthPicker value={month} onChange={setMonth} />} />
+      <TopBar icon="targets" iconTone="gold" back={{ to: to('Main'), label: 'Command Center' }} title="Targets" subtitle="Every agent's monthly targets and how far along they are." actions={<MonthPicker value={month} onChange={setMonth} />} />
       <TargetTabs />
       <CompanyPlan month={month} editable={month >= thisMonth} />
       <div className="panel" style={{ padding: '6px 18px 14px' }}>

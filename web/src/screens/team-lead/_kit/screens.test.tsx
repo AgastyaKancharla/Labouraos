@@ -104,6 +104,8 @@ describe('Team Lead home (T-Home)', () => {
     signInAs('team_lead');
     renderScreen(<TeamLeadHome />, { portal: 'team-lead', path: '/team-lead', now: NOW });
     expect(await screen.findByText("At today's speed the team reaches 1 of 2 targets")).toBeInTheDocument();
+    // Command Center colours: the headline is a gradient hero card.
+    expect(screen.getByText("At today's speed the team reaches 1 of 2 targets").closest('.panel')).toHaveClass('lb-hero-panel');
     expect(screen.getByText(/Furthest behind: Suresh B/)).toBeInTheDocument();
     expect(screen.getByText('153')).toBeInTheDocument();
     expect(await screen.findByText('44 calls · 3 registered · 1 paid')).toBeInTheDocument();

@@ -69,10 +69,10 @@ export default function RegistrationOpen() {
 
   return (
     <>
-      <PageTitle>{t('pub.open.title')}</PageTitle>
+      <PageTitle emoji="👋">{t('pub.open.title')}</PageTitle>
       <Muted>{t('pub.open.intro')}</Muted>
       {data.otpRequired && data.registrationComplete && <Warn>{t('pub.open.alreadyComplete')}</Warn>}
-      <div className="card">
+      <div className="card lb-pub-steps">
         {steps.map(([label, time]) => (
           <Row key={label} label={label}>
             <span className="sub">{time}</span>
@@ -119,9 +119,9 @@ function Resume({ status, onContinue }: { status: RegistrationOpen; onContinue: 
   };
   return (
     <>
-      <PageTitle>{t('pub.resume.title', { name: status.firstName })}</PageTitle>
+      <PageTitle emoji="👋">{t('pub.resume.title', { name: status.firstName })}</PageTitle>
       <Muted>{t('pub.resume.intro', { done })}</Muted>
-      <div className="card">
+      <div className="card lb-pub-steps">
         <Row label={t('pub.open.step1')}>{tag(status.steps.consent)}</Row>
         <Row label={t('pub.resume.selfie')}>{tag(status.steps.selfie)}</Row>
         <Row label={t('pub.resume.id')}>{tag(status.steps.idCheck)}</Row>

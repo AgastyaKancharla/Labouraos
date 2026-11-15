@@ -17,7 +17,7 @@ export default function CreditNotes() {
   const to = useScreenPath();
   return (
     <div className="lb-page">
-      <TopBar back={{ to: to('FN-Invoices'), label: 'Invoices' }} title="Credit notes" subtitle="Every credit note issued for a refund." showSearch={false} />
+      <TopBar icon="invoices" iconTone="cyan" back={{ to: to('FN-Invoices'), label: 'Invoices' }} title="Credit notes" subtitle="Every credit note issued for a refund." showSearch={false} />
       <LinkTabs
         label="Invoices and credit notes"
         items={[

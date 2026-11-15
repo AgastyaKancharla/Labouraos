@@ -119,7 +119,7 @@ export default function ManagerRequestDetail() {
   if (detail.error) {
     return (
       <div className="lb-page">
-        <TopBar back={back} title="Request" />
+        <TopBar icon="requests" iconTone="orange" back={back} title="Request" />
         <ErrorState error={detail.error} onRetry={() => void detail.refetch()} />
       </div>
     );
@@ -127,7 +127,7 @@ export default function ManagerRequestDetail() {
   if (!r) {
     return (
       <div className="lb-page">
-        <TopBar back={back} title="Request" />
+        <TopBar icon="requests" iconTone="orange" back={back} title="Request" />
         <SkeletonCard />
         <SkeletonCard />
       </div>
@@ -222,7 +222,7 @@ export default function ManagerRequestDetail() {
 
   return (
     <div className="lb-page">
-      <TopBar back={back} title={title} subtitle={`${who === '—' ? 'This' : `${who}'s`} request, with everything you need to decide.`} />
+      <TopBar icon="requests" iconTone="orange" back={back} title={title} subtitle={`${who === '—' ? 'This' : `${who}'s`} request, with everything you need to decide.`} />
       {showOverLimit && (
         <div className="panel mg-banner mg-banner--warn" role="note">
           ⚠ {who} has already taken {taken} planned leave day{taken === 1 ? '' : 's'} in {monthName}. With {days === 1 ? 'this day' : `these ${days} days`} it becomes {taken + pendingOthers + days} — more than 3, so you decide. You can approve
@@ -235,13 +235,13 @@ export default function ManagerRequestDetail() {
         </div>
       )}
       <div className="two-col">
-        <Card title="Request">
+        <Card icon="requests" tone="royal" title="Request">
           <Kv rows={requestRows} />
         </Card>
-        <Card title="Before you decide">{before.length ? <Kv rows={before} /> : <p className="ceo-sub">Nothing else to check.</p>}</Card>
+        <Card icon="checkRegistrations" tone="cyan" title="Before you decide">{before.length ? <Kv rows={before} /> : <p className="ceo-sub">Nothing else to check.</p>}</Card>
       </div>
       {r.canDecide ? (
-        <Card title="Your decision">
+        <Card icon="approvalLimits" tone="gold" title="Your decision">
           <label className="field">
             Note to them (needed if you reject)
             <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional when approving" rows={3} />
@@ -338,7 +338,7 @@ export default function ManagerRequestDetail() {
           {!note.trim() && <p className="ceo-sub">{part ? 'Write a note: the days you do not approve are rejected with it.' : 'Write a note to reject.'}</p>}
         </Card>
       ) : (
-        <Card title="Decision">
+        <Card icon="approvalLimits" tone="good" title="Decision">
           <div className="mg-actions">
             <StatusPill tone={r.status === 'pending' ? 'info' : r.status === 'approved' ? 'good' : 'danger'}>
               {r.status === 'pending' ? (r.withCeo ? 'With the CEO' : r.withTeamLead ? 'With the Team Lead' : 'Pending') : r.status === 'approved' ? 'Approved' : 'Rejected'}
@@ -364,7 +364,7 @@ export default function ManagerRequestDetail() {
           {r.decided?.reason && r.decided.reason !== 'Approved' && <p className="ceo-sub">"{r.decided.reason}"</p>}
         </Card>
       )}
-      <Card title="Where this request has been">
+      <Card icon="auditLog" tone="navy" title="Where this request has been">
         <Timeline events={events} />
       </Card>
     </div>

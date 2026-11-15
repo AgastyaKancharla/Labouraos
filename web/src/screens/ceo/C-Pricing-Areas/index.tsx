@@ -66,7 +66,7 @@ export default function Areas() {
   ];
   return (
     <div className="lb-page">
-      <TopBar
+      <TopBar icon="fieldOps" iconTone="orange"
         back={{ to: to('C-Pricing'), label: 'Pricing & policy' }}
         title="Areas"
         subtitle="The list of Bengaluru areas agents choose from."

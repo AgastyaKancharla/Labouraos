@@ -70,7 +70,7 @@ export default function TeamLeadNotifications() {
   ];
   return (
     <div className="lb-page">
-      <TopBar showSearch={false} back={{ to: to('T-Home'), label: 'My team' }} title="Notifications" subtitle="Everything about your team that needs you, newest first." />
+      <TopBar icon="flags" iconTone="gold" showSearch={false} back={{ to: to('T-Home'), label: 'My team' }} title="Notifications" subtitle="Everything about your team that needs you, newest first." />
       <FilterPanel>
         <SelectFilter label="Status" value={status} onChange={setStatus} options={[{ value: 'all', label: 'All' }, { value: 'open', label: 'New' }, { value: 'cleared', label: 'Done' }]} />
         <SelectFilter label="Type" value={type} onChange={setType} options={[{ value: '', label: 'All types' }, ...['Leave', 'Requests', 'Refunds', 'Stuck', 'Owners', 'Quality', 'Visits', 'Attendance'].map((v) => ({ value: v, label: v }))]} />

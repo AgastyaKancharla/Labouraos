@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ToneTile } from '../../../components/ToneTile';
 import { Link } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAttendance } from '../../../attendance/AttendanceProvider';
@@ -86,7 +87,10 @@ export default function RequestLeave() {
     return (
       <div className="lb-page lb-att-page lb-att-page--narrow">
         <TopBar title={t('att.leave.title')} titleHidden />
-        <h2 className="h1">{t('att.leave.title')}</h2>
+        <h2 className="h1 lb-h-tile">
+          <ToneTile icon="leave" tone="gold" />
+          {t('att.leave.title')}
+        </h2>
         <div className="lb-att-ok" role="status">
           {r.half
             ? t('att.leave.sentHalf', { date: dateRange(r.fromDate ?? fromDate, r.fromDate ?? fromDate), half: t(r.half === 'first' ? 'att.leave.firstHalf' : 'att.leave.secondHalf') })
@@ -107,7 +111,10 @@ export default function RequestLeave() {
   return (
     <div className="lb-page lb-att-page lb-att-page--narrow">
       <TopBar title={t('att.leave.title')} titleHidden />
-        <h2 className="h1">{t('att.leave.title')}</h2>
+        <h2 className="h1 lb-h-tile">
+          <ToneTile icon="leave" tone="gold" />
+          {t('att.leave.title')}
+        </h2>
       <form
         className="lb-att-page"
         style={{ gap: 18 }}

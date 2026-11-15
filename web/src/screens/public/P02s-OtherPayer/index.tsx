@@ -39,7 +39,7 @@ export default function OtherPayer() {
   if (secondsLeft === 0) {
     return (
       <>
-        <PageTitle>{t('pub.other.expiredTitle')}</PageTitle>
+        <PageTitle emoji="⏰">{t('pub.other.expiredTitle')}</PageTitle>
         <Warn>{t('pub.other.expired')}</Warn>
       </>
     );
@@ -62,7 +62,7 @@ export default function OtherPayer() {
     };
     return (
       <>
-        <PageTitle>{t('pub.other.lockedTitle')}</PageTitle>
+        <PageTitle emoji="🔒">{t('pub.other.lockedTitle')}</PageTitle>
         <span className="tag ta" style={{ alignSelf: 'flex-start' }}>
           {t('pub.other.timeLeft', { time: timeLeft })}
         </span>
@@ -88,7 +88,7 @@ export default function OtherPayer() {
 
   return (
     <>
-      <PageTitle>{t('pub.other.title', { amount: rupees(details.amountPaise), name: details.displayName })}</PageTitle>
+      <PageTitle emoji="💳">{t('pub.other.title', { amount: rupees(details.amountPaise), name: details.displayName })}</PageTitle>
       <span className="sub">{t('pub.other.sub', { code: details.jobSeekerCode, name: details.firstName })}</span>
       <span className="tag ta" style={{ alignSelf: 'flex-start' }}>
         {t('pub.other.timeLeft', { time: timeLeft })}

@@ -55,7 +55,7 @@ export default function OfferReply() {
   if (declined) {
     return (
       <>
-        <PageTitle>{t('pub.offer.declinedTitle')}</PageTitle>
+        <PageTitle emoji="👍">{t('pub.offer.declinedTitle')}</PageTitle>
         <Muted>{t('pub.offer.declined')}</Muted>
       </>
     );
@@ -78,7 +78,7 @@ export default function OfferReply() {
   const period = o.salaryPeriod === 'daily' ? t('pub.offer.perDay') : t('pub.offer.perMonth');
   return (
     <>
-      <PageTitle>{t('pub.offer.title', { name: o.firstName })}</PageTitle>
+      <PageTitle emoji="🎉">{t('pub.offer.title', { name: o.firstName })}</PageTitle>
       <div className="card">
         <Row label={t('pub.offer.job')}>
           <strong>{o.job}</strong>

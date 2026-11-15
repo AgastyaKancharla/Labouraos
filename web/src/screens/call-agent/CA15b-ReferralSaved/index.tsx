@@ -48,12 +48,12 @@ export default function ReferralSaved() {
     onError: (e) => toast.error(isApiError(e) ? e.message : t('error.server')),
   });
 
-  if (!id) return <div className="reg"><TopBar title={t('screen.CA15b-ReferralSaved')} /><EmptyState title={t('reg.ref.noneOpen')} /></div>;
-  if (header.isLoading) return <div className="reg"><TopBar title={t('screen.CA15b-ReferralSaved')} /><SkeletonCard height={320} /></div>;
+  if (!id) return <div className="reg"><TopBar icon="referrals" iconTone="good" title={t('screen.CA15b-ReferralSaved')} /><EmptyState emoji="🤝" title={t('reg.ref.noneOpen')} /></div>;
+  if (header.isLoading) return <div className="reg"><TopBar icon="referrals" iconTone="good" title={t('screen.CA15b-ReferralSaved')} /><SkeletonCard height={320} /></div>;
   if (header.error || !header.data) {
     return (
       <div className="reg">
-        <TopBar title={t('screen.CA15b-ReferralSaved')} />
+        <TopBar icon="referrals" iconTone="good" title={t('screen.CA15b-ReferralSaved')} />
         <ErrorState error={header.error} onRetry={() => void header.refetch()} />
       </div>
     );
@@ -77,7 +77,7 @@ export default function ReferralSaved() {
 
   return (
     <div className="reg">
-      <TopBar title={t('screen.CA15b-ReferralSaved')} />
+      <TopBar icon="referrals" iconTone="good" title={t('screen.CA15b-ReferralSaved')} />
       <div className="ok" role="status">
         ✓ {t('reg.ref.saved', { code: r.code, name: first })}
       </div>

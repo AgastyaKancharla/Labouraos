@@ -150,7 +150,7 @@ export default function RegisterJobSeeker() {
   if (duplicate) {
     return (
       <div className="reg">
-        <TopBar title={t('screen.CA08-Register')} />
+        <TopBar icon="jobSeekers" iconTone="royal" title={t('screen.CA08-Register')} />
         <AlreadyRegistered
           record={duplicate}
           what="number"
@@ -169,7 +169,7 @@ export default function RegisterJobSeeker() {
 
   return (
     <div className="reg">
-      <TopBar title={t('screen.CA08-Register')} subtitle={t('reg.js.subtitle')} />
+      <TopBar icon="jobSeekers" iconTone="royal" title={t('screen.CA08-Register')} subtitle={t('reg.js.subtitle')} />
       <DraftNote restored={draft.restored} onDiscard={() => {
         draft.discard();
         setMobile({ mobile: '', requestId: null, verifiedAt: null });

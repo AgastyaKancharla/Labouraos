@@ -64,7 +64,7 @@ export default function PartnerTermsPage() {
   return (
     <>
       <StepsBar current={1} label={t('partner.terms.stepLabel')} />
-      <PageTitle>{t('partner.terms.title')}</PageTitle>
+      <PageTitle emoji="📄">{t('partner.terms.title')}</PageTitle>
       <Muted>{t('partner.terms.intro')}</Muted>
       <div className="card">
         {POINTS.map((key) => (

@@ -44,7 +44,7 @@ export default function PartnerSelfiePage() {
   return (
     <>
       <StepsBar current={2} label={t('pub.selfie.stepLabel')} />
-      <PageTitle>{t('pub.selfie.title')}</PageTitle>
+      <PageTitle emoji="🤳">{t('pub.selfie.title')}</PageTitle>
       <LiveSelfie active onCapture={upload} tips={t('partner.selfie.tips')} error={<ActionError error={error} />} />
     </>
   );

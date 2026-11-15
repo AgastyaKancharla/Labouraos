@@ -1,4 +1,5 @@
 import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { ToneTile } from '../../../components/ToneTile';
 import { Button } from '../../../components/Button';
 import { ErrorState } from '../../../components/ErrorState';
 import { SkeletonCard } from '../../../components/Skeleton';
@@ -117,7 +118,10 @@ function SeekerDetails({ profile }: { profile: SeekerProfile }) {
     <>
       <div className="grid2" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))' }}>
         <div className="card">
-          <h2 className="h2" style={{ marginBottom: 6 }}>{t('ca.profile.details')}</h2>
+          <h2 className="h2 lb-h-tile" style={{ marginBottom: 6 }}>
+            <ToneTile icon="jobSeekers" tone="royal" size="sm" />
+            {t('ca.profile.details')}
+          </h2>
           <div className="row">
             <span>{t('ca.profile.trades')}</span>
             <b>{profile.trades.map((tr) => `${tr.trade} (${t('ca.years', { count: tr.years })})`).join(' · ') || '—'}</b>
@@ -173,7 +177,10 @@ function FollowUpView({ profile }: { profile: SeekerProfile }) {
   return (
     <div className="grid2" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))' }}>
       <div className="card">
-        <h2 className="h2" style={{ marginBottom: 6 }}>{t('ca.intro.title')}</h2>
+        <h2 className="h2 lb-h-tile" style={{ marginBottom: 6 }}>
+          <ToneTile icon="interviews" tone="orange" size="sm" />
+          {t('ca.intro.title')}
+        </h2>
         {profile.introductions.length === 0 && <p className="sub">{t('ca.intro.none')}</p>}
         {profile.introductions.map((i) => {
           const label = introLabel(i, t);
@@ -194,7 +201,10 @@ function FollowUpView({ profile }: { profile: SeekerProfile }) {
         )}
       </div>
       <div className="card">
-        <h2 className="h2" style={{ marginBottom: 6 }}>{t('ca.status.title')}</h2>
+        <h2 className="h2 lb-h-tile" style={{ marginBottom: 6 }}>
+          <ToneTile icon="checkRegistrations" tone="good" size="sm" />
+          {t('ca.status.title')}
+        </h2>
         <div className="row">
           <span>{t('ca.status.registration')}</span>
           <b>{profile.registration.done === profile.registration.total ? t('ca.status.allDone') : `${profile.registration.done} / ${profile.registration.total}`}</b>
@@ -228,7 +238,10 @@ function BusinessDetails({ profile }: { profile: BusinessProfile }) {
   const t = useT();
   return (
     <div className="card">
-      <h2 className="h2" style={{ marginBottom: 6 }}>{t('ca.profile.details')}</h2>
+      <h2 className="h2 lb-h-tile" style={{ marginBottom: 6 }}>
+        <ToneTile icon="businesses" tone="royal" size="sm" />
+        {t('ca.profile.details')}
+      </h2>
       <div className="row"><span>{t('ca.biz.contact')}</span><b>{[profile.contactName, profile.contactRole].filter(Boolean).join(' · ') || '—'}</b></div>
       <div className="row"><span>{t('ca.biz.status')}</span><b>{profile.verificationStatus ?? '—'}</b></div>
       <div className="row"><span>{t('ca.biz.agent')}</span><b>{profile.accountAgent ?? '—'}</b></div>
@@ -248,7 +261,10 @@ function ReferralDetails({ profile }: { profile: ReferralProfile }) {
   const t = useT();
   return (
     <div className="card">
-      <h2 className="h2" style={{ marginBottom: 6 }}>{t('ca.profile.details')}</h2>
+      <h2 className="h2 lb-h-tile" style={{ marginBottom: 6 }}>
+        <ToneTile icon="referrals" tone="orange" size="sm" />
+        {t('ca.profile.details')}
+      </h2>
       <div className="row"><span>{t('ca.ref.type')}</span><b>{t(`ca.ref.kind.${profile.partnerType === 'business' ? 'business' : 'individual'}` as MessageKey)}</b></div>
       <div className="row"><span>{t('ca.ref.results')}</span><b>{t('ca.ref.referred', { referred: profile.referred, joined: profile.joined })}</b></div>
     </div>

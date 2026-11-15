@@ -1,4 +1,5 @@
 import { Link, useSearchParams } from 'react-router-dom';
+import { ToneTile } from '../../../components/ToneTile';
 import { TopBar } from '../../../components/TopBar';
 import { useT } from '../../../i18n/I18nProvider';
 import { formatDayMonthIST } from '../../../lib/format/date';
@@ -32,7 +33,10 @@ export default function OfferSent() {
         ✓ {t('ca.sent.banner', { name, time: due ? `${formatDayMonthIST(due)}, ${time12(due)}` : '—' })}
       </div>
       <div className="card" style={{ maxWidth: 760 }}>
-        <h2 className="h2" style={{ marginBottom: 6 }}>{t('ca.sent.next')}</h2>
+        <h2 className="h2 lb-h-tile" style={{ marginBottom: 6 }}>
+          <ToneTile icon="interviews" tone="good" size="sm" />
+          {t('ca.sent.next')}
+        </h2>
         {steps.map(([when, what]) => (
           <div className="row" key={when}>
             <span>{when}</span>

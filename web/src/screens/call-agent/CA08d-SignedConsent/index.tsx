@@ -38,10 +38,10 @@ export default function SignedConsentCopy() {
 
   return (
     <div className="reg">
-      <TopBar title={title} actions={back} />
+      <TopBar icon="consentAndPrivacy" iconTone="good" title={title} actions={back} />
       {consent.isLoading && <SkeletonCard height={300} />}
       {consent.error && <ErrorState error={consent.error} onRetry={() => void consent.refetch()} />}
-      {c && !c.signed && <EmptyState title={t('reg.consent.none')}>{t('reg.consent.noneBody')}</EmptyState>}
+      {c && !c.signed && <EmptyState emoji="📝" title={t('reg.consent.none')}>{t('reg.consent.noneBody')}</EmptyState>}
       {c && c.signed && (
         <>
           <Card>

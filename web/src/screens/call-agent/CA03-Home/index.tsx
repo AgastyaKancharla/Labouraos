@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ToneTile } from '../../../components/ToneTile';
 import { Link } from 'react-router-dom';
 import { ErrorState } from '../../../components/ErrorState';
 import { Skeleton, SkeletonCard } from '../../../components/Skeleton';
@@ -75,11 +76,11 @@ export default function CallAgentHome() {
           <Skeleton height={44} />
         ) : (
           <>
-            <Stat label={t('ca.stat.callsAnswered')} value={String(data.today.callsAnswered)} sub={t('ca.stat.teamAvg', { value: data.today.teamAverage.callsAnswered })} />
-            <Stat label={t('ca.stat.talkTime')} value={durationHM(data.today.talkSeconds)} sub={t('ca.stat.teamAvg', { value: durationHM(data.today.teamAverage.talkSeconds) })} />
-            <Stat label={t('ca.stat.production')} value={durationHM(data.today.productionSeconds)} sub={t('ca.stat.of', { value: durationHM(data.today.productionTargetSeconds) })} />
-            <Stat label={t('ca.stat.registrations')} value={String(data.today.registrations)} sub={t('ca.stat.teamAvg', { value: data.today.teamAverage.registrations })} />
-            <Stat label={t('ca.stat.interviews')} value={String(data.today.interviewsBooked)} sub={t('ca.stat.teamAvg', { value: data.today.teamAverage.interviewsBooked })} />
+            <Stat bar="var(--royal)" label={t('ca.stat.callsAnswered')} value={String(data.today.callsAnswered)} sub={t('ca.stat.teamAvg', { value: data.today.teamAverage.callsAnswered })} />
+            <Stat bar="var(--cyan-raw)" label={t('ca.stat.talkTime')} value={durationHM(data.today.talkSeconds)} sub={t('ca.stat.teamAvg', { value: durationHM(data.today.teamAverage.talkSeconds) })} />
+            <Stat bar="var(--good)" label={t('ca.stat.production')} value={durationHM(data.today.productionSeconds)} sub={t('ca.stat.of', { value: durationHM(data.today.productionTargetSeconds) })} />
+            <Stat bar="var(--gold-raw)" label={t('ca.stat.registrations')} value={String(data.today.registrations)} sub={t('ca.stat.teamAvg', { value: data.today.teamAverage.registrations })} />
+            <Stat bar="var(--orange-raw)" label={t('ca.stat.interviews')} value={String(data.today.interviewsBooked)} sub={t('ca.stat.teamAvg', { value: data.today.teamAverage.interviewsBooked })} />
           </>
         )}
       </div>
@@ -87,7 +88,10 @@ export default function CallAgentHome() {
       <div className="grid2 lb-ca-home-grid">
         <section style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }} aria-labelledby="ca-work">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <h2 className="h2" id="ca-work">{t('ca.work.title')}</h2>
+            <h2 className="h2 lb-h-tile" id="ca-work">
+              <ToneTile icon="workList" tone="royal" size="sm" />
+              {t('ca.work.title')}
+            </h2>
             {data && <span className="tag lb-ca-todo">{t('ca.work.toDo', { count: data.work.counts.all })}</span>}
           </div>
           <div role="group" aria-label={t('ca.work.filters')} style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -112,12 +116,16 @@ export default function CallAgentHome() {
 
         <section style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
           <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <h2 className="h2">{t('ca.month.title')}</h2>
+            <h2 className="h2 lb-h-tile">
+              <ToneTile icon="targets" tone="gold" size="sm" />
+              {t('ca.month.title')}
+            </h2>
             {!data ? (
               <Skeleton height={40} />
             ) : (
               <div className="grid3">
                 <div className="stat">
+                  <span className="lb-ca-bar" style={{ background: 'var(--cyan-raw)' }} aria-hidden="true" />
                   <span className="lbl">{t('ca.month.activated')}</span>
                   <b>
                     {metricValue(data.month.candidatesActivated)}{' '}
@@ -125,6 +133,7 @@ export default function CallAgentHome() {
                   </b>
                 </div>
                 <div className="stat">
+                  <span className="lb-ca-bar" style={{ background: 'var(--gold-raw)' }} aria-hidden="true" />
                   <span className="lbl">{t('ca.month.vacancies')}</span>
                   <b>
                     {metricValue(data.month.vacanciesCaptured)}{' '}
@@ -132,6 +141,7 @@ export default function CallAgentHome() {
                   </b>
                 </div>
                 <div className="stat">
+                  <span className="lb-ca-bar" style={{ background: 'var(--orange-raw)' }} aria-hidden="true" />
                   <span className="lbl">{t('ca.month.refundRate')}</span>
                   <b>
                     {metricValue(data.month.refundRate, true)}{' '}
@@ -147,7 +157,10 @@ export default function CallAgentHome() {
 
           <div className="grid2" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))' }}>
             <div className="card">
-              <div className="lbl" style={{ marginBottom: 4 }}>{t('ca.stuck.title', { count: data?.stuck.length ?? 0 })}</div>
+              <div className="lbl lb-h-tile" style={{ marginBottom: 4 }}>
+                <ToneTile icon="requests" tone="orange" size="sm" />
+                {t('ca.stuck.title', { count: data?.stuck.length ?? 0 })}
+              </div>
               {data && data.stuck.length === 0 && <p className="sub">{t('ca.stuck.none')}</p>}
               {data?.stuck.map((s) => (
                 <div className="row" key={s.jobSeekerId}>
@@ -171,7 +184,10 @@ export default function CallAgentHome() {
               ))}
             </div>
             <div className="card">
-              <div className="lbl" style={{ marginBottom: 4 }}>{t('ca.risk.title')}</div>
+              <div className="lbl lb-h-tile" style={{ marginBottom: 4 }}>
+                <ToneTile icon="refundApprovals" tone="red" size="sm" />
+                {t('ca.risk.title')}
+              </div>
               {data && data.nearRefund.count > 0 ? (
                 <>
                   <button type="button" className="row lb-ca-rowbtn" onClick={() => setFilter('all')}>
@@ -187,7 +203,10 @@ export default function CallAgentHome() {
           </div>
 
           <div className="card">
-            <div className="lbl" style={{ marginBottom: 6 }}>{t('ca.done.title')}</div>
+            <div className="lbl lb-h-tile" style={{ marginBottom: 6 }}>
+              <ToneTile icon="checkRegistrations" tone="good" size="sm" />
+              {t('ca.done.title')}
+            </div>
             {data && data.doneToday.length === 0 && <p className="sub">{t('ca.done.none')}</p>}
             {data?.doneToday.map((d, i) => (
               <div className="row" key={`${d.kind}-${d.at}-${i}`}>
@@ -228,9 +247,10 @@ function doneTag(d: { kind: string; status: string; extra: string | null }, t: R
   return d.status;
 }
 
-function Stat({ label, value, sub }: { label: string; value: string; sub: string }) {
+function Stat({ label, value, sub, bar }: { label: string; value: string; sub: string; bar: string }) {
   return (
     <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 110 }}>
+      <span className="lb-ca-bar" style={{ background: bar }} aria-hidden="true" />
       <span className="lbl">{label}</span>
       <b style={{ fontFamily: 'var(--font-display)', fontSize: 18, color: 'var(--ink)' }}>{value}</b>
       <span className="sub">{sub}</span>

@@ -44,7 +44,7 @@ export default function AttendanceScreen() {
   return (
     <div className="lb-page lb-att-page">
       {/* Office portals already have a team "Attendance" page, so this one is "My attendance" there. */}
-      <TopBar title={t(family === 'console' ? 'screen.CA14b-AttendanceActive' : 'att.menu.open')} titleHidden={family === 'console'} />
+      <TopBar icon="attendance" iconTone="cyan" title={t(family === 'console' ? 'screen.CA14b-AttendanceActive' : 'att.menu.open')} titleHidden={family === 'console'} />
       {query.error && <ErrorState error={query.error} onRetry={() => void query.refetch()} />}
       {!today && !attendance.failed && <SkeletonCard height={260} />}
       {today && (phase === 'not_started' || phase === 'leave') && <BeforeStart today={today} />}
@@ -99,6 +99,7 @@ function BeforeStart({ today }: { today: AttendanceToday }) {
       </div>
       <div className="lb-att-grid3">
         <div className="card lb-att-stat">
+          <span className="lb-ca-bar" style={{ background: 'var(--navy)' }} aria-hidden="true" />
           <span className="lbl">{t('att.tile.yesterday')}</span>
           <b>{yesterday && yesterday.loginAt ? hm(yesterday.productionSeconds) : '—'}</b>
           <span className="sub">
@@ -110,11 +111,13 @@ function BeforeStart({ today }: { today: AttendanceToday }) {
           </span>
         </div>
         <div className="card lb-att-stat">
+          <span className="lb-ca-bar" style={{ background: 'var(--cyan-raw)' }} aria-hidden="true" />
           <span className="lbl">{t('att.tile.month')}</span>
           <b>{month.data ? (short > 0 ? t('att.tile.monthShort', { time: hm(short) }) : t('att.tile.monthOk')) : '—'}</b>
           <span className="sub">{short > 0 ? t('att.tile.monthShortSub', { date: dayMonth(lastDayOf(todayKey.slice(0, 7))) }) : t('att.tile.monthOkSub')}</span>
         </div>
         <div className="card lb-att-stat">
+          <span className="lb-ca-bar" style={{ background: 'var(--gold-raw)' }} aria-hidden="true" />
           <span className="lbl">{t('att.tile.leave')}</span>
           <b>{balance.data ? balance.data.casual.left + balance.data.emergency.left : '—'}</b>
           <span className="sub">{balance.data ? t('att.tile.leaveSub', { casual: balance.data.casual.left, emergency: balance.data.emergency.left }) : ''}</span>
@@ -132,6 +135,7 @@ function DayTiles({ today, audience }: { today: AttendanceToday; audience: Atten
   return (
     <div className="lb-att-grid3">
       <div className="card lb-att-stat">
+        <span className="lb-ca-bar" style={{ background: 'var(--royal)' }} aria-hidden="true" />
         <span className="lbl">{t('att.tile.loggedIn')}</span>
         <b>{today.loginAt ? clockTime(today.loginAt) : '—'}</b>
         <span className="sub">
@@ -139,6 +143,7 @@ function DayTiles({ today, audience }: { today: AttendanceToday; audience: Atten
         </span>
       </div>
       <div className="card lb-att-stat">
+        <span className="lb-ca-bar" style={{ background: 'var(--good)' }} aria-hidden="true" />
         <span className="lbl">{t('att.tile.production')}</span>
         <b>
           {hm(today.productionSeconds)} <span className="sub">{t('att.tile.of', { total: hm(full) })}</span>
@@ -149,6 +154,7 @@ function DayTiles({ today, audience }: { today: AttendanceToday; audience: Atten
         <span className="sub">{t(audience === 'agent' ? 'att.tile.productionSub' : 'att.tile.productionSubOffice')}</span>
       </div>
       <div className="card lb-att-stat">
+        <span className="lb-ca-bar" style={{ background: 'var(--orange-raw)' }} aria-hidden="true" />
         <span className="lbl">{t('att.tile.breaks')}</span>
         <b>
           {span(today.shortBreakSeconds)} <span className="sub">{t('att.tile.of', { total: span(2 * today.policy.shortBreakMinutes * 60) })}</span>

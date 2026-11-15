@@ -144,11 +144,11 @@ export default function AddVacancy() {
   });
 
   if (saved) return <ConfirmVacancy vacancy={saved} businessName={form.business?.name ?? ''} />;
-  if (draftId && draftVacancy.isLoading) return <div className="reg"><TopBar title={t('screen.CA09-AddVacancy')} /><SkeletonCard height={400} /></div>;
+  if (draftId && draftVacancy.isLoading) return <div className="reg"><TopBar icon="vacancies" iconTone="gold" title={t('screen.CA09-AddVacancy')} /><SkeletonCard height={400} /></div>;
   if (draftId && draftVacancy.error) {
     return (
       <div className="reg">
-        <TopBar title={t('screen.CA09-AddVacancy')} />
+        <TopBar icon="vacancies" iconTone="gold" title={t('screen.CA09-AddVacancy')} />
         <ErrorState error={draftVacancy.error} onRetry={() => void draftVacancy.refetch()} />
       </div>
     );
@@ -163,7 +163,7 @@ export default function AddVacancy() {
 
   return (
     <div className="reg">
-      <TopBar title={draftId ? t('reg.vac.finishTitle') : t('screen.CA09-AddVacancy')} subtitle={t('reg.vac.subtitle')} />
+      <TopBar icon="vacancies" iconTone="gold" title={draftId ? t('reg.vac.finishTitle') : t('screen.CA09-AddVacancy')} subtitle={t('reg.vac.subtitle')} />
       <DraftNote restored={draft.restored} onDiscard={draft.discard} />
       <Card className="reg-form">
         <fieldset className="sec">
@@ -419,7 +419,7 @@ function ConfirmVacancy({ vacancy, businessName }: { vacancy: Saved; businessNam
 
   return (
     <div className="reg">
-      <TopBar title={t('reg.vac.confirmTitle')} />
+      <TopBar icon="vacancies" iconTone="gold" title={t('reg.vac.confirmTitle')} />
       <div className="ok" role="status">
         ✓ {t('reg.vac.saved', { code: vacancy.code, business: businessName })}
       </div>

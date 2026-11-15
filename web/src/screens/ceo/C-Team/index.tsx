@@ -258,7 +258,7 @@ export default function Team() {
 
   return (
     <div className="lb-page">
-      <TopBar
+      <TopBar icon="teamAndAccess" iconTone="royal"
         back={{ to: to('Main'), label: 'Command Center' }}
         title="Team & access"
         subtitle="Your organisation, every account and what each role can see."
@@ -273,7 +273,7 @@ export default function Team() {
         <ErrorState error={team.error} onRetry={() => void team.refetch()} />
       ) : (
         <div className="two-col">
-          <Card title="Organisation">
+          <Card icon="teamAndAccess" tone="navy" title="Organisation">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
               <div className="rule" style={{ borderLeftColor: 'var(--navy)' }}>
                 <strong>CEO / founders</strong> · {d ? d.organisation.ceos.map((c) => c.name).join(' · ') || '—' : '…'} — same full powers, different titles
@@ -307,7 +307,7 @@ export default function Team() {
               ))}
             </div>
           </Card>
-          <Card title="Who can see what">
+          <Card icon="consentAndPrivacy" tone="cyan" title="Who can see what">
             <div className="kv">
               <span>CEO, founder, co-founder</span>
               <span>Everything, with every power: change, approve, refund, full numbers (logged)</span>
@@ -459,7 +459,7 @@ function AddStaff({ options }: { options: TeamResponse['reportsToOptions'] }) {
   });
   const missing = !name.trim() || (needsEmail && !email.trim()) || (bossRole !== null && !effectiveBoss);
   return (
-    <Card title="Add a staff member">
+    <Card icon="jobSeekers" tone="good" title="Add a staff member">
       <form
         className="ceo-form-row"
         onSubmit={(e) => {

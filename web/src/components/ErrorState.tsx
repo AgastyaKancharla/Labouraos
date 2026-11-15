@@ -43,11 +43,16 @@ export function ErrorState({ error, onRetry, compact }: { error: unknown; onRetr
 }
 
 /** What a list or card shows when there is nothing in it. */
-export function EmptyState({ title, children, action }: { title?: ReactNode; children?: ReactNode; action?: ReactNode }) {
+export function EmptyState({ title, children, action, emoji }: { title?: ReactNode; children?: ReactNode; action?: ReactNode; emoji?: string }) {
   const t = useT();
   return (
     <div className="lb-state lb-state--empty">
       <div className="lb-state__body">
+        {emoji && (
+          <span className="lb-state__emoji" aria-hidden="true">
+            {emoji}
+          </span>
+        )}
         <strong>{title ?? t('table.empty')}</strong>
         {children && <span>{children}</span>}
       </div>

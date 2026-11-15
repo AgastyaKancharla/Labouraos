@@ -72,7 +72,7 @@ export default function TeamLeadReports() {
       : [];
   return (
     <div className="lb-page">
-      <TopBar showSearch={false} back={{ to: to('T-Home'), label: 'My team' }} title="Reports" subtitle={`Your team's day and week, ready to send to ${mgr}.`} period={period} onPeriodChange={setPeriod} />
+      <TopBar icon="reports" iconTone="cyan" showSearch={false} back={{ to: to('T-Home'), label: 'My team' }} title="Reports" subtitle={`Your team's day and week, ready to send to ${mgr}.`} period={period} onPeriodChange={setPeriod} />
       <Card flush>
         <DataTable columns={columns} rows={r?.rows} rowKey={(d) => d.date} caption="Team report by day" loading={report.isPending} error={report.error} onRetry={() => void report.refetch()} download="team-report" emptyTitle="No days in this range." />
         <div className="tl-note" style={{ padding: '0 18px 14px' }}>
@@ -80,10 +80,10 @@ export default function TeamLeadReports() {
         </div>
       </Card>
       <div className="two-col">
-        <Card title="This week so far">
+        <Card icon="planVsActual" tone="gold" title="This week so far">
           <Kv rows={week(r?.thisWeek, 'Best')} />
         </Card>
-        <Card title="Last week">
+        <Card icon="auditLog" tone="navy" title="Last week">
           <Kv rows={week(r?.lastWeek, 'Best')} />
         </Card>
       </div>

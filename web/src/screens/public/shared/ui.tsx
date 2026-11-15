@@ -31,7 +31,7 @@ export function StepsBar({ current, label }: { current: 1 | 2 | 3 | 4; label: st
     <div className="lb-steps">
       <div className="lb-steps__bar" aria-hidden="true">
         {[1, 2, 3, 4].map((n) => (
-          <span key={n} className={n < current ? 'done' : n === current ? 'on' : ''} />
+          <span key={n} className={`lb-steps__seg-${n} ${n < current ? 'done' : n === current ? 'on' : ''}`.trim()} />
         ))}
       </div>
       <span className="sub">{t('pub.step', { n: current, label })}</span>
@@ -39,8 +39,23 @@ export function StepsBar({ current, label }: { current: 1 | 2 | 3 | 4; label: st
   );
 }
 
-export function PageTitle({ children }: { children: ReactNode }) {
-  return <h1 className="lb-pub-h2">{children}</h1>;
+/**
+ * The page heading in a blue gradient header card with the brand swoosh —
+ * the customer app's look, so a page opened from a link or inside the app
+ * feels the same. The emoji is a friendly picture only (hidden from screen readers).
+ */
+export function PageTitle({ children, emoji }: { children: ReactNode; emoji?: string }) {
+  return (
+    <div className="lb-pub-hero">
+      {emoji && (
+        <span className="lb-pub-hero__emoji" aria-hidden="true">
+          {emoji}
+        </span>
+      )}
+      <h1 className="lb-pub-h2">{children}</h1>
+      <span className="swoosh lb-pub-hero__swoosh" aria-hidden="true" />
+    </div>
+  );
 }
 
 export function Muted({ children, className }: { children: ReactNode; className?: string }) {
@@ -85,18 +100,29 @@ export function Choice({
   );
 }
 
-export function Ok({ children }: { children: ReactNode }) {
+function StatusEmoji({ emoji }: { emoji?: string }) {
+  if (!emoji) return null;
   return (
-    <div className="ok" role="status">
-      {children}
+    <span className="lb-pub-status__emoji" aria-hidden="true">
+      {emoji}
+    </span>
+  );
+}
+
+export function Ok({ children, emoji }: { children: ReactNode; emoji?: string }) {
+  return (
+    <div className={emoji ? 'ok lb-pub-status' : 'ok'} role="status">
+      <StatusEmoji emoji={emoji} />
+      {emoji ? <span>{children}</span> : children}
     </div>
   );
 }
 
-export function Warn({ children }: { children: ReactNode }) {
+export function Warn({ children, emoji }: { children: ReactNode; emoji?: string }) {
   return (
-    <div className="warn" role="status">
-      {children}
+    <div className={emoji ? 'warn lb-pub-status' : 'warn'} role="status">
+      <StatusEmoji emoji={emoji} />
+      {emoji ? <span>{children}</span> : children}
     </div>
   );
 }
@@ -134,7 +160,7 @@ export function LinkProblem({ error, onRetry }: { error: unknown; onRetry?: () =
   const key = problemKey(error);
   return (
     <>
-      <PageTitle>{t('pub.error.title')}</PageTitle>
+      <PageTitle emoji="⚠️">{t('pub.error.title')}</PageTitle>
       <Warn>{t(key)}</Warn>
       {onRetry && (key === 'pub.error.offline' || key === 'pub.error.server' || key === 'pub.error.generic') && (
         <button type="button" className="btn bs full" onClick={onRetry}>
@@ -274,7 +300,7 @@ export function PaidConfirming({ onHint }: { onHint?: (utr: string) => Promise<u
   const inputId = useId();
   return (
     <>
-      <Warn>
+      <Warn emoji="⏳">
         <strong>{t('pub.confirming.title')}</strong> {t('pub.confirming.body')}
       </Warn>
       <Muted>{t('pub.confirming.noScreenshot')}</Muted>

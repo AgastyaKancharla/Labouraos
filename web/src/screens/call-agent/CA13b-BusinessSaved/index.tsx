@@ -53,12 +53,12 @@ export default function BusinessSaved() {
     onError: (e) => toast.error(isApiError(e) ? e.message : t('error.server')),
   });
 
-  if (!id) return <div className="reg"><TopBar title={t('screen.CA13b-BusinessSaved')} /><EmptyState title={t('reg.biz.noneOpen')} /></div>;
-  if (business.isLoading) return <div className="reg"><TopBar title={t('screen.CA13b-BusinessSaved')} /><SkeletonCard height={360} /></div>;
+  if (!id) return <div className="reg"><TopBar icon="businesses" iconTone="good" title={t('screen.CA13b-BusinessSaved')} /><EmptyState emoji="🏪" title={t('reg.biz.noneOpen')} /></div>;
+  if (business.isLoading) return <div className="reg"><TopBar icon="businesses" iconTone="good" title={t('screen.CA13b-BusinessSaved')} /><SkeletonCard height={360} /></div>;
   if (business.error || !business.data) {
     return (
       <div className="reg">
-        <TopBar title={t('screen.CA13b-BusinessSaved')} />
+        <TopBar icon="businesses" iconTone="good" title={t('screen.CA13b-BusinessSaved')} />
         <ErrorState error={business.error} onRetry={() => void business.refetch()} />
       </div>
     );
@@ -98,7 +98,7 @@ export default function BusinessSaved() {
 
   return (
     <div className="reg">
-      <TopBar title={t('screen.CA13b-BusinessSaved')} />
+      <TopBar icon="businesses" iconTone="good" title={t('screen.CA13b-BusinessSaved')} />
       <div className="ok" role="status">
         ✓ {justSent ? t('reg.biz.savedSent', { name: b.name, code: b.code, contact }) : t('reg.biz.saved', { name: b.name, code: b.code })}
       </div>

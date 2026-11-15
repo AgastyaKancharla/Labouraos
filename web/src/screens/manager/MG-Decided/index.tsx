@@ -134,7 +134,7 @@ export default function ManagerDecided() {
 
   return (
     <div className="lb-page">
-      <TopBar back={{ to: to('MG-Requests'), label: 'Requests' }} title="Decided this week" subtitle="Every request your Team Leads and you decided — overturn any of them, with a reason." />
+      <TopBar icon="requests" iconTone="navy" back={{ to: to('MG-Requests'), label: 'Requests' }} title="Decided this week" subtitle="Every request your Team Leads and you decided — overturn any of them, with a reason." />
       <RequestTabs waiting={waiting.data?.length} />
       <section className="panel mg-filters" aria-label="Filter decisions">
         <SelectField

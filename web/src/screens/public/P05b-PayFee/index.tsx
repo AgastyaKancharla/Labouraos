@@ -58,7 +58,7 @@ export default function PayFee() {
   if (s.stopped) {
     return (
       <>
-        <PageTitle>{t('pub.error.title')}</PageTitle>
+        <PageTitle emoji="⚠️">{t('pub.error.title')}</PageTitle>
         <Warn>{t('pub.fee.stopped')}</Warn>
       </>
     );
@@ -66,7 +66,7 @@ export default function PayFee() {
   if (s.state === 'closed' || !s.pay) {
     return (
       <>
-        <PageTitle>{t('pub.error.title')}</PageTitle>
+        <PageTitle emoji="⚠️">{t('pub.error.title')}</PageTitle>
         <Warn>{t('pub.fee.closed')}</Warn>
       </>
     );
@@ -81,7 +81,7 @@ export default function PayFee() {
   if (!p) {
     return (
       <>
-        <PageTitle>{t('pub.pay.title', { amount: rupees(s.amountPaise) })}</PageTitle>
+        <PageTitle emoji="💳">{t('pub.pay.title', { amount: rupees(s.amountPaise) })}</PageTitle>
         {s.jobSeeker && <span className="sub">{t('pub.fee.registrationFor', { name: s.jobSeeker.firstName ?? '', code: s.jobSeeker.code })}</span>}
         <UpiQr svg={s.pay.qrSvg} payeeName={s.pay.payeeName} reference={s.pay.upiReference} />
         {payButton}

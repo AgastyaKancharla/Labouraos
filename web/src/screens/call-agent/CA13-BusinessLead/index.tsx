@@ -135,7 +135,7 @@ export default function RegisterBusiness() {
   if (duplicate) {
     return (
       <div className="reg">
-        <TopBar title={t('screen.CA13-BusinessLead')} />
+        <TopBar icon="businesses" iconTone="royal" title={t('screen.CA13-BusinessLead')} />
         <AlreadyRegistered
           record={duplicate.record}
           what={duplicate.what}
@@ -153,7 +153,7 @@ export default function RegisterBusiness() {
 
   return (
     <div className="reg">
-      <TopBar title={t('screen.CA13-BusinessLead')} subtitle={t('reg.biz.subtitle')} />
+      <TopBar icon="businesses" iconTone="royal" title={t('screen.CA13-BusinessLead')} subtitle={t('reg.biz.subtitle')} />
       <DraftNote restored={draft.restored} onDiscard={() => {
         draft.discard();
         setMobile({ mobile: '', requestId: null, verifiedAt: null });
