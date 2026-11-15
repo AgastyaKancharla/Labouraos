@@ -12,6 +12,7 @@ import { oneRegistrationCheck, REGISTRATION_ALREADY_CHECKED } from './one-regist
 import { MemoryCandidatePhotoStorage } from '../job-seeker/photo-storage';
 import { buildSecureQr, testSigner } from './testing/secure-qr.fixtures';
 import { fakePrisma, FakePrisma } from './testing/fake-prisma';
+import { aadhaarFingerprint, BANNED_MESSAGE } from '../conduct/permanent-ban.check';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const signer = testSigner();
@@ -424,6 +425,24 @@ describe('AadhaarQrService (guide: Aadhaar verification, 14 Nov)', () => {
     expect(out).toMatchObject({ status: 'verified', result: 'verified', maskedReference: 'XXXX-XXXX-1234', phoneLinked: 'linked' });
     expect(prisma.referralIdentityVerification.rows[0]).toMatchObject({ referralId: 'rf-1', method: 'aadhaar_qr', consentId: 'consent-2' });
     expect(prisma.idCheckDetail.rows[0]).toMatchObject({ subjectType: 'referral', photoPath: null });
+  });
+
+  it('S2 (rev 176): a partner who accepted the full v1.0 terms needs the separate ID-check consent; the old short-terms tick no longer counts', async () => {
+    const { service, prisma } = setup();
+    prisma.legalAcceptance.rows.push({ id: 'acc-1', subjectType: 'referral', subjectId: 'rf-1', documentKey: 'referral_terms', version: '1.0' });
+    await expect(service.checkReferral('rf-1', qr(), { channel: 'link', now: NOW })).rejects.toThrow();
+    prisma.consent.rows.push({ id: 'consent-9', subjectType: 'referral', subjectId: 'rf-1', purpose: 'aadhaar_verification', granted: true, grantedAt: NOW, withdrawnAt: null, createdAt: NOW });
+    await service.checkReferral('rf-1', qr(), { channel: 'link', now: NOW });
+    expect(prisma.referralIdentityVerification.rows[0]).toMatchObject({ referralId: 'rf-1', consentId: 'consent-9' });
+  });
+
+  it('D11 (rev 176): the same Aadhaar as a permanently banned person cannot register again', async () => {
+    const { service, prisma } = setup();
+    prisma.permanentBan.rows.push({ id: 'ban-1', subjectType: 'job_seeker', subjectId: 'js-old', category: 'fraud', idFingerprints: [aadhaarFingerprint('4321', '1998-08-15', 'Kavya Ramesh')] });
+    await expect(service.checkJobSeeker('js-1', qr({ last4: '4321' }), { channel: 'link', now: NOW })).rejects.toThrow(BANNED_MESSAGE);
+    expect(prisma.identityVerification.rows).toHaveLength(0);
+    // A different card is not blocked.
+    expect((await service.checkJobSeeker('js-1', qr({ last4: '9999' }), { channel: 'link', now: NOW })).result).toBe('verified');
   });
 
   it("a referral partner whose phone isn't verified never counts as linked to the Aadhaar", async () => {

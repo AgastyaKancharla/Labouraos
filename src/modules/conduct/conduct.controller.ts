@@ -33,7 +33,7 @@ export class ConductController {
   }
 
   @Get('permanent-bans/:subjectType/:subjectId')
-  @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo', 'finance')
+  @RequireRoles('manager', 'ceo', 'finance')
   banOf(@Param('subjectType') subjectType: string, @Param('subjectId') subjectId: string) {
     return this.conduct.banOf(subjectType, subjectId);
   }

@@ -6,7 +6,7 @@ import { findManyOver } from '../../test-support/prisma-where';
 
 const NOW = new Date('2026-11-11T05:30:00.000Z'); // 11:00 IST
 
-function makeService(prisma: Record<string, unknown>, registration?: unknown) {
+function makeService(prisma: Record<string, unknown>, registration?: unknown, legal?: unknown) {
   const jobSeekers = {
     getRegistrationStatus: jest.fn().mockResolvedValue(
       registration ?? {
@@ -26,7 +26,7 @@ function makeService(prisma: Record<string, unknown>, registration?: unknown) {
   const pricing = { current: jest.fn().mockResolvedValue({ jobSeekerGuaranteeDays: 30 }) };
   const clock = { now: () => NOW };
   const areas = { options: jest.fn().mockResolvedValue([...BENGALURU_AREAS]) };
-  return new ScreensCallRegistrationService(prisma as never, jobSeekers as never, pricing as never, clock as never, areas as never);
+  return new ScreensCallRegistrationService(prisma as never, jobSeekers as never, pricing as never, clock as never, areas as never, legal as never);
 }
 
 const seekerRow = {
@@ -64,6 +64,13 @@ function seekerPrisma(overrides: Record<string, unknown> = {}) {
 }
 
 describe('ScreensCallRegistrationService', () => {
+  it('shows the field agent which terms version the job seeker accepted, on the scoped status screen (rev 176)', async () => {
+    const legal = { status: jest.fn().mockResolvedValue({ documentKey: 'job_seeker_terms', currentVersion: '1.1', acceptedVersion: '1.0', needsReconsent: true, noticeVersion: '1.1', currentNoticeVersion: '1.2' }) };
+    const result = await makeService(seekerPrisma(), undefined, legal).jobSeeker(seekerRow.id);
+    expect(legal.status).toHaveBeenCalledWith('job_seeker', seekerRow.id);
+    expect(result.terms).toEqual({ currentVersion: '1.1', acceptedVersion: '1.0', needsReconsent: true });
+  });
+
   it('serves the managed Bengaluru area list with a pincode and pin for each area', async () => {
     const service = makeService({});
     const { areas, city } = await service.options();

@@ -430,6 +430,8 @@ export interface JobSeekerStatus {
   nextStep: 'consent' | 'selfie' | 'id_check' | 'payment' | 'complete';
   steps: { phone: Step; consent: Step; selfie: Step; idCheck: Step; payment: Step };
   consent: { requiredGiven: number; requiredTotal: number; promotions: boolean };
+  /** Which terms version he accepted (legal documents v1.1, rev 176). */
+  terms?: { currentVersion: string; acceptedVersion: string | null; needsReconsent: boolean } | null;
   registrationLinkExpiresAt: string | null;
   /** How long a payment-only link works (Settings, 15 minutes by default). */
   paymentOnlyLinkMinutes?: number;

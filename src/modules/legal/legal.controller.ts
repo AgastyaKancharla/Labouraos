@@ -35,10 +35,10 @@ export class LegalController {
     return this.legal.publicDocument(key, languageOf(lang));
   }
 
-  /** Which version each person accepted (C-JobSeeker, C-Business, C-Partner, Laboura Field). */
+  /** Which version each person accepted (C-JobSeeker, C-Business, C-Partner). Laboura Field reads it on the scoped status screen. */
   @Get('acceptances/:subjectType/:subjectId')
   @UseGuards(JwtAuthGuard, RbacGuard)
-  @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo', 'finance')
+  @RequireRoles('manager', 'ceo', 'finance')
   async acceptances(@Param('subjectType') subjectType: string, @Param('subjectId') subjectId: string) {
     if (!(SUBJECTS as readonly string[]).includes(subjectType)) throw new BadRequestException('subjectType must be job_seeker, business or referral');
     const type = subjectType as LegalSubjectType;
