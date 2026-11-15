@@ -1,4 +1,5 @@
 import { OwnTeam } from '../../common/rbac/own-team';
+import { assertNotBanned, BANNED_MESSAGE } from '../conduct/permanent-ban.check';
 import { Prisma } from '@prisma/client';
 import {
   BadRequestException,
@@ -294,6 +295,8 @@ export class JobSeekerService {
      * They are NOT for pay: agents are salaried, there is no commission.
      */
     const status = 'lead';
+    // D11 (rev 176): a permanently banned phone cannot register again.
+    await assertNotBanned(this.prisma, { phone });
 
     const otpConsumed = await this.otpService.consumeVerified(dto.otpRequestId, phone);
     if (!otpConsumed) {
@@ -469,6 +472,8 @@ export class JobSeekerService {
     if (!jobSeeker) {
       throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
     }
+    // D11 (rev 176): a permanently banned job seeker never pays to come back.
+    if (jobSeeker.status === 'banned') throw new ForbiddenException(BANNED_MESSAGE);
 
     if (jobSeeker.status === 'active') {
       throw new BadRequestException('Job seeker is already active');
@@ -604,6 +609,8 @@ export class JobSeekerService {
     if (!jobSeeker) {
       throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
     }
+    // D11 (rev 176): a permanently banned job seeker never pays to come back.
+    if (jobSeeker.status === 'banned') throw new ForbiddenException(BANNED_MESSAGE);
 
     // Deactivated after 3 hits, closed after finding a job on his own, or refunded: he
     // comes back by paying ₹499 again, which resets the hits and starts a fresh 30-day

@@ -1,4 +1,5 @@
 import { OwnTeam, businessesOwnedBy } from '../../common/rbac/own-team';
+import { assertNotBanned, businessIdFingerprint } from '../conduct/permanent-ban.check';
 import {
   BadRequestException,
   ConflictException,
@@ -396,6 +397,14 @@ export class BusinessService {
     const code = await this.idService.generateCode('business');
     const city = dto.city?.trim() ?? staff?.city ?? 'Bengaluru';
 
+    // D11 (rev 176): a permanently banned phone, GSTIN or PAN cannot register again.
+    await assertNotBanned(this.prisma, {
+      phone,
+      idFingerprints: [
+        ...(dto.gstNumber?.trim() ? [businessIdFingerprint('gstin', dto.gstNumber)] : []),
+        ...(dto.pan?.trim() ? [businessIdFingerprint('pan', dto.pan)] : []),
+      ],
+    });
     if (!(await this.otpService.consumeVerified(dto.otpRequestId, phone))) {
       throw new BadRequestException('This verified OTP request has already been used or expired');
     }

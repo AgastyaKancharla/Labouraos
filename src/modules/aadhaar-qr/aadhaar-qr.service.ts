@@ -1,4 +1,5 @@
 import { BadRequestException, HttpException, HttpStatus, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import { aadhaarFingerprint, assertNotBanned } from '../conduct/permanent-ban.check';
 import { partnerIdCheckConsentId } from '../consent/partner-id-consent';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
@@ -214,6 +215,8 @@ export class AadhaarQrService {
 
     const policy = await this.pricing.current();
     const dob = parseQrDateOfBirth(parsed.dateOfBirth);
+    // D11 (rev 176): the same Aadhaar as a permanently banned person cannot register again.
+    if (dob) await assertNotBanned(this.prisma, { idFingerprints: [aadhaarFingerprint(parsed.referenceLast4, dob.value, parsed.name)] });
     const isAdult = isAdultOn(dob, now, policy.adultMinimumAge);
     const name = checkIdName(subject.name, parsed.name);
     const phoneLinked = phoneLinkStatus(parsed, subject.phone);

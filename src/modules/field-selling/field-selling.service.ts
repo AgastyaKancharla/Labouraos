@@ -27,7 +27,7 @@ import { TELEPHONY_PROVIDER, TelephonyProvider } from '../telephony/telephony.in
 import { MatchingService } from '../vacancy/matching.service';
 import { InterviewService, NOT_SELECTED_REASONS } from '../vacancy/interview.service';
 import { isUnconfirmedVacancyStatus } from '../vacancy/vacancy-confirmation.service';
-import { BUSINESS_PAUSED_MESSAGE, businessCandidateAccess } from '../business/business-candidate-access';
+import { businessAccessMessage, businessCandidateAccess } from '../business/business-candidate-access';
 import { FieldVisitService } from '../field-visit/field-visit.service';
 import { testModeFields } from '../../common/otp/otp-test-mode';
 
@@ -179,7 +179,7 @@ export class FieldSellingService {
     }
     const access = businessCandidateAccess(vacancy.business);
     if (!access.allowed) {
-      throw new BadRequestException(access.reason === 'paused' ? BUSINESS_PAUSED_MESSAGE : 'The business must be verified (or onboarded in person) first');
+      throw new BadRequestException(businessAccessMessage(access, 'The business must be verified (or onboarded in person) first'));
     }
   }
 
