@@ -210,8 +210,9 @@ describe('Phase 17 Task 3: Replacements through interviews and guarantee rules',
         businessId: 'biz-1',
         jobSeekerId: 'js-rep-1',
         vacancyId: 'vac-rep-1',
-        agreedSalary: 2200000,
-        selectedSalaryPaise: 2200000,
+        agreedSalary: 2000000,
+        // Same salary as the person replaced: nothing to pay (a higher one is D3, below).
+        selectedSalaryPaise: 2000000,
         selectedJoiningDate: new Date('2026-11-01T00:00:00.000Z'),
         status: 'completed',
         result: 'selected',
@@ -269,7 +270,8 @@ describe('Phase 17 Task 3: Replacements through interviews and guarantee rules',
             gstAmount: 0,
             rootPlacementId: 'pl-root',
             replacementNumber: 1,
-            agreedSalary: 2200000,
+            countsAsReplacement: true,
+            agreedSalary: 2000000,
           }),
         }),
       );
@@ -390,6 +392,94 @@ describe('Phase 17 Task 3: Replacements through interviews and guarantee rules',
 
       // Verify no replacement vacancy is created
       expect(prisma.vacancy.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('D2: a selected candidate who never joined is replaced without using a free replacement (rev 176)', () => {
+    const interviewFor = (salary: number) => ({
+      id: 'interview-nj', businessId: 'biz-1', jobSeekerId: 'js-nj', vacancyId: 'vac-nj', proposedByStaffId: 'fa-1',
+      selectedSalaryPaise: salary, selectedJoiningDate: new Date('2026-11-20T00:00:00.000Z'),
+      status: 'completed', result: 'selected', resultRecordedAt: new Date('2026-11-16T14:00:00.000Z'),
+      vacancy: { id: 'vac-nj', businessId: 'biz-1', city: 'Bengaluru', replacementForPlacementId: 'pl-nj' },
+    });
+    const neverJoined = { ...rootPlacement, id: 'pl-nj', status: 'dropped_out', joinedDate: null, rootPlacementId: 'pl-root', replacementNumber: 1, agreedSalary: 2000000 };
+
+    beforeEach(() => {
+      prisma.placement.findUniqueOrThrow = jest.fn().mockImplementation(async ({ where }: { where: { id?: string } }) => {
+        if (where.id === 'pl-nj') return neverJoined;
+        if (where.id === 'pl-root') return { ...rootPlacement, feePercentAtCreation: 50, gstPercentAtCreation: 18 };
+        throw new Error('Not found');
+      });
+      prisma.placement.findUnique = jest.fn().mockResolvedValue(null);
+    });
+
+    it('takes the same place in the chain, is not counted, and is allowed even after 2 counted replacements', async () => {
+      prisma.interview.findUnique = jest.fn().mockResolvedValue(interviewFor(2000000));
+      prisma.placement.count = jest.fn().mockResolvedValue(2);
+      await placementService.createAwaitingPaymentFromInterview('interview-nj', new Date('2026-11-16T14:00:00.000Z'));
+      expect(prisma.placement.count).toHaveBeenCalledWith({ where: { rootPlacementId: 'pl-root', replacementNumber: { gt: 0 }, countsAsReplacement: true } });
+      expect(prisma.placement.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ replacementNumber: 1, countsAsReplacement: false, status: 'confirmed', placementFee: 0, gstAmount: 0 }),
+      }));
+    });
+
+    it('accepting a never_joined claim on a confirmed placement creates a replacement vacancy, never ends the guarantee', async () => {
+      const confirmed = { ...neverJoined, status: 'confirmed', replacementNumber: 2, business: { id: 'biz-1', accountAgentId: 'fa-1' }, vacancy: rootPlacement.vacancy };
+      prisma.staff.findUnique = jest.fn().mockResolvedValue(tlStaff);
+      prisma.staff.findMany = jest.fn().mockResolvedValue([{ id: 'fa-1' }]);
+      prisma.replacementClaim.findFirst = jest.fn().mockResolvedValue({ id: 'claim-nj', code: 'RCL-00009', placementId: 'pl-nj', reason: 'never_joined', placement: confirmed, decision: null, reportedAt: new Date('2026-11-20T12:00:00Z') });
+      await placementService.decideClaim('pl-nj', 'claim-nj', { decision: 'accepted', decisionReason: 'He is not joining' }, 'tl-1');
+      expect(prisma.placement.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'pl-nj', status: 'confirmed' }, data: expect.objectContaining({ status: 'dropped_out' }) }));
+      expect(prisma.vacancy.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ replacementForPlacementId: 'pl-nj' }) }));
+      expect(prisma.placement.update).not.toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ guaranteeEndedReason: 'second_replacement_left' }) }));
+    });
+  });
+
+  describe('D3: a higher-paid replacement pays the fee percent of the salary difference + GST first (rev 176)', () => {
+    it('creates the replacement awaiting payment with a replacement_upgrade request (Finance sees it), released on payment', async () => {
+      const upi = { createRequest: jest.fn().mockResolvedValue({ paymentId: 'pay-up-1', paymentLink: 'upi://pay?am=1180' }) };
+      (prisma as unknown as { payment: Record<string, jest.Mock> }).payment.findUnique = jest.fn().mockResolvedValue({ id: 'pay-up-1', code: 'PAY-00099', amount: 118000, status: 'pending', gatewayReference: null, upiReference: 'PAY-00099' });
+      (prisma as unknown as { businessBranch: Record<string, jest.Mock> }).businessBranch = { findUnique: jest.fn() };
+      pricingService.current.mockResolvedValue({ maxFreeReplacements: 2, placementPaymentDueHours: 24 });
+      const service = new PlacementService(
+        prisma as unknown as PrismaService, idService, auditService as unknown as AuditService, {} as unknown as JobSeekerService, {} as unknown as PaymentService,
+        pricingService as unknown as PricingService, upi as unknown as UpiCollectionService, reviewFlagService as unknown as ReviewFlagService, {} as unknown as EditPolicyService,
+      );
+      prisma.interview.findUnique = jest.fn().mockResolvedValue({
+        id: 'interview-up', businessId: 'biz-1', jobSeekerId: 'js-up', vacancyId: 'vac-up', proposedByStaffId: 'fa-1',
+        selectedSalaryPaise: 2200000, selectedJoiningDate: new Date('2026-11-25T00:00:00.000Z'),
+        status: 'completed', result: 'selected', resultRecordedAt: new Date('2026-11-16T14:00:00.000Z'),
+        vacancy: { id: 'vac-up', businessId: 'biz-1', city: 'Bengaluru', replacementForPlacementId: 'pl-root' },
+      });
+      const root = { ...rootPlacement, feePercentAtCreation: 50, gstPercentAtCreation: 18 };
+      prisma.placement.findUniqueOrThrow = jest.fn().mockResolvedValue(root);
+      prisma.placement.findUnique = jest.fn().mockResolvedValue(null);
+      prisma.placement.count = jest.fn().mockResolvedValue(0);
+      const now = new Date('2026-11-16T14:00:00.000Z');
+      const result = await service.createAwaitingPaymentFromInterview('interview-up', now);
+      // ₹22,000 replacing ₹20,000: 50% of ₹2,000 = ₹1,000 + 18% GST ₹180.
+      expect(prisma.placement.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'awaiting_payment', placementFee: 100000, gstAmount: 18000, replacedSalaryPaise: 2000000, salaryUpgradeDifferencePaise: 200000,
+          paidAt: null, paymentDueAt: new Date(now.getTime() + 24 * 60 * 60 * 1000), replacementNumber: 1,
+        }),
+      }));
+      expect(upi.createRequest).toHaveBeenCalledWith(expect.objectContaining({ type: 'replacement_upgrade', subjectType: 'placement', amountPaise: 118000, businessId: 'biz-1' }));
+      expect(result.payment).toMatchObject({ id: 'pay-up-1', amount: 118000, paymentLink: 'upi://pay?am=1180' });
+      expect(auditService.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'placement.replacement_upgrade_payment_requested' }));
+    });
+
+    it('a lower or equal salary pays nothing', async () => {
+      prisma.interview.findUnique = jest.fn().mockResolvedValue({
+        id: 'interview-low', businessId: 'biz-1', jobSeekerId: 'js-low', vacancyId: 'vac-low', proposedByStaffId: 'fa-1',
+        selectedSalaryPaise: 1800000, selectedJoiningDate: new Date('2026-11-25T00:00:00.000Z'),
+        status: 'completed', result: 'selected', resultRecordedAt: new Date('2026-11-16T14:00:00.000Z'),
+        vacancy: { id: 'vac-low', businessId: 'biz-1', city: 'Bengaluru', replacementForPlacementId: 'pl-root' },
+      });
+      prisma.placement.findUniqueOrThrow = jest.fn().mockResolvedValue(rootPlacement);
+      prisma.placement.findUnique = jest.fn().mockResolvedValue(null);
+      await placementService.createAwaitingPaymentFromInterview('interview-low', new Date('2026-11-16T14:00:00.000Z'));
+      expect(prisma.placement.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'confirmed', placementFee: 0, salaryUpgradeDifferencePaise: null }) }));
     });
   });
 

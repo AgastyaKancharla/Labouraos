@@ -1,4 +1,5 @@
 import { OwnTeam, teamLeadOf } from '../../common/rbac/own-team';
+import { REFUND_FORFEITING_HIT_REASONS } from '../job-seeker/job-seeker-refund-guards';
 import { agentViewerFor, businessForViewer } from '../business/business-agent-view';
 import { LIVE_REFUND_STATUSES, isCurrentGuaranteeRefund, latestPaidActivations } from '../../common/money/current-guarantee-refund';
 import { SEEKER_ENDED_STATUSES } from '../refund-priority/refund-priority.rules';
@@ -33,7 +34,8 @@ import {
 type SubjectType = 'job_seeker' | 'business' | 'referral';
 
 const REQUIRED_CONSENTS = ['job_matching', 'profile_sharing', 'call_recording', 'aadhaar_verification', 'job_updates'];
-const REFUND_ENDING_HITS = ['offer_declined', 'offer_no_reply', 'interview_no_show'];
+// S10 (rev 176): the legacy offer_rejected is offer_declined everywhere.
+const REFUND_ENDING_HITS = [...REFUND_FORFEITING_HIT_REASONS];
 const MATCHING_PURPOSES = ['offer', 'follow_up', 'interview_result', 'joining_confirmation'];
 /** No refund to come: the one shared list (refunded included). */
 const CLOSED_SEEKER = SEEKER_ENDED_STATUSES;

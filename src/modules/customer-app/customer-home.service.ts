@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { REFUND_FORFEITING_HIT_REASONS } from '../job-seeker/job-seeker-refund-guards';
 import { isBusinessSuspended } from '../business/business-candidate-access';
 import { Optional } from '@nestjs/common';
 import { LegalDocumentService } from '../legal/legal-document.service';
@@ -13,7 +14,8 @@ import { firstName } from '../customer-account/customer-account.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Hits that end the refund (guide, Hits): declining, not replying, not turning up. */
-const REFUND_ENDING_HITS = ['offer_declined', 'offer_no_reply', 'interview_no_show'];
+// S10 (rev 176): the legacy offer_rejected is offer_declined everywhere.
+const REFUND_ENDING_HITS = [...REFUND_FORFEITING_HIT_REASONS];
 const PAID_STATUSES = ['succeeded', 'completed'];
 const DONE_REFUND_STATUSES = ['rejected', 'cancelled', 'reversed'];
 /** Withdrawing any of these after paying ends the refund (decided 7 Nov). */

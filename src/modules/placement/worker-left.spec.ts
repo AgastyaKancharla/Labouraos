@@ -228,7 +228,8 @@ describe('Report worker left: form and finder', () => {
       expect(placements.placementListScope).toHaveBeenCalledWith({ id: 'tl-1', role: 'team_lead' });
       const where = prisma.placement.findMany.mock.calls[0][0].where;
       expect(where.AND[0]).toEqual({ OR: [{ createdByStaffId: { in: ['x'] } }] });
-      expect(where.AND[2]).toEqual({ status: 'active' });
+      // Confirmed too: a selected candidate who never joined is reported here (D2, rev 176).
+      expect(where.AND[2]).toEqual({ status: { in: ['active', 'confirmed'] } });
       expect(JSON.stringify(where.AND[1])).toContain('"contains":"ravi"');
     });
 
