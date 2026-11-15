@@ -92,6 +92,9 @@ describe('Phase 14 Task 2 — candidate cards and photos', () => {
         status: 'active',
         whatsappPhone: `919${suffix}${String(timestamp).slice(-7)}`,
         locality: 'Private locality name',
+        // Registered by the field agent on the Team Lead's team: a Team Lead's
+        // candidate lists hold only their own team's job seekers (owner decision, 14 Nov).
+        registeredByStaffId: staffIds.field_agent,
       },
     });
     const seeker = await createSeeker('1');
@@ -176,7 +179,9 @@ describe('Phase 14 Task 2 — candidate cards and photos', () => {
 
     await request(app.getHttpServer())
       .patch(`/job-seekers/${seekerId}/profile`)
-      .set('Authorization', `Bearer ${tokens.call_agent}`)
+      // The agent who registered the job seeker (the edit rule lets only them, their
+      // Team Lead and management edit it); the photo fields must still be ignored.
+      .set('Authorization', `Bearer ${tokens.field_agent}`)
       .send({ photoStoragePath: 'attacker/permanent-url', photoTakenAt: '2000-01-01T00:00:00.000Z' })
       .expect(200);
     const afterProfileUpdate = await prisma.jobSeeker.findUniqueOrThrow({ where: { id: seekerId } });

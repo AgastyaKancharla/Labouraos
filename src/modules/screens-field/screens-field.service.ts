@@ -1,3 +1,4 @@
+import { OwnTeam } from '../../common/rbac/own-team';
 import { agentSeesFullBusiness, agentViewerFor } from '../business/business-agent-view';
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { BusinessVisit, Prisma } from '@prisma/client';
@@ -377,9 +378,8 @@ export class ScreensFieldService {
     });
     if (!business) throw new NotFoundException('Business not found');
     if (actor.role === 'team_lead') {
-      const team = await this.prisma.staff.findMany({ where: { teamLeadId: actor.sub }, select: { id: true } });
-      const ids = new Set(team.map((t) => t.id));
-      if (!ids.has(business.accountAgentId ?? '') && !ids.has(business.leadCreatedByStaffId ?? '')) {
+      // The business's team (businessOwners) and the shared own-team definition (OwnTeam).
+      if (!(await new OwnTeam(this.prisma).ownsBusiness(actor.sub, business))) {
         throw new ForbiddenException("A Team Lead sees their own team's businesses");
       }
     }

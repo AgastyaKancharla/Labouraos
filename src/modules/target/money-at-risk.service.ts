@@ -1,3 +1,4 @@
+import { OwnTeam } from '../../common/rbac/own-team';
 import { LIVE_REFUND_STATUSES, isCurrentGuaranteeRefund } from '../../common/money/current-guarantee-refund';
 import {
   ForbiddenException,
@@ -157,11 +158,7 @@ export class MoneyAtRiskService {
         filterStaffIds = [actor.sub];
       } else if (actor.role === 'team_lead') {
         // Find team members
-        const teamMembers = await this.prisma.staff.findMany({
-          where: { teamLeadId: actor.sub },
-          select: { id: true },
-        });
-        const teamMemberIds = teamMembers.map((m) => m.id);
+        const teamMemberIds = (await new OwnTeam(this.prisma).memberIds(actor.sub)).filter((id) => id !== actor.sub);
 
         if (targetStaffId && targetStaffId !== 'me') {
           if (!teamMemberIds.includes(targetStaffId)) {

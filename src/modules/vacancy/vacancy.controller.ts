@@ -123,13 +123,15 @@ export class VacancyController {
   @RequirePermission('vacancy', 'read')
   async getShortlist(
     @Param('id') id: string,
+    @Req() req: Request & { user: JwtPayload },
     @Query('page') pageQuery?: string,
   ) {
     const page = pageQuery === undefined ? 1 : Number(pageQuery);
     if (!Number.isInteger(page) || page < 1) {
       throw new BadRequestException('page must be a positive integer');
     }
-    return this.matchingService.match(id, { page });
+    // A Team Lead sees only their own team's job seekers (owner decision, 14 Nov).
+    return this.matchingService.match(id, { page, viewer: { id: req.user.sub, role: req.user.role } });
   }
 
   @Post(':id/introductions/in-person')

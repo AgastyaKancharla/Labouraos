@@ -2,6 +2,7 @@ import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ageInYears, ScreensCallRegistrationService } from './screens-call-registration.service';
 import { BENGALURU_AREAS, cityForPincode } from './bengaluru-areas';
 import { encryptCallRoutingPhone } from '../staff/call-routing-key';
+import { findManyOver } from '../../test-support/prisma-where';
 
 const NOW = new Date('2026-11-11T05:30:00.000Z'); // 11:00 IST
 
@@ -314,9 +315,7 @@ describe('ScreensCallRegistrationService', () => {
   it('a Team Lead finds only partners their own team registered; agents find any', async () => {
     const findFirst = jest.fn().mockResolvedValue(null);
     const staff = {
-      findMany: jest.fn(async (args?: { where?: { teamLeadId?: string } }) =>
-        args?.where?.teamLeadId === 'tl-1' ? [{ id: 'ca-1' }] : args?.where ? [] : [],
-      ),
+      findMany: jest.fn(findManyOver([{ id: 'ca-1', role: 'call_agent', teamLeadId: 'tl-1', reportsToId: null }])),
     };
     const service = makeService({ referral: { findFirst }, staff });
     await service.findReferralPartner('rf-00042', { id: 'tl-1', role: 'team_lead' });
@@ -329,7 +328,7 @@ describe('ScreensCallRegistrationService', () => {
 
   it('a Team Lead opens a partner record only when their own team registered it', async () => {
     const referral = { findUnique: jest.fn().mockResolvedValue({ id: 'r1', code: 'RF-00043', name: 'Raju', createdAt: NOW, registeredByStaffId: 'ca-1' }) };
-    const ownTeam = { findMany: jest.fn(async (args?: { where?: { teamLeadId?: string } }) => (args?.where?.teamLeadId === 'tl-1' ? [{ id: 'ca-1' }] : [])) };
+    const ownTeam = { findMany: jest.fn(findManyOver([{ id: 'ca-1', role: 'call_agent', teamLeadId: 'tl-1', reportsToId: null }])) };
     await expect(makeService({ referral, staff: ownTeam }).record('RF-00043', { id: 'tl-1', role: 'team_lead' })).resolves.toMatchObject({ code: 'RF-00043' });
     await expect(makeService({ referral, staff: ownTeam }).record('RF-00043', { id: 'tl-2', role: 'team_lead' })).rejects.toBeInstanceOf(ForbiddenException);
   });
@@ -384,7 +383,8 @@ describe('ScreensCallRegistrationService', () => {
     const staffFindMany = jest.fn().mockResolvedValue([{ id: 'fa-1' }]);
     await makeService({ business: { findMany }, staff: { findMany: staffFindMany } }).searchBusinesses('Sri Sai', { id: 'tl-1', role: 'team_lead' });
     expect(findMany.mock.calls[0][0].where.AND).toEqual([
-      { OR: [{ accountAgentId: { in: ['tl-1', 'fa-1'] } }, { leadCreatedByStaffId: { in: ['tl-1', 'fa-1'] } }] },
+      // businessOwners (rev 170): the account agent's team, else the lead creator's team.
+      { OR: [{ accountAgentId: { in: ['tl-1', 'fa-1'] } }, { accountAgentId: null, leadCreatedByStaffId: { in: ['tl-1', 'fa-1'] } }] },
     ]);
   });
 

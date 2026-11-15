@@ -1,3 +1,4 @@
+import { OwnTeam } from '../../common/rbac/own-team';
 import {
   BadRequestException,
   ForbiddenException,
@@ -368,21 +369,16 @@ export class LoginCodeService {
         staff: { role: { in: [...LOGIN_CODE_ROLES] } },
       };
     }
+    // A Team Lead: the shared own-team definition (OwnTeam), themselves left out.
     return {
-      staff: {
-        role: { in: ['call_agent', 'field_agent'] },
-        OR: [{ teamLeadId: approver.id }, { reportsToId: approver.id }],
-      },
+      staffId: { in: (await new OwnTeam(this.prisma).memberIds(approver.id)).filter((id) => id !== approver.id) },
+      staff: { role: { in: ['call_agent', 'field_agent'] } },
     };
   }
 
   private async reportScope(approver: LoginCodeActor): Promise<Prisma.LoginCodeRequestWhereInput> {
     if (approver.role === 'team_lead') {
-      return {
-        staff: {
-          OR: [{ teamLeadId: approver.id }, { reportsToId: approver.id }],
-        },
-      };
+      return { staffId: { in: (await new OwnTeam(this.prisma).memberIds(approver.id)).filter((id) => id !== approver.id) } };
     }
     if (approver.role === 'manager') {
       const under = this.reportingScope
@@ -421,7 +417,7 @@ export class LoginCodeService {
       if (target.role === 'team_lead') {
         throw new ForbiddenException("A Team Lead's code is revealed by a Manager or the CEO");
       }
-      const onTeam = target.teamLeadId === approver.id || target.reportsToId === approver.id;
+      const onTeam = await new OwnTeam(this.prisma).includes(approver.id, target.id);
       if (!onTeam) {
         throw new ForbiddenException('A Team Lead can reveal codes only for their own team');
       }

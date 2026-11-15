@@ -323,6 +323,7 @@ describe('Call agent console: work queue, Call next, search, live channel, no-an
         .set('Authorization', `Bearer ${tokenFor(agent)}`)
         .expect(200);
       expect(card.body).toMatchObject({ known: true, caller: { code: nearRefund.code }, likelyAbout: 'job_search_refund' });
+      // GET /call-work/incoming/:callbackTaskId: a call agent it did not ring is refused (403)
       await request(app.getHttpServer())
         .get(`/call-work/incoming/${task.id}`)
         .set('Authorization', `Bearer ${tokenFor(idleAgent)}`)
