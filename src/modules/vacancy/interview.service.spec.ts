@@ -28,6 +28,7 @@ describe('InterviewService booking', () => {
   let prisma: PrismaMock;
   let tx: TxMock;
   let messaging: { send: jest.Mock };
+  let legal: { status: jest.Mock };
   let matching: { match: jest.Mock };
   let hits: { recordHit: jest.Mock };
   let calls: { recordOutcome: jest.Mock };
@@ -107,6 +108,7 @@ describe('InterviewService booking', () => {
       verifyInterviewOwnerOtp: jest.fn().mockResolvedValue({ interviewId: 'interview-id', phone: '+911234567890' }),
     };
     reviewFlags = { raise: jest.fn().mockResolvedValue({ id: 'flag-id' }) };
+    legal = { status: jest.fn().mockResolvedValue({ documentKey: 'job_seeker_terms', currentVersion: '1.1', acceptedVersion: '1.1', needsReconsent: false }) };
     placements = { createAwaitingPaymentFromInterview: jest.fn().mockResolvedValue({ id: 'placement-id', status: 'awaiting_payment' }) };
     service = new InterviewService(
       prisma as never,
@@ -125,12 +127,25 @@ describe('InterviewService booking', () => {
       { createInterviewAttendanceAssignment: attendance.createInterviewAttendanceAssignment } as never,
       reviewFlags as never,
       placements as never,
+      undefined,
+      undefined,
+      legal as never,
     );
   });
 
   afterAll(() => {
     if (previousPublicAppUrl === undefined) delete process.env.PUBLIC_APP_URL;
     else process.env.PUBLIC_APP_URL = previousPublicAppUrl;
+  });
+
+  it('H3 (rev 176): no booking and no accepted offer while he must accept the updated terms (RECONSENT_REQUIRED); declining still works', async () => {
+    legal.status.mockResolvedValue({ documentKey: 'job_seeker_terms', currentVersion: '1.1', acceptedVersion: '1.0', needsReconsent: true });
+    await expect(service.book({ vacancyId: 'vacancy-id', jobSeekerId: 'seeker-id', slotId: 'slot-id' }, 'call-1')).rejects.toThrow('accept the updated terms');
+    expect(tx.interview.create).not.toHaveBeenCalled();
+    prisma.interview.findUnique.mockResolvedValue(liveInterview());
+    await expect(service.respondFromLink('single-use-token', 'yes')).rejects.toThrow('accept the updated terms');
+    prisma.interview.findUnique.mockResolvedValue(liveInterview());
+    expect((await service.respondFromLink('single-use-token', 'no')).status).toBe('declined');
   });
 
   it('refuses candidates absent from the current Phase 14 matching results', async () => {

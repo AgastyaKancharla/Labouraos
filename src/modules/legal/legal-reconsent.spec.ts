@@ -156,6 +156,36 @@ describe('Re-consent on the link (ConsentLinkService.recordReconsent)', () => {
   });
 });
 
+describe('The job seeker consent step (P01) checks the code and the text', () => {
+  const now = new Date('2026-11-15T10:00:00Z');
+  function consentStep(otpOwnPhone: boolean) {
+    const row = { purpose: 'registration', subjectType: 'job_seeker', subjectId: 'js-1', phone: '+919876512345', expiresAt: new Date(now.getTime() + 3600_000), usedAt: null, revokedAt: null, createdAt: now, metadata: {} };
+    const prisma = { jobSeeker: { findUnique: jest.fn().mockResolvedValue({ id: 'js-1', phone: '+919876512345', status: 'lead' }) } };
+    const publicLinks = { findByToken: jest.fn().mockResolvedValue(row), hashToken: (t: string) => `hash-${t}`, markUsed: jest.fn() };
+    const consent = { hasAllRequired: jest.fn().mockResolvedValue(false), grant: jest.fn() };
+    const otp = { verifyOtp: jest.fn().mockResolvedValue(true), isVerified: jest.fn().mockResolvedValue(otpOwnPhone) };
+    const legal = { render: jest.fn(async (key: 'job_seeker_terms', lang: 'en') => renderLegalDocument(key, lang, legalNumbersFrom(POLICY as never), legalCompanyFrom(POLICY as never))) };
+    const service = new ConsentLinkService(
+      prisma as never, publicLinks as never, { now: () => now } as never, consent as never, {} as never, otp as never,
+      {} as never, {} as never, {} as never, {} as never, {} as never, legal as never,
+    );
+    return { service, consent, otp };
+  }
+
+  it('a typed code must have been sent to his own phone', async () => {
+    const { service, consent, otp } = consentStep(false);
+    await expect(service.submitConsent({ token: 't', otpRequestId: 'otp-other', otpCode: '123456', purposes: ['job_matching'], language: 'en' })).rejects.toThrow('Invalid or expired OTP');
+    expect(otp.isVerified).toHaveBeenCalledWith('otp-other', '+919876512345');
+    expect(consent.grant).not.toHaveBeenCalled();
+  });
+
+  it('refuses when the terms text he saw is not the text the server would record', async () => {
+    const { service, consent } = consentStep(true);
+    await expect(service.submitConsent({ token: 't', otpRequestId: 'otp-1', otpCode: '123456', purposes: ['job_matching'], language: 'en', textHash: '0'.repeat(64) })).rejects.toThrow('changed while you were reading');
+    expect(consent.grant).not.toHaveBeenCalled();
+  });
+});
+
 describe('The business agreement signed copy (S1)', () => {
   it('contains the FULL v1.1 text the owner saw, unchanged, and the filled acceptance record', () => {
     const terms = renderLegalDocument('business_agreement', 'en', legalNumbersFrom(POLICY as never), legalCompanyFrom(POLICY as never));
