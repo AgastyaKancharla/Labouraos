@@ -102,6 +102,7 @@ also carry `code: "VALIDATION_FAILED"` and, when known, `field`.
 | `PUSH_TOKEN_IN_USE` | 409 | `PUT /me/device`: that push token belongs to a phone signed in to another account (a different app installation) |
 | `DELETION_PENDING` | 409 | A deletion request is open: no new requests, links, drafts or vacancies, and no sign-in on a new phone until it is cancelled |
 | `NOT_IMPLEMENTED` | 501 | Route exists but not built yet on this server |
+| `UNDER_REVIEW` | 409 | The person's details are being checked by Laboura's team: the ID check and the ₹499 wait. Show the message as it comes ("being checked … we will call you"); never a ban |
 | `RECONSENT_REQUIRED` | 409 | Accept the updated terms first (§7.4): paying, ID checks, interview bookings and accepting an offer wait until then. `documentKey`, `currentVersion`, `acceptedVersion` included |
 | `INSTALLATION_REQUIRED` | 400 | The `X-Laboura-Installation` header is missing |
 | `HUMAN_CHECK_REQUIRED` | 403 | Show the human check (`provider` says which; `mock` on the test setup), then resend with `humanCheckToken` |
@@ -726,7 +727,7 @@ terms"; the ticks are itemised and never pre-ticked.
 after a step-up for `accept_terms` → `{ "success": true, "version": "1.1" }`.
 Every required purpose must be ticked (`400` otherwise). The server records the
 acceptance (version, language, the exact text's hash) and grants the consents
-under notice 1.2. A `textHash` that is not the text the server would record
+under notice 1.2. `textHash` is required (`400` without it). A `textHash` that is not the text the server would record
 (Settings or the version changed while the person read it) answers `400`: load
 the document again. Promotions left unticked withdraws an earlier "yes" to
 promotions. Only someone who already did the first consent step can re-consent
@@ -902,6 +903,8 @@ Events (`kind`, placeholders, category; all `service` unless said):
 | `replacement_cancelled` | business | | the salary difference was not paid in time, so the replacement was cancelled (rev 178); owners only |
 | `job_match` | job seeker | | `job_updates` |
 | `interview_booked` | job seeker | `hours` | urgent |
+| `interview_cancelled` | job seeker, business | | urgent; the business was suspended, so its upcoming interview is off |
+| `selection_cancelled` | job seeker | | the replacement he was selected for was cancelled (also by SMS) |
 | `interview_reminder_tomorrow`, `interview_reminder_soon` | job seeker, business | | |
 | `offer_check` | job seeker | | "Did they offer you?" |
 | `joining_confirmed`, `joining_moved`, `joining_day_check` | job seeker, business | | |

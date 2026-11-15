@@ -10,6 +10,7 @@ import { ActionButton } from '../_kit/actions';
 import { FilterPanel, PagedTable, SearchField, SelectFilter, facetOptions, humanize, useCeoList, useDebounced } from '../_kit/kit';
 import { AuditTabs } from '../_kit/tabs';
 import { OtherIdWaiting } from '../../manager/_kit/OtherIdWaiting';
+import { POSSIBLE_BAN_KIND, PossibleBanDecision, possibleBanWords } from '../../manager/_kit/PossibleBanDecision';
 
 /** Flags — design C-Audit-Flags.dc.html. Possible fraud, bypass and quality problems, most serious first. */
 interface Row {
@@ -59,7 +60,7 @@ export default function Flags() {
   const columns: Column<Row>[] = [
     { key: 'flag', header: 'Flag', cell: (r) => <div><div style={{ fontWeight: 600 }}>{humanize(r.kind)}</div><div className="ceo-cell-sub">{r.code} · {formatDateTimeIST(r.raisedAt)}</div></div>, csv: (r) => `${r.code} ${r.kind}` },
     { key: 'who', header: 'Who / what', cell: (r) => [r.subject.name ?? r.subject.code ?? humanize(r.subjectType), r.raisedFor?.name].filter(Boolean).join(' · '), csv: (r) => `${r.subject.code ?? ''} ${r.subject.name ?? ''} ${r.raisedFor?.name ?? ''}` },
-    { key: 'evidence', header: 'Evidence', cell: (r) => evidence(r.details), csv: (r) => evidence(r.details), hideOnPhone: true },
+    { key: 'evidence', header: 'Evidence', cell: (r) => (r.kind === POSSIBLE_BAN_KIND ? possibleBanWords(r.details) : evidence(r.details)), csv: (r) => evidence(r.details), hideOnPhone: true },
     { key: 'sev', header: 'Severity', cell: (r) => <StatusPill tone={SEV[r.severity].tone}>{SEV[r.severity].label}</StatusPill>, csv: (r) => r.severity },
     { key: 'owner', header: 'Owner', cell: (r) => r.owner, csv: (r) => r.owner },
     { key: 'status', header: 'Status', cell: (r) => (r.status === 'open' ? <StatusPill tone="warn">Open</StatusPill> : <span className="ceo-sub">{humanize(r.status)}{r.resolvedBy ? ` by ${r.resolvedBy}` : ''}</span>), csv: (r) => r.status },
@@ -69,7 +70,7 @@ export default function Flags() {
       cell: (r) =>
         r.status === 'open' ? (
           <div className="ceo-actions" onClick={(e) => e.stopPropagation()}>
-            <ActionButton label="Resolve" variant="success" title={`Resolve ${r.code}`} description="Say what was found and what was done." reason={{ label: 'What you found and did', required: true }} choice={{ label: 'Outcome', options: [{ value: 'resolved', label: 'Real problem — dealt with' }, { value: 'dismissed', label: 'Not a problem — dismiss' }] }} run={({ reason, choice }) => api.post(`/review-flags/${r.id}/resolve`, { status: choice, resolution: reason })} success="Flag closed" />
+            {r.kind === POSSIBLE_BAN_KIND ? <PossibleBanDecision flagId={r.id} /> : <ActionButton label="Resolve" variant="success" title={`Resolve ${r.code}`} description="Say what was found and what was done." reason={{ label: 'What you found and did', required: true }} choice={{ label: 'Outcome', options: [{ value: 'resolved', label: 'Real problem — dealt with' }, { value: 'dismissed', label: 'Not a problem — dismiss' }] }} run={({ reason, choice }) => api.post(`/review-flags/${r.id}/resolve`, { status: choice, resolution: reason })} success="Flag closed" />}
           </div>
         ) : null,
     },

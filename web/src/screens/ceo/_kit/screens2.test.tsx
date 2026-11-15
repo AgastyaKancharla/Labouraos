@@ -648,6 +648,23 @@ describe('Audit, flags, privacy, system and notifications', () => {
     await waitFor(() => expect(api.calls('POST /review-flags/f1/resolve')[0].body).toEqual({ status: 'resolved', resolution: 'Called both; fee collected' }));
   });
 
+  it('rev 181 (H2): a possible match with a banned person is decided "same person" or "not the same", never resolved', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /ceo/flags': { rows: [{ id: 'f7', code: 'RFL-7', kind: 'possible_banned_person', subjectType: 'job_seeker', subjectId: 'j', subject: { code: 'JS-00500', name: 'Raju K' }, raisedFor: null, details: { banId: 'b1', bannedCode: 'JS-00090', subjectCode: 'JS-00500', idType: 'voter_id', matchedOn: 'other_id' }, severity: 'high', owner: 'Manager', status: 'open', raisedAt: NOW.toISOString(), resolvedBy: null, resolution: null }], total: 1, page: 1, pageSize: 25, summary: { open: 1, high: 1, medium: 0, low: 0, closedThisMonth: 0 }, kinds: ['possible_banned_person'] },
+      'POST /permanent-bans/possible-matches/f7/not-same': { decision: 'not_same' },
+    });
+    render(<Flags />, '/ceo/flags');
+    expect(await screen.findByText(/JS-00500's voter id matches banned JS-00090/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Resolve' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirm — same person' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Not the same person' }));
+    const d = await dialog();
+    await userEvent.type(within(d).getByLabelText(/different person/), 'Different father and village');
+    await userEvent.click(within(d).getByRole('button', { name: 'Not the same person' }));
+    await waitFor(() => expect(api.calls('POST /permanent-bans/possible-matches/f7/not-same')[0].body).toEqual({ reason: 'Different father and village' }));
+  });
+
   it('privacy shows consent by purpose and withdrawals, and pages the consent records', async () => {
     mockApi({
       ...common,
@@ -746,6 +763,25 @@ describe('Pricing & policy', () => {
     await userEvent.type(meters, '1500');
     await userEvent.click(within(d).getByRole('button', { name: 'Change now' }));
     await waitFor(() => expect(api.calls('POST /pricing')[0].body).toEqual({ areaAutoFillMaxMeters: 1500 }));
+  });
+
+  it('shows and changes the days a business has to pay a replacement salary difference (default 7)', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /ceo/pricing/history': { current: { ...policy, upgradePaymentCancelDays: 7 }, since: {}, scheduled: [], history: [] },
+      'GET /attendance/holidays': { year: 2026, holidays: [] },
+      'POST /pricing': { ok: true },
+    });
+    render(<Pricing />, '/ceo/pricing');
+    expect(await screen.findByText('7 days, then the higher-paid replacement is cancelled')).toBeInTheDocument();
+    const row = screen.getByText('Salary difference payment time').closest('tr') as HTMLElement;
+    await userEvent.click(within(row).getByRole('button', { name: 'Change →' }));
+    const d = await dialog();
+    const days = within(d).getByLabelText(/Days \(1–30\)/);
+    await userEvent.clear(days);
+    await userEvent.type(days, '10');
+    await userEvent.click(within(d).getByRole('button', { name: 'Change now' }));
+    await waitFor(() => expect(api.calls('POST /pricing')[0].body).toEqual({ upgradePaymentCancelDays: 10 }));
   });
 
   it('shows the go-live date (CEO only) and sets it: payroll and paid leave count from it', async () => {

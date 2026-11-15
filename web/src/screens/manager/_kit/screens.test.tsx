@@ -549,6 +549,29 @@ describe('Targets, reports, login codes, notifications', () => {
     await waitFor(() => expect(api.calls('POST /identity/job-seekers/w1/other-id/decision')[0].body).toEqual({ verdict: 'ok' }));
   });
 
+  it('rev 181 (H2): a Manager confirms a possible match with a banned person, with a reason', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /manager/flags': {
+        summary: { open: 1, forCeo: 0, resolvedThisMonth: 0 },
+        rows: [{ id: 'f8', code: 'RF-8', kind: 'possible_banned_person', title: 'Possibly the same person as a banned person', subjectType: 'job_seeker', subjectId: 'j', details: { banId: 'b1', bannedCode: 'JS-00090', subjectCode: 'JS-00501', idType: 'pan', matchedOn: 'other_id' }, raisedAt: NOW.toISOString(), staff: null, team: null, isIntern: false, ownerRole: 'manager', goesToCeo: false, escalated: null, canResolve: true, canEscalate: true }],
+      },
+      'GET /identity/other-id/waiting': { rows: [] },
+      'POST /permanent-bans/possible-matches/f8/confirm': { decision: 'same_person' },
+    });
+    render(<Flags />, '/manager/flags');
+    expect(await screen.findByText(/JS-00501's pan matches banned JS-00090/)).toBeInTheDocument();
+    expect(screen.getByText('Possibly a banned person')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Resolve' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm — same person' }));
+    const d = await dialog();
+    const confirm = within(d).getByRole('button', { name: 'Confirm — same person' });
+    expect(confirm).toBeDisabled();
+    await userEvent.type(within(d).getByLabelText(/Why you are sure/), 'Same photo and address');
+    await userEvent.click(confirm);
+    await waitFor(() => expect(api.calls('POST /permanent-bans/possible-matches/f8/confirm')[0].body).toEqual({ reason: 'Same photo and address' }));
+  });
+
   it('rev 169: a registration a Team Lead made, with no other Team Lead in the city, is checked by the Manager from the waiting list', async () => {
     const api = mockApi({
       ...common,

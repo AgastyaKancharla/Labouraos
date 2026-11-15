@@ -12,6 +12,7 @@ import { ActionButton } from '../../ceo/_kit/actions';
 import { OtherIdWaiting } from '../_kit/OtherIdWaiting';
 import { roleTeam } from '../_kit/kit';
 import { flagWords } from '../_kit/flags';
+import { POSSIBLE_BAN_KIND, PossibleBanDecision, possibleBanWords } from '../_kit/PossibleBanDecision';
 
 interface FlagRow {
   id: string;
@@ -38,6 +39,7 @@ interface FlagsResponse {
 
 /** A short "what happened" from the flag's details, without any money (the API strips it). */
 function whatHappened(f: FlagRow): string {
+  if (f.kind === POSSIBLE_BAN_KIND) return possibleBanWords(f.details);
   const d = f.details ?? {};
   for (const key of ['message', 'summary', 'reason', 'note', 'text']) {
     const v = d[key];
@@ -110,7 +112,8 @@ export default function ManagerFlags() {
                         </StatusPill>
                       ) : (
                         <div className="ceo-actions">
-                          {f.canResolve && (
+                          {f.canResolve && f.kind === POSSIBLE_BAN_KIND && <PossibleBanDecision flagId={f.id} />}
+                          {f.canResolve && f.kind !== POSSIBLE_BAN_KIND && (
                             <ActionButton
                               label="Resolve"
                               variant="success"
