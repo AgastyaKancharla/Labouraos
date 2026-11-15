@@ -27,7 +27,7 @@ export default function OfferSent() {
   ];
   return (
     <div className="lb-page lb-ca">
-      <TopBar title={t('screen.CA06b-OfferSent')} titleHidden />
+      <TopBar icon="interviews" iconTone="good" title={t('screen.CA06b-OfferSent')} titleHidden />
       <div className="ok" role="status">
         ✓ {t('ca.sent.banner', { name, time: due ? `${formatDayMonthIST(due)}, ${time12(due)}` : '—' })}
       </div>

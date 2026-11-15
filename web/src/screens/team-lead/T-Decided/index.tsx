@@ -64,7 +64,7 @@ export default function TeamLeadDecided() {
   ];
   return (
     <div className="lb-page">
-      <TopBar showSearch={false} back={{ to: to('T-Requests'), label: 'Requests' }} title="Decided this week" subtitle="Every request from your team that was decided, and by whom." />
+      <TopBar icon="requests" iconTone="navy" showSearch={false} back={{ to: to('T-Requests'), label: 'Requests' }} title="Decided this week" subtitle="Every request from your team that was decided, and by whom." />
       <RequestTabs waiting={waiting.data?.length} />
       <Card flush>
         <DataTable columns={columns} rows={decided.data} rowKey={(r) => r.ref} caption="Decided this week" loading={decided.isPending} error={decided.error} onRetry={() => void decided.refetch()} emptyTitle="Nothing was decided this week." />

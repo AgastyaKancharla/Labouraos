@@ -129,7 +129,7 @@ export default function ManagerTargets() {
 
   return (
     <div className="lb-page">
-      <TopBar back={{ to: to('MG-Home'), label: 'Command Center' }} title="Targets" subtitle="Split the CEO's monthly plan into teams and agents, and see who is delivering." />
+      <TopBar icon="targets" iconTone="gold" back={{ to: to('MG-Home'), label: 'Command Center' }} title="Targets" subtitle="Split the CEO's monthly plan into teams and agents, and see who is delivering." />
       <Tabs label="Month" value={tab} onChange={setTab} items={options.map((o) => ({ key: o.key, label: monthLong(o.month) }))} />
       {q.error ? (
         <ErrorState error={q.error} onRetry={() => void q.refetch()} />
@@ -137,7 +137,7 @@ export default function ManagerTargets() {
         <>
           <PlanSplitCard plan={d?.plan} year={sel.year} month={sel.month} editable={Boolean(d?.editable)} agentSums={agentSums} />
 
-          <Card
+          <Card icon="targets" tone="royal"
             title="Agent targets"
             aside={
               d?.editable ? (
@@ -207,7 +207,7 @@ export default function ManagerTargets() {
             </div>
           )}
 
-          <Card title={`Leaderboard · ${d ? monthLong(d.month) : ''}`}>
+          <Card icon="reports" tone="orange" title={`Leaderboard · ${d ? monthLong(d.month) : ''}`}>
             <div className="scrollx">
               <table>
                 <thead>

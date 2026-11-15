@@ -44,7 +44,7 @@ export default function AttendanceScreen() {
   return (
     <div className="lb-page lb-att-page">
       {/* Office portals already have a team "Attendance" page, so this one is "My attendance" there. */}
-      <TopBar title={t(family === 'console' ? 'screen.CA14b-AttendanceActive' : 'att.menu.open')} titleHidden={family === 'console'} />
+      <TopBar icon="attendance" iconTone="cyan" title={t(family === 'console' ? 'screen.CA14b-AttendanceActive' : 'att.menu.open')} titleHidden={family === 'console'} />
       {query.error && <ErrorState error={query.error} onRetry={() => void query.refetch()} />}
       {!today && !attendance.failed && <SkeletonCard height={260} />}
       {today && (phase === 'not_started' || phase === 'leave') && <BeforeStart today={today} />}

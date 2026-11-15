@@ -44,7 +44,7 @@ export default function Leaderboard() {
   ];
   return (
     <div className="lb-page">
-      <TopBar back={{ to: to('C-Team-Targets'), label: 'Targets' }} title="Leaderboard" subtitle={`Who is delivering, across every team · ${periodRangeLabel(period)}`} period={period} onPeriodChange={setPeriod} />
+      <TopBar icon="targets" iconTone="gold" back={{ to: to('C-Team-Targets'), label: 'Targets' }} title="Leaderboard" subtitle={`Who is delivering, across every team · ${periodRangeLabel(period)}`} period={period} onPeriodChange={setPeriod} />
       <TargetTabs />
       <div className="panel" style={{ padding: '6px 18px 14px' }}>
         <DataTable columns={columns} rows={source.data?.leaderboard} rowKey={(r) => r.staff.id} caption={`Leaderboard ${period.from} to ${period.to}`} loading={source.isPending} error={source.error} onRetry={() => void source.refetch()} download={`leaderboard-${period.from}-${period.to}`} emptyTitle="No agents yet." />

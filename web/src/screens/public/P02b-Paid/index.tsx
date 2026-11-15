@@ -35,7 +35,7 @@ export default function Paid() {
   if (confirmed) {
     return (
       <>
-        <Ok>{t('pub.paid.done', { amount: rupees(open?.payment.amountPaise ?? 49900) })}</Ok>
+        <Ok emoji="✅">{t('pub.paid.done', { amount: rupees(open?.payment.amountPaise ?? 49900) })}</Ok>
         {open && open.payment.confirmedAt && (
           <div className="card">
             <Row label={t('pub.paid.confirmedBy')}>{dateTimeLabel(open.payment.confirmedAt, language)}</Row>

@@ -55,8 +55,8 @@ export default function Search() {
 
   return (
     <div className="lb-page lb-ca">
-      <TopBar title={q ? t('ca.search.titleFor', { q }) : t('screen.CA16-Search')} />
-      {!isSearchable(q) && <EmptyState title={t('ca.search.typeMore')}>{t('ca.search.help')}</EmptyState>}
+      <TopBar icon="jobSeekers" iconTone="navy" title={q ? t('ca.search.titleFor', { q }) : t('screen.CA16-Search')} />
+      {!isSearchable(q) && <EmptyState emoji="🔎" title={t('ca.search.typeMore')}>{t('ca.search.help')}</EmptyState>}
       {search.error && <ErrorState error={search.error} onRetry={() => void search.refetch()} />}
       {isSearchable(q) && search.isLoading && <SkeletonCard height={220} />}
       {search.data && counts && (

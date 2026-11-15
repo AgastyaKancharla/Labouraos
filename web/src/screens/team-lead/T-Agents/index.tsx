@@ -65,7 +65,7 @@ export default function TeamLeadAgents() {
   const fields = info?.members.filter((m) => m.role === 'field_agent').map((m) => m.name) ?? [];
   return (
     <div className="lb-page">
-      <TopBar showSearch={false} back={{ to: to('T-Home'), label: 'My team' }} title="Agents" subtitle={`Everyone in ${info?.teamName ?? 'your team'}: targets, attendance, leave and call quality.`} />
+      <TopBar icon="callCenter" iconTone="cyan" showSearch={false} back={{ to: to('T-Home'), label: 'My team' }} title="Agents" subtitle={`Everyone in ${info?.teamName ?? 'your team'}: targets, attendance, leave and call quality.`} />
       <FilterPanel>
         <SelectFilter label="Role" value={role} onChange={setRole} options={[{ value: '', label: 'Everyone' }, { value: 'call_agent', label: 'Call agents' }, { value: 'field_agent', label: 'Field agents' }]} />
         <SelectFilter label="At this speed" value={speed} onChange={setSpeed} options={[{ value: '', label: 'Everyone' }, { value: 'behind', label: 'Behind' }, { value: 'on', label: 'On track' }]} />
@@ -77,7 +77,7 @@ export default function TeamLeadAgents() {
           Call quality = average score of the calls you listened to this month
         </div>
       </Card>
-      <Card title="Who reports to you">
+      <Card icon="teamAndAccess" tone="navy" title="Who reports to you">
         <div className="tl-chain">
           <div>{info?.manager ? `${info.manager.name} · Manager · your manager` : 'No Manager set yet — ask the CEO'}</div>
           <div>

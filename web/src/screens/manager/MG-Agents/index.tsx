@@ -79,7 +79,7 @@ export default function Agents() {
 
   return (
     <div className="lb-page">
-      <TopBar back={{ to: to('MG-Home'), label: 'Command Center' }} title="Agents" subtitle="Every call and field agent in your teams: targets, attendance, leave and flags." actions={<ButtonLink to={to('MG-Targets')}>Leaderboard</ButtonLink>} />
+      <TopBar icon="callCenter" iconTone="cyan" back={{ to: to('MG-Home'), label: 'Command Center' }} title="Agents" subtitle="Every call and field agent in your teams: targets, attendance, leave and flags." actions={<ButtonLink to={to('MG-Targets')}>Leaderboard</ButtonLink>} />
       <div className="panel" style={{ padding: '6px 18px 14px' }}>
         <DataTable
           columns={columns}

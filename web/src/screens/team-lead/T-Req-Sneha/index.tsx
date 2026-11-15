@@ -75,8 +75,8 @@ export default function RequestDetailScreen() {
     onError: (e) => toast.error(e instanceof ApiError ? e.message : 'Something went wrong. Try again.'),
   });
 
-  if (detail.error) return <div className="lb-page"><TopBar showSearch={false} back={{ to: to('T-Requests'), label: 'Requests' }} title="Request" /><ErrorState error={detail.error} onRetry={() => void detail.refetch()} /></div>;
-  if (!r) return <div className="lb-page"><TopBar showSearch={false} back={{ to: to('T-Requests'), label: 'Requests' }} title="Request" /><SkeletonCard /><SkeletonCard /></div>;
+  if (detail.error) return <div className="lb-page"><TopBar icon="requests" iconTone="orange" showSearch={false} back={{ to: to('T-Requests'), label: 'Requests' }} title="Request" /><ErrorState error={detail.error} onRetry={() => void detail.refetch()} /></div>;
+  if (!r) return <div className="lb-page"><TopBar icon="requests" iconTone="orange" showSearch={false} back={{ to: to('T-Requests'), label: 'Requests' }} title="Request" /><SkeletonCard /><SkeletonCard /></div>;
 
   const name = r.about && r.about.type !== 'staff' ? `${r.about.code} · ${r.about.name}` : (r.person?.name ?? '—');
   const who = firstName(r.person?.name);
@@ -136,18 +136,18 @@ export default function RequestDetailScreen() {
 
   return (
     <div className="lb-page">
-      <TopBar showSearch={false} back={{ to: to('T-Requests'), label: 'Requests' }} title={`${r.title} · ${name}`} subtitle="Everything you need to decide, and where the work goes while they are away." />
+      <TopBar icon="requests" iconTone="orange" showSearch={false} back={{ to: to('T-Requests'), label: 'Requests' }} title={`${r.title} · ${name}`} subtitle="Everything you need to decide, and where the work goes while they are away." />
       <div className="panel" style={{ padding: '14px 18px' }} role="status">
         <b>Where it is:</b> {where}
       </div>
       <div className="two-col">
-        <Card title="Request">
+        <Card icon="requests" tone="royal" title="Request">
           <Kv rows={requestRows} />
         </Card>
-        <Card title="Before you decide">{before.length ? <Kv rows={before} /> : <p className="tl-sub">Nothing else to check.</p>}</Card>
+        <Card icon="checkRegistrations" tone="cyan" title="Before you decide">{before.length ? <Kv rows={before} /> : <p className="tl-sub">Nothing else to check.</p>}</Card>
       </div>
       {r.canDecide ? (
-        <Card title="Your decision">
+        <Card icon="approvalLimits" tone="gold" title="Your decision">
           <label className="field">
             Note to {who} (needed if you reject)
             <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional when approving" rows={3} />
@@ -183,14 +183,14 @@ export default function RequestDetailScreen() {
           {!note.trim() && <p className="tl-sub">Write a note to reject or to send it to the Manager.</p>}
         </Card>
       ) : (
-        <Card title="Decision">
+        <Card icon="approvalLimits" tone="good" title="Decision">
           <StatusPill tone={r.status === 'pending' ? 'info' : r.status === 'approved' ? 'good' : 'danger'}>
             {r.status === 'pending' ? (r.withCeo ? 'With the CEO' : `With ${mgr}`) : r.status === 'approved' ? 'Approved' : 'Rejected'}
           </StatusPill>
           {r.decided?.reason && r.decided.reason !== 'Approved' && <p className="tl-sub">"{r.decided.reason}"</p>}
         </Card>
       )}
-      <Card title="Where this request has been">
+      <Card icon="auditLog" tone="navy" title="Where this request has been">
         <Timeline events={r.history.map((h) => ({ at: h.at, text: h.text }))} />
       </Card>
     </div>

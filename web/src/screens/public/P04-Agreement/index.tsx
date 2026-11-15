@@ -83,7 +83,7 @@ export default function Agreement() {
 
   return (
     <>
-      <PageTitle>{t('pub.agree.title', { business: d.businessName })}</PageTitle>
+      <PageTitle emoji="📝">{t('pub.agree.title', { business: d.businessName })}</PageTitle>
       <div className="card">
         {items.map(([title, text]) => (
           <div key={title} className="row lb-pub-row-col">

@@ -79,7 +79,7 @@ export default function RequestCorrection() {
     const r = send.data;
     return (
       <div className="lb-page lb-att-page lb-att-page--narrow">
-        <TopBar title={t('att.corr.title')} titleHidden />
+        <TopBar icon="attendance" iconTone="orange" title={t('att.corr.title')} titleHidden />
         <h2 className="h1">{t('att.corr.title')}</h2>
         <div className="lb-att-ok" role="status">
           {t('att.corr.sent', { date: dayLabel(r.date ?? date), from: r.startAt ? hhmm(r.startAt) : from, to: r.endAt ? hhmm(r.endAt) : until })}
@@ -106,7 +106,7 @@ export default function RequestCorrection() {
 
   return (
     <div className="lb-page lb-att-page lb-att-page--narrow">
-      <TopBar title={t('att.corr.title')} titleHidden />
+      <TopBar icon="attendance" iconTone="orange" title={t('att.corr.title')} titleHidden />
         <h2 className="h1">{t('att.corr.title')}</h2>
       <form
         className="lb-att-page"

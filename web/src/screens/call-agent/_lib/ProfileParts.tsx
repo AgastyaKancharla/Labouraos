@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ToneTile } from '../../../components/ToneTile';
 import { AppSignupBadgeFor } from '../../shared/AppSignupBadge';
 import { Link } from 'react-router-dom';
 import { Skeleton } from '../../../components/Skeleton';
@@ -67,7 +68,8 @@ export function Glance({ profile }: { profile: SeekerProfile }) {
   const aadhaar = ['verified', 'pending', 'failed', 'not_started'].includes(g.aadhaar) ? t(`ca.aadhaar.${g.aadhaar}` as MessageKey) : g.aadhaar;
   return (
     <div className="card">
-      <h2 className="h2" style={{ marginBottom: 6 }}>
+      <h2 className="h2 lb-h-tile" style={{ marginBottom: 6 }}>
+        <ToneTile icon="consentAndPrivacy" tone="cyan" size="sm" />
         {t('ca.glance.title', { name: first })}
       </h2>
       <div className="row">
@@ -113,7 +115,10 @@ export function BestJobs({ profile, compact }: { profile: SeekerProfile; compact
   return (
     <div className="card">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-        <h2 className="h2">{t('ca.jobs.title')}</h2>
+        <h2 className="h2 lb-h-tile">
+          <ToneTile icon="vacancies" tone="gold" size="sm" />
+          {t('ca.jobs.title')}
+        </h2>
         {(more || page > 1) && (
           <button type="button" className="lb-ca-link" onClick={() => setPage((p) => (more ? p + 1 : 1))}>
             {more ? t('ca.jobs.showNext', { count: data?.pageSize ?? 3 }) : t('ca.jobs.startOver')}
@@ -193,7 +198,8 @@ export function History({ rows }: { rows: HistoryRow[] }) {
   const today = formatDateIST(now);
   return (
     <div className="card">
-      <h2 className="h2" style={{ marginBottom: 6 }}>
+      <h2 className="h2 lb-h-tile" style={{ marginBottom: 6 }}>
+        <ToneTile icon="auditLog" tone="navy" size="sm" />
         {t('ca.history.title')}
       </h2>
       {rows.length === 0 && <p className="sub">{t('ca.history.none')}</p>}

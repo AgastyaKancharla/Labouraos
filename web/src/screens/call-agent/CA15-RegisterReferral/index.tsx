@@ -83,7 +83,7 @@ export default function RegisterReferral() {
   if (duplicate) {
     return (
       <div className="reg">
-        <TopBar title={t('screen.CA15-RegisterReferral')} />
+        <TopBar icon="referrals" iconTone="orange" title={t('screen.CA15-RegisterReferral')} />
         <AlreadyRegistered
           record={duplicate}
           what="number"
@@ -99,7 +99,7 @@ export default function RegisterReferral() {
 
   return (
     <div className="reg">
-      <TopBar title={t('screen.CA15-RegisterReferral')} subtitle={t('reg.ref.subtitle')} />
+      <TopBar icon="referrals" iconTone="orange" title={t('screen.CA15-RegisterReferral')} subtitle={t('reg.ref.subtitle')} />
       <DraftNote restored={draft.restored} onDiscard={() => {
         draft.discard();
         setMobile({ mobile: '', requestId: null, verifiedAt: null });

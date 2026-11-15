@@ -26,6 +26,13 @@ function renderSignIn() {
 }
 
 describe('Staff sign in', () => {
+  it('sits on the brand gradient panel (Command Center colours) with the same form', () => {
+    mockApi({});
+    renderSignIn();
+    expect(screen.getByRole('main').parentElement).toHaveClass('lb-center', 'lb-signin');
+    expect(screen.getByRole('heading', { name: 'Staff sign in' })).toBeInTheDocument();
+  });
+
   it('Forgot password: management asks for a link by company email and always gets the same answer', async () => {
     const answer = { message: 'If that is the company email of a CEO, Manager or Finance account, a link to set a new password is on its way.' };
     const api = mockApi({ 'POST /staff/forgot-password': answer });

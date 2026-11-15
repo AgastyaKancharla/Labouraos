@@ -112,7 +112,7 @@ export default function FinanceNotifications() {
   ];
   return (
     <div className="lb-page">
-      <TopBar back={{ to: to('FN-Home'), label: 'Money today' }} title="Notifications" subtitle="Money matters that need you, newest first." showSearch={false} />
+      <TopBar icon="flags" iconTone="gold" back={{ to: to('FN-Home'), label: 'Money today' }} title="Notifications" subtitle="Money matters that need you, newest first." showSearch={false} />
       <FilterPanel>
         <SelectFilter label="Status" value={status} onChange={setStatus} options={[{ value: 'all', label: 'All' }, { value: 'open', label: 'New' }, { value: 'cleared', label: 'Done' }]} />
         <SelectFilter label="Type" value={group} onChange={setGroup} options={[{ value: '', label: 'All types' }, ...(Object.keys(GROUP_LABEL) as Group[]).filter((g) => g !== 'other' && g !== 'invoices' && g !== 'tax').map((g) => ({ value: g, label: GROUP_LABEL[g] }))]} />

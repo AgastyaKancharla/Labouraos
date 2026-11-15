@@ -2,6 +2,8 @@ import './manager.css';
 import '../../ceo/_kit/ceo.css';
 import type { ReactNode } from 'react';
 import { Card } from '../../../components/Card';
+import type { TileTone } from '../../../components/ToneTile';
+import type { NavIconName } from '../../../portals/navIcons';
 import { StatusPill, type StatusTone } from '../../../components/Badge';
 
 /**
@@ -58,9 +60,27 @@ export function SpeedBar({ f, lowerIsBetter = false }: { f: Forecast; lowerIsBet
 }
 
 /** The plan tables on Home and Plan vs actual ("These bring in money", "These lead to money"). */
-export function PlanTable({ title, rows, monthShort, daysLeft, footnote, loading }: { title: string; rows: PlanRow[] | undefined; monthShort: string; daysLeft: number; footnote?: ReactNode; loading?: boolean }) {
+export function PlanTable({
+  title,
+  rows,
+  monthShort,
+  daysLeft,
+  footnote,
+  loading,
+  icon,
+  tone,
+}: {
+  title: string;
+  rows: PlanRow[] | undefined;
+  monthShort: string;
+  daysLeft: number;
+  footnote?: ReactNode;
+  loading?: boolean;
+  icon?: NavIconName;
+  tone?: TileTone;
+}) {
   return (
-    <Card title={title}>
+    <Card title={title} icon={icon} tone={tone}>
       <div className="panel lb-card--flush" style={{ boxShadow: 'none' }}>
         <div className="scrollx">
           <table>

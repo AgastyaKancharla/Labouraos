@@ -79,7 +79,7 @@ export default function WithdrawConsent() {
   if (!ref) {
     return (
       <div className="reg">
-        <TopBar title={t('screen.CA12-Withdraw')} />
+        <TopBar icon="consentAndPrivacy" iconTone="red" title={t('screen.CA12-Withdraw')} />
         <Card>
           <p className="muted">{t('reg.withdraw.pick')}</p>
           <div className="reg-actions">
@@ -92,11 +92,11 @@ export default function WithdrawConsent() {
       </div>
     );
   }
-  if (seeker.isLoading) return <div className="reg"><TopBar title={t('screen.CA12-Withdraw')} /><SkeletonCard height={260} /></div>;
+  if (seeker.isLoading) return <div className="reg"><TopBar icon="consentAndPrivacy" iconTone="red" title={t('screen.CA12-Withdraw')} /><SkeletonCard height={260} /></div>;
   if (seeker.error || !seeker.data) {
     return (
       <div className="reg">
-        <TopBar title={t('screen.CA12-Withdraw')} />
+        <TopBar icon="consentAndPrivacy" iconTone="red" title={t('screen.CA12-Withdraw')} />
         <ErrorState error={seeker.error} onRetry={() => void seeker.refetch()} />
       </div>
     );
@@ -111,7 +111,7 @@ export default function WithdrawConsent() {
 
   return (
     <div className="reg">
-      <TopBar title={t('reg.withdraw.title', { name: first })} />
+      <TopBar icon="consentAndPrivacy" iconTone="red" title={t('reg.withdraw.title', { name: first })} />
       {eligibility.isLoading ? (
         <SkeletonCard height={48} />
       ) : eligible ? (

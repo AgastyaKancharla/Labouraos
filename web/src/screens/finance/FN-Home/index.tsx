@@ -137,7 +137,7 @@ export default function MoneyToday() {
             <StatTile label={d ? `GST to pay for ${formatMonthIST(d.stats.gstMonth).split(' ')[0]}` : 'GST to pay'} value={d ? formatINR(d.stats.gstLastMonthPaise) : '—'} tone="gold" loading={loading} />
           </StatGrid>
 
-          <Card title="To do today" flush>
+          <Card icon="workList" tone="orange" title="To do today" flush>
             <DataTable
               columns={TODO_COLUMNS}
               rows={todo}
@@ -156,7 +156,7 @@ export default function MoneyToday() {
           )}
 
           <div className="two-col">
-            <Card title="Money moving today" aside={<ButtonLink to={to('FN-Bank')}>Bank</ButtonLink>}>
+            <Card icon="bank" tone="cyan" title="Money moving today" aside={<ButtonLink to={to('FN-Bank')}>Bank</ButtonLink>}>
               {loading ? (
                 <SkeletonCard height={160} />
               ) : d && d.today.length ? (
@@ -180,7 +180,7 @@ export default function MoneyToday() {
                 <p className="fin-sub">No money has moved through the bank today yet.</p>
               )}
             </Card>
-            <Card title="Your limits">
+            <Card icon="approvalLimits" tone="navy" title="Your limits">
               {d ? (
                 <>
                   <div className="fin-kv">

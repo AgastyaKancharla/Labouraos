@@ -34,7 +34,7 @@ export default function FollowUpAnswer() {
   const d = task.data;
   return (
     <div className="lb-page lb-ca">
-      <TopBar title={d ? t('ca.fua.title', { name: d.name }) : t('screen.CA10b-FollowUpAnswer')} />
+      <TopBar icon="requests" iconTone="cyan" title={d ? t('ca.fua.title', { name: d.name }) : t('screen.CA10b-FollowUpAnswer')} />
       {task.error && <ErrorState error={task.error} onRetry={() => void task.refetch()} />}
       {!d && !task.error && <SkeletonCard height={300} />}
       {d && (callId ? <WithCall task={d} callId={callId} /> : <StartCall task={d} />)}

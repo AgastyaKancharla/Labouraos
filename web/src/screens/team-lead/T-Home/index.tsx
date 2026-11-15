@@ -109,7 +109,7 @@ export default function TeamLeadHome() {
       ) : !t || !hero ? (
         <SkeletonCard height={90} />
       ) : (
-        <div className="panel tl-hero">
+        <div className="panel lb-hero-panel tl-hero">
           <div>
             <div className="eyebrow">
               {teamName} · {monthName(t.month)} · day {t.dayOfMonth} of {t.daysInMonth} · {t.daysLeft} days left
@@ -121,10 +121,11 @@ export default function TeamLeadHome() {
             <StatusPill tone="good">{hero.reached} will be reached</StatusPill>
             {hero.short > 0 && <StatusPill tone="danger">{hero.short} will fall short</StatusPill>}
           </div>
+          <div className="swoosh lb-hero__swoosh" aria-hidden="true" />
         </div>
       )}
 
-      <Card title="Right now" aside={<ButtonLink to={to('T-Attendance-Live')}>Live board</ButtonLink>}>
+      <Card icon="callCenter" tone="cyan" title="Right now" aside={<ButtonLink to={to('T-Attendance-Live')}>Live board</ButtonLink>}>
         {live.error ? (
           <ErrorState error={live.error} onRetry={() => void live.refetch()} compact />
         ) : (
@@ -179,14 +180,14 @@ export default function TeamLeadHome() {
         <StatTile label="Interviews today" value={today.data?.totals.interviews ?? '—'} tone="gold" loading={today.isPending} />
       </StatGrid>
 
-      <Card title={`Team targets · ${t ? monthName(t.month) : ''}`} aside={<ButtonLink to={to('T-Targets')}>Each agent</ButtonLink>}>
+      <Card icon="targets" tone="gold" title={`Team targets · ${t ? monthName(t.month) : ''}`} aside={<ButtonLink to={to('T-Targets')}>Each agent</ButtonLink>}>
         {targets.error ? <ErrorState error={targets.error} compact /> : t ? <TeamTargetsTable rows={t.team} month={t.month} daysInMonth={t.daysInMonth} /> : <SkeletonCard />}
         <div className="tl-note">
           At this speed = where the team ends on {t?.daysInMonth ?? 30} {t ? monthName(t.month).slice(0, 3) : ''} if it keeps doing the same amount every day
         </div>
       </Card>
 
-      <Card title="Waiting for you" aside={<ButtonLink to={to('T-Requests')}>All requests ({waitingRows.length})</ButtonLink>}>
+      <Card icon="requests" tone="orange" title="Waiting for you" aside={<ButtonLink to={to('T-Requests')}>All requests ({waitingRows.length})</ButtonLink>}>
         {waiting.error ? (
           <ErrorState error={waiting.error} onRetry={() => void waiting.refetch()} compact />
         ) : (
@@ -229,7 +230,7 @@ export default function TeamLeadHome() {
         <div className="tl-note">Requests you don't answer in 24 hours also go to {manager ? `${firstName(manager.name)} (Manager)` : 'the Manager'}</div>
       </Card>
 
-      <Card title="Needs your attention">
+      <Card icon="flags" tone="red" title="Needs your attention">
         {attention.length === 0 ? (
           <p className="tl-sub">Nothing needs you right now.</p>
         ) : (
@@ -247,7 +248,7 @@ export default function TeamLeadHome() {
       </Card>
 
       {n2.data && n2.data.rows.length > 0 && (
-        <Card title="Paid, no interview after 10+ days" aside={<span className="tl-sub">Book an interview before the refund comes close</span>}>
+        <Card icon="interviews" tone="navy" title="Paid, no interview after 10+ days" aside={<span className="tl-sub">Book an interview before the refund comes close</span>}>
           <div className="scrollx">
             <table>
               <caption className="sr-only">Paid job seekers with no interview booked 10 or more days after paying</caption>

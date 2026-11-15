@@ -41,13 +41,13 @@ export default function FollowUps() {
 
   return (
     <div className="lb-page lb-ca">
-      <TopBar title={t('ca.fus.title')} />
+      <TopBar icon="requests" iconTone="orange" title={t('ca.fus.title')} />
       {list.error && <ErrorState error={list.error} onRetry={() => void list.refetch()} />}
       {!list.data && !list.error && <SkeletonCard height={240} />}
       {list.data && (
         <div className="card" style={{ padding: 0 }}>
           {pending.length === 0 ? (
-            <EmptyState title={t('ca.fus.empty')} />
+            <EmptyState emoji="✅" title={t('ca.fus.empty')} />
           ) : (
             <div className="scroll">
               <table className="tbl lb-ca-table">

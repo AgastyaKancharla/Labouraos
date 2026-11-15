@@ -79,14 +79,14 @@ export default function PlacementDetail() {
   if (query.isPending)
     return (
       <div className="lb-page">
-        <TopBar back={back} title="Placement" />
+        <TopBar icon="placements" iconTone="navy" back={back} title="Placement" />
         <SkeletonCard height={260} />
       </div>
     );
   if (query.isError || !d)
     return (
       <div className="lb-page">
-        <TopBar back={back} title="Placement" />
+        <TopBar icon="placements" iconTone="navy" back={back} title="Placement" />
         <ErrorState error={query.error} onRetry={() => void query.refetch()} />
       </div>
     );
@@ -108,7 +108,7 @@ export default function PlacementDetail() {
 
   return (
     <div className="lb-page">
-      <TopBar
+      <TopBar icon="placements" iconTone="navy"
         back={back}
         title={`${d.code} · ${d.jobSeeker.name} at ${d.business.name}`}
         subtitle={subtitle}
@@ -151,7 +151,7 @@ export default function PlacementDetail() {
         }
       />
       <div className="two-col">
-        <Card title="Placement">
+        <Card icon="placements" tone="royal" title="Placement">
           <Kv
             rows={[
               ['Candidate', <Link to={to('C-JobSeeker', { id: d.jobSeeker.id })}>{`${d.jobSeeker.name} · ${d.jobSeeker.code}`}</Link>],
@@ -164,7 +164,7 @@ export default function PlacementDetail() {
             ]}
           />
         </Card>
-        <Card title="Guarantee">
+        <Card icon="refundApprovals" tone="gold" title="Guarantee">
           <Kv
             rows={[
               ['Day', g.day ? `Day ${Math.min(g.day, g.windowDays)} of ${g.windowDays}` : 'Starts on joining'],
@@ -199,7 +199,7 @@ export default function PlacementDetail() {
           )}
         </Card>
       </div>
-      <Card title="Timeline">
+      <Card icon="reports" tone="cyan" title="Timeline">
         <Timeline
           events={d.timeline.map((e) => ({
             at: e.at,

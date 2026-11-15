@@ -62,7 +62,7 @@ export default function PartnerUpiPage() {
   return (
     <>
       <StepsBar current={4} label={t('partner.upi.stepLabel')} />
-      <PageTitle>{t('partner.upi.title')}</PageTitle>
+      <PageTitle emoji="💸">{t('partner.upi.title')}</PageTitle>
       <Muted>{t('partner.upi.intro')}</Muted>
       <fieldset className="lb-pub-fieldset">
         <legend className="lbl">{t('partner.upi.method')}</legend>
@@ -128,7 +128,7 @@ function Received({ code, maskedValue, nameMismatch }: { code: string; maskedVal
   return (
     <>
       <StepsBar current={4} label={t('partner.upi.stepLabel')} />
-      <PageTitle>{t('partner.upi.title')}</PageTitle>
+      <PageTitle emoji="💸">{t('partner.upi.title')}</PageTitle>
       {nameMismatch ? (
         <Warn>{t('partner.upi.nameMismatch')}</Warn>
       ) : (

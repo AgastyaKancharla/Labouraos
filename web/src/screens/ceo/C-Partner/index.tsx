@@ -45,14 +45,14 @@ export default function PartnerDetail() {
   if (query.isPending)
     return (
       <div className="lb-page">
-        <TopBar back={back} title="Referral partner" />
+        <TopBar icon="referrals" iconTone="orange" back={back} title="Referral partner" />
         <SkeletonCard height={260} />
       </div>
     );
   if (query.isError || !d)
     return (
       <div className="lb-page">
-        <TopBar back={back} title="Referral partner" />
+        <TopBar icon="referrals" iconTone="orange" back={back} title="Referral partner" />
         <ErrorState error={query.error} onRetry={() => void query.refetch()} />
       </div>
     );
@@ -60,7 +60,7 @@ export default function PartnerDetail() {
   const c = d.counts;
   return (
     <div className="lb-page">
-      <TopBar
+      <TopBar icon="referrals" iconTone="orange"
         back={back}
         title={`${d.name} · ${d.code}`}
         subtitle={`${c.referred} referred · ${c.registered} registered · ${c.joined} joined · ${formatINR(c.earnedPaise)} earned · ${formatINR(c.duePaise)} due.`}
@@ -112,7 +112,7 @@ export default function PartnerDetail() {
         </div>
       )}
       <div className="two-col">
-        <Card title="Partner">
+        <Card icon="referrals" tone="gold" title="Partner">
           <Kv
             rows={[
               ['Phone', d.phone.includes('*') ? d.phone : formatMobile(d.phone.replace(/^\+91/, ''))],
@@ -143,7 +143,7 @@ export default function PartnerDetail() {
             ]}
           />
         </Card>
-        <Card title="Payouts" flush>
+        <Card icon="payouts" tone="good" title="Payouts" flush>
           <div className="scrollx">
             <table>
               <caption className="sr-only">Payouts</caption>
@@ -178,7 +178,7 @@ export default function PartnerDetail() {
           </div>
         </Card>
       </div>
-      <Card title={`People ${d.name.split(' ')[0]} referred (${d.referred.length})`} flush>
+      <Card icon="jobSeekers" tone="cyan" title={`People ${d.name.split(' ')[0]} referred (${d.referred.length})`} flush>
         <div className="scrollx">
           <table>
             <caption className="sr-only">People referred</caption>

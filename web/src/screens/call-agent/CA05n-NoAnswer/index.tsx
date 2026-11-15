@@ -29,7 +29,7 @@ export default function NoAnswer() {
 
   return (
     <div className="lb-page lb-ca">
-      <TopBar title={t('screen.CA05n-NoAnswer')} titleHidden />
+      <TopBar icon="callCenter" iconTone="orange" title={t('screen.CA05n-NoAnswer')} titleHidden />
       {call.error && <ErrorState error={call.error} onRetry={() => void call.refetch()} />}
       {!c && !call.error && <SkeletonCard height={260} />}
       {c && (

@@ -755,6 +755,45 @@
   flex-wrap: wrap;
   margin-bottom: 10px;
 }
+.lb-card__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.lb-h-tile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lb-ca-bar {
+  display: block;
+  width: 28px;
+  height: 4px;
+  border-radius: 999px;
+  margin-bottom: 4px;
+}
+.lb-tile--sm {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+.lb-emoji {
+  font-size: 18px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.lb-topbar__tile {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(3, 43, 115, 0.16);
+}
+.lb-topbar--console .lb-topbar__tile {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+}
 .lb-card--flush .lb-card__head {
   padding: 16px 18px 0;
 }
@@ -865,6 +904,26 @@
   .lb-hero__value {
     font-size: 32px;
   }
+}
+
+/* A headline panel in the Command Center's hero colours (role home screens). */
+.panel.lb-hero-panel {
+  position: relative;
+  overflow: hidden;
+  color: #fff;
+  background: linear-gradient(135deg, #032b73 0%, #0055c0 100%);
+  border-color: transparent;
+  box-shadow: var(--shadow-hero);
+  padding-bottom: 24px;
+}
+.panel.lb-hero-panel h2 {
+  color: #fff;
+}
+.panel.lb-hero-panel p {
+  color: #cfe4ff;
+}
+.panel.lb-hero-panel .eyebrow {
+  color: #9fc3f0;
 }
 
 /* ---------- tabs ---------- */
@@ -1023,6 +1082,11 @@ th[aria-sort='descending'] .lb-sort {
 }
 .lb-state--empty .lb-state__body {
   flex: none;
+}
+.lb-state__emoji {
+  font-size: 28px;
+  line-height: 1;
+  margin-bottom: 6px;
 }
 .lb-state__ref {
   font-size: 11.5px;
@@ -1247,6 +1311,25 @@ th[aria-sort='descending'] .lb-sort {
 }
 
 /* ---------- sign-in ---------- */
+/* Sign-in, invite and staff photo: a brand gradient panel with the swoosh behind the card. */
+.lb-center.lb-signin {
+  background:
+    var(--swoosh) 0 296px / 100% 4px no-repeat,
+    linear-gradient(135deg, #032b73 0%, #0055c0 100%) 0 0 / 100% 300px no-repeat,
+    var(--bg);
+}
+.lb-signin .lb-auth-card {
+  border-color: transparent;
+  box-shadow: var(--shadow-pop);
+}
+@media (max-width: 760px) {
+  .lb-center.lb-signin {
+    background:
+      var(--swoosh) 0 176px / 100% 4px no-repeat,
+      linear-gradient(135deg, #032b73 0%, #0055c0 100%) 0 0 / 100% 180px no-repeat,
+      var(--bg);
+  }
+}
 .lb-auth-card {
   width: 440px;
   max-width: 100%;

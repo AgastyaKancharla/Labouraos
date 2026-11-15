@@ -85,14 +85,14 @@ export default function Devices() {
   const codes = devices.data?.codesToday ?? [];
   return (
     <div className="lb-page">
-      <TopBar back={{ to: to('C-Team'), label: 'Team & access' }} title="Devices & logins" subtitle="Approved devices and every login code given." />
+      <TopBar icon="loginCodes" iconTone="navy" back={{ to: to('C-Team'), label: 'Team & access' }} title="Devices & logins" subtitle="Approved devices and every login code given." />
       <TeamTabs />
       <div className="panel" style={{ padding: '6px 18px 14px' }}>
         <DataTable columns={columns} rows={devices.data?.rows} rowKey={(r) => r.id} caption="Devices" loading={devices.isPending} error={devices.error} onRetry={() => void devices.refetch()} download="devices" emptyTitle="No devices yet." />
         <div className="ceo-note">First login on a new device needs a Team Lead or Manager to approve · staff log in from any network: every login needs a one-time code from a senior or the authenticator code</div>
       </div>
       <div>
-        <Card title="Login codes given today" aside={<Link to={to('C-LoginCodes')}>All login codes →</Link>}>
+        <Card icon="loginCodes" tone="gold" title="Login codes given today" aside={<Link to={to('C-LoginCodes')}>All login codes →</Link>}>
           {devices.isPending ? (
             <p className="ceo-sub">Loading…</p>
           ) : codes.length ? (

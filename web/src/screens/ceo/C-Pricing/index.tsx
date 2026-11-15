@@ -129,7 +129,7 @@ export default function Pricing() {
   };
   return (
     <div className="lb-page">
-      <TopBar
+      <TopBar icon="pricingAndPolicy" iconTone="royal"
         back={{ to: to('Main'), label: 'Command Center' }}
         title="Pricing & policy"
         subtitle="Every number the software runs on, in one place. Nothing is hard-coded."
@@ -185,7 +185,7 @@ export default function Pricing() {
         </Card>
       )}
       <div className="two-col">
-        <Card title="Recent changes">
+        <Card icon="auditLog" tone="cyan" title="Recent changes">
           {h && !h.history.length && !h.scheduled.length ? (
             <p className="ceo-sub">No changes yet.</p>
           ) : (
@@ -366,7 +366,7 @@ function Holidays() {
     onError: (e) => toast.error(e instanceof ApiError ? e.message : 'Could not add. Try again.'),
   });
   return (
-    <Card
+    <Card icon="leave" tone="gold"
       title="Public holidays"
       aside={
         <span className="ceo-actions">

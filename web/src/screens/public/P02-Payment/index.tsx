@@ -67,7 +67,7 @@ export default function Payment() {
   const header = (
     <>
       <StepsBar current={4} label={t('pub.pay.stepLabel')} />
-      <PageTitle>{t('pub.pay.title', { amount: rupees(status.payment.amountPaise) })}</PageTitle>
+      <PageTitle emoji="💳">{t('pub.pay.title', { amount: rupees(status.payment.amountPaise) })}</PageTitle>
     </>
   );
 

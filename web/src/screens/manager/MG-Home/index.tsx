@@ -60,7 +60,7 @@ export default function ManagerHome() {
         <ErrorState error={ov.error} onRetry={() => void ov.refetch()} />
       ) : (
         <>
-          <section className="panel mg-headline" aria-live="polite">
+          <section className="panel lb-hero-panel mg-headline" aria-live="polite">
             <div className="eyebrow">{o ? `${monthLong(o.month.month)} · day ${o.month.dayOfMonth} of ${o.month.daysInMonth} · ${o.month.daysLeft} days left` : '…'}</div>
             <h2>{o ? headlineTitle(o) : <span className="lb-skeleton" style={{ height: 22, width: 320, display: 'inline-block' }} aria-hidden="true" />}</h2>
             <p>{o ? headlineGap(o) : ''}</p>
@@ -70,10 +70,13 @@ export default function ManagerHome() {
                 <StatusPill tone="danger">{`${o.headline.short} will fall short`}</StatusPill>
               </div>
             )}
+            <div className="swoosh lb-hero__swoosh" aria-hidden="true" />
           </section>
 
-          <PlanTable title="These bring in money" rows={o?.bringMoney} monthShort={mShort} daysLeft={o?.month.daysLeft ?? 0} loading={ov.isPending} />
+          <PlanTable icon="payments" tone="good" title="These bring in money" rows={o?.bringMoney} monthShort={mShort} daysLeft={o?.month.daysLeft ?? 0} loading={ov.isPending} />
           <PlanTable
+            icon="jobSeekers"
+            tone="cyan"
             title="These lead to money"
             rows={o?.leadToMoney}
             monthShort={mShort}
@@ -82,7 +85,7 @@ export default function ManagerHome() {
             footnote={`At this speed = where we end on the last day of the month if we keep doing the same amount every day. ${planSourceText(o)}`}
           />
 
-          <Card title="How well we turn one step into the next">
+          <Card icon="pipeline" tone="cyan" title="How well we turn one step into the next">
             <div className="scrollx">
               <table>
                 <thead>
@@ -108,7 +111,7 @@ export default function ManagerHome() {
 
           <WaitingCard />
 
-          <Card title="Teams · people placed" aside={<ButtonLink to={to('MG-Teams')}>Teams</ButtonLink>}>
+          <Card icon="teamAndAccess" tone="royal" title="Teams · people placed" aside={<ButtonLink to={to('MG-Teams')}>Teams</ButtonLink>}>
             <div className="scrollx">
               <table>
                 <thead>
@@ -149,7 +152,7 @@ export default function ManagerHome() {
           </Card>
 
           <div className="two-col">
-            <Card title="Attendance today">
+            <Card icon="attendance" tone="good" title="Attendance today">
               <StatGrid>
                 <StatTile label="At work now" value={o ? `${o.attendanceToday.atWork} / ${o.attendanceToday.people}` : '—'} tone="good" loading={ov.isPending} to={to('MG-Attendance-Live')} />
                 <StatTile label="Late logins today" value={o?.attendanceToday.lateLogins ?? '—'} tone="gold" loading={ov.isPending} />
@@ -162,7 +165,7 @@ export default function ManagerHome() {
                 <ButtonLink to={to('MG-Attendance')}>Today's attendance</ButtonLink>
               </div>
             </Card>
-            <Card title="Watch list">
+            <Card icon="flags" tone="orange" title="Watch list">
               <div className="mg-watch">
                 {o?.watch.agentsBehind.map((a) => (
                   <div key={a.staff.id}>

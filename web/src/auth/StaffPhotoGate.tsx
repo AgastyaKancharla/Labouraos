@@ -65,7 +65,7 @@ function TakeStaffPhoto({ staffId, reason }: { staffId: string; reason: StaffPho
 
   return (
     <FamilyContext.Provider value="console">
-      <div className="console lb-center lb-invite">
+      <div className="console lb-center lb-invite lb-signin">
         <main id="main" className="card lb-auth-card">
           <div className="lb-invite__lang">
             <LanguageSwitcher tone="onLight" />

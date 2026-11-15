@@ -85,7 +85,7 @@ export default function RequestLeave() {
     const r = send.data;
     return (
       <div className="lb-page lb-att-page lb-att-page--narrow">
-        <TopBar title={t('att.leave.title')} titleHidden />
+        <TopBar icon="leave" iconTone="gold" title={t('att.leave.title')} titleHidden />
         <h2 className="h1">{t('att.leave.title')}</h2>
         <div className="lb-att-ok" role="status">
           {r.half
@@ -106,7 +106,7 @@ export default function RequestLeave() {
 
   return (
     <div className="lb-page lb-att-page lb-att-page--narrow">
-      <TopBar title={t('att.leave.title')} titleHidden />
+      <TopBar icon="leave" iconTone="gold" title={t('att.leave.title')} titleHidden />
         <h2 className="h1">{t('att.leave.title')}</h2>
       <form
         className="lb-att-page"

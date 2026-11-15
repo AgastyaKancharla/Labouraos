@@ -46,7 +46,7 @@ export default function Teams() {
   const d = q.data;
   return (
     <div className="lb-page">
-      <TopBar back={{ to: to('MG-Home'), label: 'Command Center' }} title="Teams" subtitle="Each Team Lead's scorecard: how their team delivers and how well they run it." />
+      <TopBar icon="teamAndAccess" iconTone="royal" back={{ to: to('MG-Home'), label: 'Command Center' }} title="Teams" subtitle="Each Team Lead's scorecard: how their team delivers and how well they run it." />
       {q.error ? (
         <ErrorState error={q.error} onRetry={() => void q.refetch()} />
       ) : (
@@ -56,6 +56,8 @@ export default function Teams() {
               <Card
                 key={c.teamLeadId}
                 className="mg-team-card"
+                icon="teamAndAccess"
+                tone="cyan"
                 title={`${c.team} · ${c.teamLead.name}`}
                 aside={c.verdict === 'no_target' ? <StatusPill tone="muted">No target</StatusPill> : <StatusPill tone={c.verdict === 'on_track' ? 'good' : 'danger'}>{c.verdict === 'on_track' ? 'On track' : 'Behind'}</StatusPill>}
               >
@@ -107,7 +109,7 @@ export default function Teams() {
               </p>
             </Card>
           )}
-          <Card title="Who reports to whom" aside={<ButtonLink to={to('MG-Staff')}>Change reporting</ButtonLink>}>
+          <Card icon="teamAndAccess" tone="navy" title="Who reports to whom" aside={<ButtonLink to={to('MG-Staff')}>Change reporting</ButtonLink>}>
             <div className="mg-tree">
               <div>
                 <b>{d?.manager.name ?? '…'}</b> · Manager · reports to the CEO

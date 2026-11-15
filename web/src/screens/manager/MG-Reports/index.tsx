@@ -50,7 +50,7 @@ export default function WeeklyReports() {
 
   return (
     <div className="lb-page">
-      <TopBar
+      <TopBar icon="reports" iconTone="cyan"
         back={{ to: to('MG-Home'), label: 'Command Center' }}
         title="Weekly reports"
         subtitle="How your teams did each week against plan — ready to download or send."

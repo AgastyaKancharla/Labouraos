@@ -96,13 +96,13 @@ export default function TaxPage() {
   ];
   return (
     <div className="lb-page">
-      <TopBar back={{ to: to('FN-Home'), label: 'Money today' }} title="Tax" subtitle="GST and TDS for each month, ready for the CA." showSearch={false} actions={<ServerDownload label="Download for the CA (Excel)" path="/finance/reports/tax.csv" query={{ month }} filename={`tax-${month}.csv`} />} />
+      <TopBar icon="tax" iconTone="navy" back={{ to: to('FN-Home'), label: 'Money today' }} title="Tax" subtitle="GST and TDS for each month, ready for the CA." showSearch={false} actions={<ServerDownload label="Download for the CA (Excel)" path="/finance/reports/tax.csv" query={{ month }} filename={`tax-${month}.csv`} />} />
       <Tabs label="Month" value={month} onChange={setMonth} items={[last, addMonths(last, -1)].map((m) => ({ key: m, label: monthName(m) }))} />
       {query.error && <ErrorState error={query.error} onRetry={() => void query.refetch()} />}
       {query.isPending && <SkeletonCard height={300} />}
       {t && (
         <div className="two-col fin-two">
-          <Card title={`GST · ${monthName(month)}`} aside={<ServerDownload label="Download GSTR-1 data" size="compact" path="/finance/reports/gstr1.csv" query={{ month }} filename={`gstr1-data-${month}.csv`} />} flush>
+          <Card icon="invoices" tone="royal" title={`GST · ${monthName(month)}`} aside={<ServerDownload label="Download GSTR-1 data" size="compact" path="/finance/reports/gstr1.csv" query={{ month }} filename={`gstr1-data-${month}.csv`} />} flush>
             <div className="scrollx">
             <table>
               <caption className="sr-only">GST for {t.label}</caption>
@@ -158,7 +158,7 @@ export default function TaxPage() {
               </Note>
             </div>
           </Card>
-          <Card title="Dates">
+          <Card icon="monthEndReview" tone="gold" title="Dates">
             <div className="fin-kv">
               {t.dates.map((d) => (
                 <div key={d.key} style={{ display: 'contents' }}>
@@ -175,7 +175,7 @@ export default function TaxPage() {
         </div>
       )}
       {t && (
-        <Card title="TDS businesses took from our fees" aside={<span className="fin-sub">{formatINR(t.tdsReceivableTotalPaise)}</span>} flush>
+        <Card icon="moneyIn" tone="cyan" title="TDS businesses took from our fees" aside={<span className="fin-sub">{formatINR(t.tdsReceivableTotalPaise)}</span>} flush>
           <DataTable columns={tdsColumns} rows={t.tdsReceivable} rowKey={(r) => r.id} caption="TDS businesses took from our fees" pageSize={25} emptyTitle="No business deducted TDS this month." download={`tds-taken-${month}`} />
           <div style={{ padding: '0 16px 12px' }}>
             <Note>Check these against the tax department's statement every quarter · they reduce Laboura's income tax</Note>
@@ -183,7 +183,7 @@ export default function TaxPage() {
         </Card>
       )}
       {t && (
-        <Card title="TDS we take from referral payouts" aside={<span className="fin-sub">Financial year {t.referralTds.financialYear}</span>} flush>
+        <Card icon="payouts" tone="orange" title="TDS we take from referral payouts" aside={<span className="fin-sub">Financial year {t.referralTds.financialYear}</span>} flush>
           <DataTable columns={refColumns} rows={t.referralTds.rows} rowKey={(r) => r.referralId} caption="Referral commission this year" pageSize={25} emptyTitle="No referral payouts this year yet." download={`referral-commission-${month}`} />
           <div style={{ padding: '0 16px 12px' }}>
             <Note>2% once a partner's commission crosses {formatINR(t.referralTds.limitPaise)} in a year · nothing is deducted yet — the CA confirms the exact rule · Finance is warned on Payouts before paying</Note>

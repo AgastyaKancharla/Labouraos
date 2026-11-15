@@ -42,7 +42,7 @@ export default function PartnerOpenPage() {
   if (isApiError(status.error) && /already been used/i.test(status.error.message)) {
     return (
       <>
-        <PageTitle>{t('partner.open.title')}</PageTitle>
+        <PageTitle emoji="👋">{t('partner.open.title')}</PageTitle>
         <Ok>{t('partner.open.used')}</Ok>
       </>
     );
@@ -80,10 +80,10 @@ export default function PartnerOpenPage() {
 
   return (
     <>
-      <PageTitle>{t('partner.open.title')}</PageTitle>
+      <PageTitle emoji="👋">{t('partner.open.title')}</PageTitle>
       <Muted>{t('partner.open.intro')}</Muted>
       {data.otpRequired && data.registrationComplete && <Ok>{t('partner.open.alreadyComplete')}</Ok>}
-      <div className="card">
+      <div className="card lb-pub-steps">
         {steps.map(([label, time]) => (
           <Row key={label} label={label}>
             <span className="sub">{time}</span>
@@ -123,10 +123,10 @@ function Resume({ status, onContinue }: { status: PartnerOpen; onContinue: () =>
   };
   return (
     <>
-      <PageTitle>{t('partner.resume.title', { name: status.firstName })}</PageTitle>
+      <PageTitle emoji="👋">{t('partner.resume.title', { name: status.firstName })}</PageTitle>
       <Muted>{t('partner.resume.intro', { done: partnerStepsDone(status) })}</Muted>
       <span className="sub">{t('partner.resume.code', { code: status.referralCode })}</span>
-      <div className="card">
+      <div className="card lb-pub-steps">
         <Row label={t('partner.open.step1')}>{tag(status.steps.terms.state)}</Row>
         <Row label={t('pub.resume.selfie')}>{tag(status.steps.selfie.state)}</Row>
         <Row label={t('pub.resume.id')}>{tag(status.steps.id.state)}</Row>

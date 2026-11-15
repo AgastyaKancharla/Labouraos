@@ -86,7 +86,7 @@ export default function Teams() {
 
   return (
     <div className="lb-page">
-      <TopBar back={{ to: to('C-Team'), label: 'Team & access' }} title="Teams" subtitle="Teams, their Team Leads and which Manager looks after them." />
+      <TopBar icon="teamAndAccess" iconTone="cyan" back={{ to: to('C-Team'), label: 'Team & access' }} title="Teams" subtitle="Teams, their Team Leads and which Manager looks after them." />
       <TeamTabs />
       <div className="panel" style={{ padding: '6px 18px 14px' }}>
         <DataTable

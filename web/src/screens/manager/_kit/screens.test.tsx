@@ -57,6 +57,8 @@ describe('Manager Command Center', () => {
     const api = mockApi({ ...common, 'GET /manager/overview': overview, 'GET /requests/waiting': [], 'GET /manager/staff': { manager: { id: 'm1', code: 'MGR-2', name: 'Priya Sharma' }, rows: [] } });
     const { container } = render(<Home />, '/manager');
     expect(await screen.findByText("At today's speed we reach 1 of 3 targets")).toBeInTheDocument();
+    // Command Center colours: the headline is a gradient hero card.
+    expect(screen.getByText("At today's speed we reach 1 of 3 targets").closest('.panel')).toHaveClass('lb-hero-panel');
     expect(screen.getByText(/Biggest gap: people placed in jobs — we'd end at 37 of 45/)).toBeInTheDocument();
     expect(screen.getByText('Short by 8')).toBeInTheDocument();
     expect(screen.getByText('14 / 16')).toBeInTheDocument();

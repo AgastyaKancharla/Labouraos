@@ -82,7 +82,7 @@ export default function Trades() {
   ];
   return (
     <div className="lb-page">
-      <TopBar
+      <TopBar icon="workList" iconTone="cyan"
         back={{ to: to('C-Pricing'), label: 'Pricing & policy' }}
         title="Trades & salary ranges"
         subtitle="The one trade list every form uses, with the usual Bengaluru pay for each."
@@ -90,7 +90,7 @@ export default function Trades() {
       />
       <PricingTabs />
       {(suggestions.data?.length ?? 0) > 0 && (
-        <Card title={`Typed by agents · waiting for you (${suggestions.data!.length})`}>
+        <Card icon="requests" tone="gold" title={`Typed by agents · waiting for you (${suggestions.data!.length})`}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {suggestions.data!.map((s) => (
               <div key={s.id} className="ceo-rule-row">

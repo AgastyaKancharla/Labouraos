@@ -9,6 +9,8 @@ import { NotificationBell } from './NotificationBell';
 import { PeriodPicker } from './PeriodPicker';
 import { SearchBox } from './SearchBox';
 import { StatusMenu } from '../attendance/StatusMenu';
+import type { NavIconName } from '../portals/navIcons';
+import { ToneTile, type TileTone } from './ToneTile';
 
 /**
  * The header block at the top of every staff screen, as in the designs:
@@ -33,6 +35,9 @@ export interface TopBarProps {
   /** Keep the h1 for screen readers and the tab title, but don't show it (designs with no visible heading, e.g. CA03 Home). */
   titleHidden?: boolean;
   notifications?: { items: NotificationItem[]; count: number; onOpen?: () => void };
+  /** Coloured icon tile before the page title (Command Center colours). */
+  icon?: NavIconName;
+  iconTone?: TileTone;
 }
 
 export function TopBar({
@@ -47,6 +52,8 @@ export function TopBar({
   showSearch = true,
   titleHidden = false,
   notifications,
+  icon,
+  iconTone,
 }: TopBarProps) {
   const t = useT();
   const family = useFamily();
@@ -70,6 +77,7 @@ export function TopBar({
           )}
           {eyebrow && <div className="eyebrow lb-topbar__eyebrow">{eyebrow}</div>}
           <div className={titleHidden ? 'sr-only' : 'lb-topbar__h1row'}>
+            {icon && <ToneTile icon={icon} tone={iconTone} className="lb-topbar__tile" />}
             <h1 className="lb-topbar__h1">{title}</h1>
             {titleBadge}
           </div>

@@ -85,7 +85,7 @@ export default function ManagerNotifications() {
   ];
   return (
     <div className="lb-page">
-      <TopBar back={{ to: to('MG-Home'), label: 'Command Center' }} title="Notifications" subtitle="Everything about your teams that needs you, newest first." />
+      <TopBar icon="flags" iconTone="gold" back={{ to: to('MG-Home'), label: 'Command Center' }} title="Notifications" subtitle="Everything about your teams that needs you, newest first." />
       <FilterPanel>
         <SelectFilter label="Status" value={status} onChange={setStatus} options={[{ value: 'all', label: 'All' }, { value: 'open', label: 'New' }, { value: 'cleared', label: 'Done' }]} />
         <SelectFilter label="Type" value={type} onChange={setType} options={[{ value: '', label: 'All types' }, ...TYPES.map((t) => ({ value: t, label: t }))]} />

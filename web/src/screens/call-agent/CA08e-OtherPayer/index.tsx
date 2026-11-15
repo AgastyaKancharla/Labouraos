@@ -51,7 +51,7 @@ export default function OtherPayer() {
 
   return (
     <div className="reg">
-      <TopBar title={t('reg.payer.title')} subtitle={t('reg.payer.subtitle', { name: first || '…' })} />
+      <TopBar icon="payments" iconTone="gold" title={t('reg.payer.title')} subtitle={t('reg.payer.subtitle', { name: first || '…' })} />
       <Card className="fg" as="div">
         <MobileField label={t('reg.payer.mobile')} value={mobile} onChange={setMobile} required />
         <SelectField label={t('reg.payer.who')} value={relation} onChange={setRelation} options={choiceOptions(t, PAYER_RELATIONS)} />

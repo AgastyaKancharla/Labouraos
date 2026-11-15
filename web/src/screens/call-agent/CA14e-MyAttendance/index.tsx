@@ -45,7 +45,7 @@ export default function MyAttendance() {
 
   return (
     <div className="lb-page lb-att-page">
-      <TopBar title={t('screen.CA14e-MyAttendance')} titleHidden />
+      <TopBar icon="attendance" iconTone="royal" title={t('screen.CA14e-MyAttendance')} titleHidden />
       <div className="lb-att-titlebar">
         <span className="lb-att-monthnav">
           <button type="button" aria-label={t('att.mine.prev')} disabled={month <= oldest} onClick={() => setMonth(shiftMonth(month, -1))}>
@@ -115,7 +115,7 @@ export default function MyAttendance() {
         {summary.isPending ? (
           <SkeletonCard height={220} />
         ) : days.length === 0 ? (
-          <EmptyState title={t('att.mine.noDays')} />
+          <EmptyState emoji="📅" title={t('att.mine.noDays')} />
         ) : (
           <table className="lb-att-table">
             <caption className="sr-only">{t('att.mine.daysCaption')}</caption>
