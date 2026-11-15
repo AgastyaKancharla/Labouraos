@@ -40,11 +40,53 @@ import { BUSINESS_PHOTO_STORAGE, BusinessPhotoStorage } from './storefront-photo
 import { PricingService } from '../pricing/pricing.service';
 import { BusinessClock } from './business-clock';
 import { BusinessVerificationService } from './business-verification.service';
-import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
+import { EditPolicyService, EditActor, pickEditableFields } from '../../common/edit-policy/edit-policy.service';
 import { AnonymisationService } from '../../common/anonymisation/anonymisation.service';
 import { AgentViewer, agentViewerFor, businessForViewer } from './business-agent-view';
 import { areaAutoFillMaxMeters, areaRequiredError, DEFAULT_AREA_AUTO_FILL_MAX_METERS } from './area-auto-fill';
 import { detectSelfieImageType } from '../../common/image-type';
+
+/**
+ * The only columns PATCH /businesses/:id writes (security AC-1). Not here, on
+ * purpose: phoneVerified; GST, licence, shop-establishment, Udyam, PAN and FSSAI
+ * numbers and their check results (verification, and ban fingerprints); the
+ * storefront photo; the location pin and geofence flag (the verification visit);
+ * documents and verification status; the account agent and lead creator;
+ * in-person onboarding; pause and suspension fields; anonymisation; every
+ * relation. A phone change needs an OTP on the new number.
+ */
+export const ALLOWED_BUSINESS_UPDATE_FIELDS: ReadonlySet<string> = new Set([
+  'name',
+  'phone',
+  'address',
+  'legalName',
+  'ownerName',
+  'additionalContactName',
+  'additionalContactPhone',
+  'familyName',
+  'contactRole',
+  'contactWhatsAppPhone',
+  'contactLanguage',
+  'businessType',
+  'employeeCountBand',
+  'employeeCount',
+  'staffNeeded',
+  'yearsInOperation',
+  'yearsInOperationBand',
+  'hiringFrequency',
+  'openingTime',
+  'closingTime',
+  'workingDays',
+  'shopNumber',
+  'street',
+  'landmark',
+  'pincode',
+  'locality',
+  'billingName',
+  'billingAddress',
+  'billingEmail',
+  'heardFrom',
+]);
 
 @Injectable()
 export class BusinessService {
@@ -84,13 +126,20 @@ export class BusinessService {
     }
 
     const reason = typeof dto.reason === 'string' ? dto.reason : undefined;
-    normaliseBusinessPhoneFields(dto);
+    // Security (AC-1): only the business's own details. Verification, documents,
+    // GST/licence numbers (ban fingerprints), the account agent, pause and
+    // suspension have their own routes; relations are never written here.
+    const updates = pickEditableFields(dto, ALLOWED_BUSINESS_UPDATE_FIELDS, 'business');
+    normaliseBusinessPhoneFields(updates);
+    if ('name' in updates && (typeof updates.name !== 'string' || !updates.name.trim())) {
+      throw new BadRequestException('Business name is required');
+    }
 
     const { record, diff } = await this.editPolicyService.assertCanEdit({
       actor: editActor,
       entityType: 'business',
       entityId: id,
-      updates: dto,
+      updates,
       reason,
     });
 
@@ -98,15 +147,59 @@ export class BusinessService {
       return record;
     }
 
+    // Like a job seeker: the owner's new mobile number is checked by OTP on that number.
+    let phoneChange: { otpRequestId: string; phone: string } | null = null;
+    if (diff.changedFields.includes('phone')) {
+      const newPhone = updates.phone as string;
+      const otpRequestId = typeof dto.phoneOtpRequestId === 'string' ? dto.phoneOtpRequestId
+        : typeof dto.otpRequestId === 'string' ? dto.otpRequestId : null;
+      if (!otpRequestId) {
+        throw new BadRequestException('Changing the mobile number needs an OTP check on the new number: send an OTP to it and pass phoneOtpRequestId');
+      }
+      if (!(await this.otpService.isVerified(otpRequestId, newPhone, 'business_contact'))) {
+        throw new BadRequestException('The new mobile number must pass OTP verification before it is saved');
+      }
+      const taken = await this.prisma.business.findFirst({
+        where: { phone: { in: mobileLookupValues(newPhone) }, id: { not: record.id as string } },
+        select: { id: true, code: true },
+      });
+      if (taken) {
+        throw new ConflictException({
+          statusCode: 409,
+          error: 'Conflict',
+          message: 'Already registered — open it. A business with this mobile number already exists',
+          existingBusinessCode: taken.code,
+        });
+      }
+      // D11: a permanently banned phone never comes back through an edit either.
+      await assertNotBanned(this.prisma, { phone: newPhone });
+      phoneChange = { otpRequestId, phone: newPhone };
+    }
+    if (phoneChange && !(await this.otpService.consumeVerified(phoneChange.otpRequestId, phoneChange.phone, 'business_contact'))) {
+      throw new BadRequestException('This verified OTP request has already been used or expired');
+    }
+
     const data: Record<string, unknown> = {};
     for (const key of diff.changedFields) {
-      data[key] = dto[key];
+      data[key] = updates[key];
     }
 
     const updated = await this.prisma.business.update({
       where: { id: record.id as string },
-      data,
+      data: phoneChange ? { ...data, phoneVerified: true } : data,
     });
+    if (phoneChange) {
+      await this.auditService.log({
+        actorId: editActor.id,
+        action: 'business.phone_changed',
+        entityType: 'business',
+        entityCode: updated.code,
+        after: { phoneVerifiedByOtp: true },
+        changedFields: ['phoneVerified'],
+        reason: reason ?? 'Mobile number changed after OTP on the new number',
+        city: updated.city,
+      });
+    }
 
     await this.editPolicyService.logEdit({
       actorId: editActor.id,

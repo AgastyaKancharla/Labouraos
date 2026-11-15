@@ -21,7 +21,7 @@ describe('P05-InterviewResult', () => {
     const api = mockApi({
       'GET /interviews/result/rtok': details,
       'POST /interviews/result/rtok/otp': { requestId: 'rreq', phone: '******8812' },
-      'POST /interviews/result/rtok': { status: 'completed', result: 'selected', placement: { payment: { upiReference: 'PAY-9-ab' } } },
+      'POST /interviews/result/rtok': { status: 'completed', result: 'selected', placement: { payment: { upiReference: 'PAY-9-ab', payPageToken: 'PPT-9' } } },
     });
     const { container } = render();
     expect(await screen.findByRole('heading', { name: "How did Ramesh's interview go?" })).toBeInTheDocument();

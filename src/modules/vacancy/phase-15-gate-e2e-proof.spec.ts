@@ -1,4 +1,5 @@
 import { INestApplication, Injectable } from '@nestjs/common';
+import { payPageTokenByReference } from '../../test-support/pay-page';
 import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'crypto';
@@ -315,7 +316,7 @@ describe('Phase 15 gate end-to-end proof', () => {
 
     let paymentGatewayRef = placement.payment.gatewayReference;
     if (!paymentGatewayRef && placement.payment.upiReference) {
-      await request(server).post(`/payments/request/${encodeURIComponent(placement.payment.upiReference)}/card`).expect(200);
+      await request(server).post(`/payments/request/${await payPageTokenByReference(app, placement.payment.upiReference)}/card`).expect(200);
       const updated = await prisma.payment.findUniqueOrThrow({ where: { id: placement.payment.id } });
       paymentGatewayRef = updated.gatewayReference!;
     }

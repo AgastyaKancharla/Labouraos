@@ -488,6 +488,7 @@ export const hi: Messages = {
   'error.otpLimitWait': 'बहुत ज़्यादा कोशिशें। {minutes} मिनट बाद फिर कोशिश करें।',
   'error.profileExists': 'यह प्रोफ़ाइल आपके पास पहले से है। हमने उसे खोल दिया है।',
   'error.notAllowed': 'यह सिर्फ़ मालिक कर सकते हैं।',
+  'error.referralUnusable': 'यह रेफ़रल कोड इस्तेमाल नहीं हो सकता। आप इसके बिना रजिस्टर कर सकते हैं।',
   'error.referralSelf': 'आप अपना ही रेफ़रल लिंक इस्तेमाल नहीं कर सकते।',
   'error.referralPaused': 'यह रेफ़रल लिंक रोका गया है। आप इसके बिना रजिस्टर कर सकते हैं।',
   'error.deletionPending': 'आपका खाता हटाने का अनुरोध पहले से चल रहा है।',

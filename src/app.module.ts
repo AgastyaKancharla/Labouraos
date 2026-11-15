@@ -64,6 +64,7 @@ import { CustomerAppModule } from './modules/customer-app/customer-app.module';
 import { CustomerNotificationModule } from './modules/customer-notification/customer-notification.module';
 import { SignupTrackerModule } from './modules/signup-tracker/signup-tracker.module';
 import { APP_GUARD } from '@nestjs/core';
+import { PlainQueryGuard } from './common/http/plain-query';
 import { PublicRateLimitGuard } from './common/http/public-rate-limit.guard';
 
 @Module({
@@ -138,6 +139,8 @@ import { PublicRateLimitGuard } from './common/http/public-rate-limit.guard';
     { provide: APP_INTERCEPTOR, useClass: FormulaTextInterceptor },
     // M4: one per-address limit across every @Public() route.
     { provide: APP_GUARD, useClass: PublicRateLimitGuard },
+    // Security IN-2: query values are plain text only.
+    { provide: APP_GUARD, useClass: PlainQueryGuard },
   ],
 })
 export class AppModule {}

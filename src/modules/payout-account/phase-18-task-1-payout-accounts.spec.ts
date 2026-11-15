@@ -100,7 +100,7 @@ describe('Phase 18 Task 1: Payout Accounts', () => {
     };
     let mockMessagingService: { send: jest.Mock };
     let mockAuditService: { log: jest.Mock };
-    let mockOtpService: { sendOtp: jest.Mock; verifyOtp: jest.Mock };
+    let mockOtpService: { sendOtp: jest.Mock; verifyOtp: jest.Mock; sendPublicPageOtp: jest.Mock; consumeVerifiedForPage: jest.Mock };
     let mockPricingService: { current: jest.Mock };
     let mockReviewFlagService: { raise: jest.Mock };
     let service: PayoutAccountService;
@@ -174,6 +174,9 @@ describe('Phase 18 Task 1: Payout Accounts', () => {
       mockOtpService = {
         sendOtp: jest.fn().mockResolvedValue({ requestId: 'otp-req-123' }),
         verifyOtp: jest.fn().mockImplementation((_reqId, code) => Promise.resolve(code === '123456')),
+        // AC-3: the payout page's code is bound to its link and used up by the save.
+        sendPublicPageOtp: jest.fn().mockResolvedValue({ requestId: 'otp-req-123' }),
+        consumeVerifiedForPage: jest.fn().mockResolvedValue(true),
       };
 
       mockPricingService = {
@@ -238,7 +241,8 @@ describe('Phase 18 Task 1: Payout Accounts', () => {
       const otp = await service.sendOtp(token);
       expect(otp.success).toBe(true);
       expect(otp.requestId).toBe('otp-req-123');
-      expect(mockOtpService.sendOtp).toHaveBeenCalledWith('+919876543211');
+      expect(mockOtpService.sendPublicPageOtp).toHaveBeenCalledWith('+919876543211', token);
+      expect(mockOtpService.sendOtp).not.toHaveBeenCalled();
     });
 
     it('refuses submission with invalid OTP code', async () => {

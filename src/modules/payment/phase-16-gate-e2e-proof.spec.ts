@@ -1,4 +1,5 @@
 import { INestApplication } from '@nestjs/common';
+import { payPageTokenByReference } from '../../test-support/pay-page';
 import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
 import * as crypto from 'crypto';
@@ -216,13 +217,17 @@ describe('Phase 16 Gate End-to-End Proof', () => {
 
     // Candidate opens the old payment URL: the browser goes to the new phone page (P05b),
     // which reads the summary — exact amount, reference and the UPI QR, no upload field.
+    // INF-1: the payer's link carries the page token; the UPI reference opens nothing.
+    const jsPage = await payPageTokenByReference(app, jsUpiRef);
+    expect(actRes.body.paymentLink).toContain(`/p/fee/${jsPage}`);
+    expect((await request(app.getHttpServer()).get(`/payments/request/${encodeURIComponent(jsUpiRef)}/summary`)).status).toBe(404);
     const pageRes = await request(app.getHttpServer())
-      .get(`/payments/request/${encodeURIComponent(jsUpiRef)}`)
+      .get(`/payments/request/${jsPage}`)
       .set('Accept', 'text/html')
       .expect(302);
-    expect(pageRes.headers.location).toBe(`https://app.laboura.in/p/fee/${encodeURIComponent(jsUpiRef)}`);
+    expect(pageRes.headers.location).toBe(`https://app.laboura.in/p/fee/${jsPage}`);
     const summaryRes = await request(app.getHttpServer())
-      .get(`/payments/request/${encodeURIComponent(jsUpiRef)}/summary`)
+      .get(`/payments/request/${jsPage}/summary`)
       .expect(200);
     expect(summaryRes.body).toMatchObject({ type: 'activation', state: 'pending', amountPaise: 49900, upiReference: jsUpiRef });
     expect(summaryRes.body.pay.upiUri).toContain('am=499.00');
@@ -230,7 +235,7 @@ describe('Phase 16 Gate End-to-End Proof', () => {
 
     // Candidate enters 12-digit UTR hint (nothing changes)
     await request(app.getHttpServer())
-      .post(`/payments/request/${encodeURIComponent(jsUpiRef)}/utr-hint`)
+      .post(`/payments/request/${jsPage}/utr-hint`)
       .send({ utr: '202611090001' })
       .expect(200);
 
@@ -660,7 +665,7 @@ describe('Phase 16 Gate End-to-End Proof', () => {
 
     // Owner picks "Pay by card" on the payment page
     const cardRes = await request(app.getHttpServer())
-      .post(`/payments/request/${encodeURIComponent(cardUpiRef)}/card`)
+      .post(`/payments/request/${await payPageTokenByReference(app, cardUpiRef)}/card`)
       .expect(200);
 
     expect(cardRes.body.paymentId).toBe(cardPayment!.id);

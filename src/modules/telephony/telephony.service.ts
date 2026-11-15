@@ -17,6 +17,7 @@ import {
   TelephonyProvider,
 } from './telephony.interface';
 import { OwnTeam } from '../../common/rbac/own-team';
+import { queryText } from '../../common/http/plain-query';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
@@ -125,7 +126,7 @@ export class TelephonyService {
   async getCallbackQueue(filters?: { status?: string }, actor?: JwtPayload) {
     const where: Prisma.CallbackTaskWhereInput = {};
     if (filters?.status) {
-      where.status = filters.status;
+      where.status = queryText(filters.status, 'status');
     }
     if (actor && actor.role !== 'ceo') {
       const mine = [actor.sub];

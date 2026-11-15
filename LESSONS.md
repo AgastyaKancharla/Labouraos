@@ -584,3 +584,18 @@ Format:
 **Symptom:** After the temporary-password change (rev 174–175), unrelated specs that reactivate or reset someone fail in `afterAll` on `prisma.staff.deleteMany()` with "Foreign key constraint violated on the constraint: `StaffPasswordReset_issuedByStaffId_fkey`".
 **Cause:** Reactivation, "New temporary password" and "Reset sign-in completely" now write a password reset history row naming the senior, and the issuer link was `ON DELETE RESTRICT`.
 **Fix:** The issuer is optional now (the break-glass command has none), so the link is `ON DELETE SET NULL` (migration `20261130000000_staff_temp_password_and_reset_requests`). Specs that create staff through the API should still clear `tempPasswordIssuedByStaffId`, `teamLeadId` and `reportsToId` before deleting rows.
+
+## A spec can no longer read a public link's token from the staff answer
+**Symptom:** after security AC-3, `res.body.token` from `POST /consent/links`, `/businesses/:id/agreement-links` or `/referrals/:id/terms-links` is `undefined`, and the spec's next call to the public page fails.
+**Cause:** staff routes answer without the token on purpose (the link reaches the person by SMS only).
+**Fix:** wrap the staff request in `withIssuedLinkToken(app, () => request(...))` (`src/test-support/issued-link-token.ts`), which returns the token the link service issued. On the public pages, send the code from the page (`POST /consent/send-otp` or `otpService.sendPublicPageOtp(phone, token)`): a plain `otpService.sendOtp(phone)` code is refused there by design.
+
+## A spec opens the pay page by its UPI reference and gets 404
+**Symptom:** after security INF-1, `/payments/request/<upiReference>/summary` (or `/card`, `/utr-hint`) answers 404 for a request the spec just created.
+**Cause:** the pay page opens only by its page token; `upiReference` is now just the UPI `tr=` / bank reference.
+**Fix:** use `payPageTokenByReference(app, upiReference)` (`src/test-support/pay-page.ts`) or `payPageTokenFor(paymentId)`.
+
+## Prisma's runtime model description has no isList/isRequired in some local builds
+**Symptom:** `EditPolicyService` column checks refused an array for a `String[]` column, only on the local WASM-engine client.
+**Cause:** the client generated with `engineType = "client"` ships a compact `Prisma.dmmf` (no `isList` / `isRequired`); the normal client (CI, production) has them.
+**Fix:** when `isList` is missing, the check treats a column as a list when the saved record holds an array. Don't rely on `isRequired` for security decisions.

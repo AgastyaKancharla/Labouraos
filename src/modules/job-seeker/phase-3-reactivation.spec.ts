@@ -1,4 +1,5 @@
 import { INestApplication } from '@nestjs/common';
+import { payPageTokenByReference } from '../../test-support/pay-page';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as request from 'supertest';
 import * as bcrypt from 'bcrypt';
@@ -208,7 +209,7 @@ describe('Phase 3 Task 5: Reactivation', () => {
     const { paymentId } = reactivateRes.body;
     let gatewayReference = reactivateRes.body.gatewayReference;
     if (!gatewayReference && reactivateRes.body.upiReference) {
-      await request(app.getHttpServer()).post(`/payments/request/${encodeURIComponent(reactivateRes.body.upiReference)}/card`).expect(200);
+      await request(app.getHttpServer()).post(`/payments/request/${await payPageTokenByReference(app, reactivateRes.body.upiReference)}/card`).expect(200);
       const updated = await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } });
       gatewayReference = updated.gatewayReference;
     }

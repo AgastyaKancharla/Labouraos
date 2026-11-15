@@ -92,8 +92,9 @@ also carry `code: "VALIDATION_FAILED"` and, when known, `field`.
 | `ALREADY_REGISTERED_OTHER_KIND` | 409 | Reserved: not used in v1 (a job seeker may also be a partner, and so on) |
 | `UNDER_18` | 422 | Date of birth under 18: stop, polite message. Nothing is saved |
 | `VALIDATION_FAILED` | 400 | A field is wrong; `field` when known |
-| `REFERRAL_SELF` | 422 | A partner's own code was used on their own sign-up |
-| `REFERRAL_PAUSED` | 422 | The referral code belongs to a paused partner; the sign-up continues without it if the app resends without `referralCode` |
+| `REFERRAL_UNUSABLE` | 422 | The referral code cannot be used: unknown, paused, or the partner's own (one answer for all, so codes cannot be probed; security INF-14). After 5 refused codes in an hour the account gets `429 LIMIT_REACHED` |
+| `REFERRAL_SELF` | 422 | No longer sent (replaced by `REFERRAL_UNUSABLE`) |
+| `REFERRAL_PAUSED` | 422 | No longer sent (replaced by `REFERRAL_UNUSABLE`); the sign-up continues without the code if the app resends without `referralCode` |
 | `NOT_ALLOWED` | 403 | The action is not allowed for my role on this profile (e.g. a branch manager opening the agreement) |
 | `GUARANTEE_WARNING_REQUIRED` | 409 | Deleting while the 30-day guarantee runs, or while a refund is still owed: show the warning (`guaranteeRunning`, `refundOwed`), resend with `refundLossAcknowledged: true` |
 | `BELOW_MINIMUM_WAGE_TICK_REQUIRED` | 409 | Vacancy salary below the legal minimum: show the warning and the tick, resend with `ownerToldMinimumWage: true`. `legalMinimumPaise` included |
@@ -550,9 +551,13 @@ a `VisitAssignment` with purpose `business_signup`, status `pending`,
 agent yet. **The back office (D) suggests and assigns the field agent on that
 row and never creates a second one.** Branches, a visit, a selfie or a
 household cannot be sent from the app (an agent adds branches; households wait, C24).
-Errors: `409 PROFILE_EXISTS` (mobile, GST or licence already registered: linked
-if it is my mobile; otherwise `409 VALIDATION_FAILED` "Already registered" and
-the app offers "Call me back"); `400 VALIDATION_FAILED`.
+Errors: `409 PROFILE_EXISTS` (my mobile already has a business: linked);
+`409 VALIDATION_FAILED` with the generic message "We couldn't finish this
+sign-up in the app. Our team will call you to complete it." when a GST or
+licence number is already on another business — the app never says so, or
+which business (security AC-6); the sign-up gets a `needs_help` event for the
+back office, and the app offers "Call me back"; `422 REFERRAL_UNUSABLE`;
+`400 VALIDATION_FAILED`.
 
 ### 5.4 Referral partner
 

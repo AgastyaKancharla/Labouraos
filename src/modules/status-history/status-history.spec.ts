@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { payPageTokenByReference } from '../../test-support/pay-page';
 import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as request from 'supertest';
@@ -224,7 +225,7 @@ describe('Phase 9 Task 7: Status History', () => {
 
       let gatewayRef = paymentRes.body.gatewayReference;
       if (!gatewayRef && paymentRes.body.upiReference) {
-        await request(app.getHttpServer()).post(`/payments/request/${encodeURIComponent(paymentRes.body.upiReference)}/card`).expect(200);
+        await request(app.getHttpServer()).post(`/payments/request/${await payPageTokenByReference(app, paymentRes.body.upiReference)}/card`).expect(200);
         const updated = await prisma.payment.findUniqueOrThrow({ where: { id: paymentRes.body.paymentId } });
         gatewayRef = updated.gatewayReference;
       }
@@ -279,7 +280,7 @@ describe('Phase 9 Task 7: Status History', () => {
 
       let reactivateGatewayRef = reactivateRes.body.gatewayReference;
       if (!reactivateGatewayRef && reactivateRes.body.upiReference) {
-        await request(app.getHttpServer()).post(`/payments/request/${encodeURIComponent(reactivateRes.body.upiReference)}/card`).expect(200);
+        await request(app.getHttpServer()).post(`/payments/request/${await payPageTokenByReference(app, reactivateRes.body.upiReference)}/card`).expect(200);
         const updated = await prisma.payment.findUniqueOrThrow({ where: { id: reactivateRes.body.paymentId } });
         reactivateGatewayRef = updated.gatewayReference;
       }

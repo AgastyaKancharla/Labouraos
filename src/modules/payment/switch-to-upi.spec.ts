@@ -14,8 +14,9 @@ import { calculatePlacementFee, calculateGst } from '../../common/money/money';
 import { EditPolicyService } from '../../common/edit-policy/edit-policy.service';
 import { AnonymisationService } from '../../common/anonymisation/anonymisation.service';
 import { TradeService } from '../trade/trade.service';
-import { receiptToken } from './receipt-link';
-import { invoiceToken } from '../placement/invoice-link';
+import { isValidReceiptToken } from './receipt-link';
+import { payPageTokenFor } from './pay-page-token';
+import { isValidInvoiceToken } from '../placement/invoice-link';
 
 type MockPrisma = {
   payment: Record<string, jest.Mock>;
@@ -228,7 +229,9 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
       expect(res.amount).toBe(49900);
       expect(res.gatewayReference).toBeNull();
       expect(res.upiReference).toBe('PAY-00001-1234abcd');
-      expect(res.paymentLink).toContain('/p/fee/PAY-00001-1234abcd');
+      // INF-1: the link carries the pay page token, never the UPI reference.
+      expect(res.paymentLink).toContain(`/p/fee/${payPageTokenFor(res.paymentId)}`);
+      expect(res.paymentLink).not.toContain('PAY-00001-1234abcd');
       expect(messagingService.send).toHaveBeenCalledWith(
         expect.objectContaining({
           channel: 'sms',
@@ -281,10 +284,13 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
           subjectType: 'job_seeker',
           subjectId: 'js-1',
           variables: {
-            link: `https://app.laboura.in/payments/pay-1/receipt?token=${receiptToken('pay-1')}`,
+            // The token carries its own expiry (AC-5): checked below rather than by exact text.
+            link: expect.stringMatching(/^https:\/\/app\.laboura\.in\/payments\/pay-1\/receipt\?token=[0-9a-z]+\.[\w-]+$/),
           },
         }),
       );
+      const receiptSent = (messagingService.send as jest.Mock).mock.calls.map(([m]) => m).find((m) => m.template === 'payment_receipt');
+      expect(isValidReceiptToken('pay-1', new URL(receiptSent.variables.link).searchParams.get('token'))).toBe(true);
     });
 
     it('re-registration after 3 hits resets hit count and creates UPI request with reactivation: true', async () => {
@@ -404,7 +410,8 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
       expect(result.gstAmount).toBe(expectedGst);
       expect(result.payment?.amount).toBe(expectedTotal);
       expect(result.payment?.upiReference).toBe('PAY-00003-plfee1234');
-      expect(result.payment?.paymentLink).toContain('/p/fee/PAY-00003-plfee1234');
+      expect(result.payment?.paymentLink).toContain(`/p/fee/${payPageTokenFor(result.payment!.id)}`);
+      expect(result.payment?.payPageToken).toBe(payPageTokenFor(result.payment!.id));
 
       // Assert sent to business owner via SMS and WhatsApp
       expect(messagingService.send).toHaveBeenCalledWith(
@@ -414,7 +421,7 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
           subjectId: 'biz-1',
           variables: expect.objectContaining({
             amount: '9440.00',
-            link: expect.stringContaining('/p/fee/PAY-00003-plfee1234'),
+            link: expect.stringContaining(`/p/fee/${payPageTokenFor(result.payment!.id)}`),
           }),
         }),
       );
@@ -490,11 +497,13 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
           subjectId: 'biz-1',
           variables: {
             // The business's own signed, read-only invoice copy — not the staff-only route.
-            link: `https://app.laboura.in/placements/pl-1/invoice/copy?token=${invoiceToken('pl-1')}`,
+            link: expect.stringMatching(/^https:\/\/app\.laboura\.in\/placements\/pl-1\/invoice\/copy\?token=[0-9a-z]+\.[\w-]+$/),
             invoiceCode: 'INV-00001',
           },
         }),
       );
+      const invoiceSent = (messagingService.send as jest.Mock).mock.calls.map(([m]) => m).find((m) => m.template === 'placement_invoice');
+      expect(isValidInvoiceToken('pl-1', new URL(invoiceSent.variables.link).searchParams.get('token'))).toBe(true);
 
       // Candidate received joining confirmation
       expect(messagingService.send).toHaveBeenCalledWith(

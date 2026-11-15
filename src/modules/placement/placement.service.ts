@@ -1,4 +1,7 @@
 import { OwnTeam, businessesOwnedBy } from '../../common/rbac/own-team';
+import { ensurePayPageToken } from '../payment/pay-page-token';
+import { maskPhoneLast4 } from '../../common/rbac/pii-masking.interceptor';
+import { queryText } from '../../common/http/plain-query';
 import { isBusinessSuspended } from '../business/business-candidate-access';
 import { chainRefundOf } from './chain-refund';
 import { claimPausedMs, claimRefundPause, resumeEndedSuspensions } from './claim-clock';
@@ -62,7 +65,7 @@ import {
   InvoiceSupplier,
 } from './dto/gst-invoice.dto';
 import { ExportPlacementsQueryDto, RegulatoryPlacementExportRow } from './dto/export-placements.dto';
-import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
+import { EditPolicyService, EditActor, pickEditableFields } from '../../common/edit-policy/edit-policy.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { MessagingService } from '../message/messaging.service';
 import { ReportingScopeService } from '../staff/reporting-scope.service';
@@ -85,6 +88,14 @@ export function calculateDaysElapsed(
   const diffMs = Math.max(0, effectiveEnd.getTime() - startDate.getTime());
   return Math.floor(diffMs / (1000 * 60 * 60 * 24));
 }
+
+/**
+ * The only column PATCH /placements/:id writes (security AC-1). Every other
+ * placement change has a dedicated route: payment and fee (UPI / Finance),
+ * joining date (joining call), joined (POST /placements/:id/joined), claims,
+ * refunds, cancelling an upgrade. A paid placement's salary: CEO only.
+ */
+export const ALLOWED_PLACEMENT_UPDATE_FIELDS: ReadonlySet<string> = new Set(['agreedSalary']);
 
 @Injectable()
 export class PlacementService {
@@ -121,12 +132,19 @@ export class PlacementService {
     }
 
     const reason = typeof dto.reason === 'string' ? dto.reason : undefined;
+    // Security (AC-1): only the agreed salary. Status, payment (paidAt, fee, GST,
+    // invoice), joining and joined dates, the guarantee and replacement chain
+    // have their own routes, and relations are never written here.
+    const updates = pickEditableFields(dto, ALLOWED_PLACEMENT_UPDATE_FIELDS, 'placement');
+    if ('agreedSalary' in updates && (!Number.isInteger(updates.agreedSalary) || (updates.agreedSalary as number) <= 0)) {
+      throw new BadRequestException('agreedSalary must be a whole number of paise');
+    }
 
     const { record, diff } = await this.editPolicyService.assertCanEdit({
       actor: editActor,
       entityType: 'placement',
       entityId: id,
-      updates: dto,
+      updates,
       reason,
     });
 
@@ -134,13 +152,15 @@ export class PlacementService {
       return record;
     }
 
+    // Once the fee is paid, the agreed salary is what a later replacement's
+    // salary-difference fee is measured against (D3), so only the CEO changes it.
+    if (diff.changedFields.includes('agreedSalary') && record.paidAt && editActor.role !== 'ceo') {
+      throw new ForbiddenException('The fee for this placement is paid: only the CEO can change its agreed salary');
+    }
+
     const data: Record<string, unknown> = {};
     for (const key of diff.changedFields) {
-      if (['joiningDate', 'joinedDate'].includes(key)) {
-        data[key] = dto[key] ? new Date(dto[key] as string) : null;
-      } else {
-        data[key] = dto[key];
-      }
+      data[key] = updates[key];
     }
 
     const updated = await this.prisma.placement.update({
@@ -419,6 +439,8 @@ export class PlacementService {
           paymentLink: upgradeRequest.paymentLink,
           gatewayReference: upgradePayment.gatewayReference,
           upiReference: upgradePayment.upiReference,
+          // INF-1: what opens the pay page (P05b); the UPI reference no longer does.
+          payPageToken: await ensurePayPageToken(this.prisma, upgradePayment.id),
         } : null,
       };
     }
@@ -470,6 +492,7 @@ export class PlacementService {
         paymentLink: paymentLink ?? created.paymentLink,
         gatewayReference: effectivePayment.gatewayReference,
         upiReference: effectivePayment.upiReference,
+        payPageToken: await ensurePayPageToken(this.prisma, effectivePayment.id),
       } : null,
     };
   }
@@ -2287,7 +2310,10 @@ export class PlacementService {
    * (invoice-link.ts). Same invoice as staff see; the token was checked by the caller.
    */
   async getInvoiceForBusiness(id: string): Promise<GstInvoiceResponse> {
-    return this.buildInvoice(id, 'system');
+    const invoice = await this.buildInvoice(id, 'system');
+    // INF-1: the copy anyone with the link can open never shows the owner's full number.
+    const phone = invoice.customer.contactPhone;
+    return phone ? { ...invoice, customer: { ...invoice.customer, contactPhone: maskPhoneLast4(phone) } } : invoice;
   }
 
   private async buildInvoice(id: string, actorId: string): Promise<GstInvoiceResponse> {
@@ -2435,7 +2461,7 @@ export class PlacementService {
     const where: Prisma.PlacementWhereInput = {};
 
     if (query.status) {
-      where.status = query.status;
+      where.status = queryText(query.status, 'status');
     }
 
     if (query.locality) {

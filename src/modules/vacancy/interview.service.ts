@@ -1,4 +1,5 @@
 import { OwnTeam } from '../../common/rbac/own-team';
+import { queryText } from '../../common/http/plain-query';
 import { LegalDocumentService } from '../legal/legal-document.service';
 import { ReconsentRequiredException } from '../legal/legal-status';
 import {
@@ -367,7 +368,7 @@ export class InterviewService {
       throw new ForbiddenException('This staff role cannot view interviews');
     }
     const where: Prisma.InterviewWhereInput = {};
-    if (filters.status) where.status = filters.status;
+    if (filters.status) where.status = queryText(filters.status, 'status');
     if (filters.vacancyId) {
       const vacancy = await this.prisma.vacancy.findFirst({
         where: filters.vacancyId.startsWith('VC-') ? { code: filters.vacancyId } : { id: filters.vacancyId },
@@ -385,7 +386,7 @@ export class InterviewService {
       if (filters.agentId && !teamIds.includes(filters.agentId)) throw new ForbiddenException('You can only view interviews proposed by your team');
       where.proposedByStaffId = filters.agentId ?? { in: teamIds };
     } else if (filters.agentId) {
-      where.proposedByStaffId = filters.agentId;
+      where.proposedByStaffId = queryText(filters.agentId, 'agentId');
     }
 
     const rows = await this.prisma.interview.findMany({

@@ -166,7 +166,7 @@ describe('The job seeker consent step (P01) checks the code and the text', () =>
     const prisma = { jobSeeker: { findUnique: jest.fn().mockResolvedValue({ id: 'js-1', phone: '+919876512345', status: 'lead' }) } };
     const publicLinks = { findByToken: jest.fn().mockResolvedValue(row), hashToken: (t: string) => `hash-${t}`, markUsed: jest.fn() };
     const consent = { hasAllRequired: jest.fn().mockResolvedValue(false), grant: jest.fn() };
-    const otp = { verifyOtp: jest.fn().mockResolvedValue(true), isVerified: jest.fn().mockResolvedValue(otpOwnPhone) };
+    const otp = { verifyOtp: jest.fn().mockResolvedValue(true), isVerifiedForPage: jest.fn().mockResolvedValue(otpOwnPhone) };
     const legal = { render: jest.fn(async (key: 'job_seeker_terms', lang: 'en') => renderLegalDocument(key, lang, legalNumbersFrom(POLICY as never), legalCompanyFrom(POLICY as never))) };
     const service = new ConsentLinkService(
       prisma as never, publicLinks as never, { now: () => now } as never, consent as never, {} as never, otp as never,
@@ -178,7 +178,8 @@ describe('The job seeker consent step (P01) checks the code and the text', () =>
   it('a typed code must have been sent to his own phone', async () => {
     const { service, consent, otp } = consentStep(false);
     await expect(service.submitConsent({ token: 't', otpRequestId: 'otp-other', otpCode: '123456', purposes: ['job_matching'], language: 'en' })).rejects.toThrow('Invalid or expired OTP');
-    expect(otp.isVerified).toHaveBeenCalledWith('otp-other', '+919876512345');
+    // AC-3: a code sent from this link's own page to his own phone.
+    expect(otp.isVerifiedForPage).toHaveBeenCalledWith('otp-other', '+919876512345', 't');
     expect(consent.grant).not.toHaveBeenCalled();
   });
 

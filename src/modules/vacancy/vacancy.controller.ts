@@ -178,6 +178,21 @@ export class VacancyController {
     return this.vacancyService.findById(id);
   }
 
+  @Post(':id/close')
+  @RequireRoles('manager', 'ceo', 'team_lead')
+  @RequirePermission('vacancy', 'write')
+  async close(
+    @Param('id') id: string,
+    @Body() body: { reason?: string },
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.vacancyService.close(
+      id,
+      { id: req.user.sub, role: req.user.role, teamLeadId: req.user.teamLeadId },
+      body?.reason,
+    );
+  }
+
   @Patch(':id')
   @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'team_lead')
   @RequirePermission('vacancy', 'write')

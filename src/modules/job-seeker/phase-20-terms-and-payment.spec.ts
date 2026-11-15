@@ -7,6 +7,7 @@ import * as request from 'supertest';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { OtpService } from '../../common/otp/otp.service';
+import { withIssuedLinkToken } from '../../test-support/issued-link-token';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
@@ -99,12 +100,13 @@ describe('Phase 20 terms-and-payment step and a second activation payment', () =
       .expect(201);
     seekerIds.push(created.body.id);
     seekerCodes.push(created.body.code);
-    const link = await request(server())
+    // The token reaches him by SMS; the staff answer never carries it (AC-3).
+    const { token } = await withIssuedLinkToken(app, () => request(server())
       .post('/consent/links')
       .set('Authorization', `Bearer ${callAgentToken}`)
       .send({ jobSeekerId: created.body.id })
-      .expect(201);
-    return { id: created.body.id as string, phone, token: link.body.token as string };
+      .expect(201));
+    return { id: created.body.id as string, phone, token };
   }
 
   async function verifiedLinkOtp(token: string) {

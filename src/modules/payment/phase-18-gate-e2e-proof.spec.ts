@@ -1,4 +1,5 @@
 import { INestApplication } from '@nestjs/common';
+import { withIssuedLinkToken } from '../../test-support/issued-link-token';
 import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
 import * as crypto from 'crypto';
@@ -468,13 +469,13 @@ describe('Phase 18 Gate End-to-End Proof', () => {
         .expect(400);
 
       // 3. Referral partner signs terms by OTP on their phone
-      const termsLinkRes = await request(app.getHttpServer())
+      const { token: termsLinkResToken } = await withIssuedLinkToken(app, () => request(app.getHttpServer())
         .post(`/referrals/${partner.id}/terms-links`)
         .set('Authorization', `Bearer ${callAgentToken}`)
         .send({ language: 'en' })
-        .expect(201);
+        .expect(201));
 
-      const termsToken = termsLinkRes.body.token;
+      const termsToken = termsLinkResToken;
       expect(termsToken).toBeDefined();
 
       const termsOtpRes = await request(app.getHttpServer())

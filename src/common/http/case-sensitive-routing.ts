@@ -18,5 +18,7 @@ import { ExpressAdapter } from '@nestjs/platform-express';
 export function caseSensitiveHttpAdapter(): ExpressAdapter {
   const server = express();
   server.set('case sensitive routing', true);
+  // Security IN-2: no nested objects from query strings (?status[not]=x stays the text key "status[not]").
+  server.set('query parser', 'simple');
   return new ExpressAdapter(server);
 }

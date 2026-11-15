@@ -12,10 +12,10 @@ describe('P02b-Paid', () => {
     verifiedInThisTab();
     const api = mockApi({
       [`GET /registration/${TOKEN}/status`]: openStatus({
-        currentStep: 'payment', steps,
+        currentStep: 'payment', steps, payPageToken: 'PPT-1',
         payment: { state: 'pending', amountPaise: 49900, upiReference: 'PAY-1-ab', confirmedAt: null, guaranteeEndsAt: null, paymentId: null },
       }),
-      'POST /payments/request/PAY-1-ab/utr-hint': { saved: true },
+      'POST /payments/request/PPT-1/utr-hint': { saved: true },
     });
     render();
     expect(await screen.findByText('Paid — confirming.')).toBeInTheDocument();
@@ -23,7 +23,7 @@ describe('P02b-Paid', () => {
     expect(screen.getByText(/A screenshot is never proof/)).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/12-digit UPI reference/), '123456789012');
     await userEvent.click(screen.getByRole('button', { name: 'Send reference number' }));
-    expect(api.calls('POST /payments/request/PAY-1-ab/utr-hint')[0]!.body).toEqual({ utr: '123456789012' });
+    expect(api.calls('POST /payments/request/PPT-1/utr-hint')[0]!.body).toEqual({ utr: '123456789012' });
     expect(await screen.findByText(/We'll match it when the money reaches our bank/)).toBeInTheDocument();
     expect(screen.queryByText(/Registration complete/)).not.toBeInTheDocument();
   });

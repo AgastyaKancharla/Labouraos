@@ -20,6 +20,7 @@ import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { PiiMaskingInterceptor } from '../../common/rbac/pii-masking.interceptor';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { CreateReferralDto } from './dto/create-referral.dto';
+import { withoutLinkToken } from '../../common/public-link-response';
 
 @Controller('referrals')
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -39,11 +40,12 @@ export class ReferralController {
     @Body() body: { language?: string },
     @Req() req: Request & { user: JwtPayload },
   ) {
-    return this.consentLinkService.createReferralTermsLink(
+    // AC-3: the link goes to the partner by SMS; staff never get its token.
+    return withoutLinkToken(await this.consentLinkService.createReferralTermsLink(
       referralId,
       req.user.sub,
       body?.language,
-    );
+    ));
   }
 
   @Post()

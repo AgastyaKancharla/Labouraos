@@ -16,6 +16,7 @@ const CODE_KEYS: Record<string, MessageKey> = {
   UNDER_18: 'jobSeeker.under18',
   PROFILE_EXISTS: 'error.profileExists',
   NOT_ALLOWED: 'error.notAllowed',
+  REFERRAL_UNUSABLE: 'error.referralUnusable',
   REFERRAL_SELF: 'error.referralSelf',
   REFERRAL_PAUSED: 'error.referralPaused',
   DELETION_PENDING: 'error.deletionPending',

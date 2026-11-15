@@ -11,15 +11,24 @@ describe('reading the search bar', () => {
 
   it('reads a mobile number, full or the last 4 digits', () => {
     expect(parseSearchQuery('4412')).toEqual({ kind: 'phone', digits: '4412' });
-    expect(parseSearchQuery('98765 43210')).toEqual({ kind: 'phone', digits: '9876543210' });
-    expect(parseSearchQuery('+91 98765 43210')).toEqual({ kind: 'phone', digits: '9876543210' });
+    expect(parseSearchQuery('98765 43210')).toEqual({ kind: 'phone', digits: '9876543210', full: true });
+    expect(parseSearchQuery('+91 98765 43210')).toEqual({ kind: 'phone', digits: '9876543210', full: true });
     expect(parseSearchQuery('123')).toBeNull();
   });
+
+  // Security AC-2: a 5-to-9-digit suffix search let a caller rebuild a full
+  // number one digit at a time from the result counts.
+  it.each(['54321', '654321', '7654321', '87654321', '987654321', '12345678901', '0000000000'])(
+    'never reads %j as a phone search',
+    (typed) => {
+      expect(parseSearchQuery(typed)).toBeNull();
+    },
+  );
 
   it.each(['9876543210', '+919876543210', '+91 98765 43210', '919876543210', '09876543210', '98765-43210'])(
     'reads the mobile typed as %j as the 10 digits of the saved +919876543210',
     (typed) => {
-      expect(parseSearchQuery(typed)).toEqual({ kind: 'phone', digits: '9876543210' });
+      expect(parseSearchQuery(typed)).toEqual({ kind: 'phone', digits: '9876543210', full: true });
     },
   );
 

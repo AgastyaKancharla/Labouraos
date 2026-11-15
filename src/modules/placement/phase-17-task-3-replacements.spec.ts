@@ -25,7 +25,7 @@ type MockPrisma = {
   };
   replacementClaim: { findFirst: jest.Mock; findMany: jest.Mock; update: jest.Mock; updateMany: jest.Mock; findUniqueOrThrow: jest.Mock };
   replacementCandidate: { findMany: jest.Mock; create: jest.Mock; updateMany: jest.Mock };
-  payment: { findFirst: jest.Mock; create: jest.Mock };
+  payment: { findFirst: jest.Mock; create: jest.Mock; updateMany: jest.Mock };
   vacancy: { create: jest.Mock; findUniqueOrThrow: jest.Mock; update: jest.Mock };
   jobSeeker: { update: jest.Mock };
   statusHistory: { create: jest.Mock };
@@ -136,6 +136,8 @@ describe('Phase 17 Task 3: Replacements through interviews and guarantee rules',
       },
       payment: {
         findFirst: jest.fn().mockResolvedValue(null),
+        // INF-1: the pay page token's hash is saved on rows made before page tokens.
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
         create: jest.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
           id: 'pay-ref-1',
           code: 'PAY-00001',

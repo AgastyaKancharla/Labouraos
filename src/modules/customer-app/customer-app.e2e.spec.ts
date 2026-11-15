@@ -461,11 +461,48 @@ describe('Customer app API', () => {
       expect(home.body.referred).toEqual([expect.objectContaining({ firstName: 'Suresh', stage: 'paid' })]);
       expect(JSON.stringify(home.body.referred)).not.toMatch(/Kumar|Rao|\+91|phone/);
       expect(home.body.share.link).toContain(referral.code);
-      // Referring yourself is refused.
+      // Referring yourself is refused — with the same answer as an unknown code (INF-14: no oracle).
       const selfRef = await auth(http().post(`${API}/me/register/job-seeker`), session.accessToken)
         .send({ dateOfBirth: '1995-05-17', referralCode: referral.code, otp: await freshOtp(session.accessToken, 'register') })
         .expect(422);
-      expect(selfRef.body.code).toBe('REFERRAL_SELF');
+      expect(selfRef.body.code).toBe('REFERRAL_UNUSABLE');
+    });
+
+    it('INF-14: unknown, paused and own referral codes get one answer, and repeated tries are limited', async () => {
+      const partnerSession = await signIn(newPhone());
+      const partner = await auth(http().post(`${API}/me/register/referral`), partnerSession.accessToken)
+        .send({ name: 'Paused Partner', type: 'individual', individualRole: 'auto_driver', whatsappPhone: newPhone(), language: 'kn', locality: 'Jayanagar', pincode: '560041', otp: await freshOtp(partnerSession.accessToken, 'register') })
+        .expect(201);
+      await prisma.referral.update({ where: { code: partner.body.code }, data: { pausedAt: new Date() } });
+      const session = await signIn(newPhone());
+      const tryCode = (referralCode: string) => auth(http().post(`${API}/me/register/job-seeker`), session.accessToken)
+        .send({ dateOfBirth: '1995-05-17', referralCode, otp: 'unused' });
+      const answers = [];
+      for (const code of [partner.body.code, 'RF-99999', 'RF-99998', 'nonsense', 'RF-99997']) {
+        const res = await tryCode(code).expect(422);
+        answers.push({ code: res.body.code, message: res.body.message });
+      }
+      expect(new Set(answers.map((a) => JSON.stringify(a))).size).toBe(1);
+      expect(answers[0].code).toBe('REFERRAL_UNUSABLE');
+      expect(JSON.stringify(answers)).not.toMatch(/paus|known|themselves/i);
+      const limited = await tryCode('RF-99996').expect(429);
+      expect(limited.body.code).toBe('LIMIT_REACHED');
+    });
+
+    it('AC-6: a GST number already on another business gets a generic answer in the app', async () => {
+      const gst = `29AAACL${String(seq).padStart(4, '0').slice(-4)}C1Z${(seq % 9) + 1}`;
+      await prisma.business.create({ data: { code: `BZ-AC6-${stamp}-${seq}`, name: `Existing GST ${seq}`, phone: `+91${newPhone().slice(-10)}`, gstNumber: gst, verificationStatus: 'verified' } });
+      const session = await signIn(newPhone());
+      const res = await auth(http().post(`${API}/me/register/business`), session.accessToken)
+        .send({
+          name: `Probe Shop ${seq}`, contactPersonName: 'Probe', contactPersonRole: 'owner', businessType: 'bakery',
+          locality: 'Jayanagar', pincode: '560041', latitude: 12.93, longitude: 77.58, gstNumber: gst,
+          visitPreferredAt: new Date(Date.now() + 86_400_000).toISOString(), otp: await freshOtp(session.accessToken, 'register'),
+        });
+      expect(res.status).toBe(409);
+      expect(JSON.stringify(res.body)).not.toMatch(/GST|licence|BZ-|matchedOn|already/i);
+      const tracker = await prisma.signupTracker.findFirstOrThrow({ where: { accountId: session.account.id, profileKind: 'business' }, include: { events: true } });
+      expect(tracker.events.some((e) => e.kind === 'needs_help')).toBe(true);
     });
   });
 

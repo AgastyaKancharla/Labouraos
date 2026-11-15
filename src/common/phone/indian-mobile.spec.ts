@@ -153,11 +153,15 @@ describe('Indian mobile numbers: one stored format (+91 and 10 digits)', () => {
       expect(phoneLast4(null)).toBe('');
     });
 
-    it('reads a full number in any spelling as an exact search and 4-9 digits as "ends with"', () => {
+    it('reads a full number in any spelling as an exact search and exactly 4 digits as the last 4 (AC-2)', () => {
       expect(phoneSearchTerm('98765 43210')).toEqual({ kind: 'exact', values: mobileLookupValues('+919876543210') });
       expect(phoneSearchTerm('+919876543210')).toEqual({ kind: 'exact', values: mobileLookupValues('+919876543210') });
-      expect(phoneSearchTerm('3210')).toEqual({ kind: 'suffix', digits: '3210' });
-      expect(phoneSearchTerm('543 210')).toEqual({ kind: 'suffix', digits: '543210' });
+      expect(phoneSearchTerm('3210')).toEqual({ kind: 'last4', digits: '3210' });
+      expect(phoneSearchTerm('32 10')).toEqual({ kind: 'last4', digits: '3210' });
+      // 5 to 9 digits would let a caller rebuild a full number digit by digit.
+      for (const partial of ['43210', '543 210', '6543210', '76543210', '876543210']) {
+        expect(phoneSearchTerm(partial)).toBeNull();
+      }
       expect(phoneSearchTerm('321')).toBeNull();
       expect(phoneSearchTerm('Sri Sai')).toBeNull();
       expect(phoneSearchTerm('JS-00042')).toBeNull();

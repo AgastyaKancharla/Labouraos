@@ -5,6 +5,7 @@ import { Prisma, Vacancy } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { OtpService } from '../../common/otp/otp.service';
+import { publicPageOtpPurpose } from '../../common/otp/public-page-otp';
 import { OtpSendResult } from '../../common/otp/otp.interface';
 import { PublicLinkStoreService } from '../../common/public-link-store.service';
 import { publicLink } from '../../common/public-link';
@@ -278,9 +279,12 @@ export class VacancyConfirmationService {
 
   async sendLinkOtp(token: string, otpRequestId?: string) {
     const link = await this.requireLink(token);
+    // AC-3: a code bound to this link (a staff-sent vacancy_confirm code is for the
+    // agent's own "code on call" route and never confirms on the owner's page).
+    const purpose = publicPageOtpPurpose(token);
     const result = otpRequestId
-      ? await this.otpService.getProvider().sendOtp(link.phone!, { purpose: 'vacancy_confirm', requestId: otpRequestId })
-      : await this.otpService.getProvider().sendOtp(link.phone!, { purpose: 'vacancy_confirm' });
+      ? await this.otpService.getProvider().sendOtp(link.phone!, { purpose, requestId: otpRequestId })
+      : await this.otpService.getProvider().sendOtp(link.phone!, { purpose });
     return {
       otpRequestId: result.requestId,
       sentToLast4: last4(link.phone!),
@@ -303,7 +307,7 @@ export class VacancyConfirmationService {
     }
     const valid = await this.otpService.verifyOtp(body.otpRequestId, body.code);
     if (!valid) throw new BadRequestException('Wrong or expired code');
-    if (!(await this.otpService.consumeVerified(body.otpRequestId, link.phone!))) {
+    if (!(await this.otpService.consumeVerifiedForPage(body.otpRequestId, link.phone!, token))) {
       throw new BadRequestException('This code was not sent to the number this link was sent to');
     }
     await this.publicLinks.markUsed(token, new Date(), context);
