@@ -98,7 +98,12 @@ export interface SubmitConsentDto {
   purposes: string[];
   language?: string;
   signedName?: string;
+  /** sha256 of the terms text the page showed (GET /legal/documents/:key → hash); a mismatch is refused. */
+  textHash?: string;
 }
+
+/** The terms text changed (Settings or a new version) while the person was reading it. */
+export const TERMS_TEXT_CHANGED_MESSAGE = 'The terms have changed while you were reading. Please read the updated text and accept again.';
 
 export type ConsentLinkDetails =
   | {
@@ -697,10 +702,10 @@ export class ConsentLinkService {
       throw new BadRequestException('Consent link has already been used');
     }
 
-    // Verify OTP: either through otpCode or if already verified
+    // Verify OTP: either through otpCode or if already verified — always a code sent to his own phone.
     if (dto.otpCode) {
       const ok = await this.otpService.verifyOtp(dto.otpRequestId, dto.otpCode);
-      if (!ok) {
+      if (!ok || !(await this.otpService.isVerified(dto.otpRequestId, seeker.phone))) {
         throw new BadRequestException('Invalid or expired OTP');
       }
     } else {
@@ -719,6 +724,10 @@ export class ConsentLinkService {
       language = ['kn', 'hi', 'en'].includes(candidateLang) ? candidateLang : 'kn';
     }
     const purposes = Array.isArray(dto.purposes) ? dto.purposes : [];
+    const legalLanguage = (['kn', 'hi', 'en'].includes(language) ? language : 'en') as AgreementLanguage;
+    const rendered = await this.legal.render('job_seeker_terms', legalLanguage);
+    // The exact text he read: the page sends the hash of the terms it showed.
+    if (dto.textHash && dto.textHash !== rendered.hash) throw new BadRequestException(TERMS_TEXT_CHANGED_MESSAGE);
 
     // Grant each selected purpose
     for (const purpose of purposes) {
@@ -740,10 +749,9 @@ export class ConsentLinkService {
     const hasAll = await this.consentService.hasAllRequired('job_seeker', seeker.id);
     if (hasAll) {
       // The terms and notice version, language, OTP and exact text he accepted (P01, rev 176).
-      const legalLanguage = (['kn', 'hi', 'en'].includes(language) ? language : 'en') as AgreementLanguage;
       await this.legal.recordAcceptance({
         subjectType: 'job_seeker', subjectId: seeker.id,
-        rendered: await this.legal.render('job_seeker_terms', legalLanguage),
+        rendered,
         context: 'registration', method: consentMethodFor(record), otpRequestId: dto.otpRequestId,
         noticeVersion: DEFAULT_NOTICE_VERSION, purposes, acceptedAt: this.clock.now(),
       });
@@ -1006,14 +1014,19 @@ export class ConsentLinkService {
       language,
       method: consentMethodFor(record),
       otpRequestId: dto.otpRequestId,
+      textHash: dto.textHash,
     });
   }
 
-  /** Shared by the link (above) and the customer app (OTP proved by its step-up). */
+  /**
+   * Shared by the link (above) and the customer app (OTP proved by its step-up).
+   * Only for someone who did the first consent step and must now accept the
+   * current version: it never grants the consents from nothing.
+   */
   async recordReconsent(
     subjectType: 'job_seeker' | 'referral',
     subjectId: string,
-    input: { purposes: string[]; language: AgreementLanguage; method: string; otpRequestId: string | null },
+    input: { purposes: string[]; language: AgreementLanguage; method: string; otpRequestId: string | null; textHash?: string | null },
   ) {
     const required = subjectType === 'job_seeker' ? [...JOB_SEEKER_REQUIRED_CONSENT_PURPOSES] : ['agreement_terms', 'call_recording', 'aadhaar_verification'];
     const allowed = subjectType === 'job_seeker' ? [...required, 'promotions'] : required;
@@ -1022,8 +1035,14 @@ export class ConsentLinkService {
       throw new BadRequestException('Tick every required permission to accept the updated terms');
     }
     const status = await this.legal.status(subjectType, subjectId);
+    if (!status.needsReconsent) {
+      // Already on the current version (a second tap): nothing to record.
+      if (status.acceptedVersion === status.currentVersion) return { success: true, version: status.currentVersion, acceptedAt: status.acceptedAt, alreadyAccepted: true };
+      throw new BadRequestException('Give your consent on the first step of your registration link first');
+    }
     const key = subjectType === 'job_seeker' ? 'job_seeker_terms' : 'referral_terms';
     const rendered = await this.legal.render(key, input.language);
+    if (input.textHash && input.textHash !== rendered.hash) throw new BadRequestException(TERMS_TEXT_CHANGED_MESSAGE);
     const noticeVersion = subjectType === 'job_seeker' ? DEFAULT_NOTICE_VERSION : rendered.version;
     const acceptedAt = this.clock.now();
     await this.prisma.$transaction(async (tx) => {
@@ -1031,6 +1050,13 @@ export class ConsentLinkService {
         await this.consentService.grant({
           subjectType, subjectId, purpose, noticeVersion, language: input.language, method: input.method, otpRequestId: input.otpRequestId,
         }, tx);
+      }
+      // Promotions left unticked on the new version: an earlier "yes" to promotions is withdrawn.
+      if (subjectType === 'job_seeker' && !purposes.includes('promotions')) {
+        await tx.consent.updateMany({
+          where: { subjectType, subjectId, purpose: 'promotions', granted: true, withdrawnAt: null },
+          data: { granted: false, withdrawnAt: acceptedAt, withdrawnMethod: input.method },
+        });
       }
       await this.legal.recordAcceptance({
         subjectType, subjectId, rendered, context: 'reconsent', method: input.method, otpRequestId: input.otpRequestId,

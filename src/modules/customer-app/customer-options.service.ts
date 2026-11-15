@@ -68,7 +68,8 @@ export class CustomerOptionsService {
     await this.signIn.consumeStepUp(sessionId, 'accept_terms');
     const subjectType = profile.kind === 'job_seeker' ? 'job_seeker' : 'referral';
     const subjectId = (profile.jobSeekerId ?? profile.referralId)!;
-    return this.consentLinks.recordReconsent(subjectType, subjectId, { purposes, language, method: 'in_app', otpRequestId: `customer-step-up:${sessionId}` });
+    const textHash = typeof body.textHash === 'string' ? body.textHash : null;
+    return this.consentLinks.recordReconsent(subjectType, subjectId, { purposes, language, method: 'in_app', otpRequestId: `customer-step-up:${sessionId}`, textHash });
   }
 
   async formOptions() {

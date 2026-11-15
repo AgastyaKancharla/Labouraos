@@ -202,6 +202,7 @@ describe('Phase 6.5 Task 4: Deployment Configuration (render.yaml & DEPLOY.md)',
         'SMS_API_KEY',
         'CALL_ROUTING_KEY',
         'PAYOUT_ACCOUNT_KEY',
+        'PERMANENT_BAN_HASH_KEY',
         'TELEPHONY_WEBHOOK_SECRET',
         'MESSAGE_WEBHOOK_SECRET',
         'SUPABASE_URL',
@@ -500,7 +501,7 @@ describe('B1: render.free.yaml — the free-tier setup for testing', () => {
       expect(envOf(web(), key)).toMatchObject({ sync: false });
       expect(envOf(web(), key)?.value).toBeUndefined();
     }
-    for (const key of ['JWT_SECRET', 'LOGIN_CODE_SECRET', 'STAFF_BOOTSTRAP_SECRET', 'CALL_ROUTING_KEY', 'PAYOUT_ACCOUNT_KEY']) {
+    for (const key of ['JWT_SECRET', 'LOGIN_CODE_SECRET', 'STAFF_BOOTSTRAP_SECRET', 'CALL_ROUTING_KEY', 'PAYOUT_ACCOUNT_KEY', 'PERMANENT_BAN_HASH_KEY']) {
       expect(envOf(web(), key)?.generateValue).toBe(true);
     }
   });

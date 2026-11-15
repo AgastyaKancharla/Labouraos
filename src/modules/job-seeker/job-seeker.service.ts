@@ -38,6 +38,7 @@ import { ConsentService } from '../consent/consent.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { ApproveJobSeekerRefundDto } from './dto/approve-refund.dto';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
+import { ReconsentRequiredException } from '../legal/legal-status';
 import { REACTIVATABLE_STATUSES, isJobSeekerStatus } from './job-seeker.status';
 import { assertRejectionOverride, findRefundRejection, refundLockKey } from '../refund/refund-rejection';
 import { markJobSeekerRefunded } from './job-seeker-refunded';
@@ -478,6 +479,7 @@ export class JobSeekerService {
     if (jobSeeker.status === 'active') {
       throw new BadRequestException('Job seeker is already active');
     }
+    await this.assertTermsCurrent(jobSeeker.id);
 
     if (jobSeeker.status === 'deactivated' || jobSeeker.status === 'refunded') {
       throw new BadRequestException(
@@ -511,6 +513,13 @@ export class JobSeekerService {
       amountPaise: upiRequest.amountPaise,
       status: upiRequest.status,
     };
+  }
+
+  /** Review H3: no ₹499 request while he must accept the updated terms (RECONSENT_REQUIRED). */
+  private async assertTermsCurrent(jobSeekerId: string) {
+    if (!this.legalDocuments) return;
+    const status = await this.legalDocuments.status('job_seeker', jobSeekerId);
+    if (status.needsReconsent) throw new ReconsentRequiredException(status);
   }
 
   /** The one ID gate before any ₹499 activation request (Fable final re-check, L-5; see id-payment-gate.ts). */
@@ -564,14 +573,16 @@ export class JobSeekerService {
     options: { language?: string; otpRequestId?: string | null; method?: string } = {},
   ) {
     if (acceptTerms !== true) throw new BadRequestException('Tick to agree to the terms before paying');
+    await this.assertTermsCurrent(jobSeekerId);
     const terms = await this.registrationTerms(jobSeekerId);
     const now = this.consentClock?.now() ?? new Date();
     // Terms versioning (rev 176): the version, language and sha256 of the exact text shown. A guarantee
-    // already paid keeps the version it was paid under, so nothing changes once the ₹499 is in.
+    // already paid keeps the version it was paid under, so nothing changes once the ₹499 is in; coming
+    // back after deactivation, closing or a refund is a fresh guarantee, so the current version is recorded.
     const language = (['kn', 'hi', 'en'].includes(options.language ?? '') ? options.language : 'en') as 'kn' | 'hi' | 'en';
     const rendered = this.legalDocuments ? await this.legalDocuments.render('job_seeker_terms', language) : null;
     const changed = await this.prisma.jobSeeker.updateMany({
-      where: { id: jobSeekerId, paymentReceivedAt: null },
+      where: { id: jobSeekerId, OR: [{ paymentReceivedAt: null }, { status: { in: [...REACTIVATABLE_STATUSES] } }] },
       data: {
         termsAcceptedAt: now,
         termsAcceptedFloorPaise: terms.guaranteeFloorPaise,
@@ -621,6 +632,7 @@ export class JobSeekerService {
       );
     }
 
+    await this.assertTermsCurrent(jobSeeker.id);
     const policy = await this.getPolicy();
     // Coming back is another ₹499 payment: the same ID gate as the first one (Fable final re-check, L-5).
     await this.assertIdReadyForPayment(jobSeeker, policy.adultMinimumAge);
@@ -1648,6 +1660,7 @@ export class JobSeekerService {
     });
     if (!payment) throw new BadRequestException('A pending activation payment is required before sending a payment-only link');
     await this.assertIdReadyForPayment(seeker);
+    await this.assertTermsCurrent(seeker.id);
 
     const now = this.consentClock?.now() ?? new Date();
     await this.publicLinks.revokeActive('payment_only', 'job_seeker', seeker.id, now);

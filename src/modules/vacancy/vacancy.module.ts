@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { LegalModule } from '../legal/legal.module';
 import { CustomerNotificationModule } from '../customer-notification/customer-notification.module';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { IdModule } from '../../common/id/id.module';
@@ -23,7 +24,7 @@ import { VacancyConfirmationService } from './vacancy-confirmation.service';
 import { VacancyConfirmController } from './vacancy-confirm.controller';
 
 @Module({
-  imports: [PrismaModule, IdModule, AuditModule, ReviewFlagModule, ConsentModule, JobSeekerModule, MessageModule, PricingModule, CallModule, BusinessVerificationModule, PlacementModule, TradeModule, CustomerNotificationModule],
+  imports: [PrismaModule, IdModule, AuditModule, ReviewFlagModule, ConsentModule, JobSeekerModule, MessageModule, PricingModule, CallModule, BusinessVerificationModule, PlacementModule, TradeModule, CustomerNotificationModule, LegalModule],
   controllers: [VacancyController, CandidateIntroductionController, InterviewController, VacancyConfirmController],
   providers: [VacancyService, MatchingService, CandidateIntroductionService, InterviewService, VacancyConfirmationService],
   exports: [VacancyService, MatchingService, CandidateIntroductionService, InterviewService, VacancyConfirmationService],

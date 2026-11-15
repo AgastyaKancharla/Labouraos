@@ -6,6 +6,7 @@ import { ConsentClock } from '../consent/consent-clock';
 import { isBusinessSuspended } from '../business/business-candidate-access';
 import {
   aadhaarFingerprint,
+  getBanHashKey,
   BAN_CATEGORIES,
   BanCategory,
   businessIdFingerprint,
@@ -43,7 +44,10 @@ export class ConductService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly clock: ConsentClock,
-  ) {}
+  ) {
+    // Fail closed on start: ban hashes need their key (PERMANENT_BAN_HASH_KEY).
+    getBanHashKey();
+  }
 
   private async actor(actorId: string): Promise<Actor> {
     const staff = await this.prisma.staff.findUnique({ where: { id: actorId }, select: { id: true, role: true } });

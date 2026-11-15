@@ -50,6 +50,20 @@ describe('Re-consent (rev 176): who must accept the current version', () => {
     expect((await legalWith({ acceptance: { version: '1.0', language: 'en', acceptedAt: at, noticeVersion: '1.2' } }).service.status('job_seeker', 'js-1')).needsReconsent).toBe(true);
   });
 
+  it('H1: registration (ticks under notice 1.2) then the guarantee terms at payment: not asked to re-consent', async () => {
+    const rows = [
+      { context: 'registration', version: '1.1', language: 'kn', acceptedAt: new Date('2026-11-15T10:00:00Z'), noticeVersion: '1.2' },
+      // The guarantee terms at payment carry no ticks: no notice version.
+      { context: 'payment_terms', version: '1.1', language: 'kn', acceptedAt: new Date('2026-11-15T10:05:00Z'), noticeVersion: null },
+    ];
+    const { service, prisma } = legalWith({ consents: REQUIRED });
+    prisma.legalAcceptance.findFirst.mockImplementation(async ({ where }: { where: { context?: { not: string } } }) =>
+      rows.filter((r) => r.context !== where.context?.not).sort((x, y) => y.acceptedAt.getTime() - x.acceptedAt.getTime())[0] ?? null);
+    const status = await service.status('job_seeker', 'js-1');
+    expect(status).toMatchObject({ acceptedVersion: '1.1', noticeVersion: '1.2', needsReconsent: false });
+    expect(prisma.legalAcceptance.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ context: { not: 'payment_terms' } }) }));
+  });
+
   it('a business that signed agreement 1.0 must sign 1.1; one that signed 1.1 is up to date; one that never signed is not asked', async () => {
     const signedAt = new Date('2026-11-01T10:00:00Z');
     expect(await legalWith({ agreement: { version: '1.0', signedAt } }).service.status('business', 'bz-1')).toMatchObject({ acceptedVersion: '1.0', needsReconsent: true });
@@ -76,10 +90,11 @@ describe('Re-consent on the link (ConsentLinkService.recordReconsent)', () => {
   function linkService(status: { needsReconsent: boolean; acceptedVersion: string | null }) {
     const grants: unknown[] = [];
     const recorded: unknown[] = [];
-    const prisma = { $transaction: jest.fn(async (cb: (tx: unknown) => unknown) => cb({})) };
+    const tx = { consent: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) } };
+    const prisma = { $transaction: jest.fn(async (cb: (tx: unknown) => unknown) => cb(tx)) };
     const consent = { grant: jest.fn(async (dto: unknown) => grants.push(dto)) };
     const legal = {
-      status: jest.fn().mockResolvedValue({ ...status, noticeVersion: '1.1' }),
+      status: jest.fn().mockResolvedValue({ ...status, currentVersion: '1.1', noticeVersion: '1.1' }),
       render: jest.fn(async (key: 'job_seeker_terms' | 'referral_terms', lang: 'kn' | 'hi' | 'en') =>
         renderLegalDocument(key, lang, legalNumbersFrom(POLICY as never), legalCompanyFrom(POLICY as never))),
       recordAcceptance: jest.fn(async (input: unknown) => recorded.push(input)),
@@ -89,7 +104,7 @@ describe('Re-consent on the link (ConsentLinkService.recordReconsent)', () => {
       prisma as never, {} as never, { now: () => new Date('2026-11-15T10:00:00Z') } as never, consent as never, {} as never, {} as never,
       {} as never, audit as never, {} as never, {} as never, {} as never, legal as never,
     );
-    return { service, grants, recorded, audit };
+    return { service, grants, recorded, audit, tx, legal };
   }
 
   it('needs every required tick, then grants them under notice 1.2 and records the acceptance', async () => {
@@ -101,6 +116,36 @@ describe('Re-consent on the link (ConsentLinkService.recordReconsent)', () => {
     expect(grants[0]).toMatchObject({ subjectType: 'job_seeker', noticeVersion: '1.2', language: 'kn', otpRequestId: 'otp-1' });
     expect(recorded[0]).toMatchObject({ context: 'reconsent', noticeVersion: '1.2', otpRequestId: 'otp-1', rendered: expect.objectContaining({ language: 'kn', version: '1.1' }) });
     expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'legal.reconsent_accepted' }));
+  });
+
+  it('never grants the consents from nothing: someone who skipped the first consent step is refused; a second tap is a no-op', async () => {
+    const fresh = linkService({ needsReconsent: false, acceptedVersion: null });
+    await expect(fresh.service.recordReconsent('job_seeker', 'js-1', { purposes: REQUIRED, language: 'en', method: 'sms_link', otpRequestId: 'otp-1' })).rejects.toThrow('first step');
+    expect(fresh.grants).toHaveLength(0);
+    const done = linkService({ needsReconsent: false, acceptedVersion: '1.1' });
+    expect(await done.service.recordReconsent('job_seeker', 'js-1', { purposes: REQUIRED, language: 'en', method: 'sms_link', otpRequestId: 'otp-1' })).toMatchObject({ success: true, alreadyAccepted: true });
+    expect(done.grants).toHaveLength(0);
+  });
+
+  it('refuses when the text shown is not the text the server would record (hash mismatch)', async () => {
+    const { service, grants } = linkService({ needsReconsent: true, acceptedVersion: '1.0' });
+    await expect(service.recordReconsent('job_seeker', 'js-1', { purposes: REQUIRED, language: 'kn', method: 'sms_link', otpRequestId: 'otp-1', textHash: 'f'.repeat(64) })).rejects.toThrow('changed while you were reading');
+    expect(grants).toHaveLength(0);
+    const shown = renderLegalDocument('job_seeker_terms', 'kn', legalNumbersFrom(POLICY as never), legalCompanyFrom(POLICY as never));
+    await service.recordReconsent('job_seeker', 'js-1', { purposes: REQUIRED, language: 'kn', method: 'sms_link', otpRequestId: 'otp-1', textHash: shown.hash });
+    expect(grants).toHaveLength(5);
+  });
+
+  it('promotions left unticked on the new version withdraws the earlier promotions consent; ticked keeps it', async () => {
+    const without = linkService({ needsReconsent: true, acceptedVersion: '1.0' });
+    await without.service.recordReconsent('job_seeker', 'js-1', { purposes: REQUIRED, language: 'en', method: 'in_app', otpRequestId: null });
+    expect(without.tx.consent.updateMany).toHaveBeenCalledWith({
+      where: { subjectType: 'job_seeker', subjectId: 'js-1', purpose: 'promotions', granted: true, withdrawnAt: null },
+      data: expect.objectContaining({ granted: false, withdrawnMethod: 'in_app' }),
+    });
+    const withPromos = linkService({ needsReconsent: true, acceptedVersion: '1.0' });
+    await withPromos.service.recordReconsent('job_seeker', 'js-1', { purposes: [...REQUIRED, 'promotions'], language: 'en', method: 'in_app', otpRequestId: null });
+    expect(withPromos.tx.consent.updateMany).not.toHaveBeenCalled();
   });
 
   it('a partner accepts the terms, recording and the separate ID-check consent', async () => {

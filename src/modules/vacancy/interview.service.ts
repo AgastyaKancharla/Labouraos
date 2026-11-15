@@ -1,4 +1,6 @@
 import { OwnTeam } from '../../common/rbac/own-team';
+import { LegalDocumentService } from '../legal/legal-document.service';
+import { ReconsentRequiredException } from '../legal/legal-status';
 import {
   BadRequestException,
   ForbiddenException,
@@ -91,7 +93,15 @@ export class InterviewService {
     private readonly placements: PlacementService,
     @Optional() @Inject(CANDIDATE_PHOTO_STORAGE) private readonly photoStorage?: CandidatePhotoStorage,
     @Optional() private readonly customerNotifications?: CustomerNotificationHooks,
+    @Optional() private readonly legal?: LegalDocumentService,
   ) {}
+
+  /** Review H3: no booking or accepted offer while he must accept the updated terms (RECONSENT_REQUIRED). */
+  private async assertTermsCurrent(jobSeekerId: string) {
+    if (!this.legal) return;
+    const status = await this.legal.status('job_seeker', jobSeekerId);
+    if (status.needsReconsent) throw new ReconsentRequiredException(status);
+  }
 
   async book(dto: BookInterviewDto, staffId: string) {
     if (!dto?.vacancyId || !dto?.jobSeekerId || !dto?.slotId) {
@@ -130,6 +140,7 @@ export class InterviewService {
         : { id: dto.jobSeekerId },
     });
     if (!seeker) throw new NotFoundException(`Job seeker '${dto.jobSeekerId}' not found`);
+    await this.assertTermsCurrent(seeker.id);
 
     const slot = await this.prisma.vacancyInterviewSlot.findUnique({ where: { id: dto.slotId } });
     if (!slot || slot.vacancyId !== vacancy.id) {
@@ -963,6 +974,7 @@ export class InterviewService {
     if (interview.status !== 'offered' || interview.candidateRespondedAt || now.getTime() > interview.replyDueAt.getTime()) {
       throw new BadRequestException('This interview is no longer awaiting a reply');
     }
+    if (accepted) await this.assertTermsCurrent(interview.jobSeekerId);
     const status = accepted ? 'confirmed' : 'declined';
     const changed = await this.prisma.$transaction(async (tx) => {
       const update = await tx.interview.updateMany({
