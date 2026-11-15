@@ -186,7 +186,8 @@ export class PayoutAccountService {
     const record = await this.getPayoutLink(token, new Date(), true);
     if (record.purpose !== 'payout_details' || !record.phone) throw new BadRequestException('Invalid or expired payout link token');
 
-    const otp = await this.otpService.sendOtp(record.phone);
+    // AC-3: a code bound to this payout link; staff-sent codes are never accepted on it.
+    const otp = await this.otpService.sendPublicPageOtp(record.phone, token);
     return {
       success: true,
       requestId: otp.requestId,
@@ -260,9 +261,12 @@ export class PayoutAccountService {
     // Checked once the details themselves are valid, so a typo never uses up the code.
     // The session code is consumed here, atomically: of two saves sent at once
     // (a double tap), only one gets past this line; the other is refused.
+    // AC-3: either way, only a code sent from this link's own page to the link's number
+    // counts, and it is used up by this save.
     const validCode = options.otpVerifiedForPhone && isReferralRegistration && !dto.otpCode
-      ? await this.otpService.consumeVerified(dto.otpRequestId, options.otpVerifiedForPhone)
-      : await this.otpService.verifyOtp(dto.otpRequestId, dto.otpCode);
+      ? await this.otpService.consumeVerifiedForPage(dto.otpRequestId, options.otpVerifiedForPhone, dto.token)
+      : (await this.otpService.verifyOtp(dto.otpRequestId, dto.otpCode))
+        && (await this.otpService.consumeVerifiedForPage(dto.otpRequestId, record.phone, dto.token));
     if (!validCode) {
       throw new BadRequestException('Invalid or expired OTP code');
     }

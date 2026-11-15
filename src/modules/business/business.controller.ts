@@ -1,3 +1,4 @@
+import { withoutLinkToken } from '../../common/public-link-response';
 import {
   BadRequestException,
   Body,
@@ -113,12 +114,13 @@ export class BusinessController {
   @Post(':id/agreement-links')
   @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
   @RequirePermission('business', 'write')
-  createAgreementLink(
+  async createAgreementLink(
     @Param('id') businessId: string,
     @Body() body: { language?: string },
     @Req() req: Request & { user: JwtPayload },
   ) {
-    return this.consentLinkService.createAgreementLink(businessId, req.user.sub, body?.language);
+    // AC-3: the link goes to the owner by SMS; staff never get its token.
+    return withoutLinkToken(await this.consentLinkService.createAgreementLink(businessId, req.user.sub, body?.language));
   }
 
   @Post(':id/visit-assignments')

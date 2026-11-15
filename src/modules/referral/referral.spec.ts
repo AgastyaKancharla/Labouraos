@@ -1,4 +1,5 @@
 import { JwtService } from '@nestjs/jwt';
+import { withIssuedLinkToken } from '../../test-support/issued-link-token';
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as request from 'supertest';
@@ -372,28 +373,28 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
       where: { purpose: 'referral_registration', subjectId: created.body.id, revokedAt: null },
     });
     expect(originalLink).not.toBeNull();
-    const linkResponse = await request(app.getHttpServer())
+    const { token: linkResponseToken } = await withIssuedLinkToken(app, () => request(app.getHttpServer())
       .post(`/referrals/${created.body.id}/terms-links`)
       .set('Authorization', `Bearer ${callAgentToken}`)
       .send({ language: 'en' })
-      .expect(201);
+      .expect(201));
     const revokedOriginalLink = await prisma.publicLink.findUnique({ where: { id: originalLink!.id } });
     expect(revokedOriginalLink?.revokedAt).toBeInstanceOf(Date);
-    const token = linkResponse.body.token as string;
+    const token = linkResponseToken;
 
     await request(app.getHttpServer())
       .get(`/referral-registration/${token}/status`)
       .expect(200)
       .expect(({ body }) => expect(body.otpRequired).toBe(true));
 
-    const termsOtp = await otpService.sendOtp(phone);
+    const termsOtp = await otpService.sendPublicPageOtp(phone, token); // a code sent from his own page (AC-3)
     const termsCode = (otpService.getProvider() as MockOtpProvider).getCode(termsOtp.requestId)!;
     await request(app.getHttpServer())
       .post('/consent/submit')
       .send({ token, requestId: termsOtp.requestId, otpRequestId: termsOtp.requestId, otpCode: termsCode, purposes: ['agreement_terms', 'call_recording', 'aadhaar_verification'], language: 'en' })
       .expect(201);
 
-    const selfieOtp = await otpService.sendOtp(phone);
+    const selfieOtp = await otpService.sendPublicPageOtp(phone, token); // a code sent from his own page (AC-3)
     const selfieCode = (otpService.getProvider() as MockOtpProvider).getCode(selfieOtp.requestId)!;
     await otpService.verifyOtp(selfieOtp.requestId, selfieCode);
     await request(app.getHttpServer())
@@ -403,12 +404,12 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
       .attach('photo', cameraJpeg('camera-image'), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
       .expect(201);
 
-    const idOtp = await otpService.sendOtp(phone);
+    const idOtp = await otpService.sendPublicPageOtp(phone, token); // a code sent from his own page (AC-3)
     const idCode = (otpService.getProvider() as MockOtpProvider).getCode(idOtp.requestId)!;
     await otpService.verifyOtp(idOtp.requestId, idCode);
     await passPartnerId(token, idOtp.requestId);
 
-    const payoutOtp = await otpService.sendOtp(phone);
+    const payoutOtp = await otpService.sendPublicPageOtp(phone, token); // a code sent from his own page (AC-3)
     const payoutCode = (otpService.getProvider() as MockOtpProvider).getCode(payoutOtp.requestId)!;
     await request(app.getHttpServer())
       .post(`/referral-registration/${token}/upi`)
@@ -446,14 +447,14 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
     const sms = await prisma.messageLog.findFirst({ where: { channel: 'sms', template: 'referral_partner_id', subjectType: 'referral', subjectId: created.body.id } });
     expect(sms?.status).toBe('sent');
 
-    const linkResponse = await request(app.getHttpServer())
+    const { token: linkResponseToken } = await withIssuedLinkToken(app, () => request(app.getHttpServer())
       .post(`/referrals/${created.body.id}/terms-links`)
       .set('Authorization', `Bearer ${callAgentToken}`)
       .send({ language: 'en' })
-      .expect(201);
-    const token = linkResponse.body.token as string;
+      .expect(201));
+    const token = linkResponseToken;
     const code = async () => {
-      const sent = await otpService.sendOtp(phone);
+      const sent = await otpService.sendPublicPageOtp(phone, token); // a code sent from his own page (AC-3)
       return { requestId: sent.requestId, code: (otpService.getProvider() as MockOtpProvider).getCode(sent.requestId)! };
     };
     const terms = await code();
@@ -507,12 +508,12 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
     const referralId = created.body.id as string;
     const messaging = app.get(MessagingService);
     const sendSpy = jest.spyOn(messaging, 'send');
-    const linkRes = await request(app.getHttpServer())
+    const { token: linkResToken } = await withIssuedLinkToken(app, () => request(app.getHttpServer())
       .post(`/referrals/${referralId}/terms-links`)
       .set('Authorization', `Bearer ${callAgentToken}`)
       .send({ language: 'kn' })
-      .expect(201);
-    const token = linkRes.body.token as string;
+      .expect(201));
+    const token = linkResToken;
     const server = app.getHttpServer();
 
     // The SMS carries the new page; an old /consent link opened in a browser goes there.

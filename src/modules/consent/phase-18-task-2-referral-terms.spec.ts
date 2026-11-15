@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { withIssuedLinkToken } from '../../test-support/issued-link-token';
 import { LegalDocumentService } from '../legal/legal-document.service';
 import { LEGAL_TEST_POLICY } from '../../test-support/legal-policy';
 import { BadRequestException, ExecutionContext, INestApplication } from '@nestjs/common';
@@ -180,6 +181,10 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
             sendOtp: jest.fn().mockResolvedValue({ requestId: 'otp-req-999' }),
             verifyOtp: jest.fn().mockImplementation((reqId: string, code: string) => Promise.resolve(code === '123456')),
             isVerified: jest.fn().mockResolvedValue(true),
+            // AC-3: public pages use codes bound to their own link.
+            isVerifiedForPage: jest.fn().mockImplementation(async (requestId?: string) => Boolean(requestId)),
+            consumeVerifiedForPage: jest.fn().mockImplementation(async (requestId?: string) => Boolean(requestId)),
+            sendPublicPageOtp: jest.fn().mockResolvedValue({ requestId: 'otp-req-999' }),
           },
         },
         {
@@ -271,14 +276,16 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
 
   describe('1. Referral Terms Link Generation (POST /referrals/:id/terms-links)', () => {
     it('creates a resumable token and sends SMS with referral terms and partner code', async () => {
-      const res = await request(app.getHttpServer())
+      const { res, token: resToken } = await withIssuedLinkToken(app, () => request(app.getHttpServer())
         .post(`/referrals/${referralId}/terms-links`)
-        .send({ language: 'en' });
+        .send({ language: 'en' }));
 
       expect(res.status).toBe(201);
       expect(res.body.success).toBe(true);
-      expect(res.body.token).toBeDefined();
-      expect(res.body.token.length).toBe(64);
+      // AC-3: the token goes to the partner by SMS, never back to the agent.
+      expect(res.body.token).toBeUndefined();
+      expect(resToken).toBeDefined();
+      expect(resToken.length).toBe(64);
       // Response must NEVER leak the phone number
       expect(res.body.phone).toBeUndefined();
       expect(res.body.partnerPhone).toBeUndefined();
@@ -290,8 +297,8 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
           subjectType: 'referral',
           subjectId: referralId,
           variables: expect.objectContaining({
-            token: res.body.token,
-            link: expect.stringContaining(publicPagePath('referralRegistration', res.body.token)),
+            token: resToken,
+            link: expect.stringContaining(publicPagePath('referralRegistration', resToken)),
             referralCode: expect.any(String),
           }),
         }),
@@ -319,7 +326,7 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
   describe('2. Public Link Retrieval (GET /consent/:token)', () => {
     it('before a code to the partner\'s own number, shows only the masked phone and the language', async () => {
       const link = await consentLinkService.createReferralTermsLink(referralId, 'staff-1', 'en');
-      (otpService.isVerified as jest.Mock).mockResolvedValueOnce(false);
+      (otpService.isVerifiedForPage as jest.Mock).mockResolvedValueOnce(false);
       const res = await request(app.getHttpServer()).get(`/consent/${link.token}`).set('Accept', 'application/json');
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ valid: true, subjectType: 'referral', otpRequired: true, maskedPhone: '******3210', preferredLanguage: 'en' });
@@ -340,7 +347,7 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
         .set('Accept', 'application/json');
 
       expect(res.status).toBe(200);
-      expect(otpService.isVerified).toHaveBeenCalledWith('otp-req-999', partnerPhone);
+      expect(otpService.isVerifiedForPage).toHaveBeenCalledWith('otp-req-999', partnerPhone, link.token);
       expect(res.body.otpRequired).toBe(false);
       expect(res.body.valid).toBe(true);
       expect(res.body.subjectType).toBe('referral');
@@ -385,7 +392,7 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
       expect(res.body.success).toBe(true);
       expect(res.body.requestId).toBe('otp-req-999');
       expect(res.body.phone).toBe('******3210');
-      expect(otpService.sendOtp).toHaveBeenCalledWith(partnerPhone);
+      expect(otpService.sendPublicPageOtp).toHaveBeenCalledWith(partnerPhone, link.token);
     });
 
     it('refuses submission with invalid OTP code', async () => {
@@ -410,13 +417,13 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
         .post('/consent/submit')
         .send({ token: link.token, otpRequestId: 'otp-req-999', purposes: ['agreement_terms', 'call_recording', 'aadhaar_verification'] });
       expect(res.status).toBe(201);
-      expect(otpService.isVerified).toHaveBeenCalledWith('otp-req-999', partnerPhone);
+      expect(otpService.isVerifiedForPage).toHaveBeenCalledWith('otp-req-999', partnerPhone, link.token);
       expect(otpService.verifyOtp).not.toHaveBeenCalledWith('otp-req-999', undefined);
     });
 
     it('refuses without a code when that request is not a verified code for the partner phone', async () => {
       const link = await consentLinkService.createReferralTermsLink(referralId, 'staff-1', 'en');
-      (otpService.isVerified as jest.Mock).mockResolvedValueOnce(false);
+      (otpService.isVerifiedForPage as jest.Mock).mockResolvedValueOnce(false);
       const res = await request(app.getHttpServer())
         .post('/consent/submit')
         .send({ token: link.token, otpRequestId: 'otp-req-other', purposes: ['agreement_terms', 'call_recording', 'aadhaar_verification'] });

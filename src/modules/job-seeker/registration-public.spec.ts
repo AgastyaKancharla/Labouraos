@@ -1,10 +1,11 @@
 import { RegistrationController } from './registration.controller';
+import { publicPageOtpPurpose } from '../../common/otp/public-page-otp';
 
 describe('Registration link endpoints for the public pages', () => {
   const link = { id: 'link-1', purpose: 'registration', subjectType: 'job_seeker', subjectId: 'seeker-1', phone: '+919876512345', expiresAt: new Date(), language: 'kn', metadata: null };
   const payLink = { ...link, id: 'link-2', purpose: 'payment_only', phone: '+919811100000', metadata: { paymentId: 'pay-1' } };
   let publicLinks: { findByToken: jest.Mock; hashToken: jest.Mock };
-  let otp: { isVerified: jest.Mock; verifyOtp: jest.Mock };
+  let otp: { isVerified: jest.Mock; verifyOtp: jest.Mock; isVerifiedForPage: (requestId: string | undefined, phone: string | null, token: string) => Promise<boolean> };
   let journey: { status: jest.Mock };
   let otherIds: { submitForJobSeeker: jest.Mock };
   let limiter: { claimSend: jest.Mock };
@@ -14,7 +15,13 @@ describe('Registration link endpoints for the public pages', () => {
     process.env.PUBLIC_APP_URL = 'https://app.laboura.in';
     publicLinks = { findByToken: jest.fn().mockResolvedValue(link), hashToken: jest.fn((t: string) => `hash-${t}`) } as never;
     limiter = { claimSend: jest.fn().mockResolvedValue(undefined) };
-    otp = { isVerified: jest.fn().mockResolvedValue(false), verifyOtp: jest.fn().mockResolvedValue(false) };
+    const isVerified = jest.fn().mockResolvedValue(false);
+    // As OtpService: a page's code is checked with the purpose bound to its link (AC-3).
+    otp = {
+      isVerified,
+      verifyOtp: jest.fn().mockResolvedValue(false),
+      isVerifiedForPage: async (requestId, phone, token) => (requestId && phone ? isVerified(requestId, phone, publicPageOtpPurpose(token)) : false),
+    };
     journey = { status: jest.fn().mockResolvedValue({ otpRequired: true }) };
     otherIds = { submitForJobSeeker: jest.fn().mockResolvedValue({ verificationId: 'v-1', method: 'pan', status: 'pending', idNumberLast4: '234F' }) };
     controller = new RegistrationController(
@@ -27,7 +34,7 @@ describe('Registration link endpoints for the public pages', () => {
     expect(journey.status).toHaveBeenCalledWith('seeker-1', false);
     otp.isVerified.mockResolvedValue(true);
     await controller.status('tok', 'req-1');
-    expect(otp.isVerified).toHaveBeenCalledWith('req-1', '+919876512345');
+    expect(otp.isVerified).toHaveBeenCalledWith('req-1', '+919876512345', publicPageOtpPurpose('tok'));
     expect(journey.status).toHaveBeenLastCalledWith('seeker-1', true);
   });
 
@@ -77,12 +84,12 @@ describe('Registration link endpoints for the public pages', () => {
   it('limits payment-only codes on the server before any SMS is sent', async () => {
     publicLinks.findByToken.mockResolvedValue(payLink);
     const sendOtp = jest.fn().mockResolvedValue({ requestId: 'r' });
-    (otp as unknown as { sendOtp: jest.Mock }).sendOtp = sendOtp;
+    (otp as unknown as { sendPublicPageOtp: jest.Mock }).sendPublicPageOtp = sendOtp;
     limiter.claimSend.mockRejectedValueOnce(Object.assign(new Error('A code was just sent. Wait 30 seconds before asking for another.'), { status: 429 }));
     await expect(controller.sendPaymentOnlyOtp('pay-tok')).rejects.toThrow(/Wait 30 seconds/);
     expect(sendOtp).not.toHaveBeenCalled();
     await controller.sendPaymentOnlyOtp('pay-tok');
     expect(limiter.claimSend).toHaveBeenLastCalledWith('hash-pay-tok', '+919811100000');
-    expect(sendOtp).toHaveBeenCalledWith('+919811100000');
+    expect(sendOtp).toHaveBeenCalledWith('+919811100000', 'pay-tok');
   });
 });

@@ -1,4 +1,5 @@
 import { createHmac, randomUUID } from 'crypto';
+import { withIssuedLinkToken } from '../../test-support/issued-link-token';
 import { jobSeekerTermsHash } from '../../test-support/terms-hash';
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -57,8 +58,9 @@ describe('Phase 20 gate end-to-end proof', () => {
     });
   };
 
-  const verifiedOtp = async (phone: string) => {
-    const sentOtp = await otp.sendOtp(phone);
+  /** A verified code: a staff one, or (with `linkToken`) one sent from that link's own page (AC-3). */
+  const verifiedOtp = async (phone: string, linkToken?: string) => {
+    const sentOtp = linkToken ? await otp.sendPublicPageOtp(phone, linkToken) : await otp.sendOtp(phone);
     const code = provider().getCode(sentOtp.requestId);
     if (!code) throw new Error(`No mock code for ${phone}`);
     await otp.verifyOtp(sentOtp.requestId, code);
@@ -192,12 +194,12 @@ describe('Phase 20 gate end-to-end proof', () => {
     expect(registered.body.guaranteeFloorPaise).toBe(2300000);
     expect(registered.body.salaryRange).toMatchObject({ maxSalaryPaise: 2300000 });
 
-    const link = await request(server())
+    const { res: link, token: linkToken } = await withIssuedLinkToken(app, () => request(server())
       .post('/consent/links')
       .set('Authorization', `Bearer ${callAgentToken}`)
       .send({ jobSeekerId: registered.body.id })
-      .expect(201);
-    const token = link.body.token as string;
+      .expect(201));
+    const token = linkToken;
     const linkId = link.body.linkId as string;
 
     // 3. The app restarts. The same registration link still opens.
@@ -483,13 +485,13 @@ describe('Phase 20 gate end-to-end proof', () => {
     referralIds.push(partner.body.id);
     expect(partner.body.code).toMatch(/^RF-\d{5}$/);
     expect(partner.body.registrationLinkSent).toBe(true);
-    const referralLink = await request(server())
+    const { token: referralLinkToken } = await withIssuedLinkToken(app, () => request(server())
       .post(`/referrals/${partner.body.id}/terms-links`)
       .set('Authorization', `Bearer ${callAgentToken}`)
       .send({ language: 'en' })
-      .expect(201);
-    const referralToken = referralLink.body.token as string;
-    const termsOtp = await otp.sendOtp(referralPhone);
+      .expect(201));
+    const referralToken = referralLinkToken;
+    const termsOtp = await otp.sendPublicPageOtp(referralPhone, referralToken); // sent from his own page (AC-3)
     const termsCode = provider().getCode(termsOtp.requestId);
     if (!termsCode) throw new Error('Referral terms OTP was not stored');
     await request(server())
@@ -503,14 +505,14 @@ describe('Phase 20 gate end-to-end proof', () => {
         language: 'en',
       })
       .expect(201);
-    const selfieOtp = await verifiedOtp(referralPhone);
+    const selfieOtp = await verifiedOtp(referralPhone, referralToken);
     await request(server())
       .post(`/referral-registration/${referralToken}/selfie`)
       .field('requestId', selfieOtp)
       .field('captureSource', 'live_camera')
       .attach('photo', Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1]), Buffer.from('referral-camera')]), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
       .expect(201);
-    const idOtp = await verifiedOtp(referralPhone);
+    const idOtp = await verifiedOtp(referralPhone, referralToken);
     const captureNonce2 = await captureNonceFor(server(), `/referral-registration/${referralToken}/other-id`, idOtp);
     const idResult = await request(server())
       .post(`/referral-registration/${referralToken}/other-id`)
@@ -523,7 +525,7 @@ describe('Phase 20 gate end-to-end proof', () => {
       .expect(201);
     expect(idResult.body).toMatchObject({ status: 'pending', nextStep: 'team_lead_check' });
     await prisma.referralIdentityVerification.update({ where: { id: idResult.body.verificationId }, data: { status: 'verified', nameMatches: true, isAdult: true, verifiedAt: new Date() } });
-    const payoutOtp = await otp.sendOtp(referralPhone);
+    const payoutOtp = await otp.sendPublicPageOtp(referralPhone, referralToken);
     const payoutCode = provider().getCode(payoutOtp.requestId);
     if (!payoutCode) throw new Error('Referral UPI OTP was not stored');
     const upi = await request(server())

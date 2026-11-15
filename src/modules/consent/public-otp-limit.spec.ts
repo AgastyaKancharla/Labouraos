@@ -15,12 +15,12 @@ describe('Public OTP sends through the consent link service', () => {
     owner: { ...base, purpose: 'interview_owner_result', subjectType: 'interview', subjectId: 'int-1', phone: '+919822200000' },
   };
   let limiter: { claimSend: jest.Mock };
-  let otp: { sendOtp: jest.Mock };
+  let otp: { sendOtp: jest.Mock; sendPublicPageOtp: jest.Mock };
   let service: ConsentLinkService;
 
   beforeEach(() => {
     limiter = { claimSend: jest.fn().mockResolvedValue(undefined) };
-    otp = { sendOtp: jest.fn().mockResolvedValue({ requestId: 'req-1' }) };
+    otp = { sendOtp: jest.fn(), sendPublicPageOtp: jest.fn().mockResolvedValue({ requestId: 'req-1' }) };
     const prisma = { jobSeeker: { findUnique: jest.fn().mockResolvedValue({ id: 'seeker-1', phone: '+919876512345' }) } };
     const publicLinks = { findByToken: jest.fn(async (token: string) => rows[token]), hashToken: (token: string) => `hash-${token}` };
     service = new ConsentLinkService(
@@ -36,13 +36,15 @@ describe('Public OTP sends through the consent link service', () => {
   ])('claims a send for the %s link and its phone before sending', async (token, phone) => {
     await expect(service.sendOtp(token)).resolves.toMatchObject({ success: true, requestId: 'req-1' });
     expect(limiter.claimSend).toHaveBeenCalledWith(`hash-${token}`, phone, now);
-    expect(otp.sendOtp).toHaveBeenCalledWith(phone);
+    // AC-3: the code is bound to this link, never a plain (staff-style) code.
+    expect(otp.sendPublicPageOtp).toHaveBeenCalledWith(phone, token);
+    expect(otp.sendOtp).not.toHaveBeenCalled();
   });
 
   it('sends no SMS when the limit is reached (429)', async () => {
     limiter.claimSend.mockRejectedValue(new PublicOtpLimitError('A code was just sent. Wait 30 seconds before asking for another.', 30));
     const error = await service.sendOtp('reg').catch((e: unknown) => e);
     expect((error as PublicOtpLimitError).getStatus()).toBe(429);
-    expect(otp.sendOtp).not.toHaveBeenCalled();
+    expect(otp.sendPublicPageOtp).not.toHaveBeenCalled();
   });
 });

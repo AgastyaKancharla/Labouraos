@@ -9,6 +9,7 @@ import { ConsentService } from '../consent/consent.service';
 import { DEFAULT_NOTICE_VERSION, JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } from '../consent/consent.constants';
 import { LegalDocumentService } from '../legal/legal-document.service';
 import { verifiedOtpFor } from '../../test-support/verified-otp';
+import { publicPageOtpPurpose } from '../../common/otp/public-page-otp';
 import { giveVerifiedId } from '../../test-support/verified-id';
 import { UIDAI_SAMPLE_SECURE_QR } from './testing/uidai-sample-qr';
 import { AnonymisationService } from '../../common/anonymisation/anonymisation.service';
@@ -131,7 +132,8 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
       language: 'en',
       expiresAt: new Date(Date.now() + 48 * 3600 * 1000),
     });
-    return { token: link.token, requestId: await verifiedOtpFor(app, s.phone) };
+    // A code sent from his own link's page (AC-3).
+    return { token: link.token, requestId: await verifiedOtpFor(app, s.phone, publicPageOtpPurpose(link.token)) };
   }
 
   beforeAll(async () => {
