@@ -14,7 +14,7 @@ export interface PlacementRefundEligibilityInput {
   /** M10 (rev 178): milliseconds the clock stood still while the business was suspended (claim-clock.ts). */
   pausedMs?: number;
   /** M10: the business is suspended now, so the clock stands still and no refund falls due. */
-  clockPaused?: boolean;
+  searchPaused?: boolean;
 }
 
 /** Why a refund is not due while the business is suspended (the clock is paused, M10). */
@@ -89,7 +89,7 @@ export function evaluatePlacementRefundEligibility(
     };
   }
 
-  if (input.clockPaused) {
+  if (input.searchPaused) {
     return { eligible: false, ineligibleReason: CLOCK_PAUSED_REASON, amountPaise: 0, daysOwed: 0, daysElapsed: 0 };
   }
 

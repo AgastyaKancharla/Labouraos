@@ -165,7 +165,7 @@ describe('M9 (rev 178): a ban covers every profile of the person', () => {
     expect(prisma.referral.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'rf-1' }, data: expect.objectContaining({ pauseReason: expect.stringContaining('Permanent ban') }) }));
     expect(prisma.business.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'bz-9' }, data: expect.objectContaining({ suspendedUntil: null }) }));
     // The business's open claims keep their replacement clocks paused (M10).
-    expect(prisma.replacementClaim.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { clockPausedAt: NOW } }));
+    expect(prisma.replacementClaim.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { searchPausedAt: NOW } }));
   });
 
   it('a profile on another phone but with the same Aadhaar is covered too', async () => {
@@ -238,12 +238,12 @@ describe('M10 (rev 178): suspension pauses the 15-day replacement clock of open 
     const { service, prisma } = setup();
     await service.suspendBusiness('bz-1', 'ceo', { days: 30, reason: 'Repeated cancellations' });
     expect(prisma.replacementClaim.updateMany).toHaveBeenCalledWith({
-      where: { OR: [{ decision: null }, { decision: 'accepted' }], placement: { businessId: 'bz-1', guaranteeEndedReason: null }, clockPausedAt: null },
-      data: { clockPausedAt: NOW },
+      where: { OR: [{ decision: null }, { decision: 'accepted' }], placement: { businessId: 'bz-1', guaranteeEndedReason: null }, searchPausedAt: null },
+      data: { searchPausedAt: NOW },
     });
     const pausedAt = new Date(NOW.getTime() - 3 * DAY);
-    prisma.replacementClaim.findMany.mockResolvedValueOnce([{ id: 'cl-1', clockPausedAt: pausedAt, clockPausedSeconds: 3600 }]);
+    prisma.replacementClaim.findMany.mockResolvedValueOnce([{ id: 'cl-1', searchPausedAt: pausedAt, searchPausedSeconds: 3600 }]);
     await service.liftSuspension('bz-1', 'ceo', { reason: 'Owner apologised in person' });
-    expect(prisma.replacementClaim.update).toHaveBeenCalledWith({ where: { id: 'cl-1' }, data: { clockPausedAt: null, clockPausedSeconds: 3600 + 3 * 24 * 3600 } });
+    expect(prisma.replacementClaim.update).toHaveBeenCalledWith({ where: { id: 'cl-1' }, data: { searchPausedAt: null, searchPausedSeconds: 3600 + 3 * 24 * 3600 } });
   });
 });

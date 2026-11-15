@@ -1707,7 +1707,7 @@ export class PaymentService {
             guaranteeEndedReason: rootPlacement.guaranteeEndedReason,
             // M10 (rev 178): the clock stands still while the business is suspended.
             pausedMs: claimPausedMs(claim, placement.business, now),
-            clockPaused: claimClockPaused(claim, placement.business, now),
+            searchPaused: claimClockPaused(claim, placement.business, now),
           },
           now,
         );

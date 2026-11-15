@@ -255,7 +255,7 @@ export class RefundService {
     });
 
     let refundedPlacementIdSet = new Set<string>();
-    const claimByPlacementId = new Map<string, { decidedAt: Date | null; reportedAt: Date | null; clockPausedAt: Date | null; clockPausedSeconds: number }>();
+    const claimByPlacementId = new Map<string, { decidedAt: Date | null; reportedAt: Date | null; searchPausedAt: Date | null; searchPausedSeconds: number }>();
     // M4 (rev 178): the refund is the first placement's fee plus every salary difference paid in the
     // chain (chain-refund.ts) — never a replacement row's own amount.
     let chainRefunds = new Map<string, ChainRefund>();
@@ -292,7 +292,7 @@ export class RefundService {
               decision: 'accepted',
             },
             orderBy: { decidedAt: 'desc' },
-            select: { placementId: true, decidedAt: true, reportedAt: true, clockPausedAt: true, clockPausedSeconds: true },
+            select: { placementId: true, decidedAt: true, reportedAt: true, searchPausedAt: true, searchPausedSeconds: true },
           })
         : [];
       for (const claim of acceptedClaims) {
@@ -328,7 +328,7 @@ export class RefundService {
           guaranteeEndedReason: placement.guaranteeEndedReason,
           // M10: the clock stands still while the business is suspended.
           pausedMs: claimPausedMs(claim, placement.business, now),
-          clockPaused: claimClockPaused(claim, placement.business, now),
+          searchPaused: claimClockPaused(claim, placement.business, now),
         },
         now,
       );

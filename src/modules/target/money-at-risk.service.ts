@@ -418,7 +418,7 @@ export class MoneyAtRiskService {
           hasExistingRefund,
           // M10: the clock stands still while the business is suspended.
           pausedMs: claimPausedMs(claim, pl.business, now),
-          clockPaused: claimClockPaused(claim, pl.business, now),
+          searchPaused: claimClockPaused(claim, pl.business, now),
           searchDays: replacementSearchDays,
           guaranteeEndedReason: pl.guaranteeEndedReason,
         },

@@ -75,7 +75,7 @@ export interface ChainPlacement {
   dropoutReportedAt: Date | null;
   guaranteeEndedReason: string | null;
   /** Claims on this placement, any order. */
-  claims: Array<{ decision: string | null; reportedAt: Date | null; decidedAt: Date | null; clockPausedAt?: Date | null; clockPausedSeconds?: number }>;
+  claims: Array<{ decision: string | null; reportedAt: Date | null; decidedAt: Date | null; searchPausedAt?: Date | null; searchPausedSeconds?: number }>;
   replacementCandidates: Array<{ status: string }>;
 }
 
@@ -129,7 +129,7 @@ export function classifyPlacementFeePayment(input: PlacementFeeExposureInput, no
         searchDays: input.searchDays,
         guaranteeEndedReason: accepted.guaranteeEndedReason,
         pausedMs: claimPausedMs(decided, input.business, now),
-        clockPaused: claimClockPaused(decided, input.business, now),
+        searchPaused: claimClockPaused(decided, input.business, now),
       },
       now,
     );

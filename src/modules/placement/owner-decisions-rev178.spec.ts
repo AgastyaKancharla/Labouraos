@@ -12,18 +12,18 @@ describe('M10 (rev 178): the 15-day replacement clock pauses while the business 
   const base = { code: 'PL-00001', status: 'dropped_out', dropoutReportedAt: reported, placementFee: 1000000, hasExistingRefund: false, searchDays: 15 };
 
   it('counts earlier pauses and the running one; a permanent suspension keeps it paused', () => {
-    const claim = { clockPausedAt: new Date(NOW.getTime() - 2 * DAY), clockPausedSeconds: 3 * 24 * 3600 };
-    expect(claimPausedMs(claim, { suspendedAt: claim.clockPausedAt, suspendedUntil: null }, NOW)).toBe(5 * DAY);
-    expect(claimClockPaused(claim, { suspendedAt: claim.clockPausedAt, suspendedUntil: null }, NOW)).toBe(true);
+    const claim = { searchPausedAt: new Date(NOW.getTime() - 2 * DAY), searchPausedSeconds: 3 * 24 * 3600 };
+    expect(claimPausedMs(claim, { suspendedAt: claim.searchPausedAt, suspendedUntil: null }, NOW)).toBe(5 * DAY);
+    expect(claimClockPaused(claim, { suspendedAt: claim.searchPausedAt, suspendedUntil: null }, NOW)).toBe(true);
     // A 30-day suspension that ended yesterday: the pause stops at its end date even before the daily job runs.
     const ended = { suspendedAt: new Date(NOW.getTime() - 31 * DAY), suspendedUntil: new Date(NOW.getTime() - DAY) };
-    expect(claimPausedMs({ clockPausedAt: ended.suspendedAt, clockPausedSeconds: 0 }, ended, NOW)).toBe(30 * DAY);
-    expect(claimClockPaused({ clockPausedAt: ended.suspendedAt, clockPausedSeconds: 0 }, ended, NOW)).toBe(false);
+    expect(claimPausedMs({ searchPausedAt: ended.suspendedAt, searchPausedSeconds: 0 }, ended, NOW)).toBe(30 * DAY);
+    expect(claimClockPaused({ searchPausedAt: ended.suspendedAt, searchPausedSeconds: 0 }, ended, NOW)).toBe(false);
     expect(claimPausedMs(null, null, NOW)).toBe(0);
   });
 
   it('a refund is not due while paused, and afterwards the clock continues from where it stopped', () => {
-    expect(evaluatePlacementRefundEligibility({ ...base, clockPaused: true }, NOW)).toMatchObject({ eligible: false, ineligibleReason: CLOCK_PAUSED_REASON });
+    expect(evaluatePlacementRefundEligibility({ ...base, searchPaused: true }, NOW)).toMatchObject({ eligible: false, ineligibleReason: CLOCK_PAUSED_REASON });
     // 20 days since the report, 8 of them paused: 12 days counted — not due yet.
     expect(evaluatePlacementRefundEligibility({ ...base, pausedMs: 8 * DAY }, NOW)).toMatchObject({ eligible: false, daysElapsed: 12 });
     expect(evaluatePlacementRefundEligibility({ ...base, pausedMs: 4 * DAY }, NOW)).toMatchObject({ eligible: true, daysElapsed: 16, daysOwed: 1 });
@@ -34,10 +34,10 @@ describe('M10 (rev 178): the 15-day replacement clock pauses while the business 
     const pausedAt = new Date(until.getTime() - 10 * DAY);
     const client = {
       business: { findMany: jest.fn().mockResolvedValue([{ id: 'bz-1', suspendedUntil: until }]) },
-      replacementClaim: { findMany: jest.fn().mockResolvedValue([{ id: 'cl-1', clockPausedAt: pausedAt, clockPausedSeconds: 60 }]), update: jest.fn() },
+      replacementClaim: { findMany: jest.fn().mockResolvedValue([{ id: 'cl-1', searchPausedAt: pausedAt, searchPausedSeconds: 60 }]), update: jest.fn() },
     };
     expect(await resumeEndedSuspensions(client as never, NOW)).toBe(1);
-    expect(client.replacementClaim.update).toHaveBeenCalledWith({ where: { id: 'cl-1' }, data: { clockPausedAt: null, clockPausedSeconds: 60 + 10 * 24 * 3600 } });
+    expect(client.replacementClaim.update).toHaveBeenCalledWith({ where: { id: 'cl-1' }, data: { searchPausedAt: null, searchPausedSeconds: 60 + 10 * 24 * 3600 } });
   });
 });
 

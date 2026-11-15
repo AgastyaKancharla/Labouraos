@@ -4,15 +4,15 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 /**
  * M10 (Master Guide rev 178): while a business is suspended, the 15-day
  * replacement clock of its open claims stands still and then continues from
- * where it stopped. The pause is stored on the claim — `clockPausedAt` (paused
- * since) and `clockPausedSeconds` (earlier pauses added up) — never by moving
+ * where it stopped. The pause is stored on the claim — `searchPausedAt` (paused
+ * since) and `searchPausedSeconds` (earlier pauses added up) — never by moving
  * the report date. A suspension that ends on its date stops the pause at that
  * date even before the daily job folds it in; a permanent one keeps the clock
  * paused.
  */
 export interface ClaimClock {
-  clockPausedAt: Date | null;
-  clockPausedSeconds: number;
+  searchPausedAt: Date | null;
+  searchPausedSeconds: number;
 }
 
 export interface SuspensionWindow {
@@ -32,15 +32,15 @@ function pauseEnd(business: SuspensionWindow | null | undefined, now: Date): Dat
 /** Milliseconds the claim's clock has stood still, up to now. */
 export function claimPausedMs(claim: Partial<ClaimClock> | null | undefined, business: SuspensionWindow | null | undefined, now: Date): number {
   if (!claim) return 0;
-  const earlier = (claim.clockPausedSeconds ?? 0) * 1000;
-  if (!claim.clockPausedAt) return earlier;
+  const earlier = (claim.searchPausedSeconds ?? 0) * 1000;
+  if (!claim.searchPausedAt) return earlier;
   const end = pauseEnd(business, now) ?? now;
-  return earlier + Math.max(0, end.getTime() - claim.clockPausedAt.getTime());
+  return earlier + Math.max(0, end.getTime() - claim.searchPausedAt.getTime());
 }
 
 /** True while the clock stands still (the business is suspended now). */
 export function claimClockPaused(claim: Partial<ClaimClock> | null | undefined, business: SuspensionWindow | null | undefined, now: Date): boolean {
-  return Boolean(claim?.clockPausedAt) && pauseEnd(business, now) === null;
+  return Boolean(claim?.searchPausedAt) && pauseEnd(business, now) === null;
 }
 
 /** Claims whose 15-day clock may run: waiting for a decision or accepted, guarantee not ended. */
@@ -52,23 +52,23 @@ const openClaimsOf = (businessId: string): Prisma.ReplacementClaimWhereInput => 
 /** The business was suspended (or banned): pause every open claim's clock now. */
 export async function pauseClaimClocks(client: Client, businessId: string, now: Date): Promise<number> {
   const res = await client.replacementClaim.updateMany({
-    where: { ...openClaimsOf(businessId), clockPausedAt: null },
-    data: { clockPausedAt: now },
+    where: { ...openClaimsOf(businessId), searchPausedAt: null },
+    data: { searchPausedAt: now },
   });
   return res.count;
 }
 
-/** The suspension ended at `endedAt`: fold each running pause into clockPausedSeconds. */
+/** The suspension ended at `endedAt`: fold each running pause into searchPausedSeconds. */
 export async function resumeClaimClocks(client: Client, businessId: string, endedAt: Date): Promise<number> {
   const paused = await client.replacementClaim.findMany({
-    where: { placement: { businessId }, clockPausedAt: { not: null } },
-    select: { id: true, clockPausedAt: true, clockPausedSeconds: true },
+    where: { placement: { businessId }, searchPausedAt: { not: null } },
+    select: { id: true, searchPausedAt: true, searchPausedSeconds: true },
   });
   for (const claim of paused) {
-    const seconds = Math.max(0, Math.floor((endedAt.getTime() - claim.clockPausedAt!.getTime()) / 1000));
+    const seconds = Math.max(0, Math.floor((endedAt.getTime() - claim.searchPausedAt!.getTime()) / 1000));
     await client.replacementClaim.update({
       where: { id: claim.id },
-      data: { clockPausedAt: null, clockPausedSeconds: claim.clockPausedSeconds + seconds },
+      data: { searchPausedAt: null, searchPausedSeconds: claim.searchPausedSeconds + seconds },
     });
   }
   return paused.length;
@@ -77,7 +77,7 @@ export async function resumeClaimClocks(client: Client, businessId: string, ende
 /** Daily: suspensions that ended on their date resume their claims' clocks from that date. */
 export async function resumeEndedSuspensions(client: Client, now: Date): Promise<number> {
   const ended = await client.business.findMany({
-    where: { suspendedUntil: { lte: now }, placements: { some: { replacementClaims: { some: { clockPausedAt: { not: null } } } } } },
+    where: { suspendedUntil: { lte: now }, placements: { some: { replacementClaims: { some: { searchPausedAt: { not: null } } } } } },
     select: { id: true, suspendedUntil: true },
   });
   let resumed = 0;

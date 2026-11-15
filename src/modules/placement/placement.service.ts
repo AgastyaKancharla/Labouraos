@@ -1137,7 +1137,7 @@ export class PlacementService {
             decidedAt,
             decisionDueAt,
             // M10 (rev 178): reported while the business is suspended — its 15-day clock starts paused.
-            clockPausedAt: placement.business && isBusinessSuspended(placement.business, reportedAt) ? reportedAt : null,
+            searchPausedAt: placement.business && isBusinessSuspended(placement.business, reportedAt) ? reportedAt : null,
           },
           include: {
             placement: true,
@@ -1775,19 +1775,19 @@ export class PlacementService {
    */
   async suspendedBusinessClaims(now = new Date()) {
     const claims = await this.prisma.replacementClaim.findMany({
-      where: { clockPausedAt: { not: null }, placement: { business: { suspendedAt: { not: null }, suspendedUntil: null } } },
+      where: { searchPausedAt: { not: null }, placement: { business: { suspendedAt: { not: null }, suspendedUntil: null } } },
       select: {
-        id: true, code: true, reportedAt: true, decision: true, clockPausedAt: true, clockPausedSeconds: true,
+        id: true, code: true, reportedAt: true, decision: true, searchPausedAt: true, searchPausedSeconds: true,
         placement: { select: { id: true, code: true, business: { select: { id: true, code: true, name: true, suspendedAt: true, suspendedUntil: true, suspensionReason: true } } } },
       },
-      orderBy: { clockPausedAt: 'asc' },
+      orderBy: { searchPausedAt: 'asc' },
     });
     return claims.map((c) => ({
       claimId: c.id,
       claimCode: c.code,
       decision: c.decision,
       reportedAt: c.reportedAt,
-      pausedSince: c.clockPausedAt,
+      pausedSince: c.searchPausedAt,
       pausedDays: Math.floor(claimPausedMs(c, c.placement.business, now) / (24 * 60 * 60 * 1000)),
       placement: { id: c.placement.id, code: c.placement.code },
       business: { id: c.placement.business.id, code: c.placement.business.code, name: c.placement.business.name, suspendedAt: c.placement.business.suspendedAt, reason: c.placement.business.suspensionReason },
@@ -2032,7 +2032,7 @@ export class PlacementService {
           guaranteeEndedReason: rootPlacement.guaranteeEndedReason,
           // M10: the clock stands still while the business is suspended.
           pausedMs: claimPausedMs(claim, placement.business, now),
-          clockPaused: claimClockPaused(claim, placement.business, now),
+          searchPaused: claimClockPaused(claim, placement.business, now),
         },
         now,
       );

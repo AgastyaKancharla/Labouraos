@@ -26,9 +26,9 @@ ALTER TABLE "PricingPolicy" ADD COLUMN "upgradePaymentCancelDays" INTEGER NOT NU
 ALTER TABLE "PricingPolicy" ADD CONSTRAINT "PricingPolicy_upgradePaymentCancelDays_check" CHECK ("upgradePaymentCancelDays" BETWEEN 1 AND 30);
 
 -- M10 (rev 178): the 15-day replacement clock pauses while the business is suspended.
-ALTER TABLE "ReplacementClaim" ADD COLUMN "clockPausedAt" TIMESTAMP(3);
-ALTER TABLE "ReplacementClaim" ADD COLUMN "clockPausedSeconds" INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE "ReplacementClaim" ADD CONSTRAINT "ReplacementClaim_clockPausedSeconds_check" CHECK ("clockPausedSeconds" >= 0);
+ALTER TABLE "ReplacementClaim" ADD COLUMN "searchPausedAt" TIMESTAMP(3);
+ALTER TABLE "ReplacementClaim" ADD COLUMN "searchPausedSeconds" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "ReplacementClaim" ADD CONSTRAINT "ReplacementClaim_searchPausedSeconds_check" CHECK ("searchPausedSeconds" >= 0);
 
 CREATE TABLE "LegalDocumentText" (
     "hash" TEXT NOT NULL,

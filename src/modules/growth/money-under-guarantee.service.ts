@@ -280,7 +280,7 @@ export class MoneyUnderGuaranteeService {
         id: true, code: true, status: true, placementFee: true, joinedDate: true, rootPlacementId: true,
         dropoutReportedAt: true, guaranteeEndedReason: true,
         business: { select: { suspendedAt: true, suspendedUntil: true } },
-        replacementClaims: { select: { decision: true, reportedAt: true, decidedAt: true, clockPausedAt: true, clockPausedSeconds: true } },
+        replacementClaims: { select: { decision: true, reportedAt: true, decidedAt: true, searchPausedAt: true, searchPausedSeconds: true } },
         replacementCandidates: { select: { status: true } },
       },
     });

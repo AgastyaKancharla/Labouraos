@@ -835,9 +835,9 @@ model ReplacementClaim {
   overruledByStaff       Staff?      @relation("ClaimOverruledBy", fields: [overruledByStaffId], references: [id], onDelete: SetNull)
   overruleReason         String?
   /// M10 (rev 178): the 15-day replacement clock pauses while the business is suspended.
-  /// clockPausedAt: since when it is paused now (null: running); clockPausedSeconds: earlier pauses, added up.
-  clockPausedAt          DateTime?
-  clockPausedSeconds     Int         @default(0)
+  /// searchPausedAt: since when it is paused now (null: running); searchPausedSeconds: earlier pauses, added up.
+  searchPausedAt          DateTime?
+  searchPausedSeconds     Int         @default(0)
   createdAt              DateTime    @default(now())
   updatedAt              DateTime    @updatedAt
 
