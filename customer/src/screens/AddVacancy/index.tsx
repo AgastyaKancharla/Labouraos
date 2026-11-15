@@ -150,7 +150,7 @@ export default function AddVacancy() {
         <Screen>
           <Banner tone="info" title={t('vacancy.draftSaved')} message={t('vacancy.otpWhy')} />
           {tickFor !== null ? (
-            <Card testID="vacancy-tick-needed">
+            <Card accent="gold" testID="vacancy-tick-needed">
               <View style={styles.gap}>
                 <Banner tone="warn" title={t('vacancy.belowMinimumTitle')} message={t('vacancy.belowMinimum', { amount: rupees(tickFor) })} />
                 <Checkbox label={t('vacancy.legalMinimumTick')} checked={ownerTold} onChange={setOwnerTold} testID="vacancy-otp-tick" />
@@ -174,7 +174,7 @@ export default function AddVacancy() {
               </View>
             </Card>
           ) : (
-            <Card>
+            <Card accent="royal">
               <OtpCodeCard
                 testID="vacancy-otp-card"
                 send={(resendOf) => api.sendStepUp('confirm_vacancy', resendOf)}
@@ -197,7 +197,7 @@ export default function AddVacancy() {
       {header}
       <Screen>
         <Text variant="muted">{t('form.autosaved')}</Text>
-        <Card>
+        <Card accent="orange">
           <View style={styles.gap}>
             <SelectField label={t('vacancy.trade')} value={form.trade} choices={tradeChoices} onChange={(v) => set('trade', v)} required error={err('trade')} testID="vacancy-trade" />
             <TextField label={t('vacancy.roleTitle')} value={form.roleTitle} onChangeText={(v) => set('roleTitle', v)} testID="vacancy-role" />

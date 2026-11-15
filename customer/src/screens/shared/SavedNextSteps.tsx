@@ -22,7 +22,7 @@ export function SavedNextSteps({ result, purpose, nextSteps, testID }: { result:
       ) : (
         <Banner tone="ok" title={t('saved.title')} message={code ? t('saved.yourId', { code }) : undefined} testID={`${testID}-new`} />
       )}
-      <Card title={t('saved.next')}>
+      <Card title={t('saved.next')} accent="cyan" emoji="👉">
         <View style={styles.gap}>
           <Text>{nextSteps}</Text>
           <Text variant="muted">{t('saved.secureNote')}</Text>

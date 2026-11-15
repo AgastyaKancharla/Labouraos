@@ -106,7 +106,7 @@ export default function RegisterBusiness() {
         <Banner tone="info" message={t('business.howItWorks')} />
         <Text variant="muted">{t('form.autosaved')}</Text>
 
-        <Card title={t('business.sectionContact')}>
+        <Card title={t('business.sectionContact')} accent="royal">
           <View style={styles.gap}>
             <TextField label={t('business.contactName')} value={draft.contactName} onChangeText={(v) => set('contactName', v)} error={err('contactName')} testID="biz-contact-name" />
             <SelectField label={t('business.contactRole')} value={draft.contactRole} choices={contactRoleChoices(t)} onChange={(v) => set('contactRole', v)} required error={err('contactRole')} testID="biz-contact-role" />
@@ -114,7 +114,7 @@ export default function RegisterBusiness() {
           </View>
         </Card>
 
-        <Card title={t('business.sectionBusiness')}>
+        <Card title={t('business.sectionBusiness')} accent="orange">
           <View style={styles.gap}>
             <TextField label={t('business.boardName')} value={draft.boardName} onChangeText={(v) => set('boardName', v)} error={err('boardName')} testID="biz-board-name" />
             <TextField label={t('business.legalName')} value={draft.legalName} onChangeText={(v) => set('legalName', v)} hint={t('business.legalNameHint')} testID="biz-legal-name" />
@@ -140,7 +140,7 @@ export default function RegisterBusiness() {
           </View>
         </Card>
 
-        <Card title={t('business.sectionAddress')}>
+        <Card title={t('business.sectionAddress')} accent="cyan">
           <View style={styles.gap}>
             <TextField label={t('business.shopNumber')} value={draft.shopNumber} onChangeText={(v) => set('shopNumber', v)} testID="biz-shop-no" />
             <TextField label={t('business.street')} value={draft.street} onChangeText={(v) => set('street', v)} error={err('street')} testID="biz-street" />
@@ -162,7 +162,7 @@ export default function RegisterBusiness() {
           </View>
         </Card>
 
-        <Card title={t('business.sectionDocuments')}>
+        <Card title={t('business.sectionDocuments')} accent="navy">
           <View style={styles.gap}>
             <Text variant="muted">{t('business.documentsOptional')}</Text>
             <Checkbox label={t('business.noDocuments')} checked={draft.noDocuments} onChange={(v) => set('noDocuments', v)} testID="biz-no-docs" />
@@ -178,7 +178,7 @@ export default function RegisterBusiness() {
           </View>
         </Card>
 
-        <Card title={t('business.sectionStaff')}>
+        <Card title={t('business.sectionStaff')} accent="gold">
           <View style={styles.gap}>
             <Text variant="muted">{t('business.staffNote')}</Text>
             {draft.staffNeeded.map((row, i) => (
@@ -200,7 +200,7 @@ export default function RegisterBusiness() {
           </View>
         </Card>
 
-        <Card title={t('business.sectionBilling')}>
+        <Card title={t('business.sectionBilling')} accent="good">
           <View style={styles.gap}>
             <TextField
               label={t('business.billingEmail')}
@@ -216,7 +216,7 @@ export default function RegisterBusiness() {
           </View>
         </Card>
 
-        <Card title={t('business.sectionVisit')}>
+        <Card title={t('business.sectionVisit')} accent="cyan">
           <View style={styles.gap}>
             <Text variant="muted">{t('business.visitWhy')}</Text>
             <DateField label={t('business.visitDate')} value={draft.visitDate} onChange={(v) => set('visitDate', v)} min={addDays(today, 1)} max={addDays(today, 14)} testID="biz-visit-date" />

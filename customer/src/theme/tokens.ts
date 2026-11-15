@@ -22,8 +22,13 @@ export const colors = {
   navy: '#032B73',
   navSoft: '#CFE4FF',
   navAccent: '#6EC3FF',
+  navy100: '#E2E7F3',
   cyanRaw: '#02D0F8',
   gold: '#FCCE00',
+  /** Raw brand colours (Command Center `--gold-raw`, `--orange-raw`, `--red-raw`): bars, fills, icon tiles only, never small text. */
+  goldRaw: '#FCCE00',
+  orangeRaw: '#FB6800',
+  redRaw: '#FE2901',
   green: '#1C9A6C',
   green100: '#E1F5EC',
   amber: '#92670A',
@@ -38,14 +43,26 @@ export const colors = {
   neutral100: '#F1F5FC',
   white: '#FFFFFF',
   overlay: 'rgba(11,30,74,0.55)',
+  /** Progress bar track on the hero gradient. */
+  heroTrack: 'rgba(255,255,255,0.22)',
 } as const;
 
 /** Header and tab bar gradient (top → bottom). */
 export const headerGradient = [colors.blue, colors.blueDark] as const;
 
+/**
+ * The Command Center `.hero` card: royal → navy, drawn corner to corner.
+ * Only white (or `navSoft`) text goes on it.
+ */
+export const heroGradient = {
+  colors: [colors.blue, colors.navy] as const,
+  start: { x: 0, y: 0 },
+  end: { x: 1, y: 1 },
+};
+
 /** The thin Laboura "swoosh" stripe under the header and above the tab bar. */
 export const swoosh = {
-  colors: ['#0055C0', '#02D0F8', '#02D0F8', '#FCCE00', '#FB6800', '#FE2901'] as const,
+  colors: [colors.blue, colors.cyanRaw, colors.cyanRaw, colors.goldRaw, colors.orangeRaw, colors.redRaw] as const,
   locations: [0, 0.38, 0.4, 0.4, 0.76, 1] as const,
 };
 
@@ -108,6 +125,14 @@ export const shadow = {
     shadowOffset: { width: 0, height: 1 },
     elevation: 1,
   },
+  /** `--shadow-hero`: the soft navy shadow under the hero card. */
+  hero: {
+    shadowColor: colors.navy,
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
+  },
   primary: {
     shadowColor: colors.blue,
     shadowOpacity: 0.25,
@@ -126,6 +151,30 @@ export const tones = {
   blue: { fg: colors.blue, bg: colors.blue100 },
   neutral: { fg: colors.soft, bg: colors.neutral100 },
   tomato: { fg: colors.tomato, bg: colors.tomato100 },
+  navy: { fg: colors.navy, bg: colors.navy100 },
 } as const;
 
 export type Tone = keyof typeof tones;
+
+/**
+ * The full Laboura palette the way the Command Center uses it (web
+ * `StatTile` tones and `.t-*` icon tiles):
+ * - `raw`: the bright colour — top bars, fills, icon tiles, large shapes only;
+ * - `fg`: the text-safe colour of the same family (numbers, titles on white);
+ * - `bg`: its light background (chips, highlighted rows);
+ * - `on`: the icon colour on a `raw` tile (white on royal, navy, red and green;
+ *   navy on cyan, gold and orange, where white would be too faint);
+ * - `border`: the tinted border warning tiles get (good, gold, orange, red).
+ * `warn` marks the tones whose number is coloured on a stat tile.
+ */
+export const accents = {
+  royal: { raw: colors.blue, fg: colors.blue, bg: colors.blue100, on: colors.white, border: colors.border, warn: false },
+  navy: { raw: colors.navy, fg: colors.navy, bg: colors.navy100, on: colors.white, border: colors.border, warn: false },
+  cyan: { raw: colors.cyanRaw, fg: colors.cyan, bg: colors.cyan100, on: colors.navy, border: colors.border, warn: false },
+  good: { raw: colors.green, fg: colors.green, bg: colors.green100, on: colors.white, border: 'rgba(28,154,108,0.40)', warn: true },
+  gold: { raw: colors.goldRaw, fg: colors.amber, bg: colors.amber100, on: colors.navy, border: 'rgba(252,206,0,0.70)', warn: true },
+  orange: { raw: colors.orangeRaw, fg: colors.crit, bg: colors.crit100, on: colors.navy, border: 'rgba(251,104,0,0.45)', warn: true },
+  red: { raw: colors.redRaw, fg: colors.tomato, bg: colors.tomato100, on: colors.white, border: 'rgba(254,41,1,0.40)', warn: true },
+} as const;
+
+export type Accent = keyof typeof accents;

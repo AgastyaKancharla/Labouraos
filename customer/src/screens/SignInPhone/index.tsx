@@ -16,7 +16,7 @@ export default function SignInPhone() {
     <View style={styles.flex} testID="sign-in-phone">
       <AppHeader title={t('signIn.mobileTitle')} onBack={() => router.back()} />
       <Screen>
-        <Card>
+        <Card accent="royal">
           <View style={styles.gap}>
             <Text variant="muted">{t('signIn.mobileWhy')}</Text>
             <PhoneOtpForm

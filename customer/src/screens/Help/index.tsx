@@ -5,16 +5,18 @@ import { useCustomerApi } from '@/api/ApiProvider';
 import { errorText } from '@/api/errorText';
 import type { CallbackTopic } from '@/api/types';
 import { useAuth } from '@/auth/AuthProvider';
-import { AppHeader, Banner, Button, Card, Screen, Text } from '@/components';
+import { AppHeader, Banner, Button, Card, IconTile, Screen, Text, type IconName } from '@/components';
 import { RadioGroup, SelectField, TimeField, formatClock } from '@/components/form';
 import { useI18n, type MessageKey } from '@/i18n';
+import type { Accent } from '@/theme';
 
 const TOPICS: CallbackTopic[] = ['registration', 'payment', 'interview', 'refund', 'business', 'referral', 'other'];
-const FAQ: [MessageKey, MessageKey][] = [
-  ['help.faq1q', 'help.faq1a'],
-  ['help.faq2q', 'help.faq2a'],
-  ['help.faq3q', 'help.faq3a'],
-  ['help.faq4q', 'help.faq4a'],
+/** Each short answer gets its own colour and drawn icon (the words carry the meaning). */
+const FAQ: [MessageKey, MessageKey, IconName, Accent][] = [
+  ['help.faq1q', 'help.faq1a', 'rupee', 'good'],
+  ['help.faq2q', 'help.faq2a', 'refund', 'royal'],
+  ['help.faq3q', 'help.faq3a', 'briefcase', 'orange'],
+  ['help.faq4q', 'help.faq4a', 'shield', 'cyan'],
 ];
 
 /**
@@ -55,7 +57,7 @@ export default function Help() {
     <View style={styles.flex} testID="help">
       <AppHeader title={t('help.title')} onBack={() => router.back()} showAccountActions />
       <Screen>
-        <Card title={t('help.callMeBack')}>
+        <Card title={t('help.callMeBack')} accent="royal" emoji="📞">
           {done ? (
             <Banner
               tone="ok"
@@ -87,12 +89,15 @@ export default function Help() {
             </View>
           )}
         </Card>
-        <Card title={t('help.faqTitle')}>
+        <Card title={t('help.faqTitle')} accent="gold" emoji="💬">
           <View style={styles.gap}>
-            {FAQ.map(([q, a]) => (
-              <View key={q} style={styles.faq}>
-                <Text variant="bodyStrong">{t(q)}</Text>
-                <Text>{t(a)}</Text>
+            {FAQ.map(([q, a, icon, accent]) => (
+              <View key={q} style={styles.faqRow}>
+                <IconTile icon={icon} accent={accent} size={32} round />
+                <View style={styles.faq}>
+                  <Text variant="bodyStrong">{t(q)}</Text>
+                  <Text>{t(a)}</Text>
+                </View>
               </View>
             ))}
           </View>
@@ -102,4 +107,4 @@ export default function Help() {
   );
 }
 
-const styles = StyleSheet.create({ flex: { flex: 1 }, gap: { gap: 14 }, faq: { gap: 4 } });
+const styles = StyleSheet.create({ flex: { flex: 1 }, gap: { gap: 14 }, faqRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 }, faq: { flex: 1, gap: 4 } });

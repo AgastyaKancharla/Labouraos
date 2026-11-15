@@ -14,7 +14,11 @@ interface Props {
   testID?: string;
 }
 
-/** `.warn` (amber), `.ok` (green), error (red) and info (blue) boxes. */
+/**
+ * `.warn` (amber), `.ok` (green), error (red) and info (blue) boxes, each
+ * with a left stripe in the bright colour of its family (gold, green, red,
+ * royal). The words stay in the readable colours.
+ */
 export function Banner({ tone = 'warn', title, message, action, testID }: Props) {
   const t = toneStyles[tone];
   return (
@@ -40,6 +44,7 @@ const styles = StyleSheet.create({
     gap: 10,
     borderRadius: radius.lg,
     borderWidth: 1,
+    borderLeftWidth: 5,
     paddingVertical: 12,
     paddingHorizontal: 16,
   },
@@ -47,8 +52,8 @@ const styles = StyleSheet.create({
 });
 
 const toneStyles = {
-  warn: { box: { backgroundColor: colors.amber100, borderColor: colors.amberBorder }, title: colors.ink },
-  ok: { box: { backgroundColor: colors.green100, borderColor: 'rgba(28,154,108,0.35)' }, title: colors.green },
-  error: { box: { backgroundColor: colors.tomato100, borderColor: 'rgba(187,35,43,0.35)' }, title: colors.tomato },
-  info: { box: { backgroundColor: colors.blue100, borderColor: '#BCD3F3' }, title: colors.navy },
+  warn: { box: { backgroundColor: colors.amber100, borderColor: colors.amberBorder, borderLeftColor: colors.goldRaw }, title: colors.ink },
+  ok: { box: { backgroundColor: colors.green100, borderColor: 'rgba(28,154,108,0.35)', borderLeftColor: colors.green }, title: colors.green },
+  error: { box: { backgroundColor: colors.tomato100, borderColor: 'rgba(187,35,43,0.35)', borderLeftColor: colors.redRaw }, title: colors.tomato },
+  info: { box: { backgroundColor: colors.blue100, borderColor: '#BCD3F3', borderLeftColor: colors.blue }, title: colors.navy },
 } as const;

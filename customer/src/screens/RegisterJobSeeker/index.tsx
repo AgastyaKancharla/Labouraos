@@ -68,7 +68,7 @@ export default function RegisterJobSeeker() {
       <View style={styles.flex} testID="js-age">
         {header}
         <Screen>
-          <Card title={t('jobSeeker.stepAge')}>
+          <Card title={t('jobSeeker.stepAge')} accent="gold">
             <View style={styles.gap}>
               <DateField
                 label={t('jobSeeker.dob')}
@@ -179,7 +179,7 @@ export default function RegisterJobSeeker() {
       <Screen>
         <Text variant="muted">{t('form.autosaved')}</Text>
 
-        <Card title={t('jobSeeker.sectionYou')}>
+        <Card title={t('jobSeeker.sectionYou')} accent="royal">
           <View style={styles.gap}>
             <TextField label={t('jobSeeker.fullName')} value={draft.fullName} onChangeText={(v) => set('fullName', v)} error={err('fullName')} autoComplete="name" testID="js-name" />
             <RadioGroup
@@ -214,7 +214,7 @@ export default function RegisterJobSeeker() {
           </View>
         </Card>
 
-        <Card title={t('jobSeeker.sectionWhere')}>
+        <Card title={t('jobSeeker.sectionWhere')} accent="cyan">
           <View style={styles.gap}>
             <SelectField
               label={t('form.area')}
@@ -249,7 +249,7 @@ export default function RegisterJobSeeker() {
           </View>
         </Card>
 
-        <Card title={t('jobSeeker.sectionWork')}>
+        <Card title={t('jobSeeker.sectionWork')} accent="orange">
           <View style={styles.gap}>
             {draft.trades.map((row, i) => (
               <View key={i} style={styles.tradeRow}>
@@ -331,7 +331,7 @@ export default function RegisterJobSeeker() {
           </View>
         </Card>
 
-        <Card title={t('jobSeeker.sectionPay')}>
+        <Card title={t('jobSeeker.sectionPay')} accent="good">
           <View style={styles.gap}>
             <Segmented
               value={draft.salaryPeriod}
@@ -355,7 +355,7 @@ export default function RegisterJobSeeker() {
           </View>
         </Card>
 
-        <Card title={t('jobSeeker.sectionLast')}>
+        <Card title={t('jobSeeker.sectionLast')} accent="navy">
           <SelectField label={t('form.heardFrom')} value={draft.heardFrom} choices={heardFromChoices(t)} onChange={(v) => set('heardFrom', v)} required testID="js-heard" />
         </Card>
 

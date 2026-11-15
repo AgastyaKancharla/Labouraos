@@ -4,15 +4,16 @@ import { router } from 'expo-router';
 import { useCustomerApi } from '@/api/ApiProvider';
 import type { ProfileKind } from '@/api/types';
 import { useAuth } from '@/auth/AuthProvider';
-import { AppHeader, Screen, StatusChip, Text } from '@/components';
+import { AppHeader, Icon, Screen, StatusChip, Text } from '@/components';
 import { useI18n, type MessageKey } from '@/i18n';
 import { routes } from '@/navigation/routes';
-import { colors, fonts, radius, shadow } from '@/theme';
+import { accents, colors, fonts, radius, shadow, type Accent } from '@/theme';
 
-const ROLES: { kind: ProfileKind; title: MessageKey; body: MessageKey; emoji: string; href: string }[] = [
-  { kind: 'job_seeker', title: 'role.jobSeeker', body: 'role.jobSeekerBody', emoji: '🧑‍🍳', href: routes.registerJobSeeker },
-  { kind: 'business', title: 'role.business', body: 'role.businessBody', emoji: '🏪', href: routes.registerBusiness },
-  { kind: 'referral_partner', title: 'role.referral', body: 'role.referralBody', emoji: '🤝', href: routes.registerReferral },
+/** Each card gets its own colourful treatment from the palette (left bar, picture circle, arrow). */
+const ROLES: { kind: ProfileKind; title: MessageKey; body: MessageKey; emoji: string; href: string; accent: Accent }[] = [
+  { kind: 'job_seeker', title: 'role.jobSeeker', body: 'role.jobSeekerBody', emoji: '🧑‍🍳', href: routes.registerJobSeeker, accent: 'cyan' },
+  { kind: 'business', title: 'role.business', body: 'role.businessBody', emoji: '🏪', href: routes.registerBusiness, accent: 'orange' },
+  { kind: 'referral_partner', title: 'role.referral', body: 'role.referralBody', emoji: '🤝', href: routes.registerReferral, accent: 'good' },
 ];
 
 /**
@@ -56,6 +57,7 @@ export default function RolePicker() {
         <Text variant="h2">{t('role.question')}</Text>
         {ROLES.map((role) => {
           const already = role.kind !== 'business' && held.has(role.kind);
+          const a = accents[role.accent];
           return (
             <Pressable
               key={role.kind}
@@ -64,17 +66,20 @@ export default function RolePicker() {
               accessibilityLabel={`${t(role.title)}. ${t(role.body)}`}
               disabled={already || busy !== null}
               onPress={() => void pick(role.kind, role.href)}
-              style={({ pressed }) => [styles.card, pressed && styles.pressed, already && styles.off]}
+              style={({ pressed }) => [styles.card, { borderLeftColor: a.raw }, pressed && { backgroundColor: a.bg }, already && styles.off]}
               testID={`role-${role.kind}`}
             >
-              <Text style={styles.emoji} accessibilityElementsHidden importantForAccessibility="no">
-                {role.emoji}
-              </Text>
+              <View style={[styles.picture, { backgroundColor: a.bg, borderColor: a.raw }]} testID={`role-${role.kind}-picture-${role.accent}`}>
+                <Text style={styles.emoji} accessibilityElementsHidden importantForAccessibility="no">
+                  {role.emoji}
+                </Text>
+              </View>
               <View style={styles.text}>
                 <Text style={styles.title}>{t(role.title)}</Text>
                 <Text variant="muted">{t(role.body)}</Text>
-                {already ? <StatusChip label={t('role.alreadyAdded')} tone="green" /> : null}
+                {already ? <StatusChip label={t('role.alreadyAdded')} tone="green" icon="check" /> : null}
               </View>
+              {already ? null : <Icon name="chevron-right" size={22} color={a.fg} />}
             </Pressable>
           );
         })}
@@ -88,18 +93,19 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
-    padding: 18,
+    gap: 14,
+    padding: 16,
     minHeight: 112,
     borderRadius: radius.card,
     borderWidth: 1,
+    borderLeftWidth: 6,
     borderColor: colors.border,
     backgroundColor: colors.surface,
     ...shadow.card,
   },
-  pressed: { backgroundColor: colors.blue100 },
   off: { opacity: 0.6 },
-  emoji: { fontSize: 44 },
+  picture: { width: 68, height: 68, borderRadius: 34, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  emoji: { fontSize: 36, lineHeight: 44 },
   text: { flex: 1, gap: 4 },
   title: { fontFamily: fonts.display700, fontSize: 20, color: colors.navy },
 });

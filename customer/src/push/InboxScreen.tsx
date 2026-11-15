@@ -8,11 +8,12 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Switch, View } from 'react-native';
 import { router } from 'expo-router';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AppHeader, Button, Card, EmptyState, ErrorState, LoadingState, Screen, StatusChip, Text } from '@/components';
+import { AppHeader, Button, Card, EmptyState, ErrorState, IconTile, LoadingState, Screen, StatusChip, Text } from '@/components';
 import { useAuth } from '@/auth/AuthProvider';
 import { useI18n, type Language } from '@/i18n';
-import { colors, space } from '@/theme';
+import { accents, colors, space } from '@/theme';
 import { targetFor } from './deepLinks';
+import { notificationStyle } from './notificationStyle';
 import { INBOX_QUERY_KEY } from './PushBridge';
 import { defaultPushApi, type InboxMessage, type NotificationSettings, type PushApi } from './pushApi';
 import { pushText } from './strings';
@@ -73,7 +74,7 @@ export function InboxScreen({ api = defaultPushApi() }: { api?: PushApi }) {
         ) : inbox.isError ? (
           <ErrorState error={inbox.error} onRetry={() => void inbox.refetch()} />
         ) : items.length === 0 ? (
-          <EmptyState message={t('inbox.empty')} />
+          <EmptyState emoji="📭" message={t('inbox.empty')} />
         ) : (
           <View style={styles.list}>
             <View style={styles.toolbar}>
@@ -84,31 +85,35 @@ export function InboxScreen({ api = defaultPushApi() }: { api?: PushApi }) {
                 <Button label={t('inbox.markAll')} variant="secondary" onPress={() => markAll.mutate()} testID="inbox-mark-all" />
               ) : null}
             </View>
-            <Card>
-              {items.map((message, index) => (
-                <Pressable
-                  key={message.id}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: !message.readAt }}
-                  onPress={() => open(message)}
-                  testID={`inbox-item-${message.id}`}
-                  style={({ pressed }) => [styles.row, index < items.length - 1 && styles.divider, pressed && styles.pressed]}
-                >
-                  <View style={[styles.dot, !message.readAt && styles.dotUnread]} />
-                  <View style={styles.text}>
-                    <Text variant={message.readAt ? 'body' : 'bodyStrong'}>{message.title}</Text>
-                    <Text variant="muted">{message.body}</Text>
-                    <Text variant="tiny" color={colors.faint}>
-                      {when(message.createdAt, language)}
-                    </Text>
-                  </View>
-                  {message.priority === 'urgent' && !message.readAt ? (
-                    <StatusChip label={t('inbox.urgent')} tone="tomato" />
-                  ) : !message.readAt ? (
-                    <StatusChip label={t('inbox.new')} tone="blue" />
-                  ) : null}
-                </Pressable>
-              ))}
+            <Card accent="orange">
+              {items.map((message, index) => {
+                const look = notificationStyle(message.kind);
+                return (
+                  <Pressable
+                    key={message.id}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: !message.readAt }}
+                    onPress={() => open(message)}
+                    testID={`inbox-item-${message.id}`}
+                    style={({ pressed }) => [styles.row, index < items.length - 1 && styles.divider, pressed && styles.pressed]}
+                  >
+                    <View style={[styles.bar, { backgroundColor: message.readAt ? 'transparent' : accents[look.accent].raw }]} testID={`inbox-bar-${message.id}`} />
+                    <IconTile icon={look.icon} accent={look.accent} size={36} round testID={`inbox-icon-${message.id}`} />
+                    <View style={styles.text}>
+                      <Text variant={message.readAt ? 'body' : 'bodyStrong'}>{message.title}</Text>
+                      <Text variant="muted">{message.body}</Text>
+                      <Text variant="tiny" color={colors.faint}>
+                        {when(message.createdAt, language)}
+                      </Text>
+                    </View>
+                    {message.priority === 'urgent' && !message.readAt ? (
+                      <StatusChip label={t('inbox.urgent')} tone="tomato" dot testID={`inbox-urgent-${message.id}`} />
+                    ) : !message.readAt ? (
+                      <StatusChip label={t('inbox.new')} tone="blue" />
+                    ) : null}
+                  </Pressable>
+                );
+              })}
             </Card>
             {inbox.hasNextPage ? (
               <Button label={t('inbox.loadMore')} variant="secondary" onPress={() => void inbox.fetchNextPage()} loading={inbox.isFetchingNextPage} testID="inbox-more" />
@@ -152,7 +157,7 @@ export function NotificationSettingsCard({ api = defaultPushApi() }: { api?: Pus
     </View>
   );
   return (
-    <Card title={t('settings.title')} testID="notification-settings">
+    <Card title={t('settings.title')} accent="cyan" testID="notification-settings">
       {row('service', t('settings.service'), s.serviceLocked ? t('settings.serviceLocked') : t('settings.serviceHelp'), s.serviceLocked)}
       {row('jobUpdates', t('settings.jobUpdates'), t('settings.jobUpdatesHelp'))}
       {row('promotions', t('settings.promotions'), t('settings.promotionsHelp'))}
@@ -173,10 +178,9 @@ const styles = StyleSheet.create({
   list: { gap: space.md },
   toolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.sm },
   row: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md, paddingVertical: space.md },
+  bar: { width: 4, alignSelf: 'stretch', borderRadius: 2, marginLeft: -10 },
   divider: { borderBottomWidth: 1, borderBottomColor: colors.border },
   pressed: { opacity: 0.7 },
-  dot: { width: 10, height: 10, borderRadius: 5, marginTop: 6, backgroundColor: 'transparent' },
-  dotUnread: { backgroundColor: colors.blue },
   text: { flex: 1, gap: space.xxs },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.sm },
 });

@@ -3,12 +3,13 @@ import * as Clipboard from 'expo-clipboard';
 import QRCode from 'react-native-qrcode-svg';
 import { useState } from 'react';
 import type { ReferralHome, ReferralPerson } from '@/api/types';
-import { Banner, Button, Card, EmptyState, ListRow, StatusChip, StepList, Text } from '@/components';
+import { Banner, Button, Card, EmptyState, HeroCard, heroText, ListRow, ProgressBar, StatGrid, StatTile, StatusChip, StepList, Text, type StepItem } from '@/components';
 import { formatDateKey } from '@/components/form';
 import { useI18n } from '@/i18n';
 import { formatDayIst } from '@/lib/format';
 import { rupees } from '@/lib/money';
-import { colors, type Tone } from '@/theme';
+import { colors, radius, type Tone } from '@/theme';
+import type { HeroInfo } from './hero';
 import { useSecureSheet } from '../shared/useSecureSheet';
 
 const STAGE_TONE: Record<ReferralPerson['stage'], Tone> = { registered: 'neutral', paid: 'cyan', interview: 'amber', joined: 'green', closed: 'neutral' };
@@ -25,29 +26,46 @@ export function whatsappUrl(text: string): string {
  * due / approved / paid as a payout statement (a partner gets paid, so no
  * invoice); signed terms and consent copies.
  */
-export function ReferralHomeView({ profileId, home }: { profileId: string; home: ReferralHome }) {
+export function ReferralHomeView({ profileId, home, hero }: { profileId: string; home: ReferralHome; hero: HeroInfo }) {
   const { t } = useI18n();
   const sheet = useSecureSheet();
   const [copied, setCopied] = useState(false);
   const stepsDone = Object.values(home.steps).every((s) => s === 'done');
   const shareText = home.shareText || (home.shareLink ? t('refHome.shareText', { link: home.shareLink }) : '');
+  const steps: StepItem[] = [
+    { key: 'terms', label: t('refHome.stepTerms'), state: home.steps.terms, icon: 'doc', accent: 'navy' },
+    { key: 'selfie', label: t('jsHome.stepSelfie'), state: home.steps.selfie, icon: 'camera', accent: 'gold' },
+    { key: 'idCheck', label: t('jsHome.stepId'), state: home.steps.idCheck, icon: 'id-card', accent: 'orange' },
+    { key: 'upi', label: t('refHome.stepUpi'), state: home.steps.upi, icon: 'rupee', accent: 'good' },
+  ];
+  const nextStep = steps.find((s) => s.state !== 'done');
+  const doneCount = steps.filter((s) => s.state === 'done').length;
 
   return (
     <View style={styles.gap} testID="ref-home">
+      <HeroCard eyebrow={hero.eyebrow} title={hero.title} emoji={home.paused ? '⏸️' : stepsDone ? '🤝' : '📝'} testID="ref-home-hero">
+        {!stepsDone ? (
+          <View style={styles.heroBlock} testID="ref-home-hero-next">
+            <Text style={heroText.label}>{t('refHome.finishTitle')}</Text>
+            {nextStep ? <Text style={heroText.big}>{nextStep.label}</Text> : null}
+            <ProgressBar value={doneCount / steps.length} color={colors.goldRaw} trackColor={colors.heroTrack} />
+          </View>
+        ) : null}
+      </HeroCard>
+
       {home.paused ? <Banner tone="warn" title={t('refHome.pausedTitle')} message={home.pausedReason ?? t('refHome.paused')} testID="ref-home-paused" /> : null}
 
+      <StatGrid columns={2}>
+        <StatTile label={t('refHome.referredTitle')} value={home.referrals.length} accent="cyan" icon="users" testID="ref-home-referred-count" />
+        <StatTile label={t('refHome.due')} value={rupees(home.money.duePaise)} accent="gold" icon="clock" testID="ref-home-due" />
+        <StatTile label={t('refHome.approved')} value={rupees(home.money.approvedPaise)} accent="royal" icon="check" testID="ref-home-approved" />
+        <StatTile label={t('refHome.paid')} value={rupees(home.money.paidPaise)} accent="good" icon="rupee" testID="ref-home-paid" />
+      </StatGrid>
+
       {!stepsDone ? (
-        <Card title={t('refHome.finishTitle')} testID="ref-home-steps">
+        <Card title={t('refHome.finishTitle')} accent="royal" testID="ref-home-steps">
           <View style={styles.gap}>
-            <StepList
-              testID="ref-step"
-              steps={[
-                { key: 'terms', label: t('refHome.stepTerms'), state: home.steps.terms },
-                { key: 'selfie', label: t('jsHome.stepSelfie'), state: home.steps.selfie },
-                { key: 'idCheck', label: t('jsHome.stepId'), state: home.steps.idCheck },
-                { key: 'upi', label: t('refHome.stepUpi'), state: home.steps.upi },
-              ]}
-            />
+            <StepList testID="ref-step" steps={steps} />
             {home.stuckReason ? <Banner tone="warn" message={home.stuckReason} /> : null}
             <Button label={t('jsHome.continue')} loading={sheet.busy} onPress={() => void sheet.open(profileId, 'referral_registration')} testID="ref-home-continue" />
           </View>
@@ -55,7 +73,7 @@ export function ReferralHomeView({ profileId, home }: { profileId: string; home:
       ) : null}
 
       {home.shareLink && !home.paused ? (
-        <Card title={t('refHome.shareTitle')} testID="ref-home-share">
+        <Card title={t('refHome.shareTitle')} accent="gold" emoji="🔗" style={styles.shareCard} testID="ref-home-share">
           <View style={styles.gap}>
             <Text>{t('refHome.shareExplain', { amount: rupees(home.money.rewardPaise) })}</Text>
             <View style={styles.qr} testID="ref-home-qr">
@@ -79,8 +97,8 @@ export function ReferralHomeView({ profileId, home }: { profileId: string; home:
         </Card>
       ) : null}
 
-      <Card title={t('refHome.referredTitle')} testID="ref-home-referred">
-        {home.referrals.length === 0 ? <EmptyState compact message={t('refHome.noneYet')} /> : null}
+      <Card title={t('refHome.referredTitle')} accent="cyan" testID="ref-home-referred">
+        {home.referrals.length === 0 ? <EmptyState compact emoji="👋" message={t('refHome.noneYet')} /> : null}
         {home.referrals.map((p, i) => (
           <ListRow
             key={p.id}
@@ -93,23 +111,9 @@ export function ReferralHomeView({ profileId, home }: { profileId: string; home:
         ))}
       </Card>
 
-      <Card title={t('refHome.moneyTitle')} testID="ref-home-money">
+      <Card title={t('refHome.moneyTitle')} accent="good" emoji="💰" testID="ref-home-money">
         <View style={styles.gap}>
           <Text variant="muted">{t('refHome.moneyRule', { amount: rupees(home.money.rewardPaise) })}</Text>
-          <View style={styles.totals}>
-            {(
-              [
-                ['refHome.due', home.money.duePaise, 'ref-home-due'],
-                ['refHome.approved', home.money.approvedPaise, 'ref-home-approved'],
-                ['refHome.paid', home.money.paidPaise, 'ref-home-paid'],
-              ] as const
-            ).map(([key, paise, id]) => (
-              <View key={key} style={styles.total} testID={id}>
-                <Text variant="label">{t(key)}</Text>
-                <Text variant="stat">{rupees(paise)}</Text>
-              </View>
-            ))}
-          </View>
           {home.money.payouts.map((line, i) => (
             <ListRow
               key={line.id}
@@ -126,7 +130,7 @@ export function ReferralHomeView({ profileId, home }: { profileId: string; home:
       </Card>
 
       {home.documents.length > 0 ? (
-        <Card title={t('refHome.documentsTitle')} testID="ref-home-documents">
+        <Card title={t('refHome.documentsTitle')} accent="navy" emoji="📄" testID="ref-home-documents">
           <View style={styles.gap}>
             {home.documents.map((doc) => (
               <Button
@@ -147,7 +151,7 @@ export function ReferralHomeView({ profileId, home }: { profileId: string; home:
 
 const styles = StyleSheet.create({
   gap: { gap: 12 },
-  qr: { alignItems: 'center', padding: 12, backgroundColor: colors.white },
-  totals: { flexDirection: 'row', gap: 8 },
-  total: { flex: 1, gap: 4, padding: 10, borderRadius: 10, backgroundColor: colors.neutral100 },
+  heroBlock: { gap: 8 },
+  shareCard: { borderColor: colors.amberBorder },
+  qr: { alignSelf: 'center', padding: 12, backgroundColor: colors.white, borderRadius: radius.lg, borderWidth: 2, borderColor: colors.goldRaw },
 });
