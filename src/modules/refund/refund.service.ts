@@ -254,6 +254,9 @@ export class RefundService {
 
     let refundedPlacementIdSet = new Set<string>();
     const claimByPlacementId = new Map<string, { decidedAt: Date | null; reportedAt: Date | null }>();
+    // The fee a refund is about is the first placement's (the root): a replacement's own row carries
+    // nothing, or only a salary-upgrade difference (D3), and is never the amount shown here.
+    const rootFeeById = new Map<string, number>();
 
     if (placements.length > 0) {
       const placementIds = placements.map((p) => p.id);
@@ -272,6 +275,10 @@ export class RefundService {
         select: { placementId: true },
       });
       refundedPlacementIdSet = new Set(existingPlacementRefunds.map((p) => p.placementId!));
+      if (rootPlacementIds.length) {
+        const roots = await this.prisma.placement.findMany({ where: { id: { in: rootPlacementIds } }, select: { id: true, placementFee: true } });
+        for (const root of roots) rootFeeById.set(root.id, root.placementFee);
+      }
       // Business refunds decided "not owed" (FN-Refund "Reject") stay off the list.
       const rejectedPlacements = this.prisma.refundRejection
         ? await this.prisma.refundRejection.findMany({ where: { kind: 'business', placementId: { in: allPlacementIds } }, select: { placementId: true } })
@@ -315,7 +322,7 @@ export class RefundService {
           hasAcceptedReplacement,
           claimAcceptedAt,
           dropoutReportedAt,
-          placementFee: placement.placementFee,
+          placementFee: rootFeeById.get(rootId) ?? placement.placementFee,
           hasExistingRefund:
             refundedPlacementIdSet.has(placement.id) || refundedPlacementIdSet.has(rootId),
           searchDays: replacementSearchDays,

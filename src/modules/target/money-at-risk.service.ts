@@ -371,6 +371,13 @@ export class MoneyAtRiskService {
     const allPlacementIds = Array.from(new Set([...placementIds, ...rootPlacementIds]));
 
     let refundedPlacementIdSet = new Set<string>();
+    // The amount at risk is the first placement's fee (the root), never a replacement's own row
+    // (nothing, or only a salary-upgrade difference, D3).
+    const rootFeeById = new Map<string, number>();
+    if (rootPlacementIds.length > 0) {
+      const roots = await this.prisma.placement.findMany({ where: { id: { in: rootPlacementIds } }, select: { id: true, placementFee: true } });
+      for (const root of roots) rootFeeById.set(root.id, root.placementFee);
+    }
 
     if (allPlacementIds.length > 0) {
       const existingPlacementRefunds = await this.prisma.payment.findMany({
@@ -393,6 +400,7 @@ export class MoneyAtRiskService {
       seenPlacementIds.add(pl.id);
 
       const rootId = pl.rootPlacementId ?? pl.id;
+      const feePaise = rootFeeById.get(rootId) ?? pl.placementFee;
       const hasAcceptedReplacement = pl.replacementCandidates.some(
         (rc) => rc.status === 'accepted',
       );
@@ -408,7 +416,7 @@ export class MoneyAtRiskService {
           claimAcceptedAt: claim.decidedAt,
           // The 15-day clock starts at the dropout report, not the claim decision.
           dropoutReportedAt: claim.reportedAt ?? pl.dropoutReportedAt,
-          placementFee: pl.placementFee,
+          placementFee: feePaise,
           hasExistingRefund,
           searchDays: replacementSearchDays,
           guaranteeEndedReason: pl.guaranteeEndedReason,
@@ -447,8 +455,8 @@ export class MoneyAtRiskService {
           id: pl.id,
           code: pl.code,
           city: pl.city,
-          amountPaise: pl.placementFee,
-          amountRupees: pl.placementFee / 100,
+          amountPaise: feePaise,
+          amountRupees: feePaise / 100,
           daysRemaining,
           deadline: deadlineDate.toISOString(),
           staffId: pl.createdByStaffId,
@@ -457,7 +465,7 @@ export class MoneyAtRiskService {
           details: {
             businessName: pl.business.name,
             dropoutReportedAt: pl.dropoutReportedAt ? pl.dropoutReportedAt.toISOString() : undefined,
-            placementFee: pl.placementFee,
+            placementFee: feePaise,
             claimDecidedAt: claim.decidedAt!.toISOString(),
           },
         });

@@ -139,7 +139,8 @@ export class WorkerLeftService {
     const today0 = istDayOf(now)!;
     // D2: confirmed (fee paid), joining day reached, nobody recorded him joining.
     const neverJoined = placement.status === 'confirmed' && !placement.joinedDate && Boolean(placement.joiningDate) && istDayOf(placement.joiningDate!)! <= today0;
-    const rootJoined = root?.joinedDate ?? null;
+    // D2: a first candidate who never joined — the 60 days run from the first worker who did.
+    const rootJoined = root?.joinedDate ?? (placement.rootPlacementId ? await this.placements.firstJoinedInChain(placement.rootPlacementId) : null);
     const ownJoined = placement.joinedDate ?? (neverJoined ? placement.joiningDate : rootJoined);
     const policy = await this.pricing.current();
     const lastDay = rootJoined ? addDays(istDayOf(rootJoined)!, policy.replacementWindowDays) : null;

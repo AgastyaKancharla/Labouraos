@@ -507,6 +507,25 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
     });
   });
 
+  describe('3b. A dropped replacement shows the first placement\'s fee (review M4, display only)', () => {
+    it('lists the root fee, not the replacement row\'s own salary-upgrade difference', async () => {
+      const dropout = new Date(serverNow.getTime() - 20 * 24 * 60 * 60 * 1000);
+      mockPrisma.placement.findMany.mockImplementation(async (args?: unknown) => {
+        const where = (args as { where?: { id?: { in?: string[] } } } | undefined)?.where;
+        if (where?.id?.in) return [{ id: 'pl-root', placementFee: 1000000 }];
+        return [{
+          id: 'pl-rep', code: 'PL-00009', city: 'Bengaluru', status: 'dropped_out', rootPlacementId: 'pl-root',
+          dropoutReportedAt: dropout, dropoutDateCallerSupplied: false, joinedDate: new Date('2026-05-20T00:00:00.000Z'),
+          placementFee: 100000, business: { name: 'Acme Hotels', area: 'Koramangala' }, jobSeeker: { name: 'Worker Nine', phone: '9123456789' },
+          replacementCandidates: [],
+        }];
+      });
+      mockPrisma.payment.findMany.mockResolvedValue([]);
+      const rows = await refundService.getRefundsDue('ceo-1', serverNow);
+      expect(rows).toEqual([expect.objectContaining({ code: 'PL-00009', amount: 1000000, amountOwed: 1000000 })]);
+    });
+  });
+
   describe('4. Finance PII Masking Interceptor', () => {
     it('masks candidate and contact phone numbers for finance role', () => {
       const rawRows = [

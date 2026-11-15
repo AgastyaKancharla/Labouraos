@@ -120,7 +120,8 @@ export function classifyPlacementFeePayment(input: PlacementFeeExposureInput, no
         hasAcceptedReplacement: accepted.replacementCandidates.some((candidate) => candidate.status === 'accepted'),
         claimAcceptedAt: decided.decidedAt,
         dropoutReportedAt: decided.reportedAt ?? accepted.dropoutReportedAt,
-        placementFee: accepted.placementFee,
+        // The root's fee (a replacement's own row is nothing or only a salary-upgrade difference, D3).
+        placementFee: input.chain.find((p) => p.code === input.root.code)?.placementFee ?? accepted.placementFee,
         hasExistingRefund: false,
         searchDays: input.searchDays,
         guaranteeEndedReason: accepted.guaranteeEndedReason,

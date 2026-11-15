@@ -720,8 +720,10 @@ export class PlacementService {
         if (root?.guaranteeEndedReason || root?.status === 'guarantee_ended') {
           continue;
         }
-        if (root?.joinedDate) {
-          rootJoinedDate = root.joinedDate;
+        // D2: a root who never joined — the guarantee runs from the first worker who did.
+        const chainStart = root?.joinedDate ?? (root ? await this.firstJoinedInChain(placement.rootPlacementId) : null);
+        if (chainStart) {
+          rootJoinedDate = chainStart;
         }
       }
 
@@ -1183,7 +1185,11 @@ export class PlacementService {
   }
 
   /** The first joining day recorded among a root placement's chain (the root itself never joined). */
-  private async firstJoinedInChain(rootId: string): Promise<Date | null> {
+  /**
+   * D2: when the first selected candidate never joined, the 60 days count from the
+   * first worker in the chain who did join (a never-joined swap takes his place).
+   */
+  async firstJoinedInChain(rootId: string): Promise<Date | null> {
     const first = await this.prisma.placement.findFirst({
       where: { rootPlacementId: rootId, joinedDate: { not: null } },
       orderBy: { joinedDate: 'asc' },

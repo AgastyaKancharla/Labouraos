@@ -21,7 +21,7 @@ describe('Report worker left: form and finder', () => {
     placement: { findFirst: jest.Mock; findUnique: jest.Mock; findMany: jest.Mock };
     callRecord: { findMany: jest.Mock };
   };
-  let placements: { placementListScope: jest.Mock; claimCallStaffIds: jest.Mock; assertClaimScope: jest.Mock };
+  let placements: { placementListScope: jest.Mock; claimCallStaffIds: jest.Mock; assertClaimScope: jest.Mock; firstJoinedInChain: jest.Mock };
   let service: WorkerLeftService;
 
   const staff: Record<string, { id: string; role: string }> = {
@@ -71,6 +71,7 @@ describe('Report worker left: form and finder', () => {
         a.role === 'ceo' || a.role === 'manager' ? null : a.role === 'team_lead' ? ['tl-1', 'ca-7'] : [a.id],
       ),
       assertClaimScope: jest.fn().mockResolvedValue(undefined),
+      firstJoinedInChain: jest.fn().mockResolvedValue(null),
     };
     const pricing = { current: jest.fn().mockResolvedValue({ replacementWindowDays: 60, claimReportDays: 7, claimDecisionHours: 48 }) };
     service = new WorkerLeftService(prisma as unknown as PrismaService, pricing as unknown as PricingService, placements as unknown as PlacementService);
@@ -207,6 +208,16 @@ describe('Report worker left: form and finder', () => {
       // the replacement's own joining day is the earliest leaving day; the window counts from the first worker's
       expect(form.leftOnEarliest).toBe('2026-09-20');
       expect(form.leftOnLatest).toBe('2026-09-30'); // 1 Aug + 60 days
+    });
+
+    it('D2: when the first candidate never joined, the 60 days run from the first worker in the chain who did', async () => {
+      const firstJoined = new Date('2026-08-10T04:30:00.000Z');
+      prisma.placement.findFirst.mockResolvedValueOnce(placement({ rootPlacementId: 'pl-root', joinedDate: new Date('2026-09-20T00:00:00Z') }));
+      prisma.placement.findUnique.mockResolvedValueOnce({ joinedDate: null });
+      placements.firstJoinedInChain.mockResolvedValueOnce(firstJoined);
+      const form = await service.form('pl-1', 'ceo-1', NOW);
+      expect(placements.firstJoinedInChain).toHaveBeenCalledWith('pl-root');
+      expect(form.leftOnLatest).toBe('2026-10-09'); // 10 Aug + 60 days
     });
 
     it('outside a call agent’s or Team Lead’s placement scope it is a 404', async () => {

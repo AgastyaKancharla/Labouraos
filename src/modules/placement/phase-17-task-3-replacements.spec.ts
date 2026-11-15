@@ -722,5 +722,19 @@ describe('Phase 17 Task 3: Replacements through interviews and guarantee rules',
         }),
       );
     });
+
+    it('D2: a first candidate who never joined — the 60 days run from the first worker in the chain who did', async () => {
+      const firstJoined = new Date('2026-08-10T10:00:00.000Z');
+      const lastJoined = new Date('2026-09-01T10:00:00.000Z');
+      prisma.placement.findMany = jest.fn().mockResolvedValue([
+        { id: 'pl-rep-2', code: 'PL-00003', status: 'active', joinedDate: lastJoined, rootPlacementId: 'pl-root', replacementNumber: 2, guaranteeEndedReason: null },
+      ]);
+      prisma.placement.findUnique = jest.fn().mockResolvedValue({ joinedDate: null, guaranteeEndedReason: null, status: 'dropped_out' });
+      prisma.placement.findFirst = jest.fn().mockResolvedValue({ joinedDate: firstJoined });
+      prisma.replacementClaim.findFirst = jest.fn().mockResolvedValue(null);
+      const day60 = new Date(firstJoined.getTime() + 60 * 24 * 60 * 60 * 1000);
+      expect(await placementService.completeDay60Placements(day60)).toBe(1);
+      expect(prisma.placement.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { rootPlacementId: 'pl-root', joinedDate: { not: null } } }));
+    });
   });
 });
