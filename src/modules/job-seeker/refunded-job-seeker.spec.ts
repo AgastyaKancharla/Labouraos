@@ -8,6 +8,7 @@ import { PaymentService } from '../payment/payment.service';
 import { MatchingService } from '../vacancy/matching.service';
 import { RefundService } from '../refund/refund.service';
 import { recordRefundCheck } from '../../test-support/refund-check';
+import { giveVerifiedId } from '../../test-support/verified-id';
 
 /**
  * A refunded job seeker (guide check 12 Nov, finding 5): when his ₹499 is refunded
@@ -82,6 +83,8 @@ describe('A refunded job seeker leaves the pool and can pay again', () => {
       },
     });
     seekerIds.push(seeker.id);
+    // He paid once, so his ID was verified (the gate before any ₹499, L-5).
+    await giveVerifiedId(prisma, seeker.id);
     await prisma.payment.create({
       data: {
         code: await idService.generateCode('payment'),

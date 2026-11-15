@@ -81,6 +81,8 @@ export interface JourneyInput {
   guaranteeDays: number;
   /** A signed Aadhaar QR showed under 18 and no Manager / CEO has lifted the stop (sticky, rev 154). */
   under18Stop: boolean;
+  /** Any verified ID check (not only the latest): a later failed or waiting check doesn't undo it (L-5). */
+  anyVerifiedCheck?: boolean;
 }
 
 export interface JourneyStatus {
@@ -119,7 +121,8 @@ export function buildJourneyStatus(input: JourneyInput): JourneyStatus {
   const consent = JOB_SEEKER_REQUIRED_CONSENT_PURPOSES.every((purpose) => input.grantedPurposes.includes(purpose));
   const selfie = Boolean(seeker.photoStoragePath);
   const idCheck = Boolean(
-    !input.under18Stop && verification && verification.status === 'verified' && verification.nameMatches === true && verification.isAdult === true,
+    !input.under18Stop &&
+      (input.anyVerifiedCheck || (verification && verification.status === 'verified' && verification.nameMatches === true && verification.isAdult === true)),
   );
   const paid = Boolean(seeker.paymentReceivedAt) || Boolean(payment && SUCCEEDED.includes(payment.status));
 

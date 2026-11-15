@@ -42,7 +42,7 @@ export class RegistrationJourneyService {
         registrationComplete: Boolean(seeker.paymentReceivedAt),
       };
     }
-    const [policy, consents, latestVerification, latestPayment, under18Stop] = await Promise.all([
+    const [policy, consents, latestVerification, latestPayment, under18Stop, anyVerified] = await Promise.all([
       this.pricing.current(),
       this.prisma.consent.findMany({
         where: { subjectType: 'job_seeker', subjectId: seeker.id, granted: true, withdrawnAt: null },
@@ -62,6 +62,11 @@ export class RegistrationJourneyService {
         where: { jobSeekerId: seeker.id, method: 'aadhaar_qr', vendor: 'uidai_secure_qr', isAdult: false, under18LiftedAt: null },
         select: { id: true },
       }),
+      // The same gate as the payment (id-payment-gate.ts): any verified check counts.
+      this.prisma.identityVerification.findFirst({
+        where: { jobSeekerId: seeker.id, status: 'verified', nameMatches: true, isAdult: true },
+        select: { id: true },
+      }),
     ]);
     const now = this.clock.now();
     const status = buildJourneyStatus({
@@ -75,6 +80,7 @@ export class RegistrationJourneyService {
       activationFeePaise: policy.activationFeePaise,
       guaranteeDays: policy.jobSeekerGuaranteeDays,
       under18Stop: Boolean(under18Stop),
+      anyVerifiedCheck: Boolean(anyVerified),
     });
     return {
       ...status,

@@ -11,6 +11,7 @@ import { MessagingService } from '../message/messaging.service';
 import { PaymentService } from './payment.service';
 import { receiptToken } from './receipt-link';
 import { invoicePath } from '../placement/invoice-link';
+import { assertIdReadyForPayment } from '../job-seeker/id-payment-gate';
 
 const PUBLIC_LANGUAGES: Record<string, 'kn' | 'hi' | 'en'> = {
   kn: 'kn', kannada: 'kn', hi: 'hi', hindi: 'hi', en: 'en', english: 'en',
@@ -229,6 +230,15 @@ export class UpiCollectionService {
     const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
     if (!payment || payment.method !== 'upi_direct' || payment.gatewayReference !== null || payment.status !== 'pending' || !payment.upiReference || payment.expectedAmountPaise === null) {
       throw new NotFoundException('Pending UPI payment request not found');
+    }
+    // A ₹499 request sent again asks the same ID gate as when it was made (Fable final re-check, L-5):
+    // an under-18 stop raised since, or no verified ID, and the link is not sent.
+    if (payment.type === 'activation' && payment.jobSeekerId) {
+      const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: payment.jobSeekerId }, select: { id: true, dateOfBirth: true } });
+      if (seeker) {
+        const minimumAge = (await this.pricing?.current())?.adultMinimumAge ?? 18;
+        await assertIdReadyForPayment(this.prisma, seeker, minimumAge, new Date());
+      }
     }
     const { payeeName } = this.buildUpiUri({
       code: payment.code, upiReference: payment.upiReference, expectedAmountPaise: payment.expectedAmountPaise,

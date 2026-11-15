@@ -302,12 +302,25 @@ export class AadhaarQrService {
     });
 
     if (!name.matches && isAdult) {
+      // A later name mismatch doesn't un-verify a person whose ID was already verified (Fable final
+      // re-check, L-5): he can still pay; the Team Lead sees it as a name check that says so.
+      const earlierVerified =
+        subject.type === 'job_seeker'
+          ? await this.prisma.identityVerification.findFirst({ where: { jobSeekerId: subject.id, status: 'verified', nameMatches: true, isAdult: true }, select: { id: true } })
+          : await this.prisma.referralIdentityVerification.findFirst({ where: { referralId: subject.id, status: 'verified', nameMatches: true, isAdult: true }, select: { id: true } });
       await this.flags.raise({
         kind: 'name_check',
         subjectType: subject.type,
         subjectId: subject.id,
         raisedForStaffId: subject.registeredByStaffId,
-        details: { identityVerificationId: verificationId, method: 'aadhaar_qr', reviewRequired: true, reason: name.reason, likelySpelling: name.likelySpelling },
+        details: {
+          identityVerificationId: verificationId,
+          method: 'aadhaar_qr',
+          reviewRequired: true,
+          reason: name.reason,
+          likelySpelling: name.likelySpelling,
+          ...(earlierVerified ? { afterVerifiedId: earlierVerified.id, stillVerified: true } : {}),
+        },
       });
     }
     if (passed && phoneLinked === 'not_linked') {

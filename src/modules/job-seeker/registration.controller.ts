@@ -236,9 +236,11 @@ export class RegistrationController {
     }
     const seeker = await this.prisma.jobSeeker.findUnique({
       where: { id: link.subjectId },
-      select: { name: true, code: true },
+      select: { id: true, name: true, code: true, dateOfBirth: true },
     });
     if (!seeker) throw new BadRequestException('Job seeker not found');
+    // The payer sees the ₹499 only while the ID gate still holds (Fable final re-check, L-5).
+    await this.jobSeekers.assertIdReadyForPayment(seeker);
     const paymentDetails = await this.upi.getPaymentPage(payment.upiReference);
     return {
       firstName: seeker.name.trim().split(/\s+/)[0] ?? seeker.name,

@@ -68,6 +68,20 @@ describe('Registration link journey (P00 → P02b)', () => {
     expect(status.idCheck).toEqual({ waitingForTeamLead: true, lastResult: 'pending' });
   });
 
+  it('a verified ID stays verified when a later check fails or waits (L-5)', () => {
+    const status = buildJourneyStatus(input({
+      grantedPurposes: REQUIRED,
+      anyVerifiedCheck: true,
+      latestVerification: { status: 'failed', nameMatches: false, isAdult: true, failureReason: 'Name on the Aadhaar does not match the registered name' },
+    }, { photoStoragePath: 'p' }));
+    expect(status.steps.idCheck).toBe(true);
+    expect(status.currentStep).toBe('payment');
+    // ...but not past a standing under-18 stop.
+    const stopped = buildJourneyStatus(input({ grantedPurposes: REQUIRED, anyVerifiedCheck: true, under18Stop: true }, { photoStoragePath: 'p' }));
+    expect(stopped.steps.idCheck).toBe(false);
+    expect(stopped.stopped).toBe('under_18');
+  });
+
   it('the under-18 stop is sticky: a later verified ID does not get past it', () => {
     const status = buildJourneyStatus(input({
       grantedPurposes: REQUIRED,

@@ -138,6 +138,10 @@ describe('Payment link to another number records who it is (CA08e)', () => {
   const prisma = () => ({
     jobSeeker: { findUnique: jest.fn().mockResolvedValue(seeker) },
     payment: { findFirst: jest.fn().mockResolvedValue({ id: 'p1', expectedAmountPaise: 49900 }) },
+    // The ID gate before any ₹499 (L-5): a verified ID, no under-18 stop.
+    identityVerification: {
+      findFirst: jest.fn(async (args: { where: Record<string, unknown> }) => (args.where.status === 'verified' ? { id: 'idv-1' } : null)),
+    },
   });
 
   it('stores the relation with the link and in the audit row', async () => {

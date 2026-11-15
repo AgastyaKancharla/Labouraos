@@ -38,7 +38,7 @@ import { recordStatusChange } from '../../common/status-history/status-history.h
 import { REACTIVATABLE_STATUSES, isJobSeekerStatus } from './job-seeker.status';
 import { assertRejectionOverride, findRefundRejection, refundLockKey } from '../refund/refund-rejection';
 import { markJobSeekerRefunded } from './job-seeker-refunded';
-import { calculateAge, validateJobSeekerAge } from './job-seeker.validator';
+import { validateJobSeekerAge } from './job-seeker.validator';
 import { UpdateJobSeekerProfileDto } from './dto/update-job-seeker-profile.dto';
 import {
   CreateJobSeekerTradeDto,
@@ -62,10 +62,10 @@ import {
 import { IdCheckAccessService } from '../aadhaar-qr/id-check-access.service';
 import { verifiedByUidai } from '../aadhaar-qr/id-check-photo.service';
 import { maskedAadhaarReference } from '../aadhaar-qr/secure-qr.parser';
-import { UNDER_18_STOP_MESSAGE } from '../aadhaar-qr/under18-stop.service';
+import { assertIdReadyForPayment } from './id-payment-gate';
 
 /** Another ID waits for the Team Lead's check before terms and payment (rev 154). */
-export const ID_WAITING_FOR_TEAM_LEAD = 'The Team Lead is checking the photo of your ID card. Open this link again once it is checked.';
+export { ID_WAITING_FOR_TEAM_LEAD } from './id-payment-gate';
 import { PublicLinkStoreService } from '../../common/public-link-store.service';
 import { MessagingService } from '../message/messaging.service';
 import { publicPageLink } from '../../common/public-pages';
@@ -478,17 +478,9 @@ export class JobSeekerService {
     }
 
     const policy = await this.getPolicy();
-    await this.assertAdultBeforePayment(jobSeeker, policy.adultMinimumAge);
-    // The same rule as his own link (Fable re-check, L5): nobody is charged before a verified ID —
-    // the Aadhaar QR passed, or another ID approved by the Team Lead (name and 18+ confirmed).
-    const verification = await this.prisma.identityVerification.findFirst({
-      where: { jobSeekerId: jobSeeker.id },
-      orderBy: { createdAt: 'desc' },
-      select: { status: true, nameMatches: true, isAdult: true },
-    });
-    if (!verification || verification.status !== 'verified' || verification.nameMatches !== true || verification.isAdult !== true) {
-      throw new BadRequestException('Finish the ID check first');
-    }
+    // The same rule as his own link: nobody is charged before a verified ID — the Aadhaar QR passed,
+    // or another ID approved by the Team Lead (name and 18+ confirmed) — or past an under-18 stop.
+    await this.assertIdReadyForPayment(jobSeeker, policy.adultMinimumAge);
 
     const upiRequest = await this.upiCollectionService.createRequest({
       type: 'activation',
@@ -513,29 +505,10 @@ export class JobSeekerService {
     };
   }
 
-  /** Under 18 stops registration before any payment (Master Guide, ID check). */
-  private async assertAdultBeforePayment(
-    jobSeeker: { id: string; dateOfBirth: Date | null },
-    adultMinimumAge: number,
-  ) {
-    const now = this.consentClock?.now() ?? new Date();
-    if (jobSeeker.dateOfBirth && calculateAge(jobSeeker.dateOfBirth, now) < adultMinimumAge) {
-      throw new BadRequestException('Registration stops before payment: the job seeker is under 18');
-    }
-    // Sticky (rev 154): any signed Aadhaar QR that showed under 18 stops registration until a
-    // Manager or the CEO lifts it — a later ID check of any kind doesn't get past it.
-    const stop = await this.prisma.identityVerification.findFirst({
-      where: { jobSeekerId: jobSeeker.id, method: 'aadhaar_qr', vendor: 'uidai_secure_qr', isAdult: false, under18LiftedAt: null },
-      select: { id: true },
-    });
-    if (stop) throw new BadRequestException(UNDER_18_STOP_MESSAGE);
-    const latest = await this.prisma.identityVerification.findFirst({
-      where: { jobSeekerId: jobSeeker.id },
-      orderBy: { createdAt: 'desc' },
-      select: { status: true },
-    });
-    // Another ID waits for the Team Lead's check: nobody pays before the ID is confirmed.
-    if (latest?.status === 'pending') throw new BadRequestException(ID_WAITING_FOR_TEAM_LEAD);
+  /** The one ID gate before any ₹499 activation request (Fable final re-check, L-5; see id-payment-gate.ts). */
+  async assertIdReadyForPayment(jobSeeker: { id: string; dateOfBirth: Date | null }, adultMinimumAge?: number) {
+    const minimumAge = adultMinimumAge ?? (await this.getPolicy()).adultMinimumAge;
+    await assertIdReadyForPayment(this.prisma, jobSeeker, minimumAge, this.consentClock?.now() ?? new Date());
   }
 
   /**
@@ -554,15 +527,7 @@ export class JobSeekerService {
       throw new BadRequestException('Consent comes first: finish the consent step');
     }
     if (!seeker.photoStoragePath) throw new BadRequestException('Take the selfie first');
-    const verification = await this.prisma.identityVerification.findFirst({
-      where: { jobSeekerId: seeker.id },
-      orderBy: { createdAt: 'desc' },
-    });
-    await this.assertAdultBeforePayment(seeker, policy.adultMinimumAge);
-    if (verification?.status === 'pending') throw new BadRequestException(ID_WAITING_FOR_TEAM_LEAD);
-    if (!verification || verification.status !== 'verified' || verification.nameMatches !== true || verification.isAdult !== true) {
-      throw new BadRequestException('Finish the ID check first');
-    }
+    await this.assertIdReadyForPayment(seeker, policy.adultMinimumAge);
     if (seeker.guaranteeFloorPaise === null) {
       throw new BadRequestException('Waiting for the new trade to be added in the Command Center');
     }
@@ -622,6 +587,8 @@ export class JobSeekerService {
     }
 
     const policy = await this.getPolicy();
+    // Coming back is another ₹499 payment: the same ID gate as the first one (Fable final re-check, L-5).
+    await this.assertIdReadyForPayment(jobSeeker, policy.adultMinimumAge);
 
     const upiRequest = await this.upiCollectionService.createRequest({
       type: 'activation',
@@ -1549,7 +1516,7 @@ export class JobSeekerService {
     });
     if (!seeker) throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
     const now = this.consentClock?.now() ?? new Date();
-    const [consents, link, paymentOnlyLink, under18Stop] = await Promise.all([
+    const [consents, link, paymentOnlyLink, under18Stop, anyVerified] = await Promise.all([
       this.prisma.consent.findMany({
         where: { subjectType: 'job_seeker', subjectId: seeker.id, granted: true, withdrawnAt: null },
         orderBy: { grantedAt: 'desc' },
@@ -1566,6 +1533,11 @@ export class JobSeekerService {
       }),
       this.prisma.identityVerification.findFirst({
         where: { jobSeekerId: seeker.id, method: 'aadhaar_qr', vendor: 'uidai_secure_qr', isAdult: false, under18LiftedAt: null },
+        select: { id: true },
+      }),
+      // As the payment gate (id-payment-gate.ts): any verified check counts, not only the latest.
+      this.prisma.identityVerification.findFirst({
+        where: { jobSeekerId: seeker.id, status: 'verified', nameMatches: true, isAdult: true },
         select: { id: true },
       }),
     ]);
@@ -1589,7 +1561,7 @@ export class JobSeekerService {
     const idCheck = {
       state: under18Stop
         ? 'stuck'
-        : latestVerification?.status === 'verified' && latestVerification.isAdult === true && latestVerification.nameMatches === true
+        : anyVerified || (latestVerification?.status === 'verified' && latestVerification.isAdult === true && latestVerification.nameMatches === true)
           ? 'done'
           : latestVerification
             ? 'in_progress'
@@ -1640,6 +1612,7 @@ export class JobSeekerService {
       orderBy: { createdAt: 'desc' },
     });
     if (!payment) throw new BadRequestException('A pending activation payment is required before sending a payment-only link');
+    await this.assertIdReadyForPayment(seeker);
 
     const now = this.consentClock?.now() ?? new Date();
     await this.publicLinks.revokeActive('payment_only', 'job_seeker', seeker.id, now);

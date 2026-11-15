@@ -19,6 +19,8 @@ describe('UpiCollectionService', () => {
   const findFirst = jest.fn();
   const findUnique = jest.fn();
   const update = jest.fn();
+  // The ID gate before a ₹499 is sent again (L-5): a verified ID, no under-18 stop, unless a test says otherwise.
+  const identityFindFirst = jest.fn();
   const send = jest.fn().mockResolvedValue({ status: 'sent' });
   const tx = {
     $queryRaw: jest.fn().mockResolvedValue([]),
@@ -29,6 +31,8 @@ describe('UpiCollectionService', () => {
   const prisma = {
     $transaction: jest.fn((work: (client: Prisma.TransactionClient) => Promise<unknown>) => work(tx)),
     payment: { findUnique, update },
+    jobSeeker: { findUnique: jest.fn().mockResolvedValue({ id: 'seeker-1', dateOfBirth: null }) },
+    identityVerification: { findFirst: identityFindFirst },
   } as unknown as PrismaService;
   const idService = { generateCode: jest.fn().mockResolvedValue('PAY-00042') } as unknown as IdService;
   const messaging = { send } as unknown as MessagingService;
@@ -42,6 +46,7 @@ describe('UpiCollectionService', () => {
     findFirst.mockResolvedValue(null);
     create.mockResolvedValue(payment);
     send.mockResolvedValue({ status: 'sent' });
+    identityFindFirst.mockImplementation(async (args: { where: Record<string, unknown> }) => (args.where.status === 'verified' ? { id: 'idv-1' } : null));
   });
 
   afterAll(() => {
@@ -92,6 +97,20 @@ describe('UpiCollectionService', () => {
     expect(resent.paymentId).toBe(payment.id);
     expect(resent.upiReference).toBe(first.upiReference);
     expect(resent.paymentLink).toBe(first.paymentLink);
+  });
+
+  it('does not send a ₹499 again past an under-18 stop or without a verified ID (L-5)', async () => {
+    findUnique.mockResolvedValue(payment);
+    identityFindFirst.mockImplementation(async (args: { where: Record<string, unknown> }) => ('under18LiftedAt' in args.where ? { id: 'stop-1' } : { id: 'idv-1' }));
+    await expect(service.resendRequest(payment.id)).rejects.toThrow(/under 18/i);
+    identityFindFirst.mockResolvedValue(null);
+    await expect(service.resendRequest(payment.id)).rejects.toThrow('Finish the ID check first');
+    identityFindFirst.mockImplementation(async (args: { where: Record<string, unknown> }) => (args.where.status === 'pending' ? { id: 'p-1' } : null));
+    await expect(service.resendRequest(payment.id)).rejects.toThrow(/Team Lead/);
+    expect(send).not.toHaveBeenCalled();
+    // A placement fee isn't an activation: no ID gate.
+    findUnique.mockResolvedValue({ ...payment, type: 'placement_fee', jobSeekerId: null, businessId: 'biz-1' });
+    await expect(service.resendRequest(payment.id)).resolves.toMatchObject({ paymentId: payment.id });
   });
 
   it('decodes the generated QR matrix to the exact UPI link', () => {

@@ -294,6 +294,10 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
         paymentReceivedAt: new Date('2026-09-01T00:00:00Z'),
       };
       prisma.jobSeeker.findUnique.mockResolvedValueOnce(deactivatedCandidate);
+      // Coming back pays again: the same ID gate (Fable final re-check, L-5) — a verified ID, no under-18 stop.
+      prisma.identityVerification.findFirst.mockImplementation(async (args: { where?: Record<string, unknown> }) =>
+        args?.where && 'under18LiftedAt' in args.where ? null : { id: 'idv-1' },
+      );
       prisma.payment.findFirst.mockResolvedValueOnce(null);
       prisma.payment.create.mockResolvedValueOnce({
         id: 'pay-react',

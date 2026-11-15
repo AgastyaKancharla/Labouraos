@@ -350,6 +350,8 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
         },
       });
       testSeekerId = seeker.id;
+      // Coming back pays ₹499 again: the same ID gate as the first payment (L-5).
+      await giveVerifiedId(prisma, seeker.id);
       testSeekerCode = seeker.code;
       cleanJobSeekerIds.push(seeker.id);
     });

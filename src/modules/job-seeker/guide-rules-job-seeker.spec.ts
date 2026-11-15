@@ -15,6 +15,7 @@ import { FollowUpService } from '../follow-up/follow-up.service';
 import { JobSeekerService } from './job-seeker.service';
 import { loadJobSeekerRefundGuards } from './job-seeker-refund-guards';
 import { recordRefundCheck } from '../../test-support/refund-check';
+import { giveVerifiedId } from '../../test-support/verified-id';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -177,7 +178,8 @@ describe('Job seeker rules from the Master Guide', () => {
       await request(app.getHttpServer()).post(`/job-seekers/${other.id}/status`).set(auth(callAgentToken))
         .send({ status: 'closed' }).expect(400);
 
-      // He can come back later by paying ₹499 again.
+      // He can come back later by paying ₹499 again (with his verified ID: the same gate, L-5).
+      await giveVerifiedId(prisma, seeker.id);
       const back = await request(app.getHttpServer()).post(`/job-seekers/${seeker.id}/reactivate`).set(auth(callAgentToken)).expect(201);
       expect(back.body.reactivation).toBe(true);
     });

@@ -5,6 +5,7 @@ import * as bcrypt from 'bcrypt';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
+import { giveVerifiedId } from '../../test-support/verified-id';
 
 describe('Phase 3 Task 5: Reactivation', () => {
   let app: INestApplication;
@@ -116,6 +117,8 @@ describe('Phase 3 Task 5: Reactivation', () => {
       },
     });
     deactivatedJobSeekerId = deactivatedJs.id;
+    // Reactivating is another ₹499: the same ID gate as the first payment (L-5).
+    await giveVerifiedId(prisma, deactivatedJs.id);
   });
 
   afterAll(async () => {
