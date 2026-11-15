@@ -9,9 +9,10 @@ import { PayoutAccountModule } from '../payout-account/payout-account.module';
 import { ReviewFlagModule } from '../review-flag/review-flag.module';
 import { PricingModule } from '../pricing/pricing.module';
 import { ReferralTermsController } from './referral-terms.controller';
+import { AadhaarQrModule } from '../aadhaar-qr/aadhaar-qr.module';
 
 @Module({
-  imports: [ConsentModule, JobSeekerModule, PayoutAccountModule, ReviewFlagModule, PricingModule, MessageModule],
+  imports: [ConsentModule, JobSeekerModule, PayoutAccountModule, ReviewFlagModule, PricingModule, MessageModule, AadhaarQrModule],
   controllers: [ReferralController, ReferralRegistrationController, ReferralTermsController],
   providers: [ReferralService],
   exports: [ReferralService],

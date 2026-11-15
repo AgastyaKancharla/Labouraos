@@ -28,7 +28,7 @@ describe('Job seeker Home: no business before the interview is booked', () => {
       otpRequired: false,
       currentStep: 'complete',
       steps: { consent: true, selfie: true, idCheck: true, payment: true },
-      idCheck: { serviceDown: false, waitingForService: false, lastResult: 'verified' },
+      idCheck: { waitingForTeamLead: false, lastResult: 'verified' },
       stopped: null,
       termsAcceptedAt: new Date('2026-11-20T05:00:00.000Z'),
       payment: { state: 'confirmed', amountPaise: 49900, confirmedAt: new Date('2026-11-20T06:00:00.000Z') },
@@ -66,6 +66,23 @@ describe('Job seeker Home: no business before the interview is booked', () => {
     const home = await service.jobSeekerHome(profile);
     expect(home.refund).toEqual(expect.objectContaining({ state: 'due' }));
     expect(home.guarantee.active).toBe(false);
+  });
+
+  it('another ID waiting for a Team Lead\'s check: the Home says to wait for the ID check (no outside-company "service down" state)', async () => {
+    prisma.interview.findFirst.mockResolvedValue(null);
+    journey.status.mockResolvedValueOnce({
+      otpRequired: false,
+      currentStep: 'id_check',
+      steps: { consent: true, selfie: true, idCheck: false, payment: false },
+      idCheck: { waitingForTeamLead: true, lastResult: 'pending' },
+      stopped: null,
+      termsAcceptedAt: null,
+      payment: { state: 'not_started', amountPaise: 49900, confirmedAt: null },
+    });
+    const home = await service.jobSeekerHome(profile);
+    expect(home.nextAction).toBe('wait_for_id_check');
+    expect(home.idCheck).toEqual({ waitingForTeamLead: true, lastResult: 'pending' });
+    expect(JSON.stringify(home)).not.toMatch(/serviceDown|waitingForService/);
   });
 
   it('a declined offer ends the refund', async () => {

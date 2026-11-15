@@ -9,6 +9,8 @@ import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
+import { giveVerifiedId } from '../../test-support/verified-id';
+import { captureNonceFor, LIVE_CARD_JPEG } from '../../test-support/id-card-upload';
 
 describe('Phase 20 terms-and-payment step and a second activation payment', () => {
   let app: INestApplication;
@@ -129,11 +131,26 @@ describe('Phase 20 terms-and-payment step and a second activation payment', () =
       .expect(201);
   }
 
+  /** A live photo of his PAN card (pending), then the Team Lead's "Looks right" (rev 154). */
   async function passId(token: string, requestId: string) {
-    await request(server())
-      .post(`/registration/${token}/id-check`)
-      .send({ requestId, method: 'pan' })
+    const captureNonce1 = await captureNonceFor(server(), `/registration/${token}/other-id`, requestId);
+    const sent = await request(server())
+      .post(`/registration/${token}/other-id`)
+      .field('requestId', requestId)
+      .field('captureNonce', captureNonce1)
+      .field('idType', 'pan')
+      .field('idNumber', 'ABCDE1234F')
+      .field('captureSource', 'live_camera')
+      .attach('photo', LIVE_CARD_JPEG, { filename: 'pan.jpg', contentType: 'image/jpeg' })
       .expect(201);
+    expect(sent.body.status).toBe('pending');
+    // Pending: no terms, no payment yet.
+    const waiting = await terms(token, requestId).expect(400);
+    expect(messageOf(waiting.body)).toContain('Team Lead');
+    await prisma.identityVerification.update({
+      where: { id: sent.body.verificationId },
+      data: { status: 'verified', nameMatches: true, isAdult: true, verifiedAt: new Date() },
+    });
   }
 
   function terms(token: string, requestId: string) {
@@ -191,7 +208,11 @@ describe('Phase 20 terms-and-payment step and a second activation payment', () =
       orderBy: { createdAt: 'desc' },
     });
     if (!verification) throw new Error('ID check was not stored');
-    await prisma.identityVerification.update({ where: { id: verification.id }, data: { isAdult: false } });
+    // A signed Aadhaar QR showing under 18 (sticky: the verified PAN doesn't get past it).
+    await prisma.identityVerification.create({
+      data: { jobSeekerId: seeker.id, method: 'aadhaar_qr', vendor: 'uidai_secure_qr', status: 'failed', last4: '1234', nameMatches: true, isAdult: false, failureReason: 'Applicant is under 18' },
+    });
+    void verification;
 
     const blocked = await terms(seeker.token, requestId).expect(400);
     expect(messageOf(blocked.body)).toContain('under 18');
@@ -255,6 +276,7 @@ describe('Phase 20 terms-and-payment step and a second activation payment', () =
       .expect(201);
     seekerIds.push(created.body.id);
     seekerCodes.push(created.body.code);
+    await giveVerifiedId(prisma, created.body.id);
     const activation = await request(server())
       .post(`/job-seekers/${created.body.id}/activation-payment`)
       .set('Authorization', `Bearer ${callAgentToken}`)

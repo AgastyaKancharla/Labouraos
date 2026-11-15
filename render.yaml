@@ -32,6 +32,12 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # Aadhaar QR check: the SHA-256 fingerprints of the UIDAI certificates in
+      # src/modules/aadhaar-qr/certs, comma-separated, AFTER comparing each with
+      # UIDAI's own page (DEPLOY.md, go-live check). The service refuses to start
+      # until this matches the certificates in the code (not needed with LABOURA_SETUP=test).
+      - key: UIDAI_CERT_FINGERPRINTS
+        sync: false
       - key: PROCESS_ROLE
         value: web
       # 1 = Render's own proxy. Use 2 once Cloudflare sits in front of Render.
@@ -172,8 +178,6 @@ services:
         value: mock
       - key: TELEPHONY_PROVIDER_MODE
         value: mock
-      - key: KYC_PROVIDER_MODE
-        value: mock
       # Customer app pushes (Expo push service -> Google FCM / Apple APNs). mock logs instead of sending.
       - key: CUSTOMER_PUSH_PROVIDER_MODE
         value: mock
@@ -202,11 +206,6 @@ services:
       - key: TELEPHONY_VENDOR
         sync: false
       - key: TOLL_FREE_NUMBER
-        sync: false
-      # Aadhaar e-KYC
-      - key: KYC_API_KEY
-        sync: false
-      - key: KYC_API_URL
         sync: false
       # Card payments and payouts (Razorpay / RazorpayX)
       - key: RAZORPAY_KEY_ID
@@ -243,13 +242,25 @@ services:
     startCommand: npm run start:worker
     # When a vendor is switched from mock to real, change its *_PROVIDER_MODE on
     # BOTH services and copy its keys to the worker with fromService like the
-    # entries below: the worker sends WhatsApp and SMS messages and checks the
-    # KYC vendor.
+    # entries below: the worker sends WhatsApp and SMS messages.
     envVars:
       - key: NODE_ENV
         value: production
+      # Aadhaar QR check: the SHA-256 fingerprints of the UIDAI certificates in
+      # src/modules/aadhaar-qr/certs, comma-separated, AFTER comparing each with
+      # UIDAI's own page (DEPLOY.md, go-live check). The service refuses to start
+      # until this matches the certificates in the code (not needed with LABOURA_SETUP=test).
+      - key: UIDAI_CERT_FINGERPRINTS
+        sync: false
       - key: PROCESS_ROLE
         value: worker
+      # Which setup this is ("live" or "test"), the same as on the web service: the worker
+      # checks the UIDAI certificates at start-up too (UIDAI_CERT_FINGERPRINTS above).
+      - key: LABOURA_SETUP
+        fromService:
+          type: web
+          name: laboura-api
+          envVarKey: LABOURA_SETUP
       - key: DATABASE_URL
         fromService:
           type: web
@@ -340,8 +351,6 @@ services:
       - key: WHATSAPP_PROVIDER_MODE
         value: mock
       - key: TELEPHONY_PROVIDER_MODE
-        value: mock
-      - key: KYC_PROVIDER_MODE
         value: mock
       # The worker sends the customer app pushes.
       - key: CUSTOMER_PUSH_PROVIDER_MODE

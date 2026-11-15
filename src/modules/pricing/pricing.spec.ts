@@ -9,6 +9,7 @@ import { JobSeekerService } from '../job-seeker/job-seeker.service';
 import { PricingService } from './pricing.service';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 import { recordRefundCheck } from '../../test-support/refund-check';
+import { giveVerifiedId } from '../../test-support/verified-id';
 
 describe('Pricing & Policy Module (Phase 9 Task 2)', () => {
   let app: INestApplication;
@@ -306,6 +307,7 @@ describe('Pricing & Policy Module (Phase 9 Task 2)', () => {
     });
     createdJobSeekerIds.push(js1.id);
 
+    await giveVerifiedId(prisma, js1.id);
     const charge1 = await jobSeekerService.createActivationPayment(js1.id);
     expect(charge1.amount).toBe(49900);
     if (charge1.paymentId) createdPaymentIds.push(charge1.paymentId);
@@ -334,6 +336,7 @@ describe('Pricing & Policy Module (Phase 9 Task 2)', () => {
     });
     createdJobSeekerIds.push(js2.id);
 
+    await giveVerifiedId(prisma, js2.id);
     const charge2 = await jobSeekerService.createActivationPayment(js2.id);
     expect(charge2.amount).toBe(59900);
     if (charge2.paymentId) createdPaymentIds.push(charge2.paymentId);

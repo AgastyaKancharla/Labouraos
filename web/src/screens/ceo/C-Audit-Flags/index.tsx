@@ -9,6 +9,7 @@ import { useScreenPath } from '../../../portals/PortalContext';
 import { ActionButton } from '../_kit/actions';
 import { FilterPanel, PagedTable, SearchField, SelectFilter, facetOptions, humanize, useCeoList, useDebounced } from '../_kit/kit';
 import { AuditTabs } from '../_kit/tabs';
+import { OtherIdWaiting } from '../../manager/_kit/OtherIdWaiting';
 
 /** Flags — design C-Audit-Flags.dc.html. Possible fraud, bypass and quality problems, most serious first. */
 interface Row {
@@ -83,6 +84,7 @@ export default function Flags() {
         <StatTile label="Medium" value={s?.medium ?? '—'} tone="gold" loading={list.query.isPending} />
         <StatTile label="Closed this month" value={s?.closedThisMonth ?? '—'} tone="good" loading={list.query.isPending} />
       </StatGrid>
+      <OtherIdWaiting />
       <FilterPanel>
         <SearchField value={search} onChange={setSearch} placeholder="Flag code, business, person or owner" />
         <SelectFilter label="Status" value={status} onChange={setStatus} options={[{ value: 'open', label: 'Open' }, { value: 'resolved', label: 'Resolved' }, { value: 'dismissed', label: 'Dismissed' }, { value: '', label: 'All' }]} />

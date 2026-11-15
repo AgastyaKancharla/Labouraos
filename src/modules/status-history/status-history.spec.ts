@@ -9,6 +9,7 @@ import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
+import { giveVerifiedId } from '../../test-support/verified-id';
 
 describe('Phase 9 Task 7: Status History', () => {
   let app: INestApplication;
@@ -215,6 +216,7 @@ describe('Phase 9 Task 7: Status History', () => {
 
       // 2. Activate via payment
       // Create payment
+      await giveVerifiedId(prisma, jobSeekerId);
       const paymentRes = await request(app.getHttpServer())
         .post(`/job-seekers/${jobSeekerId}/activation-payment`)
         .set('Authorization', `Bearer ${callAgentToken}`)

@@ -121,8 +121,8 @@ describe('RbacGuard: own-team and own-account checks on every action', () => {
   const seekerWrites: Array<[string, string]> = [
     ['POST', 'activation-payment'],
     ['POST', 'resend-payment'],
-    ['POST', 'identity-verification'],
-    ['POST', 'identity-verification/provider'],
+    // POST identity-verification and identity-verification/provider are gone (rev 154: staff can't
+    // record or mark an ID check; 404 is covered in identity-verification.spec.ts).
     ['POST', 'payment-only-link'],
     ['POST', 'hits'],
     ['POST', 'reactivate'],

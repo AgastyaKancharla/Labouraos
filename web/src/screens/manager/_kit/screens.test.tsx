@@ -500,4 +500,51 @@ describe('Targets, reports, login codes, notifications', () => {
     expect(screen.queryByText('Ravi Shankar asked for 2 days off')).not.toBeInTheDocument();
     expect(screen.getByText('2 shop visits under 3 minutes')).toBeInTheDocument();
   });
+
+  it('rev 169: ID cards no other Team Lead of the city can check wait for the Manager, who opens one and decides', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /manager/flags': { summary: { open: 0, forCeo: 0, resolvedThisMonth: 0 }, rows: [] },
+      'GET /identity/other-id/waiting': {
+        rows: [{ subjectType: 'job_seeker', person: { id: 'w1', code: 'JS-00410', name: 'Anil R', city: 'Mysuru' }, registeredBy: { name: 'Kiran', role: 'team_lead' }, hasSelfie: true, method: 'voter_id', idNumberLast4: '4567', sentAt: NOW.toISOString(), photoKept: true }],
+      },
+      'GET /identity/job-seekers/w1/aadhaar-check': {
+        check: {
+          method: 'voter_id', status: 'pending', verifiedByUidai: false, maskedReference: null, checkedAt: NOW.toISOString(), idNumberLast4: '4567',
+          nameMatches: null, isAdult: null, phoneLinked: null, nameOnId: null, dateOfBirth: null, gender: null, area: null, pincode: null,
+          under18Stop: false, photo: { kind: 'id_card_photo', kept: true, deletedReason: null, deletedAt: null, expiresAt: NOW.toISOString() },
+        },
+        decision: { canDecide: true, mode: 'manager_or_ceo', reason: null },
+        idPhotoUrl: 'https://signed/card.jpg', qrPhotoUrl: 'https://signed/card.jpg', selfieUrl: 'https://signed/selfie.jpg',
+      },
+      'POST /identity/job-seekers/w1/other-id/decision': { verdict: 'ok', otherIdDecided: 'verified' },
+    });
+    render(<Flags />, '/manager/flags');
+    expect(await screen.findByText('Waiting for your check · 1')).toBeInTheDocument();
+    expect(screen.getByText(/Voter ID …4567 · Mysuru/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Show the ID check' }));
+    expect(await screen.findByText(/No other Team Lead in this city can check it/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Looks right' }));
+    const d = await dialog();
+    await userEvent.click(within(d).getByRole('button', { name: /looks right/i }));
+    await waitFor(() => expect(api.calls('POST /identity/job-seekers/w1/other-id/decision')[0].body).toEqual({ verdict: 'ok' }));
+  });
+
+  it('rev 169: a registration a Team Lead made, with no other Team Lead in the city, is checked by the Manager from the waiting list', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /manager/flags': { summary: { open: 0, forCeo: 0, resolvedThisMonth: 0 }, rows: [] },
+      'GET /identity/other-id/waiting': {
+        rows: [{ kind: 'registration', subjectType: 'job_seeker', person: { id: 'g1', code: 'JS-00420', name: 'Suma K', city: 'Mysuru' }, registeredBy: { name: 'Kiran', role: 'team_lead' }, hasSelfie: true, method: 'aadhaar_qr', idNumberLast4: null, sentAt: NOW.toISOString(), photoKept: true }],
+      },
+      'POST /identity/job-seekers/g1/registration-check': { verdict: 'fake', flagId: 'f9', otherIdDecided: null, photosDeleted: 1 },
+    });
+    render(<Flags />, '/manager/flags');
+    expect(await screen.findByText(/Registration to check · Mysuru/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Fake · flag it' }));
+    const d = await dialog();
+    await userEvent.type(within(d).getByRole('textbox'), 'Selfie is a photo of a photo');
+    await userEvent.click(within(d).getByRole('button', { name: /Flag JS-00420 as fake/ }));
+    await waitFor(() => expect(api.calls('POST /identity/job-seekers/g1/registration-check')[0].body).toEqual({ verdict: 'fake', note: 'Selfie is a photo of a photo' }));
+  });
 });

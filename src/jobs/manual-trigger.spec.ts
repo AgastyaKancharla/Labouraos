@@ -15,7 +15,6 @@ import { FollowUpJob } from './follow-up.job';
 import { PatternFlagsJob } from './pattern-flags.job';
 import { JoiningRewardJob } from './joining-reward.job';
 import { RetentionCleanupJob } from './retention-cleanup.job';
-import { KycRecoveryJob } from './kyc-recovery.job';
 import { RetentionService } from '../modules/retention/retention.service';
 import { AuditService } from '../common/audit/audit.service';
 import { PrismaService } from '../common/prisma/prisma.service';
@@ -74,7 +73,6 @@ describe('Phase 6.5 Task 2: Manual Trigger Endpoint for No-Pickup Evaluation Swe
     let jwtService: JwtService;
     let mockJobService: { triggerJob: jest.Mock };
     let mockAuditService: { log: jest.Mock };
-    let mockKycJobService: { triggerJob: jest.Mock };
     let mockPrisma: Partial<PrismaService>;
 
     const JWT_SECRET = 'test_jwt_secret_for_jobs_controller_spec_32chars';
@@ -89,7 +87,6 @@ describe('Phase 6.5 Task 2: Manual Trigger Endpoint for No-Pickup Evaluation Swe
       mockAuditService = {
         log: jest.fn().mockResolvedValue({ id: 'audit-1' }),
       };
-      mockKycJobService = { triggerJob: jest.fn().mockResolvedValue('kyc-recovery-job-1') };
 
       mockPrisma = {
         staffSession: {
@@ -137,7 +134,6 @@ describe('Phase 6.5 Task 2: Manual Trigger Endpoint for No-Pickup Evaluation Swe
             },
           },
           { provide: RetentionService, useValue: { getLatestSummary: jest.fn().mockResolvedValue(null) } },
-          { provide: KycRecoveryJob, useValue: mockKycJobService },
           { provide: AuditService, useValue: mockAuditService },
           { provide: PrismaService, useValue: mockPrisma },
           { provide: PricingService, useValue: { current: jest.fn() } },
@@ -239,26 +235,6 @@ describe('Phase 6.5 Task 2: Manual Trigger Endpoint for No-Pickup Evaluation Swe
         after: { jobId: 'enqueued-job-888' },
         city: 'Bengaluru',
       });
-    });
-
-    it('allows only the CEO to manually enqueue the KYC recovery probe and audits it', async () => {
-      const manager = createToken('manager');
-      await request(app.getHttpServer())
-        .post('/jobs/kyc-recovery/run')
-        .set('Authorization', `Bearer ${manager}`)
-        .expect(403);
-      expect(mockKycJobService.triggerJob).not.toHaveBeenCalled();
-
-      const response = await request(app.getHttpServer())
-        .post('/jobs/kyc-recovery/run')
-        .set('Authorization', `Bearer ${createToken('ceo')}`)
-        .expect(201);
-      expect(response.body).toEqual({ jobId: 'kyc-recovery-job-1' });
-      expect(mockKycJobService.triggerJob).toHaveBeenCalledTimes(1);
-      expect(mockAuditService.log).toHaveBeenCalledWith(expect.objectContaining({
-        entityCode: 'kyc-recovery',
-        action: 'job.manual_trigger',
-      }));
     });
 
     it('rate-limits excessive trigger requests with HTTP 429 Too Many Requests', async () => {

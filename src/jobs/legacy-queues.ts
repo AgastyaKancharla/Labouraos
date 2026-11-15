@@ -1,6 +1,6 @@
 import { Queue } from 'bullmq';
 import type Redis from 'ioredis';
-import { JOB_CATALOG, JobCatalogEntry, schedulerSetKey } from './job-catalog';
+import { JOB_CATALOG, JobCatalogEntry, RETIRED_JOBS, schedulerSetKey, SHARED_JOB_QUEUE } from './job-catalog';
 import { jobQueue } from './job-queue';
 
 /**
@@ -21,6 +21,28 @@ export interface LegacyCleanupResult {
 }
 
 type LegacyReader = Pick<Redis, 'zscore' | 'exists'>;
+
+/**
+ * Jobs that no longer exist (RETIRED_JOBS in job-catalog.ts). Their schedule may still sit in a
+ * Key Value that kept its data — in the job's own old queue, or in the shared queue — and both go.
+ * A copy already waiting in the shared queue is finished and dropped by the shared worker.
+ */
+export const RETIRED_SCHEDULES: readonly { key: string; queues: readonly string[]; schedulerId: string }[] = RETIRED_JOBS;
+
+/** The retired schedules still present, queue by queue (read only). */
+export async function retiredSchedulesPresent(
+  reader: Pick<Redis, 'zscore'>,
+  retired: typeof RETIRED_SCHEDULES = RETIRED_SCHEDULES,
+): Promise<{ key: string; queue: string; schedulerId: string }[]> {
+  const found: { key: string; queue: string; schedulerId: string }[] = [];
+  for (const entry of retired) {
+    for (const queue of entry.queues) {
+      const score = await reader.zscore(schedulerSetKey(queue), entry.schedulerId);
+      if (score !== null && score !== undefined) found.push({ key: entry.key, queue, schedulerId: entry.schedulerId });
+    }
+  }
+  return found;
+}
 
 function legacyQueue(name: string, client: Redis): Queue {
   const queue = new Queue(name, { connection: client });
@@ -45,6 +67,16 @@ export async function cleanUpLegacyQueues(
       result.removedSchedules.push(entry.key);
     } finally {
       await queue.close();
+    }
+  }
+
+  for (const retired of await retiredSchedulesPresent(reader)) {
+    const queue = retired.queue === SHARED_JOB_QUEUE ? jobQueue.queue() : legacyQueue(retired.queue, client);
+    try {
+      await queue.removeJobScheduler(retired.schedulerId);
+      result.removedSchedules.push(`${retired.key} (retired)`);
+    } finally {
+      if (retired.queue !== SHARED_JOB_QUEUE) await queue.close();
     }
   }
 

@@ -157,7 +157,9 @@ Every new table added to the code later must also switch row level security on. 
    | `COMPANY_UPI_VPA`, `COMPANY_UPI_PAYEE_NAME` | Empty until the company current account opens. See [UPI details](#upi-details). |
    | `ALERT_WEBHOOK_URL` | A Slack (or similar) incoming-webhook address for error alerts. Empty is allowed: alerts then only go to the logs. |
    | `CLOUDFLARE_ACCESS_TEAM_DOMAIN`, `CLOUDFLARE_ACCESS_AUD` | Empty for testing. Required before real data (Step 9). |
-   | Vendor keys (`SMS_*`, `DLT_*`, `WHATSAPP_*`, `TELEPHONY_VENDOR`, `TOLL_FREE_NUMBER`, `KYC_*`, `RAZORPAY*`) and webhook secrets (`*_WEBHOOK_SECRET`) | Empty until each vendor is signed up. Every vendor runs in mock mode until then. |
+   | `LABOURA_SETUP` | `live` (the worker copies it from the web service). |
+   | `UIDAI_CERT_FINGERPRINTS` | The SHA-256 fingerprints of the UIDAI certificates, comma-separated, after the go-live check below (on the web service **and** the worker). **Neither starts until this matches the certificates in the code.** |
+   | Vendor keys (`SMS_*`, `DLT_*`, `WHATSAPP_*`, `TELEPHONY_VENDOR`, `TOLL_FREE_NUMBER`, `RAZORPAY*`) and webhook secrets (`*_WEBHOOK_SECRET`) | Empty until each vendor is signed up. Every vendor runs in mock mode until then. |
 
 7. Click **Deploy Blueprint** (some screens say **Apply**).
 8. Render creates the Key Value first, then builds and starts the web service and the worker. The first build takes several minutes.
@@ -247,7 +249,23 @@ Up to here the system may hold only made-up test data. Tick every line before a 
 - [ ] An uptime monitor watches `/health/ready`.
 - [ ] Supabase **Security Advisor** shows no "RLS disabled" errors, and the Data API is off (Step 4).
 - [ ] The four buckets exist and are private (Step 3).
+- [ ] **The UIDAI certificate for the Aadhaar QR check is confirmed** (see the box below).
 - [ ] **Customer app, before it opens to the public:** `LABOURA_SETUP` is `live` and `HUMAN_CHECK_PROVIDER_MODE` names a real CAPTCHA or device attestation provider. The live setup refuses to start with the mock human check (its token is public), and with `CUSTOMER_OTP_TEST_MODE=on`.
+
+> [!IMPORTANT]
+> **Go-live check: compare the UIDAI certificate in the repo with UIDAI's page, and test with a freshly downloaded e-Aadhaar.**
+>
+> `src/modules/aadhaar-qr/certs/uidai_offline_publickey_2026.pem` ("DS Unique Identification Authority of India 06", serial `624C4F50`, valid until **03 Feb 2029**) checks every e-Aadhaar made since February 2026. UIDAI's certificate page lists an Offline e-KYC certificate valid until 03 Feb 2029, and this file's end date matches it. uidai.gov.in is blocked from the build machine, so the file itself came from public copies that all have the same fingerprint. Confirm it once from a normal computer:
+>
+> 1. Open UIDAI's "UIDAI Certificate Details" page (developer section) and download the Paperless Offline e-KYC certificate valid until 03 Feb 2029 (`uidai_offline_publickey_2026.cer`).
+> 2. Run `openssl x509 -in uidai_offline_publickey_2026.cer -noout -enddate -fingerprint -sha256` (add `-inform DER` if it is binary). The end date must be 3 Feb 2029 and the fingerprint must be `E0:30:4B:9E:61:EE:36:40:EC:DD:AE:2D:B4:B6:17:F2:E2:67:8F:57:DB:C2:82:6C:2F:86:AC:5C:04:F2:77:DF`. **If it is different, stop and ask Claude to replace the file before real data.**
+> 3. In the Render dashboard set **`UIDAI_CERT_FINGERPRINTS`** on the web service and the worker to the SHA-256 fingerprints of every certificate in `src/modules/aadhaar-qr/certs/`, comma-separated (the four in `secure-qr.parser.spec.ts`, after you checked the new one in step 2). **The live service refuses to start until this matches the certificates in the code**, so this check can't be skipped; the test setup (`LABOURA_SETUP=test`, `render.free.yaml`, made-up data only) doesn't need it.
+> 4. Download a fresh e-Aadhaar PDF (or use a new Aadhaar card) and scan its QR on a test registration link: it must say "Aadhaar verified by UIDAI", not "newer than our check supports".
+>
+> When UIDAI publishes the next certificate (after 03 Feb 2029, or earlier if it changes keys), cards signed with it are answered "This Aadhaar is newer than our check supports, please use another ID" and the CEO gets an "Add the new UIDAI certificate" flag (once a day) — never a fraud flag. Download it the same way, check its fingerprint against UIDAI's page, ask Claude to add it to `src/modules/aadhaar-qr/certs/` (and pin its fingerprint in `secure-qr.parser.spec.ts`), and add the fingerprint to `UIDAI_CERT_FINGERPRINTS`. Several failed signatures on new QR codes from different people in one day also raise a CEO alert ("UIDAI key may have changed").
+
+> [!NOTE]
+> **ID checks: what the photo rules do and don't do.** For PAN, driving licence and voter ID the page takes a live camera photo of the card with a one-time token, and the server refuses pictures with camera or editing metadata or a size the capture screen can't make, then re-encodes the photo without any metadata. This raises the bar against a gallery upload; it cannot prove a photo is live. **The real control is the Team Lead's eye**: the card next to the live selfie, the name and the date of birth. Nobody approves the ID of a person they registered (rev 169).
 
 > [!WARNING]
 > **Cloudflare Access must be on before real data.**
@@ -413,8 +431,9 @@ So during a free-tier deploy the two copies hold about **4** of the ~50. (Before
    | `COMPANY_LEGAL_NAME` | `Laboura Private Limited` |
    | `COMPANY_ADDRESS` | `Bengaluru, Karnataka, India` |
    | `COMPANY_UPI_VPA`, `COMPANY_UPI_PAYEE_NAME` | A made-up UPI id and name (payment links are refused while empty) |
-   | `OTP_PROVIDER_MODE`, `SMS_PROVIDER_MODE`, `PAYMENT_PROVIDER_MODE`, `WHATSAPP_PROVIDER_MODE`, `TELEPHONY_PROVIDER_MODE`, `KYC_PROVIDER_MODE` | `mock` |
+   | `OTP_PROVIDER_MODE`, `SMS_PROVIDER_MODE`, `PAYMENT_PROVIDER_MODE`, `WHATSAPP_PROVIDER_MODE`, `TELEPHONY_PROVIDER_MODE` | `mock` |
    | `CLOUDFLARE_ACCESS_ENFORCED` | `false` (testing only) |
+   | `LABOURA_SETUP` | `test` (made-up data only: the UIDAI certificates need no `UIDAI_CERT_FINGERPRINTS` here while every vendor is `mock`) |
 
 4. Click **Deploy Web Service**.
 
@@ -527,7 +546,7 @@ If something does not open: wait an hour (the Hostinger change may still be spre
 | `CALL_ROUTING_KEY` | Generated by Render, shared with the worker | Encrypts staff phone numbers used for call routing |
 | `PAYOUT_ACCOUNT_KEY` | Generated by Render, shared with the worker | Encrypts payout UPI and bank details |
 | `CUSTOMER_JWT_SECRET` | Generated by Render | Signs sign-ins of the Laboura customer app (job seekers, businesses, referral partners). Separate from `JWT_SECRET`, so a customer can never use a staff door |
-| `LABOURA_SETUP` | `live` on the live setup, `test` on the test setup (the free tier is always `test`) | Marks which setup this is. The only thing it switches today: the customer OTP test mode is allowed only on `test` |
+| `LABOURA_SETUP` | `live` on the live setup, `test` on the test setup (the free tier is always `test`); the worker copies it from the web service | Marks which setup this is: the customer OTP test mode is allowed only on `test`, and only `test` with no real vendor may start without `UIDAI_CERT_FINGERPRINTS` |
 | `CUSTOMER_OTP_TEST_MODE` | `off` (paid, fixed); `on` on the free test tier | Shows the customer app's OTP code on screen, for testing with pretend SMS. **The server refuses to start with `on` unless `LABOURA_SETUP=test`**, so the live setup can never show codes. The staff OTP test mode does not turn it on |
 | `CUSTOMER_OTP_DAILY_LIMIT` | `3000` (fixed) | Customer sign-in codes across the whole system in 24 hours. Above it, sending pauses and an alert goes to `ALERT_WEBHOOK_URL`; check for abuse before raising it |
 | `HUMAN_CHECK_PROVIDER_MODE` | `mock` on the test setup | The "are you a person" check asked for after repeated code requests. Only a mock exists (it accepts the token `mock-human-ok` and proves nothing); a CAPTCHA or Play Integrity / App Attest provider must replace it before the public launch. **The server refuses to start with `mock` when `LABOURA_SETUP=live`.** Any value without a provider refuses every check |
@@ -542,13 +561,13 @@ If something does not open: wait an hour (the Hostinger change may still be spre
 | `COMPANY_UPI_VPA`, `COMPANY_UPI_PAYEE_NAME` | Bank UPI details | UPI payment links and QR codes |
 | `CLOUDFLARE_ACCESS_ENFORCED`, `CLOUDFLARE_ACCESS_TEAM_DOMAIN`, `CLOUDFLARE_ACCESS_AUD` | Step 9 | Identity check in front of the office consoles |
 | `ALERT_WEBHOOK_URL` | Slack-style webhook | Where error alerts are posted |
-| `OTP_PROVIDER_MODE`, `SMS_PROVIDER_MODE`, `PAYMENT_PROVIDER_MODE`, `WHATSAPP_PROVIDER_MODE`, `TELEPHONY_PROVIDER_MODE`, `KYC_PROVIDER_MODE` | `mock` (fixed) until each vendor is signed up | Picks the mock or the real vendor; the only switch for each vendor |
+| `UIDAI_CERT_FINGERPRINTS` | The go-live check (Step "Before real data") | SHA-256 fingerprints of the UIDAI certificates in the code, confirmed against UIDAI's page; the live service won't start until they match |
+| `OTP_PROVIDER_MODE`, `SMS_PROVIDER_MODE`, `PAYMENT_PROVIDER_MODE`, `WHATSAPP_PROVIDER_MODE`, `TELEPHONY_PROVIDER_MODE` | `mock` (fixed) until each vendor is signed up | Picks the mock or the real vendor; the only switch for each vendor |
 | `CUSTOMER_PUSH_PROVIDER_MODE` | `mock` (fixed) until push is tested on a real phone | Laboura app notifications: `mock` writes them to the log; `real` sends them through Expo's free push service (Google FCM for Android, Apple APNs for iPhone). The inbox inside the app works either way. Before `real`: upload the Firebase server key (FCM V1 service account) to the Expo project, and later the Apple push key |
 | `EXPO_ACCESS_TOKEN` | empty | Only if "enhanced push security" is switched on in the Expo account; the worker copies it from the web service |
 | `SMS_API_KEY`, `SMS_API_URL`, `DLT_SENDER_ID`, `DLT_TEMPLATE_ID`, `DLT_ENTITY_ID`, `SMS_DLT_TEMPLATE_IDS` | From the SMS gateway | OTP and SMS messages |
 | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` | From Meta | WhatsApp messages |
 | `TELEPHONY_VENDOR`, `TOLL_FREE_NUMBER` | From the calling vendor | Calls |
-| `KYC_API_KEY`, `KYC_API_URL` | From the licensed Aadhaar vendor | Identity checks |
 | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `RAZORPAYX_WEBHOOK_SECRET`, `RAZORPAYX_ACCOUNT_NUMBER` | From Razorpay | Card payments (only when a payer picks a card) and payouts |
 | `BANK_FEED_WEBHOOK_SECRET`, `PAYMENT_WEBHOOK_SECRET`, `PAYOUT_WEBHOOK_SECRET`, `TELEPHONY_WEBHOOK_SECRET`, `MESSAGE_WEBHOOK_SECRET` | At least 32 characters each, shared with the vendor | Proves an incoming webhook really came from the vendor |
 

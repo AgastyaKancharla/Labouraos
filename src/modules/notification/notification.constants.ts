@@ -231,6 +231,12 @@ const FLAG_TITLES: Record<string, string> = {
   registration_suspect: 'Registration may be fake',
   call_flagged: 'Call flagged by the Team Lead',
   visit_flagged: 'Visit flagged by the Team Lead',
+  aadhaar_phone_not_linked: 'Phone not linked to the Aadhaar',
+  aadhaar_qr_tampered: 'Aadhaar QR failed the UIDAI signature check again and again',
+  aadhaar_cert_missing: 'Add the new UIDAI certificate: an Aadhaar is newer than our check supports',
+  aadhaar_key_rotation_suspected: 'Several new Aadhaar QR codes failed the signature today: UIDAI may have a new certificate',
+  other_id_needs_manager: 'An ID card photo waits for a Manager or the CEO: no other Team Lead in the city',
+  aadhaar_duplicate_person: 'The same Aadhaar is already verified for another person',
 };
 
 export function flagTitle(kind: string): string {

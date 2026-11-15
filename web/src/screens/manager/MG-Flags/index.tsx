@@ -9,6 +9,7 @@ import { formatDateIST, istDateKey } from '../../../lib/format/date';
 import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { ActionButton } from '../../ceo/_kit/actions';
+import { OtherIdWaiting } from '../_kit/OtherIdWaiting';
 import { roleTeam } from '../_kit/kit';
 import { flagWords } from '../_kit/flags';
 
@@ -74,6 +75,7 @@ export default function ManagerFlags() {
         <StatTile label="Money-related · CEO decides" value={d?.summary.forCeo ?? '—'} tone="gold" loading={q.isPending} />
         <StatTile label="Resolved this month" value={d?.summary.resolvedThisMonth ?? '—'} tone="good" loading={q.isPending} />
       </StatGrid>
+      <OtherIdWaiting />
       {q.error ? (
         <ErrorState error={q.error} onRetry={() => void q.refetch()} />
       ) : (

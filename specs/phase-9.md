@@ -195,7 +195,7 @@
 > - Everything going out — refunds, payouts, rewards — is released by the CEO or Finance.
 >
 > ### Identity
-> - Aadhaar through DigiLocker via a licensed vendor (QR scan or PAN/driving licence/voter ID as fallbacks). Store only: verified yes/no, method, vendor reference, last 4 digits, name match, 18+. **Never** the full number, the XML or PDF, the photo or the address.
+> - Aadhaar through an outside route at the time (QR scan or PAN/driving licence/voter ID as fallbacks). Store only: verified yes/no, method, vendor reference, last 4 digits, name match, 18+. **Never** the full number, the XML or PDF, the photo or the address. (Superseded 14 Nov — Aadhaar is now an in-house check of UIDAI's Secure QR; see AGENTS.md "Identity" and src/modules/aadhaar-qr.)
 >
 > ### Keeping data (replaces the 25 October "never delete" rule)
 > | Data | Kept | Then |

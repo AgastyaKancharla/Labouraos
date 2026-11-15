@@ -3,6 +3,7 @@ import { DelayedError, Job, JobsOptions, Queue, Worker } from 'bullmq';
 import type Redis from 'ioredis';
 import { isRedisReady, sharedRedis } from '../common/redis/redis-connections';
 import { runsJobs } from '../common/process/process-role';
+import { RETIRED_JOBS } from './job-catalog';
 
 /**
  * The ONE BullMQ queue every background job uses, and the ONE Worker that runs
@@ -168,6 +169,18 @@ export class JobQueue {
   /** Runs one job: the handler registered under its name, one run per name at a time. */
   async dispatch(job: Job, token?: string): Promise<unknown> {
     const handler = this.handlers.get(job.name);
+    const retired = handler ? undefined : RETIRED_JOBS.find((entry) => entry.jobName === job.name);
+    if (retired) {
+      // A job that no longer exists (Fable final re-check, L-7): done, and its schedule removed —
+      // never put back for an instance that will never come.
+      this.logger.log(`Job '${job.name}' is retired: finished without running, its schedule removed`);
+      try {
+        await this.queue().removeJobScheduler(retired.schedulerId);
+      } catch (error) {
+        this.logger.warn(`Could not remove the retired schedule '${retired.schedulerId}': ${(error as Error).message}`);
+      }
+      return { retired: true };
+    }
     if (!handler) {
       // Usually a job added by a newer version during a deploy (both run for a
       // few minutes). Put it back so the instance that knows it runs it.

@@ -44,6 +44,9 @@ describe('installable web app (scripts/pwa.js)', () => {
     expect(sw).toContain('"/field/"');
     expect(sw).toContain('"/field/manifest.webmanifest"');
     expect(sw).not.toContain('metadata.json');
+    // "Scan Aadhaar QR": the QR decoder's WebAssembly is served from the app itself, never a CDN.
+    expect(fs.statSync(path.join(dist, 'zxing_reader.wasm')).size).toBeGreaterThan(100000);
+    expect(sw).toContain('"/field/zxing_reader.wasm"');
     expect(sw).toContain("if (!isAppRequest(request)) return;");
     expect(JSON.parse(fs.readFileSync(path.join(dist, 'manifest.webmanifest'), 'utf8')).name).toBe('Laboura Field');
     // Same files → same version; a changed bundle → a new version (phones update).

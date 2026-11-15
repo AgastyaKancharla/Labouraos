@@ -44,10 +44,28 @@ export const JOB_CATALOG: readonly JobCatalogEntry[] = [
   { key: 'winBack', queue: SHARED_JOB_QUEUE, jobName: 'daily-win-back', schedulerId: 'daily-win-back-scheduler', runName: 'daily-win-back', label: 'Win-back call list', legacyQueue: 'win-back' },
   { key: 'weeklyReport', queue: SHARED_JOB_QUEUE, jobName: 'monday-weekly-report', schedulerId: 'monday-weekly-report-scheduler', runName: 'monday-weekly-report', label: 'Weekly report (Monday 9 AM)', legacyQueue: 'weekly-report' },
   { key: 'interviewReply', queue: SHARED_JOB_QUEUE, jobName: 'process-due-interview-replies', schedulerId: 'interview-reply-deadline-scheduler', runName: 'process-due-interview-replies', label: 'Offer reply and payment deadlines', legacyQueue: 'interview-reply-deadlines' },
-  { key: 'kycRecovery', queue: SHARED_JOB_QUEUE, jobName: 'probe-id-check-recovery', schedulerId: 'kyc-recovery-scheduler', runName: 'probe-id-check-recovery', label: 'ID check recovery', legacyQueue: 'kyc-recovery' },
   { key: 'signupTracker', queue: SHARED_JOB_QUEUE, jobName: 'sweep-signup-tracker', schedulerId: 'signup-tracker-scheduler', runName: 'sweep-signup-tracker', label: 'App sign-ups: reminders, call tasks, closing' },
   { key: 'notificationSweep', queue: SHARED_JOB_QUEUE, jobName: 'sweep-notifications', schedulerId: 'notification-sweep-scheduler', runName: 'sweep-notifications', label: 'Notification bells that change with the clock', legacyQueue: 'notification-sweep' },
   { key: 'customerPush', queue: SHARED_JOB_QUEUE, jobName: 'send-due-customer-pushes', schedulerId: 'customer-push-scheduler', runName: 'send-due-customer-pushes', label: 'Customer app notifications (push)' },
+];
+
+/** A job that no longer exists: its schedule may still sit in a Key Value that kept its data. */
+export interface RetiredJob {
+  key: string;
+  /** The BullMQ job name it ran under: the shared worker finishes such a job and removes its schedule. */
+  jobName: string;
+  schedulerId: string;
+  /** Where its schedule may still be: its own old queue and the shared queue. */
+  queues: readonly string[];
+}
+
+/**
+ * Jobs that no longer exist (plain data, read by legacy-queues.ts and the shared worker).
+ * - kycRecovery: the outside ID company's outage probe (retired with the company, PR #135:
+ *   Aadhaar is checked in-house, other IDs by a Team Lead).
+ */
+export const RETIRED_JOBS: readonly RetiredJob[] = [
+  { key: 'kycRecovery', jobName: 'probe-id-check-recovery', schedulerId: 'kyc-recovery-scheduler', queues: ['kyc-recovery', SHARED_JOB_QUEUE] },
 ];
 
 /** BullMQ keeps each queue's schedulers in this sorted set (default `bull` prefix). */

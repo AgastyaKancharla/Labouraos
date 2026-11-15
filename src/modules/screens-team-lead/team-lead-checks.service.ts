@@ -12,6 +12,14 @@ import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { ReportingScopeService } from '../staff/reporting-scope.service';
 import { Actor, TeamLeadScreensService } from './team-lead-screens.service';
 import { QUALITY_CHECKLIST, scoreOf } from './quality';
+import { IdCheckPhotoService, verifiedByUidai } from '../aadhaar-qr/id-check-photo.service';
+import { OtherIdService } from '../aadhaar-qr/other-id.service';
+import { OtherIdApprovalService, SELF_APPROVAL_REFUSED } from '../aadhaar-qr/other-id-approval.service';
+
+/** Nobody checks a registration they made themselves (rev 169). */
+export const SELF_CHECK_REFUSED = "You registered this person, so you can't check this registration yourself.";
+import { maskedAadhaarReference } from '../aadhaar-qr/secure-qr.parser';
+import { oneRegistrationCheck } from '../aadhaar-qr/one-registration-check';
 
 const DAY_MS = 24 * 3600 * 1000;
 const HOUR_MS = 3600 * 1000;
@@ -23,6 +31,40 @@ const STUCK_STATUSES: Record<string, string> = {
   consented: 'Stopped before the ID check or payment',
   pending_activation: 'Stopped at payment',
 };
+
+/** One registration on T-Verify (a job seeker, or a referral partner whose other ID waits for the check). */
+export interface VerifyRow {
+  subjectType: 'job_seeker' | 'referral';
+  person: { id: string; code: string; name: string };
+  jobSeeker: { id: string; code: string; name: string } | null;
+  trade: string | null;
+  registeredBy: { id: string; code: string; name: string; role: string } | null;
+  registeredAt: string;
+  paid: boolean;
+  hasSelfie: boolean;
+  idCheck: {
+    method: string;
+    status: string;
+    nameMatches: boolean | null;
+    isAdult: boolean | null;
+    verifiedByUidai: boolean;
+    waitingForTeamLead: boolean;
+    maskedReference: string | null;
+    idNumberLast4: string | null;
+    phoneLinked: string | null;
+    idPhotoKept: boolean;
+    qrPhotoKept: boolean;
+  } | null;
+  /**
+   * Rev 169: may this Team Lead decide it? needsAnotherTeamLead: a Team Lead registered the
+   * person, or nobody's team did — another Team Lead of the city checks the ID (fromAnotherTeam:
+   * such a row from outside this team, which this Team Lead may decide).
+   */
+  approval: { canDecide: boolean; needsAnotherTeamLead: boolean; fromAnotherTeam: boolean; reason: string | null };
+  duplicates: string[];
+  signals: string[];
+  verdict: string;
+}
 
 /**
  * Actions and checks on the Team Lead portal: the work list, reminders,
@@ -42,6 +84,9 @@ export class TeamLeadChecksService {
     private readonly notifications: NotificationService,
     @Inject(BUSINESS_PHOTO_STORAGE) private readonly photoStore: BusinessPhotoStorage,
     @Optional() @Inject(CANDIDATE_PHOTO_STORAGE) private readonly candidatePhotos?: CandidatePhotoStorage,
+    @Optional() private readonly idPhotos?: IdCheckPhotoService,
+    @Optional() private readonly otherIds?: OtherIdService,
+    @Optional() private readonly approvals?: OtherIdApprovalService,
   ) {}
 
   // ---------------------------------------------------------------- work
@@ -193,27 +238,129 @@ export class TeamLeadChecksService {
 
   // ------------------------------------------------------- registrations
 
-  /** T-Verify: paid registrations from the team in the last 7 days not yet checked, the ones with signals first. */
+  /**
+   * T-Verify: registrations from the team in the last 7 days not yet checked,
+   * plus every job seeker or referral partner whose other ID (PAN, driving
+   * licence, voter ID) waits for the Team Lead's check (rev 154) — those
+   * first, then the ones with signals.
+   */
   async registrations(actor: Actor) {
     const team = await this.screens.members(actor);
     const people = [...team.map((row) => row.id), actor.id];
     const now = this.clock.now();
     const monthStart = istStartOfDay(`${istDayKey(now).slice(0, 8)}01`);
+    const seekerSelect = {
+      id: true, code: true, name: true, whatsappPhone: true, dateOfBirth: true, photoStoragePath: true, registeredByStaffId: true, paymentReceivedAt: true, createdAt: true,
+      trades: { select: { trade: true }, orderBy: { isPrimary: 'desc' as const }, take: 1 },
+      identityVerifications: { orderBy: { createdAt: 'desc' as const }, take: 1, select: { id: true, method: true, vendor: true, status: true, nameMatches: true, isAdult: true, phoneLinked: true, last4: true } },
+    };
+    // An app sign-up with no registering agent counts for the team of the agent it is assigned to (#144).
     const appAgents = await this.appSignupAgents(people);
-    const seekers = await this.prisma.jobSeeker.findMany({
-      where: { ...this.registeredOrAssigned(people, appAgents), createdAt: { gte: new Date(now.getTime() - 7 * DAY_MS) }, anonymisedAt: null, status: { notIn: ['lead'] } },
-      select: {
-        id: true, code: true, name: true, whatsappPhone: true, dateOfBirth: true, photoStoragePath: true, registeredByStaffId: true, paymentReceivedAt: true, createdAt: true,
-        trades: { select: { trade: true }, orderBy: { isPrimary: 'desc' }, take: 1 },
-        identityVerifications: { orderBy: { createdAt: 'desc' }, take: 1, select: { method: true, status: true, nameMatches: true, isAdult: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
+    const [recent, waiting, referrals] = await Promise.all([
+      this.prisma.jobSeeker.findMany({
+        where: { ...this.registeredOrAssigned(people, appAgents), createdAt: { gte: new Date(now.getTime() - 7 * DAY_MS) }, anonymisedAt: null, status: { notIn: ['lead'] } },
+        select: seekerSelect,
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+      }),
+      this.prisma.jobSeeker.findMany({
+        where: { ...this.registeredOrAssigned(people, appAgents), anonymisedAt: null, identityVerifications: { some: { status: 'pending', vendor: 'team_lead_check' } } },
+        select: seekerSelect,
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      }),
+      this.prisma.referral.findMany({
+        where: { registeredByStaffId: { in: people }, anonymisedAt: null, identityVerifications: { some: { status: 'pending', vendor: 'team_lead_check' } } },
+        select: {
+          id: true, code: true, name: true, photoStoragePath: true, registeredByStaffId: true, createdAt: true,
+          identityVerifications: { orderBy: { createdAt: 'desc' }, take: 1, select: { id: true, method: true, vendor: true, status: true, nameMatches: true, isAdult: true, phoneLinked: true, last4: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      }),
+    ]);
+    // Rev 169: pending other IDs from outside this team that need ANOTHER Team Lead of the city
+    // (a Team Lead registered them, or no team did) — this Team Lead may decide those.
+    const crossTeam = this.approvals ? await this.approvals.waitingFor(actor, 'another_team_lead') : [];
+    // ...and, by the same rule, the general check of recent registrations made by a Team Lead or by
+    // nobody's team (never this Team Lead's own).
+    const crossRecent = this.approvals ? await this.approvals.uncheckedRegistrationsFor(actor, 'another_team_lead', new Date(now.getTime() - 7 * DAY_MS)) : [];
+    const ownSeekerIds = new Set([...waiting, ...recent].map((s) => s.id));
+    const ownReferralIds = new Set(referrals.map((r) => r.id));
+    const crossSeekerIds = [...new Set([...crossTeam.filter((c) => c.subjectType === 'job_seeker').map((c) => c.id), ...crossRecent])].filter((id) => !ownSeekerIds.has(id));
+    const crossReferralIds = crossTeam.filter((c) => c.subjectType === 'referral' && !ownReferralIds.has(c.id)).map((c) => c.id);
+    const [crossSeekers, crossReferrals] = await Promise.all([
+      crossSeekerIds.length ? this.prisma.jobSeeker.findMany({ where: { id: { in: crossSeekerIds } }, select: seekerSelect }) : Promise.resolve([]),
+      crossReferralIds.length
+        ? this.prisma.referral.findMany({
+          where: { id: { in: crossReferralIds } },
+          select: {
+            id: true, code: true, name: true, photoStoragePath: true, registeredByStaffId: true, createdAt: true,
+            identityVerifications: { orderBy: { createdAt: 'desc' }, take: 1, select: { id: true, method: true, vendor: true, status: true, nameMatches: true, isAdult: true, phoneLinked: true, last4: true } },
+          },
+        })
+        : Promise.resolve([]),
+    ]);
+    const fromAnotherTeam = new Set([...crossSeekers.map((s) => s.id), ...crossReferrals.map((r) => r.id)]);
+    const outsiders = await this.prisma.staff.findMany({
+      where: { id: { in: [...crossSeekers, ...crossReferrals].map((p) => p.registeredByStaffId).filter((id): id is string => Boolean(id)) } },
+      select: { id: true, code: true, name: true, role: true },
     });
+    const registrarOf = (id: string | null) => team.find((row) => row.id === id) ?? outsiders.find((row) => row.id === id) ?? null;
+    const isPending = (rows: { status: string; vendor: string | null }[]) => rows[0]?.status === 'pending' && rows[0]?.vendor === 'team_lead_check';
+    const approvalOf = (personId: string, registeredByStaffId: string | null, pending: boolean): VerifyRow['approval'] => {
+      if (fromAnotherTeam.has(personId)) return { canDecide: true, needsAnotherTeamLead: true, fromAnotherTeam: true, reason: null };
+      if (registeredByStaffId === actor.id) {
+        return { canDecide: false, needsAnotherTeamLead: true, fromAnotherTeam: false, reason: pending ? SELF_APPROVAL_REFUSED : SELF_CHECK_REFUSED };
+      }
+      return { canDecide: true, needsAnotherTeamLead: false, fromAnotherTeam: false, reason: null };
+    };
+    const allWaiting = [...waiting, ...crossSeekers];
+    const waitingIds = new Set(allWaiting.filter((s) => s.identityVerifications[0]?.status === 'pending').map((s) => s.id));
+    // His own registrations show only while their other ID waits (for another Team Lead): he can't check them himself.
+    const crossRecentRows = crossSeekers.filter((s) => !waitingIds.has(s.id));
+    const seekers = [
+      ...allWaiting.filter((s) => waitingIds.has(s.id)),
+      ...recent.filter((s) => !waitingIds.has(s.id) && s.registeredByStaffId !== actor.id),
+      ...crossRecentRows,
+    ];
     const checked = await this.prisma.teamLeadCheck.findMany({ where: { subjectType: 'job_seeker', subjectId: { in: seekers.map((s) => s.id) } }, select: { subjectId: true } });
+    const allReferrals = [...referrals, ...crossReferrals];
+    const verificationIds = [...seekers, ...allReferrals].flatMap((s) => s.identityVerifications.map((v) => v.id));
+    const details = await this.prisma.idCheckDetail.findMany({ where: { verificationId: { in: verificationIds } }, select: { verificationId: true, photoPath: true } });
+    const photoKept = new Set(details.filter((d) => d.photoPath).map((d) => d.verificationId));
     const checkedIds = new Set(checked.map((row) => row.subjectId));
-    const rows = [];
-    for (const seeker of seekers.filter((s) => !checkedIds.has(s.id))) {
+    type IdRow = (typeof seekers)[number]['identityVerifications'][number];
+    const idCheckOf = (idCheck: IdRow | null) => {
+      if (!idCheck) return null;
+      const uidai = verifiedByUidai(idCheck);
+      return {
+        method: idCheck.method,
+        status: idCheck.status,
+        nameMatches: idCheck.nameMatches,
+        isAdult: idCheck.isAdult,
+        verifiedByUidai: uidai,
+        /** Another ID waiting for this Team Lead's check (photo of the card + typed number). */
+        waitingForTeamLead: idCheck.status === 'pending' && idCheck.vendor === 'team_lead_check',
+        maskedReference: uidai ? maskedAadhaarReference(idCheck.last4) : null,
+        idNumberLast4: idCheck.method !== 'aadhaar_qr' ? idCheck.last4 : null,
+        phoneLinked: uidai ? idCheck.phoneLinked : null,
+        idPhotoKept: photoKept.has(idCheck.id),
+        /** Kept for older screens: the same as idPhotoKept. */
+        qrPhotoKept: photoKept.has(idCheck.id),
+      };
+    };
+    const signalsOf = (idCheck: IdRow | null) => {
+      const signals: string[] = [];
+      if (idCheck?.status === 'pending' && idCheck.vendor === 'team_lead_check') signals.push('ID card photo to check');
+      if (idCheck?.status === 'failed') signals.push('ID check failed');
+      if (idCheck && idCheck.nameMatches === false) signals.push('Name does not match the ID');
+      if (idCheck && verifiedByUidai(idCheck) && idCheck.phoneLinked === 'not_linked') signals.push('Phone not linked to the Aadhaar');
+      if (!idCheck || (idCheck.status !== 'verified' && idCheck.status !== 'pending')) signals.push('ID not verified yet');
+      return signals;
+    };
+    const rows: VerifyRow[] = [];
+    for (const seeker of seekers.filter((s) => waitingIds.has(s.id) || !checkedIds.has(s.id))) {
       const duplicateWhere: Prisma.JobSeekerWhereInput[] = [];
       if (seeker.whatsappPhone) duplicateWhere.push({ whatsappPhone: seeker.whatsappPhone }, { phone: seeker.whatsappPhone });
       if (seeker.dateOfBirth) duplicateWhere.push({ name: { equals: seeker.name, mode: 'insensitive' }, dateOfBirth: seeker.dateOfBirth });
@@ -221,70 +368,153 @@ export class TeamLeadChecksService {
         ? await this.prisma.jobSeeker.findMany({ where: { id: { not: seeker.id }, anonymisedAt: null, OR: duplicateWhere }, select: { code: true }, take: 3 })
         : [];
       const idCheck = seeker.identityVerifications[0] ?? null;
-      const signals: string[] = [];
-      if (duplicates.length) signals.push('Possible duplicate');
-      if (idCheck?.status === 'failed') signals.push('ID check failed');
-      if (idCheck && idCheck.nameMatches === false) signals.push('Name does not match the ID');
-      if (!idCheck || idCheck.status !== 'verified') signals.push('ID not verified yet');
+      const signals = signalsOf(idCheck);
+      if (duplicates.length) signals.unshift('Possible duplicate');
       rows.push({
+        subjectType: 'job_seeker',
+        person: { id: seeker.id, code: seeker.code, name: seeker.name },
         jobSeeker: { id: seeker.id, code: seeker.code, name: seeker.name },
         trade: seeker.trades[0]?.trade ?? null,
-        registeredBy: team.find((row) => row.id === (seeker.registeredByStaffId ?? appAgents.get(seeker.id))) ?? null,
+        registeredBy: registrarOf(seeker.registeredByStaffId ?? appAgents.get(seeker.id) ?? null),
         registeredAt: seeker.createdAt.toISOString(),
         paid: Boolean(seeker.paymentReceivedAt),
         hasSelfie: Boolean(seeker.photoStoragePath),
-        idCheck: idCheck ? { method: idCheck.method, status: idCheck.status, nameMatches: idCheck.nameMatches, isAdult: idCheck.isAdult } : null,
+        idCheck: idCheckOf(idCheck),
+        approval: approvalOf(seeker.id, seeker.registeredByStaffId, isPending(seeker.identityVerifications)),
         duplicates: duplicates.map((row) => row.code),
         signals,
         verdict: duplicates.length ? 'Possible duplicate' : signals.filter((s) => s !== 'ID not verified yet').length ? signals[0] : 'Looks normal',
       });
     }
-    rows.sort((a, b) => Number(b.verdict !== 'Looks normal') - Number(a.verdict !== 'Looks normal'));
+    for (const referral of allReferrals) {
+      const idCheck = referral.identityVerifications[0] ?? null;
+      if (idCheck?.status !== 'pending') continue;
+      const signals = signalsOf(idCheck);
+      rows.push({
+        subjectType: 'referral',
+        person: { id: referral.id, code: referral.code, name: referral.name },
+        jobSeeker: null,
+        trade: null,
+        registeredBy: registrarOf(referral.registeredByStaffId),
+        registeredAt: referral.createdAt.toISOString(),
+        paid: false,
+        hasSelfie: Boolean(referral.photoStoragePath),
+        idCheck: idCheckOf(idCheck),
+        approval: approvalOf(referral.id, referral.registeredByStaffId, isPending(referral.identityVerifications)),
+        duplicates: [],
+        signals,
+        verdict: signals[0] ?? 'Looks normal',
+      });
+    }
+    const rank = (row: VerifyRow) => (row.idCheck?.waitingForTeamLead && row.approval.canDecide ? 3 : row.idCheck?.waitingForTeamLead ? 2 : row.verdict !== 'Looks normal' ? 1 : 0);
+    rows.sort((a, b) => rank(b) - rank(a));
     const [checkedThisMonth, fakesThisMonth] = await Promise.all([
-      this.prisma.teamLeadCheck.count({ where: { subjectType: 'job_seeker', checkedByStaffId: actor.id, createdAt: { gte: monthStart } } }),
-      this.prisma.teamLeadCheck.count({ where: { subjectType: 'job_seeker', checkedByStaffId: actor.id, verdict: 'fake', createdAt: { gte: monthStart } } }),
+      this.prisma.teamLeadCheck.count({ where: { subjectType: { in: ['job_seeker', 'referral'] }, checkedByStaffId: actor.id, createdAt: { gte: monthStart } } }),
+      this.prisma.teamLeadCheck.count({ where: { subjectType: { in: ['job_seeker', 'referral'] }, checkedByStaffId: actor.id, verdict: 'fake', createdAt: { gte: monthStart } } }),
     ]);
     return {
-      summary: { toCheck: rows.length, possibleDuplicates: rows.filter((row) => row.duplicates.length).length, checkedThisMonth, fakesThisMonth },
+      summary: {
+        toCheck: rows.length,
+        idCardsToCheck: rows.filter((row) => row.idCheck?.waitingForTeamLead && row.approval.canDecide).length,
+        needsAnotherTeamLead: rows.filter((row) => row.approval.fromAnotherTeam).length,
+        possibleDuplicates: rows.filter((row) => row.duplicates.length).length,
+        checkedThisMonth,
+        fakesThisMonth,
+      },
       rows: rows.slice(0, 20),
     };
   }
 
-  /** The selfie of a registration from the team, through a short-lived private link. */
-  async selfie(actor: Actor, jobSeekerId: string) {
+  /**
+   * A registration this Team Lead may open ('view') or check ('decide'): one from their team (the
+   * registering agent, or for an app sign-up the agent it is assigned to — #144), or — rev 169 — one
+   * they may check for another team of their city (OtherIdApprovalService), and that only while
+   * something waits for it (an other ID pending, or no registration check yet). Checking one's own
+   * registration is refused for every kind of check.
+   */
+  private async requireTeamSubject(actor: Actor, subjectType: 'job_seeker' | 'referral', id: string, purpose: 'view' | 'decide') {
     const team = await this.screens.members(actor);
-    const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: jobSeekerId }, select: { id: true, code: true, photoStoragePath: true, registeredByStaffId: true } });
-    const owner = seeker ? await this.registrationOwner(seeker.id, seeker.registeredByStaffId) : null;
-    if (!seeker || !owner || (owner !== actor.id && !team.some((row) => row.id === owner))) {
+    const select = { id: true, code: true, city: true, photoStoragePath: true, registeredByStaffId: true } as const;
+    const subject =
+      subjectType === 'job_seeker'
+        ? await this.prisma.jobSeeker.findUnique({ where: { id }, select })
+        : await this.prisma.referral.findUnique({ where: { id }, select });
+    if (!subject) throw new NotFoundException('Not a registration from your team');
+    const own = subject.registeredByStaffId === actor.id;
+    const owner = subjectType === 'job_seeker' ? await this.registrationOwner(subject.id, subject.registeredByStaffId) : subject.registeredByStaffId;
+    const inTeam = own || (owner !== null && team.some((row) => row.id === owner));
+    const routed = { ...subject, subjectType };
+    const pendingWhere = { status: 'pending', vendor: 'team_lead_check' };
+    const pending = this.approvals
+      ? subjectType === 'job_seeker'
+        ? await this.prisma.identityVerification.findFirst({ where: { jobSeekerId: subject.id, ...pendingWhere }, select: { id: true } })
+        : await this.prisma.referralIdentityVerification.findFirst({ where: { referralId: subject.id, ...pendingWhere }, select: { id: true } })
+      : null;
+    if (pending && this.approvals) {
+      const right = await this.approvals.rightFor(actor, routed);
+      if (right.allowed) return subject;
+      if (inTeam && purpose === 'view') return subject;
+      if (inTeam) throw new ForbiddenException(right.reason ?? SELF_APPROVAL_REFUSED);
       throw new NotFoundException('Not a registration from your team');
     }
-    if (!seeker.photoStoragePath || !this.candidatePhotos) return { url: null, expiresInSeconds: 0 };
-    const url = await this.candidatePhotos.signedUrl(seeker.photoStoragePath, CANDIDATE_PHOTO_LINK_TTL_SECONDS);
-    await this.audit.log({ actorId: actor.id, action: 'team_lead.selfie_viewed', entityType: 'job_seeker', entityCode: seeker.code, changedFields: [] });
+    // The general check follows the same rule (rev 169). Never one's own.
+    if (purpose === 'decide' && own) throw new ForbiddenException(SELF_CHECK_REFUSED);
+    if (inTeam) return subject;
+    // Another team's registration: only while it still waits for its check (M-B), never afterwards.
+    const checked = await this.prisma.teamLeadCheck.findFirst({ where: { subjectType, subjectId: subject.id }, select: { id: true } });
+    if (!checked && this.approvals && (await this.approvals.rightFor(actor, routed)).allowed) return subject;
+    throw new NotFoundException('Not a registration from your team');
+  }
+
+  /** The selfie of a registration from the team, through a short-lived private link (audited). */
+  async selfie(actor: Actor, id: string, subjectTypeText?: string) {
+    const subjectType = subjectTypeText === 'referral' ? 'referral' : 'job_seeker';
+    const subject = await this.requireTeamSubject(actor, subjectType, id, 'view');
+    if (!subject.photoStoragePath || !this.candidatePhotos) return { url: null, expiresInSeconds: 0 };
+    const url = await this.candidatePhotos.signedUrl(subject.photoStoragePath, CANDIDATE_PHOTO_LINK_TTL_SECONDS);
+    await this.audit.log({ actorId: actor.id, action: 'team_lead.selfie_viewed', entityType: subjectType, entityCode: subject.code, changedFields: [] });
     return { url, expiresInSeconds: CANDIDATE_PHOTO_LINK_TTL_SECONDS };
   }
 
-  /** "Looks right" or "Fake · flag it" (opens a flag the Manager sees). */
-  async checkRegistration(actor: Actor, jobSeekerId: string, body: { verdict?: string; note?: string }) {
+  /**
+   * "Looks right" or "Fake · flag it" (opens a flag the Manager sees). A
+   * pending other ID is approved (verified) or rejected (failed) by this
+   * decision; every ID photo of the person is then deleted (audited).
+   */
+  async checkRegistration(actor: Actor, id: string, body: { verdict?: string; note?: string; subjectType?: string }) {
     const verdict = body?.verdict === 'fake' ? 'fake' : body?.verdict === 'ok' ? 'ok' : null;
     if (!verdict) throw new BadRequestException('verdict is ok or fake');
     const note = String(body?.note ?? '').trim();
     if (verdict === 'fake' && !note) throw new BadRequestException('Say what looks fake');
-    const team = await this.screens.members(actor);
-    const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: jobSeekerId }, select: { id: true, code: true, registeredByStaffId: true } });
-    const owner = seeker ? await this.registrationOwner(seeker.id, seeker.registeredByStaffId) : null;
-    if (!seeker || !owner || (owner !== actor.id && !team.some((row) => row.id === owner))) {
-      throw new NotFoundException('Not a registration from your team');
-    }
-    let flagId: string | null = null;
-    if (verdict === 'fake') {
-      flagId = await this.raiseForManager(actor, 'registration_suspect', 'job_seeker', seeker.id, owner, { jobSeekerCode: seeker.code, note });
-    }
-    const check = await this.prisma.teamLeadCheck.create({
-      data: { subjectType: 'job_seeker', subjectId: seeker.id, verdict, note: note || null, flagId, checkedByStaffId: actor.id, createdAt: this.clock.now() },
+    const subjectType = body?.subjectType === 'referral' ? 'referral' : 'job_seeker';
+    const subject = await this.requireTeamSubject(actor, subjectType, id, 'decide');
+    // One general check per person (L-8): a second tap, or the Manager's fallback at the same moment, gets 409.
+    return oneRegistrationCheck(this.prisma, subjectType, subject.id, async () => {
+      // The ID decision first: anything it refuses (under-18 stop, not this Team Lead's to decide, photo
+      // gone or not opened, decided a moment ago) leaves everything as it was — no check row, no flag,
+      // no photo deleted. Then the ID photos (QR or card) go, as they are kept only until this check.
+      let otherIdDecided: 'verified' | 'failed' | null = null;
+      let photosDeleted = 0;
+      if (this.otherIds) {
+        const decided = await this.otherIds.recordDecision(subjectType, subject.id, verdict, actor, this.clock.now());
+        otherIdDecided = decided.otherIdDecided;
+        photosDeleted = decided.photosDeleted;
+      } else if (this.idPhotos) {
+        photosDeleted = await this.idPhotos.deletePhotos(subjectType, subject.id, verdict === 'ok' ? 'team_lead_approved' : 'team_lead_rejected', actor.id, this.clock.now());
+      }
+      let flagId: string | null = null;
+      if (verdict === 'fake') {
+        flagId = await this.raiseForManager(actor, 'registration_suspect', subjectType, subject.id, subject.registeredByStaffId, {
+          [subjectType === 'referral' ? 'referralCode' : 'jobSeekerCode']: subject.code,
+          note,
+        });
+      }
+      const check = await this.prisma.teamLeadCheck.create({
+        data: { subjectType, subjectId: subject.id, verdict, note: note || null, flagId, checkedByStaffId: actor.id, createdAt: this.clock.now() },
+      });
+      await this.audit.log({ actorId: actor.id, action: `team_lead.registration_${verdict}`, entityType: subjectType, entityCode: subject.code, after: { verdict, flagId, otherIdDecided } });
+      return { id: check.id, verdict, flagId, otherIdDecided, idPhotoDeleted: photosDeleted > 0, qrPhotoDeleted: photosDeleted > 0 };
     });
-    await this.audit.log({ actorId: actor.id, action: `team_lead.registration_${verdict}`, entityType: 'job_seeker', entityCode: seeker.code, after: { verdict, flagId } });
-    return { id: check.id, verdict, flagId };
   }
 
   // -------------------------------------------------------------- visits

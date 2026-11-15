@@ -124,6 +124,8 @@ export class CustomerHomeService {
     if (status.stopped) nextAction = 'none';
     else if (seeker.status === 'deactivated') nextAction = 'pay_again';
     else if (status.currentStep === 'id_check' && status.steps.selfie && status.idCheck.lastResult === 'none') nextAction = 'open_registration_link';
+    // Another ID (PAN, DL, voter ID) waits for a Team Lead's check by eye (PR #135, rev 169): nothing to do but wait.
+    else if (status.currentStep === 'id_check' && status.idCheck.waitingForTeamLead) nextAction = 'wait_for_id_check';
     else if (status.currentStep !== 'complete') {
       nextAction = status.currentStep === 'payment'
         ? (status.payment.state === 'confirming' ? 'wait_for_payment_confirmation' : 'pay')

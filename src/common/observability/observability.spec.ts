@@ -194,7 +194,8 @@ describe('Phase 8 Task 5: Observability, Structured Logging & Status Dashboard',
       expect(typeof res.body.uptimeFormatted).toBe('string');
       expect(res.body.version).toBe('0.1.0');
       expect(Array.isArray(res.body.components)).toBe(true);
-      expect(res.body.idCheck.status).toMatch(/^(up|down)$/);
+      // No outside ID-check provider any more (guide, 14 Nov): nothing to report for it.
+      expect(res.body.idCheck).toBeUndefined();
 
       const dbComp = res.body.components.find((c: { name: string }) =>
         c.name.includes('PostgreSQL'),

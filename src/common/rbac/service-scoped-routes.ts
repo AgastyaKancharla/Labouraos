@@ -26,6 +26,14 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
     proof: '/notifications/${mine!.id}/seen`)).status).toBe(404)',
   },
 
+  // ---------------------------------------------------------------- ID check (PR #135)
+  'AadhaarQrController.view': {
+    reason:
+      "A Team Lead opens a person's ID check only for their own team's registrations (IdCheckAccessService) or, under rev 169, one they may check for another team of their city (OtherIdApprovalService); anything else is 404. Every view is audited.",
+    test: 'modules/aadhaar-qr/aadhaar-qr.e2e.spec.ts',
+    proof: "expect((await get(otherLead, `/identity/job-seekers/${s.id}/aadhaar-check`)).status).toBe(404);",
+  },
+
   // ---------------------------------------------------------------- attendance
   'AttendanceController.approve': {
     reason: "Only the person's own Team Lead (reportsTo/teamLeadId), their Manager or the CEO; never one's own.",

@@ -62,3 +62,7 @@
 /* Grid children with wide tables must be allowed to shrink so the table scrolls inside the card. */
 .two-col > *, .three-col > * { min-width: 0; }
 .ceo-rule-row > * { min-width: 0; }
+
+/* Aadhaar check: live selfie next to the photo from the Aadhaar QR. */
+.lb-idphoto { border-radius: 10px; background: linear-gradient(160deg, #2a3b66, #0b1e4a); color: #cfe4ff; aspect-ratio: 4/3; display: flex; align-items: center; justify-content: center; font-size: 11.5px; text-align: center; overflow: hidden; padding: 6px; }
+.lb-idphoto img { width: 100%; height: 100%; object-fit: cover; }

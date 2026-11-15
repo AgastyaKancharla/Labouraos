@@ -10,10 +10,6 @@ import { MockPaymentProvider } from '../modules/payment/mock-payment.provider';
 import { RealPaymentProvider } from '../modules/payment/real-payment.provider';
 import { PaymentModule } from '../modules/payment/payment.module';
 
-import { KYC_PROVIDER } from './kyc/kyc.interface';
-import { MockKycProvider } from './kyc/mock-kyc.provider';
-import { RealKycProvider } from './kyc/real-kyc.provider';
-import { KycModule } from './kyc/kyc.module';
 
 import { TELEPHONY_PROVIDER } from '../modules/telephony/telephony.interface';
 import { MockTelephonyProvider } from '../modules/telephony/mock-telephony.provider';
@@ -36,7 +32,6 @@ describe('Provider Switching and Config (Task 1)', () => {
     delete process.env.OTP_PROVIDER_MODE;
     delete process.env.PAYMENT_PROVIDER_MODE;
     delete process.env.PAYMENT_PROVIDER;
-    delete process.env.KYC_PROVIDER_MODE;
     delete process.env.TELEPHONY_PROVIDER_MODE;
     delete process.env.WHATSAPP_PROVIDER_MODE;
   });
@@ -57,7 +52,6 @@ describe('Provider Switching and Config (Task 1)', () => {
           AuthModule,
           OtpModule,
           PaymentModule,
-          KycModule,
           TelephonyModule,
           WhatsAppModule,
         ],
@@ -78,10 +72,6 @@ describe('Provider Switching and Config (Task 1)', () => {
       expect(provider).toBeInstanceOf(MockPaymentProvider);
     });
 
-    it('injects MockKycProvider when KYC_PROVIDER_MODE is unset', () => {
-      const provider = moduleRef.get(KYC_PROVIDER);
-      expect(provider).toBeInstanceOf(MockKycProvider);
-    });
 
     it('injects MockTelephonyProvider when TELEPHONY_PROVIDER_MODE is unset', () => {
       const provider = moduleRef.get(TELEPHONY_PROVIDER);
@@ -100,7 +90,6 @@ describe('Provider Switching and Config (Task 1)', () => {
     beforeAll(async () => {
       process.env.OTP_PROVIDER_MODE = 'real';
       process.env.PAYMENT_PROVIDER_MODE = 'real';
-      process.env.KYC_PROVIDER_MODE = 'real';
       process.env.TELEPHONY_PROVIDER_MODE = 'real';
       process.env.WHATSAPP_PROVIDER_MODE = 'real';
 
@@ -112,7 +101,6 @@ describe('Provider Switching and Config (Task 1)', () => {
           AuthModule,
           OtpModule,
           PaymentModule,
-          KycModule,
           TelephonyModule,
           WhatsAppModule,
         ],
@@ -123,8 +111,7 @@ describe('Provider Switching and Config (Task 1)', () => {
       await moduleRef.close();
       delete process.env.OTP_PROVIDER_MODE;
       delete process.env.PAYMENT_PROVIDER_MODE;
-      delete process.env.KYC_PROVIDER_MODE;
-      delete process.env.TELEPHONY_PROVIDER_MODE;
+        delete process.env.TELEPHONY_PROVIDER_MODE;
       delete process.env.WHATSAPP_PROVIDER_MODE;
     });
 
@@ -138,10 +125,6 @@ describe('Provider Switching and Config (Task 1)', () => {
       expect(provider).toBeInstanceOf(RealPaymentProvider);
     });
 
-    it('injects RealKycProvider when KYC_PROVIDER_MODE=real', () => {
-      const provider = moduleRef.get(KYC_PROVIDER);
-      expect(provider).toBeInstanceOf(RealKycProvider);
-    });
 
     it('injects RealTelephonyProvider when TELEPHONY_PROVIDER_MODE=real', () => {
       const provider = moduleRef.get(TELEPHONY_PROVIDER);

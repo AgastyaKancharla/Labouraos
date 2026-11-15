@@ -77,7 +77,7 @@ Each task has its own branch and a fixed migration folder name. Build on the lat
 **Branch:** `phase-12/task-5-identity-verification` · **Migration folder:** `20261105130000_add_identity_verification`
 
 **Acceptance:**
-- `IdentityVerification` table exactly as data-design §4. `method`: `digilocker`, `aadhaar_qr`, `pan`, `driving_licence`, `voter_id`.
+- `IdentityVerification` table exactly as data-design §4. `method`: `aadhaar_qr`, `pan`, `driving_licence`, `voter_id` (Superseded 14 Nov — Aadhaar is now an in-house check of UIDAI's Secure QR; see AGENTS.md "Identity" and src/modules/aadhaar-qr.)
 - Every write path runs through the existing `assertNoRawAadhaar` guard — extend its call sites to cover this table's inserts if it isn't already wired in generically.
 - `status`: `pending`, `verified`, `failed`. `last4`, `nameMatches`, `isAdult` are the only Aadhaar-derived facts ever stored.
 - Verification can only be requested (`POST /job-seekers/:id/identity-verification`) once `Consent.aadhaar_verification` is granted for that job seeker — refused otherwise.

@@ -180,8 +180,6 @@ services:
         value: mock
       - key: TELEPHONY_PROVIDER_MODE
         value: mock
-      - key: KYC_PROVIDER_MODE
-        value: mock
       - key: CUSTOMER_PUSH_PROVIDER_MODE
         value: mock
 

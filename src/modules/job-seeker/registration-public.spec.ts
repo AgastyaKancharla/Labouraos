@@ -6,7 +6,7 @@ describe('Registration link endpoints for the public pages', () => {
   let publicLinks: { findByToken: jest.Mock; hashToken: jest.Mock };
   let otp: { isVerified: jest.Mock; verifyOtp: jest.Mock };
   let journey: { status: jest.Mock };
-  let kyc: { isDown: jest.Mock; requestRecovery: jest.Mock };
+  let otherIds: { submitForJobSeeker: jest.Mock };
   let limiter: { claimSend: jest.Mock };
   let controller: RegistrationController;
 
@@ -16,9 +16,9 @@ describe('Registration link endpoints for the public pages', () => {
     limiter = { claimSend: jest.fn().mockResolvedValue(undefined) };
     otp = { isVerified: jest.fn().mockResolvedValue(false), verifyOtp: jest.fn().mockResolvedValue(false) };
     journey = { status: jest.fn().mockResolvedValue({ otpRequired: true }) };
-    kyc = { isDown: jest.fn().mockResolvedValue(true), requestRecovery: jest.fn().mockResolvedValue(undefined) };
+    otherIds = { submitForJobSeeker: jest.fn().mockResolvedValue({ verificationId: 'v-1', method: 'pan', status: 'pending', idNumberLast4: '234F' }) };
     controller = new RegistrationController(
-      publicLinks as never, otp as never, {} as never, {} as never, {} as never, journey as never, limiter as never, kyc as never,
+      publicLinks as never, otp as never, {} as never, {} as never, {} as never, journey as never, limiter as never, {} as never, otherIds as never,
     );
   });
 
@@ -47,13 +47,18 @@ describe('Registration link endpoints for the public pages', () => {
     expect(journey.status).not.toHaveBeenCalled();
   });
 
-  it('records "SMS me when the ID service is back" only after his OTP and only while it is down', async () => {
-    await expect(controller.waitForIdService('tok', { requestId: 'req-1' })).rejects.toThrow(/OTP/);
+  it('another ID: only after his OTP, and the photo, type and number go to the Team Lead check (pending)', async () => {
+    const photo = { buffer: Buffer.from([0xff, 0xd8, 0xff]), mimetype: 'image/jpeg' };
+    await expect(controller.submitOtherId('tok', photo, { requestId: 'req-1', idType: 'pan', idNumber: 'ABCDE1234F', captureSource: 'live_camera' })).rejects.toThrow(/OTP/);
+    expect(otherIds.submitForJobSeeker).not.toHaveBeenCalled();
     otp.isVerified.mockResolvedValue(true);
-    await expect(controller.waitForIdService('tok', { requestId: 'req-1' })).resolves.toEqual({ success: true, waitingForRecovery: true });
-    expect(kyc.requestRecovery).toHaveBeenCalledWith('seeker-1', 'link-1');
-    kyc.isDown.mockResolvedValue(false);
-    await expect(controller.waitForIdService('tok', { requestId: 'req-1' })).rejects.toThrow(/available/);
+    await expect(controller.submitOtherId('tok', photo, { requestId: 'req-1', idType: 'pan', idNumber: 'ABCDE1234F', captureSource: 'live_camera' }))
+      .resolves.toMatchObject({ status: 'pending', idNumberLast4: '234F' });
+    expect(otherIds.submitForJobSeeker).toHaveBeenCalledWith('seeker-1', { idType: 'pan', idNumber: 'ABCDE1234F', captureSource: 'live_camera', photo }, { channel: 'link' });
+  });
+
+  it('has no "SMS me when the ID service is back" any more (no outside ID company)', () => {
+    expect((controller as unknown as Record<string, unknown>).waitForIdService).toBeUndefined();
   });
 
   it('payment-only info shows only the masked payer number and how long the link lasts', async () => {

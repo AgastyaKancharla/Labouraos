@@ -616,7 +616,7 @@ The answer depends on the profile kind (`kind`).
   "steps": { "phone": true, "profile": true, "consent": true, "selfie": true, "idCheck": true, "terms": true, "payment": true },
   "currentStep": "complete",
   "stopped": null,
-  "idCheck": { "lastResult": "verified", "serviceDown": false, "waitingForService": false },
+  "idCheck": { "lastResult": "verified", "waitingForTeamLead": false },
   "payment": { "state": "confirmed", "amountPaise": 49900, "confirmedAt": "…" },
   "guarantee": { "active": true, "day": 12, "days": 30, "startedAt": "…", "endsAt": "…" },
   "hits": { "count": 0, "max": 3 },
@@ -626,6 +626,11 @@ The answer depends on the profile kind (`kind`).
 }
 ```
 
+- `idCheck.lastResult`: `none`, `verified`, `pending` (another ID waits for a Team Lead's check by
+  eye: `waitingForTeamLead` is true and `nextAction` is `wait_for_id_check`), `name_mismatch`,
+  `under_18` (registration stops; a Manager can lift it), `photo_expired` (the photo of the ID card
+  expired before the check: take a new one on the registration link), `failed`. There is no outside
+  ID company, so no "service down" state.
 - `payment.state`: `not_started`, `pending`, `confirming` ("Paid, confirming" until the
   bank credit is matched), `failed`, `confirmed`. The 30 days start only at `confirmed`.
 - `guarantee.day` counts from the confirmed payment, 1 to 30 (null before payment).

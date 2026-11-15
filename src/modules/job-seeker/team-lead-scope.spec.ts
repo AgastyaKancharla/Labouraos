@@ -124,8 +124,8 @@ describe('M3: Team Lead scope on job seekers', () => {
   const writeRoutes: Array<[string, string]> = [
     ['post', 'activation-payment'],
     ['post', 'resend-payment'],
-    ['post', 'identity-verification'],
-    ['post', 'identity-verification/provider'],
+    // POST identity-verification and identity-verification/provider are gone (rev 154: staff can't
+    // record or mark an ID check; 404 is covered in identity-verification.spec.ts).
     ['post', 'payment-only-link'],
     ['post', 'hits'],
     ['post', 'reactivate'],

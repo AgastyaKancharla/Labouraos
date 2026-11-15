@@ -41,7 +41,7 @@ function jobSeekerService(prisma: Record<string, unknown>, extra: { publicLinks?
   const audit = extra.audit ?? { log: jest.fn() };
   const service = new JobSeekerService(
     prisma as never, {} as never, audit as never, otp as never, {} as never, pricing as never, {} as never, {} as never,
-    {} as never, {} as never, undefined, undefined, { now: () => NOW } as never, undefined, undefined,
+    {} as never, {} as never, undefined, undefined, { now: () => NOW } as never, undefined,
     extra.publicLinks as never, extra.messaging as never,
   );
   return { service, otp };
@@ -138,6 +138,10 @@ describe('Payment link to another number records who it is (CA08e)', () => {
   const prisma = () => ({
     jobSeeker: { findUnique: jest.fn().mockResolvedValue(seeker) },
     payment: { findFirst: jest.fn().mockResolvedValue({ id: 'p1', expectedAmountPaise: 49900 }) },
+    // The ID gate before any ₹499 (L-5): a verified ID, no under-18 stop.
+    identityVerification: {
+      findFirst: jest.fn(async (args: { where: Record<string, unknown> }) => (args.where.status === 'verified' ? { id: 'idv-1' } : null)),
+    },
   });
 
   it('stores the relation with the link and in the audit row', async () => {

@@ -3,11 +3,15 @@ import { AppModule } from './app.module';
 import { StructuredLogger } from './common/observability/structured-logger.service';
 import { getPublicAppUrl } from './common/public-link';
 import { assertDurableUploadStorage } from './common/storage/durable-storage';
+import { assertNoMockIdCheck } from './common/process/no-mock-id-check';
+import { assertUidaiCertificatesPinned } from './modules/aadhaar-qr/uidai-certificates';
 import { installShutdownDeadline } from './common/process/shutdown-deadline';
 
 export async function bootstrapWorker() {
   getPublicAppUrl();
   assertDurableUploadStorage();
+  assertNoMockIdCheck();
+  assertUidaiCertificatesPinned();
   process.env.PROCESS_ROLE = 'worker';
 
   const logger = new StructuredLogger('WorkerBootstrap');

@@ -76,6 +76,11 @@ const RETIRED_NAMES = [
   'WHATSAPP_BUSINESS_ACCOUNT_ID',
   'TELEPHONY_API_KEY',
   'TRUSTED_PROXY_HOPS',
+  // The outside ID-check provider is gone (guide, 14 Nov): Aadhaar by its QR in-house, other IDs by the Team Lead.
+  'KYC_PROVIDER_MODE',
+  'KYC_API_KEY',
+  'KYC_API_URL',
+  'KYC_HEALTH_URL',
 ];
 
 describe('Each setting has one name across code, .env.example and render.yaml', () => {
@@ -107,7 +112,7 @@ describe('Each setting has one name across code, .env.example and render.yaml', 
     }
   });
 
-  it.each(['OTP', 'WHATSAPP', 'TELEPHONY', 'KYC'])(
+  it.each(['OTP', 'WHATSAPP', 'TELEPHONY'])(
     'the %s vendor is chosen only by its _PROVIDER_MODE setting (no second switch)',
     (vendor) => {
       for (const file of sourceFiles(path.join(rootDir, 'src'))) {

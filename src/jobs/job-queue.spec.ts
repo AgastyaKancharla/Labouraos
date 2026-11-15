@@ -115,6 +115,22 @@ describe('JobQueue: one queue and one Worker for every job, dispatching by job n
     expect(tooOld.moveToDelayed).not.toHaveBeenCalled();
   });
 
+  it('finishes a retired job (in RETIRED_JOBS) and removes its schedule instead of putting it back (L-7)', async () => {
+    const queue = new JobQueue();
+    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const removeJobScheduler = jest.fn().mockResolvedValue(true);
+    jest.spyOn(queue, 'queue').mockReturnValue({ removeJobScheduler } as never);
+    const job = fakeJob('probe-id-check-recovery');
+    await expect(queue.dispatch(job, 'token')).resolves.toEqual({ retired: true });
+    expect(job.moveToDelayed).not.toHaveBeenCalled();
+    expect(removeJobScheduler).toHaveBeenCalledWith('kyc-recovery-scheduler');
+
+    // Removing the schedule failing (Redis busy) still finishes the job.
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    removeJobScheduler.mockRejectedValueOnce(new Error('busy'));
+    await expect(queue.dispatch(fakeJob('probe-id-check-recovery'), 'token')).resolves.toEqual({ retired: true });
+  });
+
   it('builds no Worker in a web process', () => {
     process.env.PROCESS_ROLE = 'web';
     const queue = new JobQueue();

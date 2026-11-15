@@ -45,17 +45,21 @@ export const CONSENT_NOTICES: Record<
     },
   },
   aadhaar_verification: {
+    // Guide, "Aadhaar verification" (14 Nov): says exactly what is read, what is kept and what is never kept.
     en: {
-      title: 'Aadhaar Verification',
-      description: 'I consent to identity verification via DigiLocker / Aadhaar fallbacks to confirm age and identity.',
+      title: 'ID check (Aadhaar or another ID)',
+      description:
+        "I consent to Laboura checking my ID to confirm who I am and that I am 18 or older. Aadhaar: the Secure QR code on my Aadhaar is read on my own phone (or from my e-Aadhaar PDF, which stays on my phone) and only the QR's data is sent; Laboura checks UIDAI's digital signature. Laboura keeps only: verified or not, the method, the date and time, the last 4 digits of my Aadhaar number and the QR's time stamp, my name, date of birth, gender, area and pincode, whether the name matches, whether my phone is linked to that Aadhaar, whether I am 18 or older, and this consent. The photo from the QR is kept only until a Team Lead compares it with my selfie (30 days at most). Laboura never keeps my full Aadhaar number, any picture of my card, my e-Aadhaar PDF or XML, or my full address. I can use PAN, a driving licence or a voter ID instead.",
     },
     kn: {
-      title: 'ಆಧಾರ್ ಪರಿಶೀಲನೆ',
-      description: 'ವಯಸ್ಸು ಮತ್ತು ಗುರುತನ್ನು ದೃಢೀಕರಿಸಲು ಡಿಜಿಲಾಕರ್ ಮೂಲಕ ಆಧಾರ್ ಪರಿಶೀಲನೆಗೆ ಒಪ್ಪಿಗೆ ನೀಡುತ್ತೇನೆ.',
+      title: 'ಗುರುತು ಪರಿಶೀಲನೆ (ಆಧಾರ್ ಅಥವಾ ಬೇರೆ ಗುರುತಿನ ಚೀಟಿ)',
+      description:
+        'ನಾನು ಯಾರು ಮತ್ತು ನನಗೆ 18 ವರ್ಷ ಅಥವಾ ಹೆಚ್ಚು ವಯಸ್ಸಾಗಿದೆ ಎಂದು ದೃಢೀಕರಿಸಲು ಲ್ಯಾಬೂರಾ ನನ್ನ ಗುರುತನ್ನು ಪರಿಶೀಲಿಸಲು ನಾನು ಒಪ್ಪುತ್ತೇನೆ. ಆಧಾರ್: ನನ್ನ ಆಧಾರ್‌ನಲ್ಲಿರುವ ಸುರಕ್ಷಿತ QR ಕೋಡ್ ಅನ್ನು ನನ್ನ ಫೋನ್‌ನಲ್ಲೇ ಓದಲಾಗುತ್ತದೆ (ಅಥವಾ ನನ್ನ ಇ-ಆಧಾರ್ PDF ನಿಂದ — ಅದು ನನ್ನ ಫೋನ್‌ನಲ್ಲೇ ಉಳಿಯುತ್ತದೆ) ಮತ್ತು QR ನ ಮಾಹಿತಿ ಮಾತ್ರ ಕಳುಹಿಸಲಾಗುತ್ತದೆ; ಲ್ಯಾಬೂರಾ UIDAI ಡಿಜಿಟಲ್ ಸಹಿಯನ್ನು ಪರಿಶೀಲಿಸುತ್ತದೆ. ಲ್ಯಾಬೂರಾ ಉಳಿಸುವುದು ಇಷ್ಟೇ: ಪರಿಶೀಲನೆ ಆಯಿತೇ ಇಲ್ಲವೇ, ವಿಧಾನ, ದಿನಾಂಕ ಮತ್ತು ಸಮಯ, ನನ್ನ ಆಧಾರ್ ಸಂಖ್ಯೆಯ ಕೊನೆಯ 4 ಅಂಕೆಗಳು ಮತ್ತು QR ನ ಸಮಯ ಮುದ್ರೆ, ನನ್ನ ಹೆಸರು, ಹುಟ್ಟಿದ ದಿನಾಂಕ, ಲಿಂಗ, ಪ್ರದೇಶ ಮತ್ತು ಪಿನ್‌ಕೋಡ್, ಹೆಸರು ಹೊಂದುತ್ತದೆಯೇ, ನನ್ನ ಫೋನ್ ಆ ಆಧಾರ್‌ಗೆ ಜೋಡಣೆಯಾಗಿದೆಯೇ, ನನಗೆ 18 ವರ್ಷ ತುಂಬಿದೆಯೇ, ಮತ್ತು ಈ ಒಪ್ಪಿಗೆ. QR ನಲ್ಲಿರುವ ಫೋಟೋವನ್ನು ಟೀಮ್ ಲೀಡ್ ನನ್ನ ಸೆಲ್ಫಿಯೊಂದಿಗೆ ಹೋಲಿಸುವವರೆಗೆ ಮಾತ್ರ (ಗರಿಷ್ಠ 30 ದಿನ) ಇಡಲಾಗುತ್ತದೆ. ನನ್ನ ಪೂರ್ಣ ಆಧಾರ್ ಸಂಖ್ಯೆ, ನನ್ನ ಕಾರ್ಡ್‌ನ ಯಾವುದೇ ಚಿತ್ರ, ಇ-ಆಧಾರ್ PDF ಅಥವಾ XML, ಅಥವಾ ನನ್ನ ಪೂರ್ಣ ವಿಳಾಸವನ್ನು ಲ್ಯಾಬೂರಾ ಎಂದಿಗೂ ಉಳಿಸುವುದಿಲ್ಲ. ಬದಲಿಗೆ PAN, ಡ್ರೈವಿಂಗ್ ಲೈಸೆನ್ಸ್ ಅಥವಾ ವೋಟರ್ ID ಬಳಸಬಹುದು.',
     },
     hi: {
-      title: 'आधार सत्यापन',
-      description: 'उम्र और पहचान की पुष्टि के लिए डिजीलॉकर/आधार सत्यापन की सहमति देता/देती हूँ।',
+      title: 'पहचान जाँच (आधार या कोई और आईडी)',
+      description:
+        'मैं लेबूरा को मेरी पहचान और मेरी उम्र 18 साल या उससे ज़्यादा होने की पुष्टि के लिए मेरी आईडी जाँचने की सहमति देता/देती हूँ। आधार: मेरे आधार पर छपा सिक्योर QR कोड मेरे अपने फ़ोन पर ही पढ़ा जाता है (या मेरी ई-आधार PDF से, जो मेरे फ़ोन पर ही रहती है) और सिर्फ़ QR का डेटा भेजा जाता है; लेबूरा UIDAI का डिजिटल हस्ताक्षर जाँचता है। लेबूरा सिर्फ़ यह रखता है: जाँच हुई या नहीं, तरीका, तारीख़ और समय, मेरे आधार नंबर के आख़िरी 4 अंक और QR का समय, मेरा नाम, जन्मतिथि, लिंग, इलाक़ा और पिनकोड, नाम मिलता है या नहीं, मेरा फ़ोन उस आधार से जुड़ा है या नहीं, मेरी उम्र 18 साल या ज़्यादा है या नहीं, और यह सहमति। QR की फ़ोटो सिर्फ़ तब तक रखी जाती है जब तक टीम लीड उसे मेरी सेल्फ़ी से न मिला ले (ज़्यादा से ज़्यादा 30 दिन)। लेबूरा मेरा पूरा आधार नंबर, मेरे कार्ड की कोई भी तस्वीर, मेरी ई-आधार PDF या XML, या मेरा पूरा पता कभी नहीं रखता। मैं इसकी जगह PAN, ड्राइविंग लाइसेंस या वोटर ID भी दे सकता/सकती हूँ।',
     },
   },
   job_updates: {

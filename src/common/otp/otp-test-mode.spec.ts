@@ -12,7 +12,6 @@ const KEYS = [
   'PAYMENT_PROVIDER_MODE',
   'WHATSAPP_PROVIDER_MODE',
   'TELEPHONY_PROVIDER_MODE',
-  'KYC_PROVIDER_MODE',
 ] as const;
 
 function withEnv(values: Partial<Record<(typeof KEYS)[number], string>>, fn: () => Promise<void> | void) {
@@ -32,7 +31,7 @@ function withEnv(values: Partial<Record<(typeof KEYS)[number], string>>, fn: () 
 }
 
 /** The hosted test site: production build, every vendor pretend. */
-const HOSTED_TEST = { NODE_ENV: 'production', OTP_PROVIDER_MODE: 'mock', SMS_PROVIDER_MODE: 'mock', PAYMENT_PROVIDER_MODE: 'mock', WHATSAPP_PROVIDER_MODE: 'mock', TELEPHONY_PROVIDER_MODE: 'mock', KYC_PROVIDER_MODE: 'mock' };
+const HOSTED_TEST = { NODE_ENV: 'production', OTP_PROVIDER_MODE: 'mock', SMS_PROVIDER_MODE: 'mock', PAYMENT_PROVIDER_MODE: 'mock', WHATSAPP_PROVIDER_MODE: 'mock', TELEPHONY_PROVIDER_MODE: 'mock' };
 /** Production with live vendors (only OTP still mock, e.g. half-way through switching). */
 const LIVE = { ...HOSTED_TEST, SMS_PROVIDER_MODE: 'real', PAYMENT_PROVIDER_MODE: 'real' };
 
@@ -46,7 +45,7 @@ describe('B2: OTP test mode — when it is on', () => {
   it('is never on in production with any live vendor', () => {
     expect(anyLiveVendor(LIVE)).toBe(true);
     expect(otpTestModeEnabled(LIVE)).toBe(false);
-    for (const key of ['SMS_PROVIDER_MODE', 'PAYMENT_PROVIDER_MODE', 'WHATSAPP_PROVIDER_MODE', 'TELEPHONY_PROVIDER_MODE', 'KYC_PROVIDER_MODE']) {
+    for (const key of ['SMS_PROVIDER_MODE', 'PAYMENT_PROVIDER_MODE', 'WHATSAPP_PROVIDER_MODE', 'TELEPHONY_PROVIDER_MODE']) {
       expect({ key, on: otpTestModeEnabled({ ...HOSTED_TEST, [key]: 'real' }) }).toEqual({ key, on: false });
     }
   });

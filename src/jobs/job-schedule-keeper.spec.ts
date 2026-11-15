@@ -19,7 +19,6 @@ import { ShortageTasksJob } from './shortage-tasks.job';
 import { WinBackJob } from './win-back.job';
 import { WeeklyReportJob } from './weekly-report.job';
 import { InterviewReplyJob } from './interview-reply.job';
-import { KycRecoveryJob } from './kyc-recovery.job';
 import { NotificationSweepJob } from './notification-sweep.job';
 import { CustomerPushJob } from './customer-push.job';
 import { SignupTrackerJob } from './signup-tracker.job';
@@ -175,7 +174,6 @@ describe('H3 with a real Redis: a Key Value restart wipes the schedules; the hea
     construct(WinBackJob),
     construct(WeeklyReportJob),
     construct(InterviewReplyJob),
-    construct(KycRecoveryJob),
     construct(NotificationSweepJob),
     construct(CustomerPushJob),
     construct(SignupTrackerJob),

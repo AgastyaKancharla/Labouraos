@@ -197,10 +197,35 @@ if ('serviceWorker' in navigator) {
 `;
 }
 
+/**
+ * "Scan Aadhaar QR" in the web app: where the browser has no BarcodeDetector
+ * (iPhone Safari), expo-camera reads QR codes with zxing-cpp as WebAssembly
+ * (the barcode-detector polyfill). Its .wasm file is copied into the build so
+ * it comes from Laboura's own address, not a public CDN
+ * (src/device/aadhaar-qr/prepareQrDecoder.web.ts points there).
+ */
+const ZXING_WASM_FILE = 'zxing_reader.wasm';
+
+/** The zxing-wasm copy barcode-detector uses (nested under it, or hoisted next to it). */
+function zxingWasmSource(appDir = path.join(__dirname, '..')) {
+  const candidates = [
+    path.join(appDir, 'node_modules', 'barcode-detector', 'node_modules', 'zxing-wasm'),
+    path.join(appDir, 'node_modules', 'zxing-wasm'),
+  ].map((dir) => path.join(dir, 'dist', 'reader', ZXING_WASM_FILE));
+  const found = candidates.find((file) => fs.existsSync(file));
+  if (!found) throw new Error(`${ZXING_WASM_FILE} not found — run npm ci in field/ first`);
+  return found;
+}
+
+function copyQrDecoder(distDir, source = zxingWasmSource()) {
+  fs.copyFileSync(source, path.join(distDir, ZXING_WASM_FILE));
+}
+
 function run(distDir, base = basePath()) {
   base = normaliseBase(base);
   const indexPath = path.join(distDir, 'index.html');
   if (!fs.existsSync(indexPath)) throw new Error(`${indexPath} not found — run expo export first`);
+  copyQrDecoder(distDir);
   fs.writeFileSync(indexPath, injectHead(fs.readFileSync(indexPath, 'utf8'), base));
   fs.writeFileSync(path.join(distDir, 'manifest.webmanifest'), `${JSON.stringify(buildManifest(base), null, 2)}\n`);
   fs.writeFileSync(path.join(distDir, 'register-sw.js'), buildRegisterScript(base));
@@ -217,4 +242,4 @@ if (require.main === module) {
   console.log(`Laboura Field web app (${base}) ready in ${dir}: ${files.length} files cached by sw.js (version ${version}).`);
 }
 
-module.exports = { basePath, normaliseBase, buildManifest, injectHead, buildServiceWorker, buildRegisterScript, precacheList, listFiles, run };
+module.exports = { basePath, normaliseBase, buildManifest, injectHead, buildServiceWorker, buildRegisterScript, precacheList, listFiles, run, copyQrDecoder, zxingWasmSource, ZXING_WASM_FILE };

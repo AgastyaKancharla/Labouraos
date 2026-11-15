@@ -28,4 +28,5 @@ export type ConsentLanguage = (typeof CONSENT_LANGUAGES)[number];
 export const CONSENT_METHODS = ['sms_link', 'in_app', 'contract'] as const;
 export type ConsentMethod = (typeof CONSENT_METHODS)[number];
 
-export const DEFAULT_NOTICE_VERSION = '1.0';
+/** 1.1 (rev 154): the ID check notice names the live photo of another ID card, checked by the Team Lead. Consents given under 1.0 stay valid. */
+export const DEFAULT_NOTICE_VERSION = '1.1';

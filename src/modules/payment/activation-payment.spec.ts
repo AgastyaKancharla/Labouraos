@@ -9,6 +9,7 @@ import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 import { PaymentService } from './payment.service';
 import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
+import { giveVerifiedId } from '../../test-support/verified-id';
 
 describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
   let app: INestApplication;
@@ -107,6 +108,7 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
   it('POST /job-seekers/:id/activation-payment creates Payment row (49900 paise, pending) and returns link', async () => {
     const seeker = await createPendingJobSeeker(timestamp.toString().slice(-8));
 
+    await giveVerifiedId(prisma, seeker.id);
     const res = await request(app.getHttpServer())
       .post(`/job-seekers/${seeker.id}/activation-payment`)
       .set('Authorization', `Bearer ${callAgentToken}`);
@@ -138,6 +140,7 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
       data: { guaranteeFloorPaise: 2100000 },
     });
 
+    await giveVerifiedId(prisma, seeker.id);
     const paymentRes = await request(app.getHttpServer())
       .post(`/job-seekers/${seeker.id}/activation-payment`)
       .set('Authorization', `Bearer ${callAgentToken}`);
@@ -196,6 +199,7 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
   it('onPaymentSucceeded starts activation at confirmedAt and a replay has no effects', async () => {
     const suffix = (timestamp + 5).toString().slice(-8);
     const seeker = await createPendingJobSeeker(suffix);
+    await giveVerifiedId(prisma, seeker.id);
     const paymentRes = await request(app.getHttpServer())
       .post(`/job-seekers/${seeker.id}/activation-payment`)
       .set('Authorization', `Bearer ${callAgentToken}`);
@@ -233,6 +237,7 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
   it('stores a payment with no gateway reference', async () => {
     const suffix = (timestamp + 6).toString().slice(-8);
     const seeker = await createPendingJobSeeker(suffix);
+    await giveVerifiedId(prisma, seeker.id);
     const paymentRes = await request(app.getHttpServer())
       .post(`/job-seekers/${seeker.id}/activation-payment`)
       .set('Authorization', `Bearer ${callAgentToken}`);
@@ -256,6 +261,7 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
     const phoneSuffix = (timestamp + 2).toString().slice(-8);
     const seeker = await createPendingJobSeeker(phoneSuffix);
 
+    await giveVerifiedId(prisma, seeker.id);
     const paymentRes = await request(app.getHttpServer())
       .post(`/job-seekers/${seeker.id}/activation-payment`)
       .set('Authorization', `Bearer ${callAgentToken}`);
@@ -330,6 +336,7 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
     const phoneSuffix = (timestamp + 3).toString().slice(-8);
     const seeker = await createPendingJobSeeker(phoneSuffix);
 
+    await giveVerifiedId(prisma, seeker.id);
     const paymentRes = await request(app.getHttpServer())
       .post(`/job-seekers/${seeker.id}/activation-payment`)
       .set('Authorization', `Bearer ${callAgentToken}`);

@@ -10,6 +10,7 @@ import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
 import { maskPhoneLast4 } from '../../common/rbac/pii-masking.interceptor';
 import { JobSeekerService } from './job-seeker.service';
+import { giveVerifiedId } from '../../test-support/verified-id';
 
 describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => {
   let app: INestApplication;
@@ -289,6 +290,7 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
     });
 
     it('Field agent can create activation payment (POST /job-seekers/:id/activation-payment)', async () => {
+      await giveVerifiedId(prisma, createdSeekerId);
       const res = await request(app.getHttpServer())
         .post(`/job-seekers/${createdSeekerId}/activation-payment`)
         .set('Authorization', `Bearer ${fieldAgentToken}`);
@@ -348,6 +350,8 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
         },
       });
       testSeekerId = seeker.id;
+      // Coming back pays ₹499 again: the same ID gate as the first payment (L-5).
+      await giveVerifiedId(prisma, seeker.id);
       testSeekerCode = seeker.code;
       cleanJobSeekerIds.push(seeker.id);
     });

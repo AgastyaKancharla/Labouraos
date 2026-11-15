@@ -181,7 +181,6 @@ describe('Phase 6.5 Task 4: Deployment Configuration (render.yaml & DEPLOY.md)',
         'PAYMENT_PROVIDER_MODE',
         'WHATSAPP_PROVIDER_MODE',
         'TELEPHONY_PROVIDER_MODE',
-        'KYC_PROVIDER_MODE',
       ];
 
       for (const mode of providerModes) {
@@ -201,7 +200,6 @@ describe('Phase 6.5 Task 4: Deployment Configuration (render.yaml & DEPLOY.md)',
         'RAZORPAY_WEBHOOK_SECRET',
         'WHATSAPP_ACCESS_TOKEN',
         'SMS_API_KEY',
-        'KYC_API_KEY',
         'CALL_ROUTING_KEY',
         'PAYOUT_ACCOUNT_KEY',
         'TELEPHONY_WEBHOOK_SECRET',
@@ -495,7 +493,7 @@ describe('B1: render.free.yaml — the free-tier setup for testing', () => {
   it('wires Redis from the free Key Value and keeps every vendor in mock mode, with no committed secret', () => {
     expect(envOf(web(), 'REDIS_HOST')?.fromService).toEqual({ type: 'keyvalue', name: kv().name, property: 'host' });
     expect(envOf(web(), 'REDIS_PORT')?.fromService).toEqual({ type: 'keyvalue', name: kv().name, property: 'port' });
-    for (const mode of ['OTP_PROVIDER_MODE', 'SMS_PROVIDER_MODE', 'PAYMENT_PROVIDER_MODE', 'WHATSAPP_PROVIDER_MODE', 'TELEPHONY_PROVIDER_MODE', 'KYC_PROVIDER_MODE']) {
+    for (const mode of ['OTP_PROVIDER_MODE', 'SMS_PROVIDER_MODE', 'PAYMENT_PROVIDER_MODE', 'WHATSAPP_PROVIDER_MODE', 'TELEPHONY_PROVIDER_MODE']) {
       expect({ mode, value: envOf(web(), mode)?.value }).toEqual({ mode, value: 'mock' });
     }
     for (const key of ['DATABASE_URL', 'DIRECT_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'PUBLIC_APP_URL']) {
