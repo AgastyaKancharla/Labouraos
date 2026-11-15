@@ -738,6 +738,51 @@ describe('Fable re-check of PR #135 (rev 169 and the review fixes)', () => {
     });
   });
 
+  describe('the general registration check follows the same rule (rev 169)', () => {
+    const since = new Date(NOW.getTime() - 7 * DAY_MS);
+    function withRegistrar(registrar: string | null, city = 'Bengaluru') {
+      const ctx = setup();
+      const seeker = ctx.prisma.jobSeeker.rows.find((r) => r.id === 'js-1')!;
+      seeker.registeredByStaffId = registrar;
+      seeker.city = city;
+      // js-2 (agent-2, tl-2's team) and js-3 stay with their own team's Team Lead.
+      return ctx;
+    }
+
+    it('a Team Lead\'s registration goes to the other Team Leads of the city, never to him, and leaves the list once checked', async () => {
+      const { approvals, prisma } = withRegistrar('tl-1');
+      expect(await approvals.uncheckedRegistrationsFor(tl('tl-2'), 'another_team_lead', since)).toEqual(['js-1']);
+      expect(await approvals.uncheckedRegistrationsFor(tl('tl-1'), 'another_team_lead', since)).toEqual([]);
+      expect(await approvals.uncheckedRegistrationsFor({ id: 'manager-1', role: 'manager' }, 'manager_or_ceo', since)).toEqual([]);
+      expect(await approvals.uncheckedRegistrationsFor(tl('tl-9'), 'another_team_lead', since)).toEqual([]);
+      expect((await approvals.rightFor(tl('tl-1'), { registeredByStaffId: 'tl-1', city: 'Bengaluru' })).reason).toBe(SELF_APPROVAL_REFUSED);
+      prisma.teamLeadCheck.rows.push({ id: 'tlc-1', subjectType: 'job_seeker', subjectId: 'js-1', verdict: 'ok', createdAt: NOW });
+      expect(await approvals.uncheckedRegistrationsFor(tl('tl-2'), 'another_team_lead', since)).toEqual([]);
+    });
+
+    it('no team (a Manager, the CEO or nobody registered): another Team Lead of the city', async () => {
+      for (const registrar of ['manager-1', 'ceo-1', null]) {
+        const { approvals } = withRegistrar(registrar);
+        expect(await approvals.uncheckedRegistrationsFor(tl('tl-1'), 'another_team_lead', since)).toContain('js-1');
+      }
+    });
+
+    it('no other active Team Lead in the city: a Manager of that city or the CEO', async () => {
+      const { approvals } = withRegistrar('tl-9', 'Mysuru');
+      expect(await approvals.uncheckedRegistrationsFor({ id: 'manager-9', role: 'manager' }, 'manager_or_ceo', since)).toEqual(['js-1']);
+      expect(await approvals.uncheckedRegistrationsFor({ id: 'ceo-1', role: 'ceo' }, 'manager_or_ceo', since)).toEqual(['js-1']);
+      expect(await approvals.uncheckedRegistrationsFor({ id: 'manager-1', role: 'manager' }, 'manager_or_ceo', since)).toEqual([]);
+      expect(await approvals.uncheckedRegistrationsFor(tl('tl-9'), 'another_team_lead', since)).toEqual([]);
+    });
+
+    it('an agent\'s registration stays with that agent\'s own Team Lead (not listed for anyone else)', async () => {
+      const { approvals } = setup();
+      for (const actor of [tl('tl-1'), tl('tl-2')]) expect(await approvals.uncheckedRegistrationsFor(actor, 'another_team_lead', since)).toEqual([]);
+      expect((await approvals.rightFor(tl('tl-2'), { registeredByStaffId: 'agent-2', city: 'Bengaluru' })).allowed).toBe(true);
+      expect((await approvals.rightFor(tl('tl-1'), { registeredByStaffId: 'agent-2', city: 'Bengaluru' })).allowed).toBe(false);
+    });
+  });
+
   describe('M-2: an approval needs the photo, opened by this decider', () => {
     it('refused until this decider opened the photo (another person opening it does not count)', async () => {
       const { otherIds, card, viewPhoto, prisma } = setup();

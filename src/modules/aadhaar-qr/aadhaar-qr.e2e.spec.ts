@@ -472,6 +472,52 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
       expect(await waiting(ceo)).not.toContain(s.id);
     });
 
+    it('the general registration check: a Team Lead\'s registration is checked by another Team Lead of the city, never by him', async () => {
+      // A city of its own, so registrations from other test files don't crowd the list.
+      const city = `Twopur${stamp}`;
+      const cityManager = await make('manager', 'MGRW', ceo.id, city);
+      const leadA = await make('team_lead', 'TLWA', cityManager.id, city);
+      const leadB = await make('team_lead', 'TLWB', cityManager.id, city);
+      const s = await seeker(25, 'Ravi Shankar', leadA.id, city);
+      const mine = await get(leadA, '/team-lead/registrations').expect(200);
+      expect((mine.body.rows as Row[]).some((r) => r.person.id === s.id)).toBe(false);
+      const refused = await post(leadA, `/team-lead/registrations/${s.id}/check`, { verdict: 'ok' });
+      expect(refused.status).toBe(403);
+      expect(refused.body.message).toMatch(/can't check this registration yourself/);
+      const theirs = await get(leadB, '/team-lead/registrations').expect(200);
+      expect((theirs.body.rows as Row[]).find((r) => r.person.id === s.id)?.approval).toMatchObject({ canDecide: true, needsAnotherTeamLead: true, fromAnotherTeam: true });
+      // A Team Lead of another city never sees or checks it.
+      expect(((await get(otherLead, '/team-lead/registrations').expect(200)).body.rows as Row[]).some((r) => r.person.id === s.id)).toBe(false);
+      expect((await post(otherLead, `/team-lead/registrations/${s.id}/check`, { verdict: 'ok' })).status).toBe(404);
+      // He can open it (audited) and check it.
+      expect((await get(leadB, `/identity/job-seekers/${s.id}/aadhaar-check`)).status).toBe(200);
+      const ok = await post(leadB, `/team-lead/registrations/${s.id}/check`, { verdict: 'ok' }).expect(200);
+      expect(ok.body.verdict).toBe('ok');
+      expect(await prisma.teamLeadCheck.count({ where: { subjectId: s.id, checkedByStaffId: leadB.id } })).toBe(1);
+      expect(((await get(leadB, '/team-lead/registrations').expect(200)).body.rows as Row[]).some((r) => r.person.id === s.id)).toBe(false);
+      // A Manager is not the fallback while another Team Lead can check it.
+      expect((await post(cityManager, `/identity/job-seekers/${s.id}/registration-check`, { verdict: 'ok' })).status).toBe(403);
+    });
+
+    it('the general registration check: no other Team Lead in the city, so a Manager of that city or the CEO checks it from the waiting list', async () => {
+      const city = `Checkpur${stamp}`;
+      const cityManager = await make('manager', 'MGRC', ceo.id, city);
+      const cityLead = await make('team_lead', 'TLC', cityManager.id, city);
+      const s = await seeker(26, 'Ravi Shankar', cityLead.id, city);
+      expect((await post(cityLead, `/team-lead/registrations/${s.id}/check`, { verdict: 'ok' })).status).toBe(403);
+      const rows = async (p: Person) => (await get(p, '/identity/other-id/waiting').expect(200)).body.rows as Array<{ kind: string; person: { id: string } }>;
+      expect((await rows(cityManager)).find((r) => r.person.id === s.id)).toMatchObject({ kind: 'registration' });
+      expect((await rows(ceo)).some((r) => r.person.id === s.id)).toBe(true);
+      expect((await rows(manager)).some((r) => r.person.id === s.id)).toBe(false);
+      expect((await post(manager, `/identity/job-seekers/${s.id}/registration-check`, { verdict: 'ok' })).status).toBe(403);
+      expect((await post(cityLead, `/identity/job-seekers/${s.id}/registration-check`, { verdict: 'ok' })).status).toBe(403);
+      expect((await post(cityManager, `/identity/job-seekers/${s.id}/registration-check`, { verdict: 'fake' })).status).toBe(400);
+      const fake = await post(cityManager, `/identity/job-seekers/${s.id}/registration-check`, { verdict: 'fake', note: 'Not the person in the selfie' }).expect(200);
+      expect(fake.body).toMatchObject({ verdict: 'fake', flagId: expect.any(String) });
+      expect(await prisma.teamLeadCheck.count({ where: { subjectId: s.id, checkedByStaffId: cityManager.id, verdict: 'fake' } })).toBe(1);
+      expect((await rows(cityManager)).some((r) => r.person.id === s.id)).toBe(false);
+    });
+
     it('Laboura Field: the camera token belongs to the field agent who registered the person, and works once', async () => {
       const s = await seeker(24, 'Ravi Shankar');
       expect((await post(otherFielder, `/field-work/job-seekers/${s.id}/other-id/capture-nonce`)).status).toBe(404);

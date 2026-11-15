@@ -520,7 +520,7 @@ describe('Targets, reports, login codes, notifications', () => {
       'POST /identity/job-seekers/w1/other-id/decision': { verdict: 'ok', otherIdDecided: 'verified' },
     });
     render(<Flags />, '/manager/flags');
-    expect(await screen.findByText('ID cards waiting for you · 1')).toBeInTheDocument();
+    expect(await screen.findByText('Waiting for your check · 1')).toBeInTheDocument();
     expect(screen.getByText(/Voter ID …4567 · Mysuru/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Show the ID check' }));
     expect(await screen.findByText(/No other Team Lead in this city can check it/)).toBeInTheDocument();
@@ -528,5 +528,23 @@ describe('Targets, reports, login codes, notifications', () => {
     const d = await dialog();
     await userEvent.click(within(d).getByRole('button', { name: /looks right/i }));
     await waitFor(() => expect(api.calls('POST /identity/job-seekers/w1/other-id/decision')[0].body).toEqual({ verdict: 'ok' }));
+  });
+
+  it('rev 169: a registration a Team Lead made, with no other Team Lead in the city, is checked by the Manager from the waiting list', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /manager/flags': { summary: { open: 0, forCeo: 0, resolvedThisMonth: 0 }, rows: [] },
+      'GET /identity/other-id/waiting': {
+        rows: [{ kind: 'registration', subjectType: 'job_seeker', person: { id: 'g1', code: 'JS-00420', name: 'Suma K', city: 'Mysuru' }, registeredBy: { name: 'Kiran', role: 'team_lead' }, hasSelfie: true, method: 'aadhaar_qr', idNumberLast4: null, sentAt: NOW.toISOString(), photoKept: true }],
+      },
+      'POST /identity/job-seekers/g1/registration-check': { verdict: 'fake', flagId: 'f9', otherIdDecided: null, photosDeleted: 1 },
+    });
+    render(<Flags />, '/manager/flags');
+    expect(await screen.findByText(/Registration to check · Mysuru/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Fake · flag it' }));
+    const d = await dialog();
+    await userEvent.type(within(d).getByRole('textbox'), 'Selfie is a photo of a photo');
+    await userEvent.click(within(d).getByRole('button', { name: /Flag JS-00420 as fake/ }));
+    await waitFor(() => expect(api.calls('POST /identity/job-seekers/g1/registration-check')[0].body).toEqual({ verdict: 'fake', note: 'Selfie is a photo of a photo' }));
   });
 });

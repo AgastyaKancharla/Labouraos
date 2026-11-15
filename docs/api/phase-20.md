@@ -30,9 +30,13 @@ Team Lead, Manager (in their teams) and CEO — and, for a pending other ID, who
 
 Nobody approves the other ID of a person they registered themselves (any role, any verdict: `403`). The registering agent's Team Lead approves it; when a Team Lead registered the person, or nobody's team did (a Manager, the CEO or nobody), another active Team Lead of the same city approves it (T-Verify lists those rows with `approval.fromAnotherTeam`); when the city has no other active Team Lead, a Manager of that city or the CEO approves it (an `other_id_needs_manager` flag tells them). An approval also needs the card photo still kept (`409` otherwise) and the decider to have opened it (`400`); a decision made a moment earlier by someone else is `409`; under a standing under-18 stop every approval is refused and nothing is deleted. A card photo that expires (30 days) before a decision closes the check as `failed` (`idCheck.lastResult: "photo_expired"`): the person takes a new photo.
 
+### The registration check in T-Verify follows the same rule
+
+The general check ("Looks right" / "Fake · flag it", `POST /team-lead/registrations/:id/check`) of a registration a Team Lead made, or nobody's team did, is done by another active Team Lead of the same city (T-Verify lists the city's unchecked ones from the last 7 days with `approval.fromAnotherTeam`), else by a Manager of that city or the CEO (`POST /identity/job-seekers/:id/registration-check`, same body and rules as the decision below). Nobody checks their own registration (`403`).
+
 ### `GET /identity/other-id/waiting` and `POST /identity/job-seekers/:id/other-id/decision` (also `/identity/referrals/:id/…`)
 
-Manager and CEO: the pending other IDs this person may decide as the fallback (a Manager: their city; never their own registrations) — `rows[]` with `subjectType`, `person {id, code, name, city}`, `registeredBy`, `method`, `idNumberLast4`, `sentAt`, `photoKept`. The decision: `{"verdict":"ok"}` or `{"verdict":"fake","note":"…"}` (a note is required for fake, which also opens a `registration_suspect` flag); same rules as above. **Response `200`:** `{"verdict":"ok","flagId":null,"otherIdDecided":"verified","photosDeleted":1}`.
+Manager and CEO: what this person checks as the fallback (a Manager: their city; never their own registrations) — `rows[]` with `kind` (`id_card`: a pending other ID; `registration`: the general check), `subjectType`, `person {id, code, name, city}`, `registeredBy`, `method`, `idNumberLast4`, `sentAt`, `photoKept`. The other-ID decision also records the registration check. The decision: `{"verdict":"ok"}` or `{"verdict":"fake","note":"…"}` (a note is required for fake, which also opens a `registration_suspect` flag); same rules as above. **Response `200`:** `{"verdict":"ok","flagId":null,"otherIdDecided":"verified","photosDeleted":1}`.
 
 ### `POST /identity/job-seekers/:id/under-18/lift` and `POST /identity/referrals/:id/under-18/lift`
 
