@@ -899,6 +899,7 @@ Events (`kind`, placeholders, category; all `service` unless said):
 | `id_check_approved`, `id_check_retry` | job seeker, partner | | |
 | `payment_confirmed` | job seeker | `days` | receipt (card payment: at once, not capped) |
 | `fee_paid` | business | | receipt; owners only |
+| `replacement_cancelled` | business | | the salary difference was not paid in time, so the replacement was cancelled (rev 178); owners only |
 | `job_match` | job seeker | | `job_updates` |
 | `interview_booked` | job seeker | `hours` | urgent |
 | `interview_reminder_tomorrow`, `interview_reminder_soon` | job seeker, business | | |
