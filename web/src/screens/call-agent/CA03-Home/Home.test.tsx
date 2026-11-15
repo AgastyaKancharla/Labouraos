@@ -73,7 +73,7 @@ describe('Call agent Home (CA03)', () => {
     let fail = true;
     mockApi({
       'GET /call-work/home': () =>
-        fail ? apiError(500, 'Internal server error') : homeData({ work: { items: [], counts: { all: 0, callbacks: 0, follow_ups: 0, offers: 0, new_leads: 0, priority: 0 } }, callNext: null }),
+        fail ? apiError(500, 'Internal server error') : homeData({ work: { items: [], counts: { all: 0, callbacks: 0, follow_ups: 0, offers: 0, new_leads: 0, priority: 0, app_signups: 0 } }, callNext: null }),
     });
     signInAs('call_agent');
     renderScreen(<Home />, path);

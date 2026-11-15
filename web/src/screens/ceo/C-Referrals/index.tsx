@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { AppSignupBadge, useAppLabels } from '../../shared/AppSignupBadge';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '../../../components/Card';
 import type { Column } from '../../../components/DataTable';
@@ -69,6 +70,7 @@ export default function Referrals() {
   const loading = list.query.isPending;
   const maxJoined = Math.max(1, ...(d?.best ?? []).map((b) => b.joined));
 
+  const appLabels = useAppLabels('referral', (list.query.data?.rows ?? []).map((r) => r.id));
   const columns: Column<Row>[] = [
     { key: 'code', header: 'Code', cell: (r) => <span className="code">{r.code}</span>, csv: (r) => r.code },
     {
@@ -76,7 +78,10 @@ export default function Referrals() {
       header: 'Partner',
       cell: (r) => (
         <div>
-          <div style={{ fontWeight: 600 }}>{r.name}</div>
+          <div style={{ fontWeight: 600 }}>
+            {r.name}
+            <AppSignupBadge label={appLabels.data?.[r.id]} />
+          </div>
           <div className="ceo-cell-sub">{[humanize(r.role), r.area].filter((x) => x && x !== '—').join(' · ')}</div>
         </div>
       ),

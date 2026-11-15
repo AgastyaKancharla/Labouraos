@@ -274,6 +274,8 @@ export const hi: Messages = {
   'fa05.planned': 'आज की योजना',
   'fa05.verification': 'सत्यापन',
   'fa05.attendInterview': 'इंटरव्यू में जाएँ',
+  'fa05.signupVisit': 'ऐप साइन-अप विज़िट',
+  'fa05.ownerPicked': 'मालिक का चुना समय {when}',
   'fa05.revisits': 'बाकी दोबारा विज़िट',
   'fa05.comeBackToday': 'आज फिर जाना है',
   'fa05.overdueSince': '{date} से बाकी',

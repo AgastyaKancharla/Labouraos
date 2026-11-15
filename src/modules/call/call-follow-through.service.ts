@@ -7,6 +7,7 @@ import { MessagingService } from '../message/messaging.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { FINAL_CALL_STATUSES } from './call-status';
 import { nextDayRetryAt, nextRetryAt } from './call-retry-time';
+import { CALL_TASK_KIND_SIGNUP_HELP } from '../../common/customer-auth/customer-app.constants';
 
 /** Purposes whose call belongs to a follow-up task (retried the next day, Team Lead told after 3). */
 const FOLLOW_UP_PURPOSES = ['follow_up', 'check_in', 'refund_check', 'exit_call'];
@@ -85,6 +86,9 @@ export class CallFollowThroughService {
 
   private async onNoAnswer(call: CallRecord): Promise<void> {
     const missedAt = call.endedAt ?? call.startedAt ?? call.createdAt;
+    // An app sign-up help call has its own tries (3 over 3 working days, signup-tracker):
+    // no automatic retry and no no-answer WhatsApp on top of them.
+    if (await this.isSignupHelpCall(call)) return;
     if (call.subjectType === 'job_seeker') {
       await this.sendWhatsAppOncePerDay(call.subjectId!, missedAt);
     }
@@ -93,6 +97,20 @@ export class CallFollowThroughService {
       return;
     }
     await this.scheduleRetry(call, missedAt);
+  }
+
+  private async isSignupHelpCall(call: CallRecord): Promise<boolean> {
+    const task = await this.prisma.callTask.findFirst({
+      where: {
+        staffId: call.staffId!,
+        subjectType: call.subjectType!,
+        subjectId: call.subjectId!,
+        kind: CALL_TASK_KIND_SIGNUP_HELP,
+        status: 'open',
+      },
+      select: { id: true },
+    });
+    return Boolean(task);
   }
 
   private async sendWhatsAppOncePerDay(jobSeekerId: string, missedAt: Date): Promise<void> {

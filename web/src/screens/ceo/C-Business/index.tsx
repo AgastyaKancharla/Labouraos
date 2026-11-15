@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { AppSignupBadgeFor } from '../../shared/AppSignupBadge';
 import { Link, useParams } from 'react-router-dom';
 import { Button } from '../../../components/Button';
 import { Card } from '../../../components/Card';
@@ -119,6 +120,7 @@ export default function BusinessDetail() {
       <TopBar
         back={back}
         title={`${d.name} · ${d.code}`}
+        titleBadge={<AppSignupBadgeFor type="business" id={d.id} />}
         subtitle={`${statusLabel}${d.accountAgent?.name ? ` · ${d.accountAgent.name}'s account` : ''} · ${d.tiles.placements} placements and ${formatINR(d.tiles.feesPaidPaise)} paid since ${formatDateIST(d.createdAt)}.`}
         actions={
           <div className="ceo-actions">

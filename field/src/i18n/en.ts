@@ -276,6 +276,8 @@ export const en = {
   'fa05.planned': 'Planned today',
   'fa05.verification': 'Verification',
   'fa05.attendInterview': 'Attend interview',
+  'fa05.signupVisit': 'App sign-up visit',
+  'fa05.ownerPicked': 'Owner picked {when}',
   'fa05.revisits': 'Revisits due',
   'fa05.comeBackToday': 'Come back today',
   'fa05.overdueSince': 'Due since {date}',

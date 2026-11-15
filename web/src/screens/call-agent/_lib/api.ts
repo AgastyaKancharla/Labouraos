@@ -19,8 +19,10 @@ export type WorkKind =
   | 'follow_up'
   | 'retry'
   | 'stuck_registration'
+  | 'signup_help'
+  | 'signup_payment'
   | 'win_back';
-export type WorkCategory = 'callbacks' | 'follow_ups' | 'offers' | 'new_leads' | 'priority';
+export type WorkCategory = 'callbacks' | 'follow_ups' | 'offers' | 'new_leads' | 'priority' | 'app_signups';
 
 export interface WorkCall {
   purpose: string;

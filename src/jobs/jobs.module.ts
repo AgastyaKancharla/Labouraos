@@ -38,12 +38,14 @@ import { JobRunNowController } from './job-run-now.controller';
 import { JobQueueLifecycle } from './job-queue.lifecycle';
 import { CustomerPushJob } from './customer-push.job';
 import { CustomerNotificationModule } from '../modules/customer-notification/customer-notification.module';
+import { SignupTrackerJob } from './signup-tracker.job';
+import { SignupTrackerModule } from '../modules/signup-tracker/signup-tracker.module';
 
 @Module({
-  imports: [PrismaModule, JobSeekerModule, AuthModule, AuditModule, MessageModule, VacancyModule, PlacementModule, FollowUpModule, ReviewFlagModule, RetentionModule, KycHealthModule, AttendanceModule, GrowthModule, NotificationModule, RefundPriorityModule, FieldSellingModule, WeeklyReportModule, CustomerNotificationModule],
+  imports: [PrismaModule, JobSeekerModule, AuthModule, AuditModule, MessageModule, VacancyModule, PlacementModule, FollowUpModule, ReviewFlagModule, RetentionModule, KycHealthModule, AttendanceModule, GrowthModule, NotificationModule, RefundPriorityModule, FieldSellingModule, WeeklyReportModule, CustomerNotificationModule, SignupTrackerModule],
   controllers: [JobsController, JobRunNowController],
-  providers: [NoPickupEvaluationJob, SweepMonitoringService, InterviewReplyJob, PlacementCompletionJob, ClaimOverdueJob, FollowUpJob, PatternFlagsJob, JoiningRewardJob, RetentionCleanupJob, KycRecoveryJob, ForgottenLogoutJob, WorkerHeartbeatService, ShortageTasksJob, WinBackJob, NotificationSweepJob, WeeklyReportJob, CustomerPushJob, JobScheduleKeeper, JobQueueLifecycle],
-  exports: [NoPickupEvaluationJob, SweepMonitoringService, PlacementCompletionJob, ClaimOverdueJob, FollowUpJob, PatternFlagsJob, JoiningRewardJob, RetentionCleanupJob, KycRecoveryJob, ForgottenLogoutJob, ShortageTasksJob, WinBackJob, NotificationSweepJob, WeeklyReportJob, CustomerPushJob, JobScheduleKeeper],
+  providers: [NoPickupEvaluationJob, SweepMonitoringService, InterviewReplyJob, PlacementCompletionJob, ClaimOverdueJob, FollowUpJob, PatternFlagsJob, JoiningRewardJob, RetentionCleanupJob, KycRecoveryJob, ForgottenLogoutJob, WorkerHeartbeatService, ShortageTasksJob, WinBackJob, NotificationSweepJob, WeeklyReportJob, CustomerPushJob, SignupTrackerJob, JobScheduleKeeper, JobQueueLifecycle],
+  exports: [NoPickupEvaluationJob, SweepMonitoringService, PlacementCompletionJob, ClaimOverdueJob, FollowUpJob, PatternFlagsJob, JoiningRewardJob, RetentionCleanupJob, KycRecoveryJob, ForgottenLogoutJob, ShortageTasksJob, WinBackJob, NotificationSweepJob, WeeklyReportJob, CustomerPushJob, SignupTrackerJob, JobScheduleKeeper],
 })
 export class JobsModule {}
 

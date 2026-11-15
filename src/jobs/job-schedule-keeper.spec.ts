@@ -22,6 +22,7 @@ import { InterviewReplyJob } from './interview-reply.job';
 import { KycRecoveryJob } from './kyc-recovery.job';
 import { NotificationSweepJob } from './notification-sweep.job';
 import { CustomerPushJob } from './customer-push.job';
+import { SignupTrackerJob } from './signup-tracker.job';
 
 type Fake = { schedule: jest.Mock; scheduleDailyJob: jest.Mock; process: jest.Mock; evaluateNoPickups: jest.Mock };
 
@@ -177,6 +178,7 @@ describe('H3 with a real Redis: a Key Value restart wipes the schedules; the hea
     construct(KycRecoveryJob),
     construct(NotificationSweepJob),
     construct(CustomerPushJob),
+    construct(SignupTrackerJob),
   ];
 
   beforeAll(async () => {

@@ -71,4 +71,6 @@ export const INTERVAL_JOB_MS = {
   notificationSweep: 5 * 60 * 1000,
   /** Customer app pushes (Agent C): what is due, every minute; a "send now" kick makes most go at once. */
   customerPush: 60_000,
+  /** Customer app: unfinished sign-ups (reminders at 30 min and 4 h, call tasks, closing). */
+  signupTracker: 5 * 60 * 1000,
 } as const;

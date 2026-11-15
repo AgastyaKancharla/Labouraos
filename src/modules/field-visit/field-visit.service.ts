@@ -1,3 +1,4 @@
+import { isVerificationVisitPurpose } from '../business/business.constants';
 import {
   BadRequestException,
   ConflictException,
@@ -344,7 +345,7 @@ export class FieldVisitService {
   /** FA06 step 3: the owner's code completes a verification visit (live, never queued). */
   async completeVerification(staffId: string, id: string, body: { ownerOtpRequestId?: string; ownerOtpCode?: string }) {
     const visit = await this.ownVisit(staffId, id);
-    if (visit.purpose !== 'verification' || !visit.assignmentId || !visit.businessId) {
+    if (!isVerificationVisitPurpose(visit.purpose) || !visit.assignmentId || !visit.businessId) {
       throw new BadRequestException('This is not a verification visit');
     }
     if (!visit.boardPhotoHash || !visit.selfieHash) {
@@ -368,7 +369,7 @@ export class FieldVisitService {
       action: 'business.visit_recorded',
       entityType: 'business_visit',
       entityCode: id,
-      after: { businessId: business.id, purpose: 'verification', assignmentId: visit.assignmentId, geofenceFlag: visit.geofenceFlag },
+      after: { businessId: business.id, purpose: visit.purpose, assignmentId: visit.assignmentId, geofenceFlag: visit.geofenceFlag },
       changedFields: ['ownerOtpRequestId', 'assignmentStatus'],
       reason: 'Verification visit completed with GPS, live photos and the owner’s OTP',
       city: business.city,

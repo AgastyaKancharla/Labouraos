@@ -19,6 +19,7 @@ export const ceoSidebar: SidebarConfig = {
         { screen: 'JobSeekers', label: 'nav.jobSeekers', icon: 'jobSeekers' },
         { screen: 'C-Referrals', label: 'nav.referrals', icon: 'referrals' },
         { screen: 'C-Businesses', label: 'nav.businesses', icon: 'businesses' },
+        { screen: 'C-AppSignups', label: 'nav.appSignups', icon: 'pipeline' },
         { screen: 'C-Vacancies', label: 'nav.vacancies', icon: 'vacancies' },
         { screen: 'C-Interviews', label: 'nav.interviews', icon: 'interviews', badge: { tone: 'cyan', source: 'interviews-today' } },
         { screen: 'C-Placements', label: 'nav.placements', icon: 'placements' },
@@ -88,6 +89,7 @@ export const managerSidebar: SidebarConfig = {
       label: 'navSection.work',
       items: [
         { screen: 'MG-Pipeline', label: 'nav.pipeline', icon: 'pipeline' },
+        { screen: 'MG-AppSignups', label: 'nav.appSignups', icon: 'pipeline' },
         { screen: 'MG-CallCenter', label: 'nav.callCenter', icon: 'callCenter', badge: { tone: 'gold', source: 'callbacks-waiting' } },
         { screen: 'MG-FieldOps', label: 'nav.fieldOps', icon: 'fieldOps' },
       ],
@@ -140,6 +142,7 @@ export const teamLeadSidebar: SidebarConfig = {
       label: 'navSection.work',
       items: [
         { screen: 'T-Work', label: 'nav.workList', icon: 'workList' },
+        { screen: 'T-AppSignups', label: 'nav.appSignups', icon: 'pipeline' },
         { screen: 'T-LoginCodes', label: 'nav.loginCodes', icon: 'loginCodes', badge: { tone: 'gold', source: 'login-codes' } },
         { screen: 'T-Flags', label: 'nav.flags', icon: 'flags', badge: { tone: 'tomato', source: 'review-flags' } },
       ],
