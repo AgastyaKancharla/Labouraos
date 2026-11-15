@@ -70,9 +70,9 @@ export class LoginCodeService {
     if (!staff) {
       throw new NotFoundException(`Staff '${staffId}' not found`);
     }
-    if (!(LOGIN_CODE_ROLES as readonly string[]).includes(staff.role)) {
+    if (!LOGIN_CODE_ROLES.includes(staff.role)) {
       throw new BadRequestException(
-        'Login codes are only for a Team Lead, call agent or field agent',
+        'Login codes are only for call agents and field agents',
       );
     }
     const device = await this.prisma.staffDevice.findUnique({ where: { id: staffDeviceId } });
@@ -372,7 +372,7 @@ export class LoginCodeService {
     // A Team Lead: the shared own-team definition (OwnTeam), themselves left out.
     return {
       staffId: { in: (await new OwnTeam(this.prisma).memberIds(approver.id)).filter((id) => id !== approver.id) },
-      staff: { role: { in: ['call_agent', 'field_agent'] } },
+      staff: { role: { in: [...LOGIN_CODE_ROLES] } },
     };
   }
 
@@ -396,7 +396,7 @@ export class LoginCodeService {
     if (approver.id === target.id) {
       throw new ForbiddenException('An approver cannot reveal or refuse their own login code');
     }
-    if (!(LOGIN_CODE_ROLES as readonly string[]).includes(target.role)) {
+    if (!LOGIN_CODE_ROLES.includes(target.role)) {
       throw new ForbiddenException('This account does not use a login code');
     }
     if (approver.role === 'ceo') {
@@ -414,9 +414,6 @@ export class LoginCodeService {
       return;
     }
     if (approver.role === 'team_lead') {
-      if (target.role === 'team_lead') {
-        throw new ForbiddenException("A Team Lead's code is revealed by a Manager or the CEO");
-      }
       const onTeam = await new OwnTeam(this.prisma).includes(approver.id, target.id);
       if (!onTeam) {
         throw new ForbiddenException('A Team Lead can reveal codes only for their own team');

@@ -53,7 +53,8 @@ export class FollowUpHandoverService {
 
   /** Same-role teammates under the same Team Lead, active, not off on any of those days. */
   async teammates(staffId: string, fromDay: string, toDay: string): Promise<HandoverTeammate[]> {
-    const person = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { role: true, teamLeadId: true, reportsToId: true } });
+    const person = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { role: true, teamLeadId: true, reportsToId: true, reportsTo: { select: { role: true } } } });
+    // An owner account under a CEO has no Team Lead, so no teammates to hand over to.
     const lead = person ? teamLeadOf(person) : null;
     if (!person || !lead) return [];
     // The same team as OwnTeam (teamLeadId links and the reporting line).

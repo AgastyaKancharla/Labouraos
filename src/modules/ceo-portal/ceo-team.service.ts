@@ -1,3 +1,4 @@
+import { AUTHENTICATOR_ROLES } from '../../common/auth/sign-in-roles';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { AuditService } from '../../common/audit/audit.service';
@@ -184,7 +185,8 @@ export class CeoTeamService {
         signedInNow: live.filter((s) => online.has(s.id)).length,
         invitesPending: live.filter((s) => s.status === 'pending_invite').length,
         locked: live.filter((s) => staffState(s, now) === 'locked').length,
-        withoutAuthenticator: live.filter((s) => ['ceo', 'manager', 'finance'].includes(s.role) && !s.totpEnabled).length,
+        // CEO, Manager, Finance and Team Lead sign in with their own authenticator (rev 174–175).
+        withoutAuthenticator: live.filter((s) => AUTHENTICATOR_ROLES.includes(s.role) && s.status === 'active' && !s.totpEnabled).length,
       },
       organisation: {
         ceos: live.filter((s) => s.role === 'ceo').map((s) => ({ id: s.id, name: s.name })),
@@ -201,9 +203,18 @@ export class CeoTeamService {
         })),
         finance: live.filter((s) => s.role === 'finance').map((s) => ({ id: s.id, name: s.name })),
       },
+      // A boss can be active or created but not signed in yet ("(not signed in
+      // yet)"), never deactivated (rev 174–175). CEOs are offered for Managers,
+      // Finance and owner agent accounts.
       reportsToOptions: live
-        .filter((s) => ['ceo', 'manager', 'team_lead'].includes(s.role) && s.status === 'active')
-        .map((s) => ({ id: s.id, name: s.name, role: s.role, team: s.role === 'team_lead' ? teamLabel(s) : null })),
+        .filter((s) => ['ceo', 'manager', 'team_lead'].includes(s.role) && (s.status === 'active' || s.status === 'pending_invite'))
+        .map((s) => ({
+          id: s.id,
+          name: s.name,
+          role: s.role,
+          team: s.role === 'team_lead' ? teamLabel(s) : null,
+          notSignedInYet: s.status === 'pending_invite',
+        })),
     };
   }
 
