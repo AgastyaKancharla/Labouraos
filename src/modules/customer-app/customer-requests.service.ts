@@ -243,11 +243,11 @@ export class CustomerRequestsService {
         select: { id: true, status: true, createdAt: true },
       });
       await tx.customerAccount.update({ where: { id: accountId }, data: { status: 'deletion_requested' } });
-      // Other phones are signed out and stop getting notifications; this one stays so the person can see or cancel the request.
-      const others = await tx.customerSession.findMany({ where: { accountId, revokedAt: null, id: { not: sessionId } }, select: { deviceId: true } });
+      // Other phones are signed out; this one stays signed in so the person can see or cancel the request.
       await tx.customerSession.updateMany({ where: { accountId, revokedAt: null, id: { not: sessionId } }, data: { revokedAt: now, endedReason: 'deleted' } });
-      const deviceIds = others.map((o) => o.deviceId).filter((id): id is string => Boolean(id));
-      if (deviceIds.length) await tx.customerDevice.updateMany({ where: { id: { in: deviceIds } }, data: { pushToken: null, pushTokenUpdatedAt: now } });
+      // No phone of an account being deleted keeps a push token, this one included (owner rule;
+      // notification privacy review H2). Cancelling the deletion lets the app save it again.
+      await tx.customerDevice.updateMany({ where: { accountId, pushToken: { not: null } }, data: { pushToken: null, pushTokenUpdatedAt: now } });
       return request;
     });
     await this.audit.log({

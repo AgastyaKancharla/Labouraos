@@ -1,38 +1,17 @@
 /**
- * PLACEHOLDER — owned by Agent C (notifications). Agent C replaces this whole
- * folder (customer/src/push/), including this file. On a merge conflict here,
- * take Agent C's version.
- *
- * The contract the rest of the app relies on (see customer/README.md,
+ * Agent C's part of the Laboura app: push notifications and the inbox.
+ * The rest of the app uses exactly these exports (customer/README.md,
  * "Hand-off to Agent C"):
- *   - `InboxScreen`  default-exported by app/(app)/inbox.tsx — the in-app inbox.
- *   - `PushBridge`   rendered once inside the signed-in layout
- *                    (app/(app)/_layout.tsx). It may ask for notification
- *                    permission, register the push token with the server and
- *                    route taps to screens. It renders nothing visible.
- * Both may use `useCustomerApi()`/`httpClient` from '@/api', `useAuth()` from
- * '@/auth/AuthProvider', `useI18n()` from '@/i18n' and `routes` from
- * '@/navigation/routes'.
+ *   - InboxScreen: default export of app/(app)/inbox.tsx.
+ *   - PushBridge: rendered once in the signed-in layout.
+ * Also available: useUnreadCount (a badge for the bell) and
+ * NotificationSettingsCard (the three switches, shown on the inbox screen;
+ * Settings may show it too).
+ *
+ * Needs `expo-notifications` in customer/package.json and its plugin in
+ * app.config.js (Agent B's files), plus the Firebase google-services.json for
+ * Android push and the EAS project id (extra.eas.projectId).
  */
-import { StyleSheet, View } from 'react-native';
-import { router } from 'expo-router';
-import { AppHeader, EmptyState, Screen } from '@/components';
-import { useI18n } from '@/i18n';
-
-export function InboxScreen() {
-  const { t } = useI18n();
-  return (
-    <View style={styles.flex} testID="inbox-placeholder">
-      <AppHeader title={t('menu.inbox')} onBack={() => router.back()} />
-      <Screen>
-        <EmptyState message={t('inbox.placeholder')} />
-      </Screen>
-    </View>
-  );
-}
-
-export function PushBridge() {
-  return null;
-}
-
-const styles = StyleSheet.create({ flex: { flex: 1 } });
+export { InboxScreen, NotificationSettingsCard, useUnreadCount } from './InboxScreen';
+export { PushBridge } from './PushBridge';
+export { targetFor } from './deepLinks';

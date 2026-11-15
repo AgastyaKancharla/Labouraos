@@ -491,10 +491,14 @@ describe('Customer app API', () => {
       const noOtp = await auth(http().post(`${API}/me/deletion`), session.accessToken).send({ refundLossAcknowledged: true }).expect(403);
       expect(noOtp.body.code).toBe('STEP_UP_REQUIRED');
       await stepUp(session.accessToken, 'delete_account');
+      const phoneRow = await prisma.customerDevice.findFirstOrThrow({ where: { accountId: session.account.id } });
+      await prisma.customerDevice.update({ where: { id: phoneRow.id }, data: { pushToken: `ExponentPushToken[del-${stamp}-${seq}]` } });
       const done = await auth(http().post(`${API}/me/deletion`), session.accessToken).send({ refundLossAcknowledged: true }).expect(201);
       expect(done.body.status).toBe('requested');
       const account = await prisma.customerAccount.findUniqueOrThrow({ where: { id: session.account.id } });
       expect(account.status).toBe('deletion_requested');
+      // No phone of an account being deleted keeps a push token, the requesting one included.
+      expect(await prisma.customerDevice.count({ where: { accountId: session.account.id, pushToken: { not: null } } })).toBe(0);
       const row = await prisma.customerDeletionRequest.findUniqueOrThrow({ where: { id: done.body.id } });
       expect(row).toEqual(expect.objectContaining({ guaranteeRunning: true, refundLossAcknowledged: true }));
       const twice = await auth(http().post(`${API}/me/deletion`), session.accessToken).send({ refundLossAcknowledged: true }).expect(409);

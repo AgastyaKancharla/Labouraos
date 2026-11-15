@@ -1,5 +1,6 @@
 import { OwnTeam, businessesOwnedBy } from '../../common/rbac/own-team';
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { CustomerNotificationHooks } from '../customer-notification/customer-notification-hooks.service';
 import { Prisma, Vacancy } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -58,6 +59,7 @@ export class VacancyConfirmationService {
     private readonly publicLinks: PublicLinkStoreService,
     private readonly messagingService: MessagingService,
     private readonly pricingService: PricingService,
+    @Optional() private readonly customerNotifications?: CustomerNotificationHooks,
   ) {}
 
   /**
@@ -371,6 +373,8 @@ export class VacancyConfirmationService {
       changedFields: ['status', 'confirmedAt', 'confirmationMethod'],
       city: vacancy.city,
     });
+    // Customer app notification (Agent C).
+    await this.customerNotifications?.vacancyConfirmed(vacancy.id);
     return confirmed;
   }
 

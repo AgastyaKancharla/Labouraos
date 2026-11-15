@@ -47,6 +47,7 @@ export const JOB_CATALOG: readonly JobCatalogEntry[] = [
   { key: 'kycRecovery', queue: SHARED_JOB_QUEUE, jobName: 'probe-id-check-recovery', schedulerId: 'kyc-recovery-scheduler', runName: 'probe-id-check-recovery', label: 'ID check recovery', legacyQueue: 'kyc-recovery' },
   { key: 'signupTracker', queue: SHARED_JOB_QUEUE, jobName: 'sweep-signup-tracker', schedulerId: 'signup-tracker-scheduler', runName: 'sweep-signup-tracker', label: 'App sign-ups: reminders, call tasks, closing' },
   { key: 'notificationSweep', queue: SHARED_JOB_QUEUE, jobName: 'sweep-notifications', schedulerId: 'notification-sweep-scheduler', runName: 'sweep-notifications', label: 'Notification bells that change with the clock', legacyQueue: 'notification-sweep' },
+  { key: 'customerPush', queue: SHARED_JOB_QUEUE, jobName: 'send-due-customer-pushes', schedulerId: 'customer-push-scheduler', runName: 'send-due-customer-pushes', label: 'Customer app notifications (push)' },
 ];
 
 /** BullMQ keeps each queue's schedulers in this sorted set (default `bull` prefix). */

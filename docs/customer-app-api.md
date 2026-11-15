@@ -98,6 +98,8 @@ also carry `code: "VALIDATION_FAILED"` and, when known, `field`.
 | `GUARANTEE_WARNING_REQUIRED` | 409 | Deleting while the 30-day guarantee runs, or while a refund is still owed: show the warning (`guaranteeRunning`, `refundOwed`), resend with `refundLossAcknowledged: true` |
 | `BELOW_MINIMUM_WAGE_TICK_REQUIRED` | 409 | Vacancy salary below the legal minimum: show the warning and the tick, resend with `ownerToldMinimumWage: true`. `legalMinimumPaise` included |
 | `SERVICE_LOCKED` | 409 | Service notifications cannot be switched off while a guarantee is running |
+| `MESSAGE_NOT_FOUND` | 404 | Not one of my inbox messages (or no such message) |
+| `PUSH_TOKEN_IN_USE` | 409 | `PUT /me/device`: that push token belongs to a phone signed in to another account (a different app installation) |
 | `DELETION_PENDING` | 409 | A deletion request is open: no new requests, links, drafts or vacancies, and no sign-in on a new phone until it is cancelled |
 | `NOT_IMPLEMENTED` | 501 | Route exists but not built yet on this server |
 | `INSTALLATION_REQUIRED` | 400 | The `X-Laboura-Installation` header is missing |
@@ -726,25 +728,31 @@ recorded with method `in_app`.
 
 | Method and path | Auth | Status |
 | --- | --- | --- |
-| `GET /me/inbox?cursor=&limit=` | 🔒 | C |
-| `POST /me/inbox/:messageId/read` | 🔒 | C |
-| `POST /me/inbox/read-all` | 🔒 | C |
-| `PUT /me/device` | 🔒 | C |
-| `DELETE /me/device/push-token` | 🔒 | C |
-| `GET /me/notification-settings` | 🔒 | C |
-| `PUT /me/notification-settings` | 🔒 | C |
+| `GET /me/inbox?cursor=&limit=` | 🔒 | C (built) |
+| `POST /me/inbox/:messageId/read` | 🔒 | C (built) |
+| `POST /me/inbox/read-all` | 🔒 | C (built) |
+| `PUT /me/device` | 🔒 | C (built) |
+| `DELETE /me/device/push-token` | 🔒 | C (built) |
+| `GET /me/notification-settings` | 🔒 | C (built) |
+| `PUT /me/notification-settings` | 🔒 | C (built) |
 
-`GET /me/inbox` → `{ "items": [Message], "nextCursor": "…" | null, "unreadCount": 3 }`, newest first, `limit` 1 to 50 (default 20).
+`GET /me/inbox` → `{ "items": [Message], "nextCursor": "…" | null, "unreadCount": 3 }`, newest first, `limit` 1 to 50 (default 20). `cursor` is the `nextCursor` of the previous page (opaque).
+The inbox holds account-level messages and messages about profiles that are
+still mine: a profile revoked (number corrected, record anonymised, link
+removed) takes its messages with it, and `unreadCount` counts only what is listed.
 
 ```json
 {
-  "id": "uuid", "profileId": "uuid", "kind": "payment_received", "category": "service", "priority": "normal",
+  "id": "uuid", "profileId": "uuid", "kind": "payment_confirmed", "category": "service", "priority": "normal",
   "title": "…", "body": "…", "deepLink": "/home", "data": {}, "createdAt": "…", "readAt": null
 }
 ```
 
-Wording is in the account's language. Lock-screen text never carries private
-details (proposal 5.4). `read` / `read-all` → `204`.
+Wording is in the account's language (`kn`, `hi`, `en`). Lock-screen text never
+carries private details (proposal 5.4): no business name, address, phone number,
+rupee amount or reason; the app shows those after sign-in. `read` / `read-all` → `204`.
+Someone else's message id (or one that does not exist) answers
+`404 MESSAGE_NOT_FOUND`, the same in both cases.
 
 `PUT /me/device` — called after sign-in and whenever the push token or
 permission changes:
@@ -753,22 +761,120 @@ permission changes:
 { "installationId": "uuid", "platform": "android", "appVersion": "1.0.0", "pushToken": "ExponentPushToken[…]", "pushPermission": "granted" }
 ```
 
-→ `204`. One push token belongs to one account at a time (moving it to this
-account removes it elsewhere). `pushToken: null` or `DELETE /me/device/push-token` stops push to this phone.
+→ `204`. It always saves onto the phone this sign-in belongs to: `installationId`
+may be left out, and if sent it must be that phone's (else `400 VALIDATION_FAILED`,
+`field: "installationId"`); a session with no phone answers `400 INSTALLATION_REQUIRED`.
+`platform`: `android`, `ios`, `web`. `pushPermission`: `granted`,
+`denied`, `undetermined`. `pushToken` must be an Expo push token
+(`ExponentPushToken[…]` or `ExpoPushToken[…]`) or null; anything else is
+`400 VALIDATION_FAILED` with `field`. One push token belongs to one account at a
+time: it moves here from another account only when that was this same app
+installation or that phone is no longer signed in; a token on another account's
+signed-in phone answers `409 PUSH_TOKEN_IN_USE`. An account keeps push tokens on at
+most 5 phones (saving a 6th drops the one seen longest ago). Pushes go only to
+phones with a live sign-in, and never to an account being deleted or blocked (its
+phones' tokens are dropped, the requesting phone's too). `pushToken: null` or
+`DELETE /me/device/push-token` stops push to this phone (the session's phone, or
+the `X-Laboura-Installation` one). Tokens Expo reports as `DeviceNotRegistered`
+(app uninstalled) are removed by the server.
+
+**What a push carries** (`data` of the notification): `messageId`, `kind`,
+`category`, `deepLink`, `profileId` (never the server's internal keys). A referral
+push says "Someone you referred …" on the lock screen; the first name is only in
+the inbox copy. The app opens `deepLink` (only `/home`,
+`/inbox`, `/settings`, `/help`; anything else opens the inbox), switches to
+`profileId` if it is one of mine, and marks `messageId` read. Android channels:
+`service`, `job-updates`, `promotions`.
 
 `GET /me/notification-settings` →
 `{ "service": true, "jobUpdates": false, "promotions": false, "quietStart": "21:00", "quietEnd": "09:00", "dailyCap": 3, "serviceLocked": true }`.
-`PUT` `{ "service": true, "jobUpdates": true, "promotions": false }` → same shape.
-`service: false` while a guarantee is running → `409 SERVICE_LOCKED`. Quiet
-hours and the daily cap are fixed in v1 (9 PM to 9 AM, 3 non-urgent a day). C
-keeps the job seeker's `job_updates` and `promotions` consent rows in step with
-the switches.
+`PUT` `{ "service": true, "jobUpdates": true, "promotions": false }` (any of the three) → same shape.
+`service: false` while a guarantee is running (a job seeker's 30 days, or a
+business placement that is confirmed or active) → `409 SERVICE_LOCKED`. A value
+that is not `true`/`false` → `400 VALIDATION_FAILED`. Quiet hours and the daily
+cap are fixed in v1 (9 PM to 9 AM IST, 3 non-urgent pushes a day). The switches
+start from the consents already given (job seeker `job_updates`, `promotions`).
 
-Server side (C): `src/modules/customer-notification/` exports a service the
-other modules call, e.g. `notify({ accountId, profileId?, kind, category, priority, vars, dedupeKey })`.
-It writes `CustomerInboxMessage`, a `MessageLog` row with channel `push` or
-`in_app`, and queues the push. **A push or in-app message is never a contact
-attempt** and never counts toward a hit (C17).
+Consent rows (Q22): **promotions** is kept in step both ways (on = granted with
+method `in_app` for every record the account acts for; off = withdrawn).
+**Job updates on** grants the job seeker's `job_updates` consent if it is not
+given. **Job updates off only stops app job alerts**: `job_updates` is one of the
+consents given at registration, and the guide lets it be withdrawn only on an
+answered, recorded call with an agent, so the app never withdraws it (change from
+the earlier line "C keeps the job_updates consent in step", made in this PR).
+
+### 9.1 Server side: `notify` (for other modules)
+
+`src/modules/customer-notification/` exports `CustomerNotificationService`:
+
+```ts
+notify(target, kind, vars?, { urgent?, promotional?, selfAction?, dedupeKey?, data? })
+notifySafely(...)   // same, never throws (for calls from other services)
+```
+
+- `target`: `{ accountId, profileId? }`, `{ jobSeekerId }`, `{ referralId }` or
+  `{ businessId, branchId? }` (without `branchId`: owner-level people only; with
+  it: those plus that branch's managers). Money events (`fee_paid`,
+  `refund_approved`, `refund_paid`) reach business owners with no branch limit
+  only. A record with no app account gets nothing, and neither does a profile
+  that is no longer the account's (`CustomerScopeService.stillMine`: number
+  corrected or record anonymised).
+- `kind`: one of the events below; `vars` fills its placeholders (a missing one throws).
+- It writes the `CustomerInboxMessage` (in the account's language), a `MessageLog`
+  row (channel `push`, or `in_app` when there is no push; `subjectType`
+  `customer_account`, `relatedType`/`relatedId` = the record), and leaves the push
+  to the background worker (`src/jobs/customer-push.job.ts`, every minute plus a
+  "send now" kick). **A push or in-app message is never a contact attempt** and
+  never counts toward a hit (C17): no `ContactAttempt` is written and the log's
+  subject is never the job seeker.
+- Rules: quiet hours 9 PM to 9 AM IST: everything waits until 9 AM, urgent
+  pushes included, except sign-in codes (SMS, never through here) and
+  `selfAction` receipts for something the person just did, which go at once
+  (Q21). `selfAction: true` is honoured only for receipt events and only when the
+  event reaches exactly one account; the payment hooks pass it only for a card
+  payment the gateway confirmed (a credit matched by the bank feed or Finance
+  waits for 9 AM). At most 3 non-urgent pushes a day per account (urgent ones and
+  receipts never count, also when they go out at 9 AM; counted under a
+  per-account database lock, so two rounds at once cannot exceed it); over the
+  cap the message stays in the inbox without a push. Service off = inbox only,
+  except while a guarantee runs (Service is on then, even if it was switched off
+  before). `job_updates` and `promotions` events (or `promotional: true`) only with
+  the switch on **and** the matching consent for every record the message is
+  about, whatever its kind (an account with no record gets none). The worker
+  checks the account, the profile, the switch and the consent again before
+  sending; a message whose profile or consent is gone is cancelled (not pushed,
+  not listed).
+- `CustomerNotificationHooks` turns existing events into notifications (payment
+  confirmed, fee paid, refund/payout/reward approved and paid, offer, visit
+  booked, business approved, vacancy confirmed).
+
+Events (`kind`, placeholders, category; all `service` unless said):
+
+| kind | for | placeholders | notes |
+| --- | --- | --- | --- |
+| `signup_reminder` | all | `stepsLeft` | sent by the sign-up tracker (D) |
+| `id_check_approved`, `id_check_retry` | job seeker, partner | | |
+| `payment_confirmed` | job seeker | `days` | receipt (card payment: at once, not capped) |
+| `fee_paid` | business | | receipt; owners only |
+| `job_match` | job seeker | | `job_updates` |
+| `interview_booked` | job seeker | `hours` | urgent |
+| `interview_reminder_tomorrow`, `interview_reminder_soon` | job seeker, business | | |
+| `offer_check` | job seeker | | "Did they offer you?" |
+| `joining_confirmed`, `joining_moved`, `joining_day_check` | job seeker, business | | |
+| `hit_recorded` | job seeker | | |
+| `guarantee_countdown` | job seeker, business | `daysLeft` | |
+| `refund_approved`, `refund_paid` | job seeker, business | | business: owners only |
+| `reward_approved`, `reward_paid` | job seeker | | ₹200 joining reward |
+| `visit_booked` | business | `agentFirstName`, `when` | |
+| `business_approved` | business | | |
+| `vacancy_confirmed` | business | `vacancyCode` | |
+| `candidates_shared` | business | | |
+| `interview_result_due` | business | | |
+| `selected_pay_fee` | business | `hours` | urgent |
+| `claim_decided`, `replacement_found` | business | | |
+| `referral_registered`, `referral_paid`, `referral_joined` | partner | `firstName` | first name in the inbox only; the push says "Someone you referred" |
+| `payout_approved`, `payout_paid` | partner | | |
+| `promotion` | all | | `promotions` |
 
 ---
 
@@ -908,6 +1014,8 @@ tracker assignee and their team) for app sign-ups.
 | `CUSTOMER_JWT_SECRET` | render.yaml (generated) | Key for customer tokens, 32+ characters, different from `JWT_SECRET`. If unset (local, tests), one is derived from `JWT_SECRET` |
 | `GOOGLE_CLIENT_ID_ANDROID`, `GOOGLE_CLIENT_ID_IOS`, `GOOGLE_CLIENT_ID_WEB` | render.yaml, `sync: false` | OAuth client ids from the Firebase / Google Cloud project. None set: Google sign-in is off |
 | `CUSTOMER_ACCESS_TOKEN_MINUTES` | optional | Access token life, 1 to 60, default 15 |
+| `CUSTOMER_PUSH_PROVIDER_MODE` | render.yaml (web and worker), render.free.yaml | `mock` (default: logs instead of sending) or `real` (Expo's push service) |
+| `EXPO_ACCESS_TOKEN` | render.yaml, `sync: false` (worker copies it) | Optional: only if "enhanced push security" is on in the Expo account |
 
 ---
 
