@@ -69,7 +69,24 @@ describe('FA01b set your password (first login with the temporary password)', ()
     expect(router.replace).toHaveBeenCalledWith('/login');
   });
 
-  it('asks for the selfie first when no staff photo is on file, and says when the set-up has ended', async () => {
+  it('asks for the selfie first when no staff photo is on file, with no way past it', async () => {
+    await renderWithApp(
+      <>
+        <LoginScreen />
+        <SetupScreen />
+      </>,
+      { route: (url) => (url.endsWith('/auth/login') ? { status: 200, body: { ...setupRequired, photoRequired: true } } : undefined) },
+    );
+    await fireEvent.changeText(screen.getByTestId('staff-code'), 'FA-00017');
+    await fireEvent.changeText(screen.getByTestId('password'), 'K7M4-Q2PX');
+    await fireEvent.press(screen.getByTestId('sign-in'));
+    await waitFor(() => screen.getByTestId('setup-photo-open'));
+    // The server refuses the new password before the selfie, so there is no "later".
+    expect(screen.queryByTestId('setup-photo-later')).toBeNull();
+    expect(screen.queryByTestId('setup-password')).toBeNull();
+  });
+
+  it('says when the set-up has ended', async () => {
     await renderWithApp(
       <>
         <LoginScreen />
@@ -77,7 +94,7 @@ describe('FA01b set your password (first login with the temporary password)', ()
       </>,
       {
         route: (url) => {
-          if (url.endsWith('/auth/login')) return { status: 200, body: { ...setupRequired, photoRequired: true } };
+          if (url.endsWith('/auth/login')) return { status: 200, body: { ...setupRequired, photoRequired: false } };
           if (url.endsWith('/auth/setup/complete')) return { status: 401, body: { message: 'This set-up has ended.' } };
           return undefined;
         },
@@ -86,8 +103,7 @@ describe('FA01b set your password (first login with the temporary password)', ()
     await fireEvent.changeText(screen.getByTestId('staff-code'), 'FA-00017');
     await fireEvent.changeText(screen.getByTestId('password'), 'K7M4-Q2PX');
     await fireEvent.press(screen.getByTestId('sign-in'));
-    await waitFor(() => screen.getByTestId('setup-photo-open'));
-    await fireEvent.press(screen.getByTestId('setup-photo-later'));
+    await waitFor(() => screen.getByTestId('setup-password'));
     await fireEvent.changeText(screen.getByTestId('setup-password'), 'my-own-pass');
     await fireEvent.changeText(screen.getByTestId('setup-confirm'), 'my-own-pass');
     await fireEvent.press(screen.getByTestId('setup-finish'));

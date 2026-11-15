@@ -144,6 +144,17 @@ describe('Staff sign in', () => {
     });
   });
 
+  it('Owner agent account that reports to a CEO: the code step says to ask a CEO, not a Team Lead', async () => {
+    mockApi({
+      'POST /auth/login': { status: 'awaiting_code', loginRequestId: 'lr-9', loginRequestProof: 'proof-9', expiresAt: new Date(Date.now() + 300_000).toISOString(), codeFrom: 'ceo' },
+    });
+    renderSignIn();
+    await enterPassword('CA-0099');
+    expect(await screen.findByRole('heading', { name: 'Ask a CEO for your code' })).toBeInTheDocument();
+    expect(screen.getByText(/A CEO now sees your request/)).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Ask your Team Lead for your code' })).toBeNull();
+  });
+
   it('Team Lead: password, then their own authenticator code — no login code (rev 174–175)', async () => {
     const api = mockApi({
       'POST /auth/login': ({ body }: { body: { totpCode?: string } }) =>

@@ -8,6 +8,7 @@ import { applyTrustProxy } from '../../common/http/trust-proxy';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 import { TEMP_PASSWORD_TTL_MS } from '../../common/auth/temporary-password';
 import { loginCodeFor } from '../login-code/login-code.crypto';
+import { takeSetupSelfie } from '../../test-support/setup-selfie';
 
 const TEMP_FORMAT = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/;
 
@@ -229,6 +230,7 @@ describe('Phase 6.6 Task 3 (rev 174–175): Reset sign-in completely and reactiv
         .send({ staffCode: hire.code, password: reissueRes.body.tempPassword, deviceId: `test-device-${hire.id}` });
       expect(setup.status).toBe(200);
       expect(setup.body.status).toBe('setup_required');
+      await takeSetupSelfie(app, setup.body, `test-device-${hire.id}`);
       const newPassword = 'New-Secret-Password-123';
       const done = await request(app.getHttpServer())
         .post('/auth/setup/complete')
@@ -399,6 +401,7 @@ describe('Phase 6.6 Task 3 (rev 174–175): Reset sign-in completely and reactiv
         .set('X-Forwarded-For', freshIp())
         .send({ staffCode: hire.code, password: reactivateRes.body.tempPassword, deviceId: `test-device-${hire.id}` });
       expect(setup.body.status).toBe('setup_required');
+      await takeSetupSelfie(app, setup.body, `test-device-${hire.id}`);
       const freshPassword = 'Fresh-Password-After-Reactivation-456';
       await request(app.getHttpServer())
         .post('/auth/setup/complete')

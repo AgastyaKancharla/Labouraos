@@ -13,6 +13,7 @@ import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { StaffService } from './staff.service';
 import { TEMP_PASSWORD_TTL_MS, normaliseTemporaryPassword } from '../../common/auth/temporary-password';
 import { TEMP_PASSWORD_EXPIRED } from '../../common/auth/auth.service';
+import { takeSetupSelfie } from '../../test-support/setup-selfie';
 
 const TEMP_FORMAT = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/;
 
@@ -101,10 +102,13 @@ describe('Phase 8 Task 9: Staff account management', () => {
 
   /** First login (rev 174–175): staff code + temporary password → set-up ticket → the new password. */
   async function startSetup(h: { code: string; tempPassword: string }) {
-    return request(app.getHttpServer())
+    const start = await request(app.getHttpServer())
       .post('/auth/login')
       .set('X-Forwarded-For', freshIp())
       .send({ staffCode: h.code, password: h.tempPassword, deviceId: `setup-${h.code}` });
+    // The live selfie comes first whenever none is on file.
+    if (start.body?.status === 'setup_required') await takeSetupSelfie(app, start.body, `setup-${h.code}`);
+    return start;
   }
   async function accept(h: { code: string; tempPassword: string }, password = goodPassword) {
     const start = await startSetup(h);

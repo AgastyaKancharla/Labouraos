@@ -18,7 +18,7 @@ import { ActionButton } from '../ceo/_kit/actions';
  * Staff accounts kit (Master Guide rev 174–175), shared by the CEO, Manager
  * and Team Lead screens:
  *   S1  the temporary password box (staff code + temporary password, shown
- *       once, expiry, Copy, Share on WhatsApp);
+ *       once, expiry, Copy; Share on WhatsApp for agents only);
  *   S2  "New temporary password" and "Reset sign-in completely";
  *   S6  the red PASSWORD RESET cards on the code screens (Reveal / Refuse);
  *   S7  the password reset history.
@@ -41,6 +41,14 @@ const roleWords: Record<string, string> = {
 };
 const roleWord = (role: string) => roleWords[role] ?? role;
 
+/**
+ * Only call agent and field agent accounts get the WhatsApp share: they still
+ * need an approved device and a login code from a senior. For the CEO, a
+ * Manager, Finance or a Team Lead the temporary password is read out on a
+ * call (it must never sit in a link or a chat).
+ */
+export const WHATSAPP_SHARE_ROLES = ['call_agent', 'field_agent'];
+
 /** The WhatsApp message with the staff code and temporary password (wa.me opens the share sheet). */
 export function whatsappShareLink(text: string): string {
   return `https://wa.me/?text=${encodeURIComponent(text)}`;
@@ -51,6 +59,7 @@ export function TempPasswordModal({ result, onClose }: { result: TempPasswordRes
   const t = useT();
   const toast = useToast();
   const message = result ? t('access.temp.message', { code: result.staff.code, password: result.tempPassword }) : '';
+  const shareable = Boolean(result && WHATSAPP_SHARE_ROLES.includes(result.staff.role));
   return (
     <Modal
       open={Boolean(result)}
@@ -66,9 +75,11 @@ export function TempPasswordModal({ result, onClose }: { result: TempPasswordRes
           >
             {t('access.temp.copy')}
           </Button>
-          <a className="btn" href={whatsappShareLink(message)} target="_blank" rel="noreferrer noopener" data-testid="temp-password-whatsapp">
-            {t('access.temp.whatsapp')}
-          </a>
+          {shareable && (
+            <a className="btn" href={whatsappShareLink(message)} target="_blank" rel="noreferrer noopener" data-testid="temp-password-whatsapp">
+              {t('access.temp.whatsapp')}
+            </a>
+          )}
           <Button variant="primary" onClick={onClose}>
             {t('access.temp.done')}
           </Button>
@@ -88,6 +99,11 @@ export function TempPasswordModal({ result, onClose }: { result: TempPasswordRes
           <p className="ceo-sub" style={{ margin: 0 }}>
             <strong>{t('access.temp.once')}</strong> {t('access.temp.expires', { time: formatDateTimeIST(result.tempPasswordExpiresAt) })}
           </p>
+          {!shareable && (
+            <p className="lb-notice" style={{ margin: 0 }} data-testid="temp-password-read-out">
+              {t('access.temp.readOut')}
+            </p>
+          )}
         </div>
       )}
     </Modal>

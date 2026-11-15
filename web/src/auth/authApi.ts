@@ -69,6 +69,8 @@ export interface AwaitingCodeResponse {
   /** Sent back with the code: only this sign-in has it. */
   loginRequestProof: string;
   expiresAt: string;
+  /** Who reads the code out: the Team Lead, or a CEO for an owner account that reports to a CEO. */
+  codeFrom?: 'team_lead' | 'ceo';
 }
 
 export type LoginResponse = TokenResponse | AwaitingCodeResponse | SetupRequiredResponse;

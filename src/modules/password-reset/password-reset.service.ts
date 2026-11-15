@@ -6,8 +6,7 @@ import {
   Optional,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
-import { randomUUID } from 'node:crypto';
+import { Prisma, Staff } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { AuthClock, AuthService, TOTP_REUSED } from '../../common/auth/auth.service';
@@ -22,7 +21,8 @@ import { loginCodesMatch } from '../login-code/login-code.crypto';
 import { ReportingScopeService } from '../staff/reporting-scope.service';
 import { StaffPhotoService } from '../staff/staff-photo.service';
 import { ResetAftermathService } from '../staff/reset-aftermath.service';
-import { resetCodeFor, resetRequestProofFor } from './password-reset.crypto';
+import { ownOwnerAccount } from '../../common/rbac/own-owner-account';
+import { resetCodeFor, resetRequestProofFor, standInResetRequestId } from './password-reset.crypto';
 
 /** A request (and, once revealed, its code) lives this long: the code works for 15 minutes after the reveal. */
 export const RESET_REQUEST_TTL_MS = 15 * 60 * 1000;
@@ -30,6 +30,14 @@ export const RESET_REQUEST_TTL_MS = 15 * 60 * 1000;
 export const RESET_WRONG_TRIES = 5;
 /** Requests per staff code per hour; more are answered the same way and do nothing. */
 export const RESET_REQUESTS_PER_HOUR = 3;
+
+/** Stand-in answers kept in memory at most (oldest dropped first). */
+const STAND_IN_LIMIT = 5000;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The one answer for a wrong reset code, one not given yet, or a request that does not exist. */
+export const RESET_CODE_INVALID = 'The reset code is not right, or your senior has not given it yet.';
 
 /** The one answer to "Forgot password", whether or not the staff code exists. */
 export const RESET_REQUESTED_MESSAGE =
@@ -72,7 +80,9 @@ const staffCard = {
   role: true,
   teamLeadId: true,
   reportsToId: true,
+  isOwnerAccount: true,
 } as const;
+
 
 /**
  * "Forgot password" (Master Guide rev 174–175, rules 7, 8 and 10).
@@ -110,9 +120,14 @@ export class PasswordResetService {
   /**
    * Always the same answer, whether the staff code exists or not: a request
    * id, its proof and when it ends. Nothing is made for an unknown, inactive
-   * or limited account (the id then leads nowhere). One open request per
-   * account (asking again from the same device gives the same one), at most
-   * 3 an hour per staff code; the IP limit is on the route.
+   * or limited account: the id is a stand-in worked out from the staff code,
+   * device and time, so asking again gives the same id and end time, as a
+   * real open request does, and about the same work is done. One open request
+   * per account (asking again from the same device gives the same one); a
+   * request from an approved device of that person replaces one from an
+   * unknown device (a stranger cannot block the real person); at most 3 an
+   * hour per staff code (from an approved device only its own requests
+   * count); the IP limit is on the route.
    */
   async request(rawStaffCode: unknown, rawDeviceId: unknown, app: StaffApp | null, ip: string | null): Promise<ResetRequestAnswer> {
     const staffCode = text(rawStaffCode).trim();
@@ -128,55 +143,100 @@ export class PasswordResetService {
       resetRequestProof: resetRequestProofFor(id, deviceId),
       expiresAt,
     });
-    const nothing = () => answer(randomUUID(), new Date(now.getTime() + RESET_REQUEST_TTL_MS));
+    const nothing = () => {
+      const standIn = this.standIn(staffCode, deviceId, now);
+      return answer(standIn.id, standIn.expiresAt);
+    };
+    const ignored = async (staff: { id: string; code: string } | null, reason: string, extra: Record<string, unknown> = {}) => {
+      await this.audit.log({
+        actorId: staff?.id ?? 'login',
+        action: 'password_reset.request_ignored',
+        entityType: 'staff',
+        entityCode: staff?.code ?? 'unknown',
+        after: { reason, ...extra, deviceId, ip },
+      });
+      return nothing();
+    };
 
     const staff = await this.prisma.staff.findFirst({
       where: { code: { equals: staffCode, mode: 'insensitive' } },
       select: { id: true, code: true, role: true, status: true },
     });
     if (!staff || staff.status !== 'active') {
-      await this.audit.log({ actorId: staff?.id ?? 'login', action: 'password_reset.request_ignored', entityType: 'staff', entityCode: staff?.code ?? 'unknown', after: { reason: staff ? 'account_not_active' : 'unknown_staff_code', deviceId, ip } });
-      return nothing();
+      await this.comparableWork(deviceId);
+      return ignored(staff, staff ? 'account_not_active' : 'unknown_staff_code');
     }
     noteRequestDevice({ staffId: staff.id, deviceId });
     // Each app takes only its own roles: nothing reaches a senior from the wrong app.
     if (app && !roleAllowedInApp(staff.role, app)) {
-      await this.audit.log({ actorId: staff.id, action: 'password_reset.request_ignored', entityType: 'staff', entityCode: staff.code, after: { reason: 'wrong_app', app, deviceId, ip } });
-      return nothing();
+      await this.comparableWork(deviceId);
+      return ignored(staff, 'wrong_app', { app });
     }
     await this.expireOld({ staffId: staff.id });
-    const open = await this.prisma.passwordResetRequest.findFirst({
-      where: { staffId: staff.id, status: { in: OPEN } },
-      orderBy: { createdAt: 'desc' },
-    });
-    if (open) {
-      if (open.deviceId === deviceId) return answer(open.id, open.expiresAt);
-      await this.audit.log({ actorId: staff.id, action: 'password_reset.request_ignored', entityType: 'staff', entityCode: staff.code, after: { reason: 'open_request', openRequestId: open.id, deviceId, ip } });
-      return nothing();
-    }
-    const lastHour = await this.prisma.passwordResetRequest.count({
-      where: { staffId: staff.id, createdAt: { gt: new Date(now.getTime() - 60 * 60 * 1000) } },
-    });
-    if (lastHour >= RESET_REQUESTS_PER_HOUR) {
-      await this.audit.log({ actorId: staff.id, action: 'password_reset.request_ignored', entityType: 'staff', entityCode: staff.code, after: { reason: 'hourly_limit', lastHour, deviceId, ip } });
-      return nothing();
-    }
     const known = await this.prisma.staffDevice.findUnique({
       where: { staffId_deviceId: { staffId: staff.id, deviceId } },
       select: { status: true },
     });
-    const row = await this.prisma.passwordResetRequest.create({
-      data: {
+    const approvedDevice = known?.status === 'approved';
+    const open = await this.prisma.passwordResetRequest.findFirst({
+      where: { staffId: staff.id, status: { in: OPEN } },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (open && open.deviceId === deviceId) return answer(open.id, open.expiresAt);
+    if (open && !(approvedDevice && !open.knownDevice)) {
+      return ignored(staff, 'open_request', { openRequestId: open.id });
+    }
+    const lastHour = await this.prisma.passwordResetRequest.count({
+      where: {
         staffId: staff.id,
-        deviceId,
-        knownDevice: known?.status === 'approved',
-        app,
-        ipAddress: ip,
-        status: 'pending',
-        createdAt: now,
-        expiresAt: new Date(now.getTime() + RESET_REQUEST_TTL_MS),
+        createdAt: { gt: new Date(now.getTime() - 60 * 60 * 1000) },
+        // From an approved device, requests from unknown devices never use up the person's own tries.
+        ...(approvedDevice ? { knownDevice: true } : {}),
       },
     });
+    if (lastHour >= RESET_REQUESTS_PER_HOUR) {
+      return ignored(staff, 'hourly_limit', { lastHour });
+    }
+    if (open) {
+      // The person's own approved device replaces a request from an unknown device.
+      const replaced = await this.prisma.passwordResetRequest.updateMany({
+        where: { id: open.id, status: { in: OPEN }, knownDevice: false },
+        data: { status: 'cancelled' },
+      });
+      if (replaced.count === 1) {
+        await this.audit.log({
+          actorId: staff.id,
+          action: 'password_reset.replaced',
+          entityType: 'password_reset_request',
+          entityCode: open.id,
+          after: { status: 'cancelled', reason: 'replaced_by_approved_device', openDeviceId: open.deviceId, deviceId, ip },
+        });
+      }
+    }
+    let row;
+    try {
+      row = await this.prisma.passwordResetRequest.create({
+        data: {
+          staffId: staff.id,
+          deviceId,
+          knownDevice: approvedDevice,
+          app,
+          ipAddress: ip,
+          status: 'pending',
+          createdAt: now,
+          expiresAt: new Date(now.getTime() + RESET_REQUEST_TTL_MS),
+        },
+      });
+    } catch (error) {
+      // Two requests at once: the database keeps one open request per account.
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') throw error;
+      const winner = await this.prisma.passwordResetRequest.findFirst({
+        where: { staffId: staff.id, status: { in: OPEN } },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (winner && winner.deviceId === deviceId) return answer(winner.id, winner.expiresAt);
+      return ignored(staff, 'open_request', { openRequestId: winner?.id ?? null });
+    }
     await this.audit.log({
       actorId: staff.id,
       action: 'password_reset.requested',
@@ -187,6 +247,36 @@ export class PasswordResetService {
     return answer(row.id, row.expiresAt);
   }
 
+  /** Stand-in answers handed out recently: the same id and end time while it lasts, as for a real request. */
+  private readonly standIns = new Map<string, { id: string; expiresAt: Date }>();
+
+  private standIn(staffCode: string, deviceId: string, now: Date): { id: string; expiresAt: Date } {
+    const key = `${staffCode.toUpperCase()}\u0000${deviceId}`;
+    const kept = this.standIns.get(key);
+    if (kept && kept.expiresAt.getTime() > now.getTime()) return kept;
+    for (const [k, v] of this.standIns) {
+      if (v.expiresAt.getTime() <= now.getTime() || this.standIns.size >= STAND_IN_LIMIT) this.standIns.delete(k);
+      else break;
+    }
+    const windowStart = Math.floor(now.getTime() / RESET_REQUEST_TTL_MS) * RESET_REQUEST_TTL_MS;
+    const made = { id: standInResetRequestId(staffCode, deviceId, windowStart), expiresAt: new Date(now.getTime() + RESET_REQUEST_TTL_MS) };
+    this.standIns.delete(key);
+    this.standIns.set(key, made);
+    return made;
+  }
+
+  /** About the same database work as a real request, so the answer time says nothing either. */
+  private async comparableWork(deviceId: string): Promise<void> {
+    const nobody = '00000000-0000-4000-8000-000000000000';
+    await this.prisma.passwordResetRequest.updateMany({
+      where: { staffId: nobody, status: { in: OPEN }, expiresAt: { lte: this.clock.now() } },
+      data: { status: 'expired' },
+    });
+    await this.prisma.staffDevice.findFirst({ where: { staffId: nobody, deviceId }, select: { status: true } });
+    await this.prisma.passwordResetRequest.findFirst({ where: { staffId: nobody, status: { in: OPEN } } });
+    await this.prisma.passwordResetRequest.count({ where: { staffId: nobody, createdAt: { gt: new Date(this.clock.now().getTime() - 60 * 60 * 1000) } } });
+  }
+
   /** The reset code + a new password (+ an authenticator code for authenticator roles). */
   async complete(input: ResetCompleteInput, app: StaffApp | null, ip: string | null): Promise<{ success: true; code: string; signInAt: 'field_app' | 'web' }> {
     const id = text(input?.resetRequestId).trim();
@@ -194,22 +284,30 @@ export class PasswordResetService {
     const proof = text(input?.resetRequestProof);
     const code = text(input?.code).trim();
     const password = text(input?.newPassword);
-    const invalid = () => new UnauthorizedException({ message: 'Reset code is not valid', reason: 'code_invalid' });
+    // One answer for an unknown request, a code not given yet and a wrong code.
+    const invalid = () => new UnauthorizedException({ message: RESET_CODE_INVALID, reason: 'code_invalid' });
+    const otherDevice = () => new UnauthorizedException({ message: 'This reset code can only be used on the device that asked for it', reason: 'other_device' });
     const problem = passwordRuleProblem(password);
     if (problem) throw new BadRequestException({ message: problem, reason: 'password_rules' });
     if (input?.confirmPassword !== undefined && text(input.confirmPassword) !== password) {
       throw new BadRequestException({ message: 'The two passwords are not the same.', reason: 'password_mismatch' });
     }
     if (!id || !code) throw invalid();
-    const request = await this.prisma.passwordResetRequest.findUnique({ where: { id }, include: { staff: true } });
-    if (!request) throw invalid();
+    const request = UUID.test(id) ? await this.prisma.passwordResetRequest.findUnique({ where: { id }, include: { staff: true } }) : null;
+    if (!request) {
+      // A stand-in id answers like a real one that is not given yet: the same checks, the same work.
+      const proofRight = Boolean(deviceId) && loginCodesMatch(proof, resetRequestProofFor(id, deviceId));
+      loginCodesMatch(code, resetCodeFor(id));
+      if (!proofRight) throw otherDevice();
+      throw invalid();
+    }
     noteRequestDevice({ staffId: request.staffId, deviceId: deviceId || null });
 
     // Only the device and sign-in page that asked; a mismatch never uses up a try.
     const sameDevice = Boolean(deviceId) && deviceId === request.deviceId;
     if (!sameDevice || !loginCodesMatch(proof, resetRequestProofFor(request.id, request.deviceId))) {
       await this.audit.log({ actorId: request.staffId, action: 'password_reset.refused', entityType: 'password_reset_request', entityCode: request.id, after: { reason: sameDevice ? 'other_sign_in' : 'other_device', deviceId, ip } });
-      throw new UnauthorizedException({ message: 'This reset code can only be used on the device that asked for it', reason: 'other_device' });
+      throw otherDevice();
     }
     if (app && request.app && app !== request.app) {
       throw new UnauthorizedException({ message: 'This reset code can only be used in the app that asked for it', reason: 'other_app' });
@@ -220,7 +318,9 @@ export class PasswordResetService {
       throw new UnauthorizedException({ message: 'Reset code has expired. Ask again from the login page.', reason: 'expired' });
     }
     if (request.status === 'pending') {
-      throw new UnauthorizedException({ message: 'Your senior has not given the reset code yet', reason: 'not_revealed' });
+      // Not given yet: the same answer as a wrong code (no try used).
+      loginCodesMatch(code, resetCodeFor(request.id));
+      throw invalid();
     }
     if (request.status !== 'revealed') {
       const reason = request.status === 'used' ? 'used' : request.status === 'refused' ? 'refused' : 'expired';
@@ -229,30 +329,39 @@ export class PasswordResetService {
         reason,
       });
     }
-    if (!loginCodesMatch(code, resetCodeFor(request.id))) {
-      const bumped = await this.prisma.passwordResetRequest.update({
-        where: { id: request.id },
-        data: { failedAttempts: { increment: 1 } },
-        select: { failedAttempts: true },
-      });
-      const dead = bumped.failedAttempts >= RESET_WRONG_TRIES;
-      if (dead) {
-        await this.prisma.passwordResetRequest.updateMany({
-          where: { id: request.id, status: { in: OPEN } },
-          data: { status: 'refused', refusedReason: 'too_many_wrong_codes', refusedAt: now },
-        });
-      }
-      await this.audit.log({ actorId: request.staffId, action: 'password_reset.wrong_code', entityType: 'password_reset_request', entityCode: request.id, after: { attempt: bumped.failedAttempts, ended: dead, deviceId, ip } });
+    // Take a try BEFORE comparing (never more than 5, however many arrive at once); a right code gives it back.
+    const tookTry = await this.prisma.passwordResetRequest.updateMany({
+      where: { id: request.id, status: 'revealed', failedAttempts: { lt: RESET_WRONG_TRIES } },
+      data: { failedAttempts: { increment: 1 } },
+    });
+    if (tookTry.count !== 1) {
+      await this.endRequest(request.id, 'too_many_wrong_codes', now);
       throw invalid();
     }
+    if (!loginCodesMatch(code, resetCodeFor(request.id))) {
+      const after = await this.prisma.passwordResetRequest.findUnique({ where: { id: request.id }, select: { failedAttempts: true } });
+      const attempt = after?.failedAttempts ?? RESET_WRONG_TRIES;
+      const dead = attempt >= RESET_WRONG_TRIES;
+      if (dead) await this.endRequest(request.id, 'too_many_wrong_codes', now);
+      await this.audit.log({ actorId: request.staffId, action: 'password_reset.wrong_code', entityType: 'password_reset_request', entityCode: request.id, after: { attempt, ended: dead, deviceId, ip } });
+      throw invalid();
+    }
+    await this.prisma.passwordResetRequest.updateMany({
+      where: { id: request.id, failedAttempts: { gt: 0 } },
+      data: { failedAttempts: { decrement: 1 } },
+    });
 
     const staff = request.staff;
     if (staff.status !== 'active') {
       throw new UnauthorizedException({ message: 'Account is not active', reason: 'account_not_active' });
     }
-    // A lock a senior placed stays (a wrong-try lock ends with the new password).
-    if (staff.lockedByStaffId) {
-      throw new UnauthorizedException({ message: 'Account is locked until a Team Lead, Manager or the CEO unlocks it', reason: 'locked' });
+    // Locked (a senior's lock, or wrong passwords / authenticator codes): the
+    // request ends with the lock, so authenticator guessing cannot carry on.
+    try {
+      await this.auth.assertNotLocked(staff);
+    } catch (locked) {
+      await this.endRequest(request.id, 'account_locked', now);
+      throw new UnauthorizedException({ message: (locked as Error).message, reason: 'locked' });
     }
     const signInApp = (request.app as StaffApp | null) ?? app;
     if (signInApp && !roleAllowedInApp(staff.role, signInApp)) {
@@ -272,12 +381,10 @@ export class PasswordResetService {
       }
       const step = this.totp.verifyStep(totpCode, staff.totpSecret);
       if (step === null) {
-        await this.auth.countWrongSecondFactor(staff, 'totp_invalid');
-        throw new UnauthorizedException({ message: 'The authenticator code is not right', reason: 'totp_invalid' });
+        await this.wrongAuthenticatorCode(staff, request.id, 'totp_invalid', 'The authenticator code is not right', now);
       }
-      if (!(await claimTotpStep(this.prisma, staff.id, step))) {
-        await this.auth.countWrongSecondFactor(staff, 'totp_reused');
-        throw new UnauthorizedException({ message: TOTP_REUSED, reason: 'totp_reused' });
+      if (!(await claimTotpStep(this.prisma, staff.id, step!))) {
+        await this.wrongAuthenticatorCode(staff, request.id, 'totp_reused', TOTP_REUSED, now);
       }
     }
 
@@ -292,7 +399,7 @@ export class PasswordResetService {
       });
       if (used.count !== 1) return false;
       const updated = await tx.staff.updateMany({
-        where: { id: staff.id, status: 'active', lockedByStaffId: null },
+        where: { id: staff.id, status: 'active', lockedByStaffId: null, OR: [{ lockedUntil: null }, { lockedUntil: { lte: now } }] },
         data: {
           passwordHash,
           failedLoginCount: 0,
@@ -334,6 +441,27 @@ export class PasswordResetService {
     });
     await this.aftermath.ringBells(staff, approver, 'senior_code', request.id, now);
     return { success: true, code: staff.code, signInAt: staff.role === 'field_agent' ? 'field_app' : 'web' };
+  }
+
+  /** A wrong authenticator code counts on the account; the one that locks it ends the request. */
+  private async wrongAuthenticatorCode(staff: Staff, requestId: string, reason: 'totp_invalid' | 'totp_reused', message: string, now: Date): Promise<never> {
+    const lockedUntil = await this.auth.countWrongSecondFactor(staff, reason);
+    if (lockedUntil) {
+      await this.endRequest(requestId, 'account_locked', now);
+      throw new UnauthorizedException({ message: `Account is locked until ${lockedUntil.toISOString()}`, reason: 'locked' });
+    }
+    throw new UnauthorizedException({ message, reason });
+  }
+
+  /** Ends an open request for good (too many wrong reset codes, or the account locked). */
+  private async endRequest(requestId: string, why: 'too_many_wrong_codes' | 'account_locked', now: Date): Promise<void> {
+    const ended = await this.prisma.passwordResetRequest.updateMany({
+      where: { id: requestId, status: { in: OPEN } },
+      data: { status: 'refused', refusedReason: why, refusedAt: now },
+    });
+    if (ended.count === 1 && why === 'account_locked') {
+      await this.audit.log({ actorId: 'login', action: 'password_reset.ended', entityType: 'password_reset_request', entityCode: requestId, after: { reason: why } });
+    }
   }
 
   // ---------------------------------------------------------------- the seniors (code screens)
@@ -390,7 +518,13 @@ export class PasswordResetService {
       action: 'password_reset.revealed',
       entityType: 'password_reset_request',
       entityCode: request.id,
-      after: { status: 'revealed', staffCode: request.staff.code, revealedByStaffId: row.revealedByStaffId, knownDevice: request.knownDevice },
+      after: {
+        status: 'revealed',
+        staffCode: request.staff.code,
+        revealedByStaffId: row.revealedByStaffId,
+        knownDevice: request.knownDevice,
+        ...(ownOwnerAccount(actor.id, request.staff) ? { ownOwnerAccount: true } : {}),
+      },
     });
     return { id: row.id, status: row.status, expiresAt: row.expiresAt, revealedAt: row.revealedAt, code: resetCodeFor(row.id) };
   }

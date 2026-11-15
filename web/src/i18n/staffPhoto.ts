@@ -3,7 +3,6 @@
    going on (auth/StaffPhotoGate). Kannada and Hindi need a native speaker's review. */
 
 export const staffPhotoEn = {
-  'staffPhoto.inviteLater': 'No camera on this device? Take it when you first sign in',
   'staffPhoto.title': 'Take your staff photo',
   'staffPhoto.retakeTitle': 'Take a new staff photo',
   'staffPhoto.intro': 'A live camera selfie, so whoever gives you a login code can see it is you. It shows on login code requests, staff lists and your profile.',
@@ -20,7 +19,6 @@ export const staffPhotoEn = {
 export type StaffPhotoKey = keyof typeof staffPhotoEn;
 
 export const staffPhotoKn: Record<StaffPhotoKey, string> = {
-  'staffPhoto.inviteLater': 'ಈ ಸಾಧನದಲ್ಲಿ ಕ್ಯಾಮೆರಾ ಇಲ್ಲವೇ? ಮೊದಲ ಬಾರಿ ಸೈನ್ ಇನ್ ಮಾಡುವಾಗ ತೆಗೆಯಿರಿ',
   'staffPhoto.title': 'ನಿಮ್ಮ ಸಿಬ್ಬಂದಿ ಫೋಟೋ ತೆಗೆಯಿರಿ',
   'staffPhoto.retakeTitle': 'ಹೊಸ ಸಿಬ್ಬಂದಿ ಫೋಟೋ ತೆಗೆಯಿರಿ',
   'staffPhoto.intro': 'ನಿಮಗೆ ಲಾಗಿನ್ ಕೋಡ್ ಕೊಡುವವರು ಇದು ನೀವೇ ಎಂದು ನೋಡಲು, ಲೈವ್ ಕ್ಯಾಮೆರಾ ಸೆಲ್ಫಿ. ಇದು ಲಾಗಿನ್ ಕೋಡ್ ವಿನಂತಿಗಳು, ಸಿಬ್ಬಂದಿ ಪಟ್ಟಿಗಳು ಮತ್ತು ನಿಮ್ಮ ಪ್ರೊಫೈಲ್‌ನಲ್ಲಿ ಕಾಣುತ್ತದೆ.',
@@ -35,7 +33,6 @@ export const staffPhotoKn: Record<StaffPhotoKey, string> = {
 };
 
 export const staffPhotoHi: Record<StaffPhotoKey, string> = {
-  'staffPhoto.inviteLater': 'इस डिवाइस में कैमरा नहीं है? पहली बार साइन इन करते समय लें',
   'staffPhoto.title': 'अपनी स्टाफ़ फ़ोटो लें',
   'staffPhoto.retakeTitle': 'नई स्टाफ़ फ़ोटो लें',
   'staffPhoto.intro': 'लाइव कैमरा से एक सेल्फ़ी, ताकि जो आपको लॉगिन कोड दे वह देख सके कि यह आप ही हैं। यह लॉगिन कोड के अनुरोधों, स्टाफ़ सूचियों और आपकी प्रोफ़ाइल पर दिखती है।',

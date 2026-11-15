@@ -88,6 +88,8 @@ export class AwaitingCodeResponseDto {
   /** Send back with the code, with the same deviceId: the code works only for this device and sign-in. */
   loginRequestProof!: string;
   expiresAt!: Date;
+  /** Who reads the code out: the agent's Team Lead, or a CEO for an owner account that reports to a CEO. */
+  codeFrom!: 'team_lead' | 'ceo';
 }
 
 export type LoginResult = LoginResponseDto | AwaitingCodeResponseDto | SetupRequiredResponseDto;

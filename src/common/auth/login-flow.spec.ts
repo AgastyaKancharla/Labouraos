@@ -160,6 +160,20 @@ describe('Phase 10 Task 4: staff-code login', () => {
     expect(queue.body.map((row: { id: string }) => row.id)).toContain(pending.id);
   });
 
+  it('an owner agent account that reports to a CEO is told a CEO reads the code out (codeFrom: ceo)', async () => {
+    const ceo = await makeStaff('ceo', { totpSecret: authenticator.generateSecret(), totpEnabled: true });
+    const owner = await makeStaff('call_agent');
+    await prisma.staff.update({ where: { id: owner.id }, data: { reportsToId: ceo.id, isOwnerAccount: true } });
+    await prisma.staffDevice.create({
+      data: { staffId: owner.id, deviceId: 'owner-laptop', label: 'Laptop', platform: 'web', status: 'approved', approvedAt: new Date() },
+    });
+    const waiting = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ staffCode: owner.code, password, deviceId: 'owner-laptop' });
+    expect(waiting.status).toBe(200);
+    expect(waiting.body).toMatchObject({ status: 'awaiting_code', codeFrom: 'ceo' });
+  });
+
   it('issues a token only when the revealed code matches', async () => {
     const lead = await makeStaff('team_lead');
     const agent = await makeStaff('field_agent', { teamLeadId: lead.id });
@@ -191,7 +205,7 @@ describe('Phase 10 Task 4: staff-code login', () => {
       .send({ staffCode: agent.code, password, deviceId: 'approved-handset' });
     expect(waiting.status).toBe(200);
     expect(waiting.body).toEqual(
-      expect.objectContaining({ status: 'awaiting_code', loginRequestId: expect.any(String) }),
+      expect.objectContaining({ status: 'awaiting_code', loginRequestId: expect.any(String), codeFrom: 'team_lead' }),
     );
     expect(waiting.body.accessToken).toBeUndefined();
     expect(waiting.body.expiresAt).toBeDefined();

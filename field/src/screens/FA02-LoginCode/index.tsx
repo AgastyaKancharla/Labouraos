@@ -36,6 +36,8 @@ export default function LoginCodeScreen({ now = Date.now }: { now?: () => number
   }, [pendingLogin, now]);
 
   if (!pendingLogin) return <Redirect href={routes.login} />;
+  // An owner account that reports to a CEO asks a CEO; every other agent their Team Lead.
+  const fromCeo = pendingLogin.codeFrom === 'ceo';
 
   const expired = remaining <= 0;
 
@@ -66,11 +68,11 @@ export default function LoginCodeScreen({ now = Date.now }: { now?: () => number
         <View style={styles.body}>
           <View style={styles.titleRow}>
             <Text variant="h1" accessibilityRole="header" style={styles.flex1}>
-              {t('fa02.title')}
+              {t(fromCeo ? 'fa02.titleCeo' : 'fa02.title')}
             </Text>
             <Emoji symbol="🔐" size={28} />
           </View>
-          <Text variant="muted">{t('fa02.help')}</Text>
+          <Text variant="muted">{t(fromCeo ? 'fa02.helpCeo' : 'fa02.help')}</Text>
           <Card stripe accent="gold">
             <CodeInput
               value={code}

@@ -215,14 +215,14 @@ When the app first starts, no staff accounts exist. A one-time "bootstrap" reque
    The answer includes the staff code (`"code": "CEO-00001"`) and `"tempPassword"`. Close the console afterwards.
 3. **Set your password and the authenticator app on the first login.** Open `https://<your laboura-api address>/login`.
    - Sign in with the **staff code** (for example `CEO-00001`) and the **temporary password** (capitals or small letters, with or without the dash). Not the email.
-   - Take the live selfie (or skip it if this computer has no camera: it is asked again at the first sign-in).
+   - Take the live selfie. It is required: if this computer has no camera, sign in with the staff code and temporary password on a phone or laptop that has one and do the set-up there.
    - Type your own password twice (at least 8 characters; not the temporary one).
    - The page shows a QR code and a secret key (shown only this once). Scan it, or type the key, in Google Authenticator, Microsoft Authenticator or Authy, and type the 6-digit code from the app. Click **Set password**.
    - The page says **Password set — sign in**. Sign in again with the staff code, your new password and a fresh 6-digit code. That sign-in also approves this browser as the CEO's device, and opens the CEO Command Center (`/ceo`).
 
 Managers, Finance and Team Leads also use their own authenticator app, set up the same way at their first sign-in. Call agents and field agents instead wait on the "Ask your Team Lead for your code" page until someone reveals their code on the Login codes screen.
 
-Everyone you add gets a staff code and a temporary password (shown once on **Team & access**, with **Copy** and **Share on WhatsApp**); there are no invite links. Someone who forgets their password taps **Forgot password?** on the sign-in page: a red **PASSWORD RESET** card appears on their senior's Login codes screen, and the senior calls them back and reads out a reset code.
+Everyone you add gets a staff code and a temporary password (shown once on **Team & access**, with **Copy**; for call agents and field agents also **Share on WhatsApp**). For a Manager, Finance or a Team Lead there is no WhatsApp button: read the temporary password to them on a call. There are no invite links. Someone who forgets their password taps **Forgot password?** on the sign-in page: a red **PASSWORD RESET** card appears on their senior's Login codes screen, and the senior calls them back and reads out a reset code.
 
 Staff log in from any network: there is no office-network rule (owner decision 14 Nov). Every login already needs a one-time code from a senior or the authenticator code.
 

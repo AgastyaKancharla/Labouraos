@@ -34,7 +34,7 @@ type Step =
   | { kind: 'password' }
   | { kind: 'forgot' }
   | { kind: 'totp' }
-  | { kind: 'code'; loginRequestId: string; loginRequestProof: string; expiresAt: number }
+  | { kind: 'code'; loginRequestId: string; loginRequestProof: string; expiresAt: number; codeFrom?: 'team_lead' | 'ceo' }
   | { kind: 'setup'; setup: SetupRequiredResponse; temporary: string };
 
 const LOGO_SRC = `${import.meta.env.BASE_URL}logo-mark.png`;
@@ -128,6 +128,7 @@ export default function StaffSignIn() {
             loginRequestId: response.loginRequestId,
             loginRequestProof: response.loginRequestProof,
             expiresAt: new Date(response.expiresAt).getTime(),
+            codeFrom: response.codeFrom,
           });
           return;
         }
@@ -178,7 +179,8 @@ export default function StaffSignIn() {
   };
 
   const reasonText = signOutReason ? t(`auth.signedOut.${signOutReason}`) : null;
-  const audience = codeAudience(staffCode);
+  // An owner account under a CEO asks a CEO; other agents their Team Lead.
+  const audience = step.kind === 'code' && step.codeFrom === 'ceo' ? 'ceo' : codeAudience(staffCode);
   const codeExpired = step.kind === 'code' && now >= step.expiresAt;
   const secondsLeft = step.kind === 'code' ? Math.max(0, Math.ceil((step.expiresAt - now) / 1000)) : 0;
   const countdown = `${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, '0')}`;
@@ -290,10 +292,10 @@ export default function StaffSignIn() {
               }}
             >
               <h1 className="h1">
-                {audience === 'teamLead' ? t('auth.code.titleTeamLead') : t('auth.code.title')}
+                {audience === 'ceo' ? t('auth.code.titleCeo') : audience === 'teamLead' ? t('auth.code.titleTeamLead') : t('auth.code.title')}
               </h1>
               <p className="muted">
-                {audience === 'teamLead' ? t('auth.code.bodyTeamLead') : t('auth.code.body')}
+                {audience === 'ceo' ? t('auth.code.bodyCeo') : audience === 'teamLead' ? t('auth.code.bodyTeamLead') : t('auth.code.body')}
               </p>
               {codeExpired ? (
                 <p className="lb-notice" role="alert">

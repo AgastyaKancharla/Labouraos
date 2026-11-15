@@ -16,8 +16,8 @@ import { LiveSelfie } from '../public/shared/LiveSelfie';
  * code and the temporary password: no session, only the set-up ticket for
  * this device (15 minutes).
  *
- *   1. live camera selfie (when no staff photo is on file; "later" when the
- *      device has no camera — it is asked again at the first sign-in);
+ *   1. live camera selfie (when no staff photo is on file; required — without
+ *      a camera here, they sign in on a device that has one);
  *   2. the new password, typed twice (not the temporary one);
  *   3. CEO, Manager, Finance and Team Lead: the authenticator QR code and its
  *      first code, in the same step (or a code from the authenticator they keep);
@@ -228,10 +228,10 @@ export function FirstLoginSetup({
             }
           }}
         />
-        {/* No camera on this device: the photo is asked again, before anything else, at the first sign-in. */}
-        <Button fullWidth onClick={() => setStep('password')}>
-          {t('staffPhoto.inviteLater')}
-        </Button>
+        {/* The selfie is required before the password (the server refuses otherwise): no camera here means set-up on another device. */}
+        <p className="muted" data-testid="setup-no-camera">
+          {t('staffPhoto.noCamera')}
+        </p>
       </div>
     );
   }

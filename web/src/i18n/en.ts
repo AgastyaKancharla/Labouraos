@@ -328,6 +328,8 @@ export const en = {
   "auth.code.titleTeamLead": "Ask your Team Lead for your code",
   "auth.code.body": "Your Team Lead, a Manager or the CEO sees your request and reads the code out.",
   "auth.code.bodyTeamLead": "Your Team Lead now sees your request on their screen. They tap Show code and read it out to you.",
+  "auth.code.titleCeo": "Ask a CEO for your code",
+  "auth.code.bodyCeo": "A CEO now sees your request on their screen. They tap Show code and read it out to you.",
   "auth.code.note": "The code works once, for 5 minutes. Nobody can see their own code. You stay logged in while you work; after 60 minutes idle or 2 hours in total you sign in again.",
   "auth.code.expiresIn": "Code request expires in {time}",
   "auth.code.expired": "This code request has expired. Sign in again to get a new one.",

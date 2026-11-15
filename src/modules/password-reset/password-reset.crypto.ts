@@ -18,3 +18,18 @@ export function resetCodeFor(requestId: string, secret = getLoginCodeSecret()): 
 export function resetRequestProofFor(requestId: string, deviceId: string, secret = getLoginCodeSecret()): string {
   return createHmac('sha256', secret).update(`password-reset-proof:${requestId}:${deviceId}`).digest('base64url');
 }
+
+/**
+ * The request id answered for a staff code that gets no request (unknown,
+ * inactive, limited, or another request open). Worked out from the staff code,
+ * the device and the 15-minute window, so asking again gives the same id, as
+ * a real open request does; it looks like any other request id.
+ */
+export function standInResetRequestId(staffCode: string, deviceId: string, windowStart: number, secret = getLoginCodeSecret()): string {
+  const hex = createHmac('sha256', secret)
+    .update(`password-reset-stand-in:${staffCode.trim().toUpperCase()}:${deviceId}:${windowStart}`)
+    .digest('hex');
+  // UUID v4 layout, like the ids of real requests.
+  const variant = ((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}

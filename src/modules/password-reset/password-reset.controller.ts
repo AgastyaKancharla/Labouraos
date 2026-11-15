@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Header, HttpCode, HttpStatus, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
 import { AuthThrottlerGuard } from '../../common/auth/auth-throttler.guard';
@@ -68,8 +68,12 @@ export class PasswordResetApprovalController {
     return this.resets.listPending(this.actor(req));
   }
 
+  /** The code is read out over the phone: never cached, and limited like the login code reveal. */
   @Post(':id/reveal')
   @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
+  @UseGuards(AuthThrottlerGuard)
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
   reveal(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.resets.reveal(id, this.actor(req));
   }

@@ -1,3 +1,4 @@
+import { ownOwnerAccount } from '../../common/rbac/own-owner-account';
 import { OwnTeam } from '../../common/rbac/own-team';
 import {
   BadRequestException,
@@ -796,6 +797,7 @@ export class StaffService {
         passwordResetId: resetId,
         tempPasswordExpiresAt: temp.expiresAt.toISOString(),
         replacedEarlierTempPassword: Boolean(target.tempPasswordExpiresAt),
+        ...(ownOwnerAccount(actor.sub, target) ? { ownOwnerAccount: true } : {}),
       },
     });
 
@@ -900,6 +902,7 @@ export class StaffService {
         passwordResetId: resetId,
         sessionsEnded,
         tempPasswordExpiresAt: temp.expiresAt.toISOString(),
+        ...(ownOwnerAccount(actor.sub, target) ? { ownOwnerAccount: true } : {}),
       },
     });
 

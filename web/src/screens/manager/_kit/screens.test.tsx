@@ -242,6 +242,10 @@ describe('Staff & access', () => {
     await userEvent.click(within(d).getByRole('button', { name: 'New temporary password' }));
     await waitFor(() => expect(api.calls('POST /staff/tl1/temp-password')).toHaveLength(1));
     expect(await screen.findByTestId('temp-password')).toHaveTextContent('K7M4-Q2PX');
+    // A Team Lead's temporary password is read out on a call: Copy only, never a WhatsApp link.
+    expect(screen.queryByTestId('temp-password-whatsapp')).toBeNull();
+    expect(screen.getByTestId('temp-password-read-out')).toHaveTextContent(/Read it to them on a call/);
+    expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Done' }));
 
     await userEvent.click(within(row).getByRole('button', { name: 'Reset sign-in completely' }));
@@ -276,6 +280,7 @@ describe('Staff & access', () => {
     await waitFor(() => expect(api.calls('POST /staff')[0].body).toEqual({ name: 'Meena R', role: 'field_agent', teamLeadId: 'tl2', intern: true, joinedOn: '2026-11-09' }));
     expect(await screen.findByTestId('temp-password')).toHaveTextContent('K7M4-Q2PX');
     expect(screen.getByTestId('temp-password-whatsapp').getAttribute('href')).toContain('wa.me');
+    expect(screen.queryByTestId('temp-password-read-out')).toBeNull();
   });
 });
 

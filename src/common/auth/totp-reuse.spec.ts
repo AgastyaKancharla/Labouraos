@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { applyTrustProxy } from '../http/trust-proxy';
 import { TotpService, TOTP_STEP_SECONDS, claimTotpStep } from './totp.service';
 import { TOTP_REUSED } from './auth.service';
+import { takeSetupSelfie } from '../../test-support/setup-selfie';
 
 /**
  * Security check L9: an authenticator code works once. The same code inside its 30
@@ -99,6 +100,7 @@ describe('L9: an authenticator code is accepted only once', () => {
     expect(setupLogin.status).toBe(200);
     expect(setupLogin.body.status).toBe('setup_required');
     const ticket = { setupTicket: setupLogin.body.setupTicket, deviceId };
+    await takeSetupSelfie(app, setupLogin.body, deviceId);
     const qr = await request(app.getHttpServer()).post('/auth/setup/authenticator').set('X-Forwarded-For', freshIp()).send(ticket).expect(200);
     const code = await codeWithTimeLeft(qr.body.secret);
     await request(app.getHttpServer())

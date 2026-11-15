@@ -11,7 +11,7 @@ import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { normaliseTemporaryPassword } from '../../common/auth/temporary-password';
 import { loginCodeFor } from '../login-code/login-code.crypto';
 import { resetCodeFor, resetRequestProofFor } from '../password-reset/password-reset.crypto';
-import { RESET_REQUESTED_MESSAGE } from '../password-reset/password-reset.service';
+import { RESET_CODE_INVALID, RESET_REQUESTED_MESSAGE } from '../password-reset/password-reset.service';
 import { freshTotpWindow } from '../../test-support/enrolled-login-spec';
 import { passwordResetState, resetRequestState } from './staff.service';
 
@@ -245,7 +245,10 @@ describe('Temporary passwords and Forgot password by a senior reset code', () =>
     expect((await as('tlC', 'post', `/password-resets/${asked.body.resetRequestId}/reveal`)).status).toBe(403);
     // Before the reveal nothing works, even the right code.
     const early = await post('/auth/password-reset/complete', { resetRequestId: asked.body.resetRequestId, resetRequestProof: asked.body.resetRequestProof, deviceId: `usual-${ts}`, code: resetCodeFor(asked.body.resetRequestId), newPassword });
-    expect(reasonOf(early.body)).toBe('not_revealed');
+    // The same answer as a wrong code or an unknown request: it never says whether a senior has the card yet.
+    expect(early.status).toBe(401);
+    expect(reasonOf(early.body)).toBe('code_invalid');
+    expect(early.body.message ?? early.body.details?.message).toBe(RESET_CODE_INVALID);
 
     const revealed = await as('tlA', 'post', `/password-resets/${asked.body.resetRequestId}/reveal`).expect(200);
     expect(revealed.body.code).toBe(resetCodeFor(asked.body.resetRequestId));
@@ -338,12 +341,165 @@ describe('Temporary passwords and Forgot password by a senior reset code', () =>
     await prisma.staff.update({ where: { id: people.tlA.id }, data: { lockedByStaffId: people.mgrA.id, lockedReason: 'check' } });
     const locked = await post('/auth/password-reset/complete', { ...base, totpCode: await totpFor('tlA') });
     expect(reasonOf(locked.body)).toBe('locked');
+    // The lock ends the request: after the unlock they ask again.
+    expect(await prisma.passwordResetRequest.findUniqueOrThrow({ where: { id: asked.body.resetRequestId } })).toMatchObject({ status: 'refused', refusedReason: 'account_locked' });
     await prisma.staff.update({ where: { id: people.tlA.id }, data: { lockedByStaffId: null, lockedReason: null } });
-    await post('/auth/password-reset/complete', { ...base, totpCode: await totpFor('tlA') }).expect(200);
+    const ended = await post('/auth/password-reset/complete', { ...base, totpCode: await totpFor('tlA') });
+    expect(reasonOf(ended.body)).toBe('refused');
+    const again = await requestReset(people.tlA.code, `d-tla-${ts}`).expect(200);
+    expect(again.body.resetRequestId).not.toBe(asked.body.resetRequestId);
+    await as('mgrA', 'post', `/password-resets/${again.body.resetRequestId}/reveal`).expect(200);
+    await post('/auth/password-reset/complete', {
+      ...base,
+      resetRequestId: again.body.resetRequestId,
+      resetRequestProof: again.body.resetRequestProof,
+      code: resetCodeFor(again.body.resetRequestId),
+      totpCode: await totpFor('tlA'),
+    }).expect(200);
     const row = await prisma.staff.findUniqueOrThrow({ where: { id: people.tlA.id } });
     expect(row.totpEnabled).toBe(true);
     expect(row.totpSecret).toBe(secrets.tlA);
     expect(await passwordIs('tlA', newPassword)).toBe(true);
+  });
+
+  // ------------------------------------------------------------------ Fable review fixes
+
+  it('an unknown staff code gets a stand-in id that repeats like a real open request (same id and end time), and looks like one', async () => {
+    const one = await requestReset(`GHOST-${ts}`, `d-gh-${ts}`).expect(200);
+    const two = await requestReset(`ghost-${ts}`, `d-gh-${ts}`).expect(200);
+    expect(two.body.resetRequestId).toBe(one.body.resetRequestId);
+    expect(two.body.expiresAt).toBe(one.body.expiresAt);
+    expect(one.body.resetRequestId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    const otherDevice = await requestReset(`GHOST-${ts}`, `d-gh2-${ts}`).expect(200);
+    expect(otherDevice.body.resetRequestId).not.toBe(one.body.resetRequestId);
+    // A real account asked twice from one device: the same pattern.
+    const real1 = await requestReset(people.agentA3.code, `d-a3-${ts}`).expect(200);
+    const real2 = await requestReset(people.agentA3.code, `d-a3-${ts}`).expect(200);
+    expect(real2.body).toEqual(real1.body);
+    // Completing: an unknown request, one a senior has not revealed yet and a wrong code all get the same answer.
+    const tryIt = (asked: request.Response, deviceId: string, code: string) =>
+      post('/auth/password-reset/complete', { resetRequestId: asked.body.resetRequestId, resetRequestProof: asked.body.resetRequestProof, deviceId, code, newPassword });
+    const ghost = await tryIt(one, `d-gh-${ts}`, '123456');
+    const notYet = await tryIt(real1, `d-a3-${ts}`, resetCodeFor(real1.body.resetRequestId));
+    await as('ceo', 'post', `/password-resets/${real1.body.resetRequestId}/reveal`).expect(200);
+    const right = resetCodeFor(real1.body.resetRequestId);
+    const wrong = await tryIt(real1, `d-a3-${ts}`, right === '000000' ? '111111' : '000000');
+    for (const r of [ghost, notYet, wrong]) {
+      expect(r.status).toBe(401);
+      expect(reasonOf(r.body)).toBe('code_invalid');
+    }
+    expect(JSON.stringify(notYet.body)).toBe(JSON.stringify(ghost.body));
+    expect(JSON.stringify(wrong.body)).toBe(JSON.stringify(ghost.body));
+    // A stand-in's proof only fits the device that asked, like a real one.
+    const ghostElsewhere = await tryIt(one, `thief-${ts}`, '123456');
+    expect(reasonOf(ghostElsewhere.body)).toBe('other_device');
+    await prisma.passwordResetRequest.updateMany({ where: { staffId: people.agentA3.id, status: { in: ['pending', 'revealed'] } }, data: { status: 'expired' } });
+  });
+
+  it('authenticator guessing on reset completion stops at the account lock, and the lock ends the request', async () => {
+    await mk('tlD', 'team_lead', { reportsToId: people.mgrA.id });
+    const asked = await requestReset(people.tlD.code, `d-tld-${ts}`).expect(200);
+    await as('mgrA', 'post', `/password-resets/${asked.body.resetRequestId}/reveal`).expect(200);
+    const base = { resetRequestId: asked.body.resetRequestId, resetRequestProof: asked.body.resetRequestProof, deviceId: `d-tld-${ts}`, code: resetCodeFor(asked.body.resetRequestId), newPassword };
+    const reasons: (string | undefined)[] = [];
+    for (let i = 0; i < 8 && reasons[reasons.length - 1] !== 'locked'; i += 1) {
+      reasons.push(reasonOf((await post('/auth/password-reset/complete', { ...base, totpCode: '000000' })).body));
+    }
+    expect(reasons).toEqual(['totp_invalid', 'totp_invalid', 'totp_invalid', 'totp_invalid', 'locked']);
+    const row = await prisma.passwordResetRequest.findUniqueOrThrow({ where: { id: asked.body.resetRequestId } });
+    expect(row).toMatchObject({ status: 'refused', refusedReason: 'account_locked' });
+    // The right reset code never used up a try.
+    expect(row.failedAttempts).toBe(0);
+    // Even the right authenticator code is refused now; the password is unchanged.
+    const after = await post('/auth/password-reset/complete', { ...base, totpCode: await totpFor('tlD') });
+    expect(after.status).toBe(401);
+    expect(await passwordIs('tlD', oldPassword)).toBe(true);
+  });
+
+  it('wrong reset codes sent all at once still stop at 5 tries', async () => {
+    await mk('agentRace', 'call_agent', { teamLeadId: people.tlA.id, reportsToId: people.tlA.id });
+    const asked = await requestReset(people.agentRace.code, `d-race-${ts}`).expect(200);
+    await as('ceo', 'post', `/password-resets/${asked.body.resetRequestId}/reveal`).expect(200);
+    const right = resetCodeFor(asked.body.resetRequestId);
+    const wrong = right === '000000' ? '111111' : '000000';
+    const results = await Promise.all(
+      Array.from({ length: 12 }, () =>
+        post('/auth/password-reset/complete', { resetRequestId: asked.body.resetRequestId, resetRequestProof: asked.body.resetRequestProof, deviceId: `d-race-${ts}`, code: wrong, newPassword }),
+      ),
+    );
+    expect(results.every((r) => r.status === 401)).toBe(true);
+    const row = await prisma.passwordResetRequest.findUniqueOrThrow({ where: { id: asked.body.resetRequestId } });
+    expect(row.failedAttempts).toBeLessThanOrEqual(5);
+    expect(row).toMatchObject({ status: 'refused', refusedReason: 'too_many_wrong_codes' });
+    const late = await post('/auth/password-reset/complete', { resetRequestId: asked.body.resetRequestId, resetRequestProof: asked.body.resetRequestProof, deviceId: `d-race-${ts}`, code: right, newPassword });
+    expect(late.status).toBe(401);
+  });
+
+  it('one open request per account is kept by the database too, even when requests arrive at the same moment', async () => {
+    await mk('agentTwin', 'call_agent', { teamLeadId: people.tlA.id, reportsToId: people.tlA.id });
+    await Promise.all(Array.from({ length: 6 }, (_, i) => requestReset(people.agentTwin.code, `d-twin-${i}-${ts}`).expect(200)));
+    expect(await prisma.passwordResetRequest.count({ where: { staffId: people.agentTwin.id, status: { in: ['pending', 'revealed'] } } })).toBe(1);
+    await expect(
+      prisma.passwordResetRequest.create({ data: { staffId: people.agentTwin.id, deviceId: 'x', status: 'pending', expiresAt: new Date(Date.now() + 60_000) } }),
+    ).rejects.toMatchObject({ code: 'P2002' });
+  });
+
+  it('the person\'s own approved device replaces a request from an unknown device; unknown devices never use up its hourly tries', async () => {
+    await mk('agentOwn', 'call_agent', { teamLeadId: people.tlA.id, reportsToId: people.tlA.id });
+    await prisma.staffDevice.create({ data: { staffId: people.agentOwn.id, deviceId: `own-${ts}`, label: 'Phone', platform: 'web', status: 'approved', approvedAt: new Date() } });
+    // A stranger asks 3 times in an hour from unknown devices (each ends before the next).
+    let stranger: request.Response | null = null;
+    for (let i = 0; i < 3; i += 1) {
+      await prisma.passwordResetRequest.updateMany({ where: { staffId: people.agentOwn.id, status: 'pending' }, data: { status: 'expired' } });
+      stranger = await requestReset(people.agentOwn.code, `stranger-${i}-${ts}`).expect(200);
+    }
+    const strangerRow = await prisma.passwordResetRequest.findUniqueOrThrow({ where: { id: stranger!.body.resetRequestId } });
+    expect(strangerRow).toMatchObject({ status: 'pending', knownDevice: false });
+    // Another unknown device cannot replace it.
+    const other = await requestReset(people.agentOwn.code, `stranger-x-${ts}`).expect(200);
+    expect(await prisma.passwordResetRequest.count({ where: { id: other.body.resetRequestId } })).toBe(0);
+    // The real person, from their approved phone: a new request replaces the stranger's, despite the 3 in the last hour.
+    const mine = await requestReset(people.agentOwn.code, `own-${ts}`).expect(200);
+    const mineRow = await prisma.passwordResetRequest.findUniqueOrThrow({ where: { id: mine.body.resetRequestId } });
+    expect(mineRow).toMatchObject({ status: 'pending', knownDevice: true, deviceId: `own-${ts}` });
+    expect((await prisma.passwordResetRequest.findUniqueOrThrow({ where: { id: strangerRow.id } })).status).toBe('cancelled');
+    expect(await prisma.auditLog.count({ where: { action: 'password_reset.replaced', entityCode: strangerRow.id } })).toBe(1);
+    // An unknown device cannot replace the approved device's request.
+    await requestReset(people.agentOwn.code, `stranger-y-${ts}`).expect(200);
+    expect((await prisma.passwordResetRequest.findUniqueOrThrow({ where: { id: mineRow.id } })).status).toBe('pending');
+  });
+
+  it('a founder may approve for his own owner agent account; the audit says "own owner account"; the reveal is never cached', async () => {
+    await mk('owner', 'call_agent', { reportsToId: people.ceo.id, teamLeadId: null, isOwnerAccount: true });
+    const asked = await requestReset(people.owner.code, `d-own-${ts}`).expect(200);
+    const revealed = await as('ceo', 'post', `/password-resets/${asked.body.resetRequestId}/reveal`).expect(200);
+    expect(revealed.headers['cache-control']).toContain('no-store');
+    const log = await prisma.auditLog.findFirstOrThrow({ where: { action: 'password_reset.revealed', entityCode: asked.body.resetRequestId } });
+    expect(log.after).toMatchObject({ ownOwnerAccount: true });
+    const temp = await as('ceo', 'post', `/staff/${people.owner.id}/temp-password`).expect(200);
+    expect(temp.body.tempPassword).toMatch(TEMP_FORMAT);
+    const tempLog = await prisma.auditLog.findFirstOrThrow({ where: { action: 'staff.temp_password_issued', entityCode: people.owner.code }, orderBy: { createdAt: 'desc' } });
+    expect(tempLog.after).toMatchObject({ ownOwnerAccount: true });
+    // The other CEO approving is not "own".
+    const other = await requestReset(people.agentB.code, `d-b-${ts}`).expect(200);
+    await as('ceo2', 'post', `/password-resets/${other.body.resetRequestId}/reveal`).expect(200);
+    const otherLog = await prisma.auditLog.findFirstOrThrow({ where: { action: 'password_reset.revealed', entityCode: other.body.resetRequestId } });
+    expect(otherLog.after).not.toHaveProperty('ownOwnerAccount');
+  });
+
+  it('"Forgot password" routes are limited per connection only: rotating the staff code in the body never opens a fresh bucket', async () => {
+    for (const path of ['/auth/password-reset/request', '/auth/password-reset/complete']) {
+      const ip = `10.66.${path.length}.${ts % 200}`;
+      const statuses: number[] = [];
+      for (let i = 0; i < 7; i += 1) {
+        const res = await request(app.getHttpServer())
+          .post(path)
+          .set('X-Forwarded-For', ip)
+          .send({ staffCode: `ROT-${i}-${ts}`, deviceId: `rot-${i}`, resetRequestId: `00000000-0000-4000-8000-00000000000${i}`, code: '123456', newPassword });
+        statuses.push(res.status);
+      }
+      expect({ path, first: statuses.slice(0, 5).includes(429), last: statuses.slice(5) }).toEqual({ path, first: false, last: [429, 429] });
+    }
   });
 
   // ------------------------------------------------------------------ history

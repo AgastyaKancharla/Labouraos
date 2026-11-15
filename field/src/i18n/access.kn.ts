@@ -22,7 +22,6 @@ export const accessKn: Record<keyof typeof accessEn, string> = {
   'access.setup.photoTitle': 'ಮೊದಲು ನಿಮ್ಮ ಫೋಟೋ',
   'access.setup.photoBody': 'ಲಾಗಿನ್ ಕೋಡ್ ಕೊಡುವವರು ನೀವೇ ಎಂದು ನೋಡಲು ಲೈವ್ ಸೆಲ್ಫಿ ತೆಗೆಯಿರಿ.',
   'access.setup.photoOpen': 'ಕ್ಯಾಮೆರಾ ತೆರೆಯಿರಿ',
-  'access.setup.photoLater': 'ಕ್ಯಾಮೆರಾ ಇಲ್ಲವೇ? ಮೊದಲ ಸೈನ್ ಇನ್‌ನಲ್ಲಿ ತೆಗೆಯಿರಿ',
   'access.setup.photoDone': 'ಫೋಟೋ ಉಳಿಸಲಾಗಿದೆ. ಈಗ ನಿಮ್ಮ ಪಾಸ್‌ವರ್ಡ್ ಆರಿಸಿ.',
   'access.setup.photoFailed': 'ಫೋಟೋ ಉಳಿಸಲಾಗಲಿಲ್ಲ. ಸಿಗ್ನಲ್ ಪರಿಶೀಲಿಸಿ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.',
   'access.setup.staffCode': 'ನಿಮ್ಮ ಸ್ಟಾಫ್ ಕೋಡ್: {code}',

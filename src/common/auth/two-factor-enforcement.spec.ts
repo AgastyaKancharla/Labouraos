@@ -110,17 +110,20 @@ describe('2FA is mandatory: a password alone never opens a session for an authen
       expect(res.body.accessToken).toBeUndefined();
     });
 
-    it('a token that still carries the old totp_setup scope is refused on ordinary endpoints', async () => {
+    it('a token that still carries the old totp_setup scope is refused everywhere (the limited token is gone)', async () => {
       const { id, code } = await mkStaff('ceo');
       const session = await prisma.staffSession.create({
         data: { staffId: id, expiresAt: new Date(Date.now() + 900_000), absoluteExpiresAt: new Date(Date.now() + 7_200_000), lastActivityAt: new Date() },
       });
-      const limited = jwt.sign({ sub: id, role: 'ceo', email: null, code, sid: session.id, scope: 'totp_setup' } as JwtPayload);
+      const limited = jwt.sign({ sub: id, role: 'ceo', email: null, code, sid: session.id, scope: 'totp_setup' } as JwtPayload & { scope: string });
       for (const path of ['/staff/sessions', '/staff', '/pricing', '/job-seekers']) {
         const res = await get(path, limited);
         expect({ path, status: res.status }).toEqual({ path, status: 403 });
       }
       expect((await post('/staff', limited, { name: 'x' })).status).toBe(403);
+      // No route takes a limited token any more: not even refresh or sign-out (the old exceptions).
+      expect((await post('/auth/refresh', limited)).status).toBe(403);
+      expect((await post('/auth/logout', limited)).status).toBe(403);
     });
 
     it('enrolment happens only inside the first-login set-up, with a temporary password: the old 2FA endpoints are gone', async () => {
@@ -166,7 +169,7 @@ describe('2FA is mandatory: a password alone never opens a session for an authen
         .send({ staffCode: staff.code, password, deviceId: 'tfa-test-device', totpCode: await stableTotpCode(secret) });
       expect(right.status).toBe(200);
       expect(right.body.status).toBeUndefined();
-      expect((jwt.decode(right.body.accessToken) as JwtPayload).scope).toBeUndefined();
+      expect((jwt.decode(right.body.accessToken) as JwtPayload & { scope?: string }).scope).toBeUndefined();
       expect((await get('/staff', right.body.accessToken)).status).toBe(200);
     });
   });

@@ -6,6 +6,7 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { applyTrustProxy } from '../../common/http/trust-proxy';
 import { seed } from '../../../prisma/seed';
+import { takeSetupSelfie } from '../../test-support/setup-selfie';
 
 describe('Phase 8 Task 10 (rev 174–175): First-admin bootstrap with a temporary password', () => {
   let app: INestApplication;
@@ -186,6 +187,7 @@ describe('Phase 8 Task 10 (rev 174–175): First-admin bootstrap with a temporar
       expect(first.status).toBe(200);
       expect(first.body.status).toBe('setup_required');
       const ticket = { setupTicket: first.body.setupTicket, deviceId: 'bootstrap-ceo-device' };
+      await takeSetupSelfie(app, first.body, 'bootstrap-ceo-device');
       const setupRes = await request(app.getHttpServer()).post('/auth/setup/authenticator').set('X-Forwarded-For', freshIp()).send(ticket);
       expect(setupRes.status).toBe(200);
       const secret = setupRes.body.secret as string;

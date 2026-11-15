@@ -22,7 +22,6 @@ export const accessHi: Record<keyof typeof accessEn, string> = {
   'access.setup.photoTitle': 'पहले, आपकी फ़ोटो',
   'access.setup.photoBody': 'लाइव सेल्फ़ी लें ताकि लॉगिन कोड देने वाले देख सकें कि यह आप ही हैं।',
   'access.setup.photoOpen': 'कैमरा खोलें',
-  'access.setup.photoLater': 'कैमरा नहीं है? पहली बार साइन इन करते समय लें',
   'access.setup.photoDone': 'फ़ोटो सेव हो गई। अब अपना पासवर्ड चुनें।',
   'access.setup.photoFailed': 'फ़ोटो सेव नहीं हो सकी। सिग्नल देखें और फिर से कोशिश करें।',
   'access.setup.staffCode': 'आपका स्टाफ़ कोड: {code}',

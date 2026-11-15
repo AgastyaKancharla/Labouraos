@@ -88,6 +88,8 @@ export const en = {
 
   'fa02.title': 'Call your Team Lead for your code',
   'fa02.help': 'Your Team Lead sees your request and reads the code to you over the phone.',
+  'fa02.titleCeo': 'Call a CEO for your code',
+  'fa02.helpCeo': 'A CEO sees your request and reads the code to you over the phone.',
   'fa02.codeLabel': 'Login code',
   'fa02.digitLabel': 'Digit {position} of 6',
   'fa02.once': 'Works once, for 5 minutes.',

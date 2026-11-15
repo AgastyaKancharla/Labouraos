@@ -8,6 +8,7 @@ import { stableTotpCode } from '../../test-support/enrolled-login-spec';
 import { authenticator } from 'otplib';
 import { RBAC_MATRIX } from '../../common/rbac/rbac.types';
 import { seed } from '../../../prisma/seed';
+import { takeSetupSelfie } from '../../test-support/setup-selfie';
 
 interface StaffListItem {
   id: string;
@@ -37,6 +38,7 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
     expect(start.status).toBe(200);
     expect(start.body.status).toBe('setup_required');
     const ticket = { setupTicket: start.body.setupTicket, deviceId };
+    await takeSetupSelfie(app, start.body, deviceId);
     let secret: string | null = null;
     let totpCode: string | undefined;
     if (start.body.authenticatorSetupRequired) {

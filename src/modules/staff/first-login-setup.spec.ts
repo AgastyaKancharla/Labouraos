@@ -10,6 +10,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { AUTHENTICATOR_NOT_SET_UP, TEMP_PASSWORD_EXPIRED } from '../../common/auth/auth.service';
 import { freshTotpWindow } from '../../test-support/enrolled-login-spec';
+import { takeSetupSelfie } from '../../test-support/setup-selfie';
 
 function reasonOf(body: { reason?: string; details?: { reason?: string } }): string | undefined {
   return body.details?.reason ?? body.reason;
@@ -126,6 +127,10 @@ describe('First login with a temporary password', () => {
     const elsewhere = await post('/auth/setup/complete', { setupTicket: res.body.setupTicket, deviceId: `other-${ts}`, newPassword: 'Brand-New-1' });
     expect(elsewhere.status).toBe(401);
     expect(reasonOf(elsewhere.body)).toBe('other_device');
+    // The live selfie comes first: no new password before it.
+    const noSelfie = await post('/auth/setup/complete', { setupTicket: res.body.setupTicket, deviceId: `dev-t-${ts}`, newPassword: 'Brand-New-1' });
+    expect(noSelfie.status).toBe(400);
+    expect(reasonOf(noSelfie.body)).toBe('photo_required');
     // The selfie needs the ticket too (checked before the photo is read).
     await request(app.getHttpServer()).post('/auth/setup/photo').set('X-Forwarded-For', freshIp()).field('captureSource', 'live_camera').attach('photo', JPEG, 'me.jpg').expect(401);
     await request(app.getHttpServer())
@@ -194,6 +199,7 @@ describe('First login with a temporary password', () => {
     const res = await login(made.body.staff.code, made.body.tempPassword, `dev-tl-${ts}`).expect(200);
     expect(res.body).toMatchObject({ authenticatorSetupRequired: true, authenticatorCodeRequired: false });
     const ticket = { setupTicket: res.body.setupTicket, deviceId: `dev-tl-${ts}` };
+    await takeSetupSelfie(app, res.body, `dev-tl-${ts}`);
     const notStarted = await post('/auth/setup/complete', { ...ticket, newPassword: 'Lead-Pass-1' });
     expect(reasonOf(notStarted.body)).toBe('authenticator_not_started');
     const qr = await post('/auth/setup/authenticator', ticket).expect(200);
@@ -215,6 +221,66 @@ describe('First login with a temporary password', () => {
     const device = await login(made.body.staff.code, 'Lead-Pass-1', `dev-tl-${ts}`, { totpCode: authenticator.generate(qr.body.secret) });
     expect(messageOf(device.body)).toBe('This device is waiting for approval by a Manager or the CEO');
     expect(await prisma.loginCodeRequest.count({ where: { staffId: made.body.staff.id } })).toBe(0);
+  });
+
+  it('authenticator guessing in set-up stops at the account lock: the lock ends the ticket, even the right code is refused after it', async () => {
+    const made = await create('mgr', { name: 'Guess Lead', role: 'team_lead', reportsToId: staffIds.mgr });
+    const device = `dev-g-${ts}`;
+    const res = await login(made.body.staff.code, made.body.tempPassword, device).expect(200);
+    const ticket = { setupTicket: res.body.setupTicket, deviceId: device };
+    await takeSetupSelfie(app, res.body, device);
+    const qr = await post('/auth/setup/authenticator', ticket).expect(200);
+    const reasons: (string | undefined)[] = [];
+    for (let i = 0; i < 8 && reasons[reasons.length - 1] !== 'account_locked'; i += 1) {
+      const wrong = await post('/auth/setup/complete', { ...ticket, newPassword: 'Guess-Pass-1', totpCode: '000000' });
+      reasons.push(reasonOf(wrong.body));
+    }
+    // Wrong codes count like wrong passwords: the 5th locks the account and ends the ticket.
+    expect(reasons).toEqual(['totp_invalid', 'totp_invalid', 'totp_invalid', 'totp_invalid', 'account_locked']);
+    let row = await prisma.staff.findUniqueOrThrow({ where: { id: made.body.staff.id } });
+    expect(row.lockedUntil?.getTime()).toBeGreaterThan(Date.now());
+    expect(row).toMatchObject({ setupTicketHash: null, setupTicketDeviceId: null, status: 'pending_invite', totpEnabled: false });
+    await freshTotpWindow(qr.body.secret);
+    const after = await post('/auth/setup/complete', { ...ticket, newPassword: 'Guess-Pass-1', totpCode: authenticator.generate(qr.body.secret) });
+    expect(after.status).toBe(401);
+    expect(reasonOf(after.body)).toBe('setup_unknown');
+    // While locked, the temporary password gives no new ticket either.
+    const again = await login(made.body.staff.code, made.body.tempPassword, device);
+    expect(again.status).toBe(401);
+    expect(messageOf(again.body)).toContain('locked');
+    row = await prisma.staff.findUniqueOrThrow({ where: { id: made.body.staff.id } });
+    expect(row.setupTicketHash).toBeNull();
+  });
+
+  it('a ticket stops working the moment the account is locked (wrong passwords elsewhere), and the lock ends it', async () => {
+    const made = await create('mgr', { name: 'Locked Agent', role: 'call_agent', reportsToId: staffIds.tl });
+    const device = `dev-k-${ts}`;
+    const res = await login(made.body.staff.code, made.body.tempPassword, device).expect(200);
+    await prisma.staff.update({ where: { id: made.body.staff.id }, data: { lockedUntil: new Date(Date.now() + 15 * 60_000), failedLoginCount: 5 } });
+    const photo = await request(app.getHttpServer())
+      .post('/auth/setup/photo')
+      .set('X-Forwarded-For', freshIp())
+      .set('x-setup-ticket', res.body.setupTicket)
+      .set('x-device-id', device)
+      .field('captureSource', 'live_camera')
+      .attach('photo', JPEG, 'me.jpg');
+    expect(photo.status).toBe(401);
+    expect(messageOf(photo.body)).toContain('locked');
+    expect((await prisma.staff.findUniqueOrThrow({ where: { id: made.body.staff.id } })).setupTicketHash).toBeNull();
+  });
+
+  it('set-up routes are limited per connection only: a different staff code in the body never opens a fresh bucket', async () => {
+    const ip = `10.64.${ts % 200}.9`;
+    const statuses: number[] = [];
+    for (let i = 0; i < 7; i += 1) {
+      const res = await request(app.getHttpServer())
+        .post('/auth/setup/complete')
+        .set('X-Forwarded-For', ip)
+        .send({ staffCode: `RAND-${i}-${ts}`, resetRequestId: `r-${i}`, setupTicket: `${i}`.repeat(64), deviceId: `d-${i}`, newPassword: 'Whatever-123' });
+      statuses.push(res.status);
+    }
+    expect(statuses.slice(0, 5).every((st) => st === 401)).toBe(true);
+    expect(statuses.slice(5)).toEqual([429, 429]);
   });
 
   it('an existing Team Lead without an authenticator gets no session from a password alone; a fresh temporary password from a senior is the safe way in', async () => {

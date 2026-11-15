@@ -135,7 +135,6 @@ export default function SetupScreen() {
               <Text variant="muted">{t('access.setup.photoBody')}</Text>
               {error ? <Banner tone="error" message={error} testID="setup-error" /> : null}
               <Button label={busy ? t('access.setup.saving') : t('access.setup.photoOpen')} loading={busy} onPress={() => setCamera(true)} fullWidth testID="setup-photo-open" />
-              <Button label={t('access.setup.photoLater')} variant="secondary" onPress={() => setStep('password')} testID="setup-photo-later" />
             </>
           ) : (
             <>

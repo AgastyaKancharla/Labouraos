@@ -14,6 +14,13 @@ export const LOGIN_CONNECTION_TTL = 60000;
 /** POST /staff/sessions/:id/revoke (letter case does not matter to the bucket). */
 const SESSION_REVOKE_PATH = /^\/staff\/sessions\/[^/]+\/revoke\/?$/i;
 
+/**
+ * Public set-up and "Forgot password" routes: limited per connection ONLY.
+ * Whatever staff code, ticket or request id the body carries never opens a
+ * fresh bucket (a guesser could otherwise rotate them).
+ */
+const IP_ONLY_PATHS = [/^\/auth\/setup\//i, /^\/auth\/password-reset\/(request|complete)\/?$/i];
+
 @Injectable()
 export class AuthThrottlerGuard extends ThrottlerGuard {
   protected override async getTracker(req: Record<string, unknown>): Promise<string> {
@@ -33,11 +40,14 @@ export class AuthThrottlerGuard extends ThrottlerGuard {
       return `session-revoke:${user.sub}`;
     }
 
+    if (IP_ONLY_PATHS.some((path) => path.test(url))) {
+      return `ip:${clientIp}`;
+    }
+
     const body = expressReq.body as Record<string, unknown> | undefined;
     const identity =
       (body?.staffCode as string) ||
       (body?.loginRequestId as string) ||
-      (body?.resetRequestId as string) ||
       (body?.phone as string) ||
       (body?.requestId as string) ||
       (typeof body?.email === 'string' ? (body.email as string).trim().toLowerCase() : '') ||

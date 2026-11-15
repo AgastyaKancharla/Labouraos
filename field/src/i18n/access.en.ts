@@ -24,7 +24,6 @@ export const accessEn = {
   'access.setup.photoTitle': 'First, your photo',
   'access.setup.photoBody': 'Take a live selfie so whoever gives you a login code can see it is you.',
   'access.setup.photoOpen': 'Open the camera',
-  'access.setup.photoLater': 'No camera? Take it when you first sign in',
   'access.setup.photoDone': 'Photo saved. Now choose your password.',
   'access.setup.photoFailed': 'The photo could not be saved. Check your signal and try again.',
   'access.setup.staffCode': 'Your staff code: {code}',

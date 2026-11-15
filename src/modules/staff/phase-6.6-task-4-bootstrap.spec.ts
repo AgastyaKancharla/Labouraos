@@ -6,6 +6,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { applyTrustProxy } from '../../common/http/trust-proxy';
 import { stableTotpCode } from '../../test-support/enrolled-login-spec';
 import { seed } from '../../../prisma/seed';
+import { takeSetupSelfie } from '../../test-support/setup-selfie';
 
 describe('Phase 6.6 Task 4: Harden the CEO bootstrap', () => {
   let app: INestApplication;
@@ -91,6 +92,7 @@ describe('Phase 6.6 Task 4: Harden the CEO bootstrap', () => {
       expect(firstLoginRes.body).toMatchObject({ status: 'setup_required', authenticatorSetupRequired: true });
       expect(firstLoginRes.body.accessToken).toBeUndefined();
       const ticket = { setupTicket: firstLoginRes.body.setupTicket, deviceId: 'phase66-ceo-device' };
+      await takeSetupSelfie(app, firstLoginRes.body, 'phase66-ceo-device');
 
       // 3. Authenticator QR inside the set-up, then the new password and first code together.
       const setupRes = await request(app.getHttpServer()).post('/auth/setup/authenticator').set('X-Forwarded-For', freshIp()).send(ticket);

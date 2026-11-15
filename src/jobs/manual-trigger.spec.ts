@@ -161,8 +161,8 @@ describe('Phase 6.5 Task 2: Manual Trigger Endpoint for No-Pickup Evaluation Swe
       jest.clearAllMocks();
     });
 
-    const createToken = (role: Role, extra: Partial<JwtPayload> = {}): string => {
-      const payload: JwtPayload = {
+    const createToken = (role: Role, extra: Partial<JwtPayload> & { scope?: string } = {}): string => {
+      const payload: JwtPayload & { scope?: string } = {
         sub: `staff-${role}-id`,
         role,
         email: `${role}@laboura.local`,
@@ -181,7 +181,7 @@ describe('Phase 6.5 Task 2: Manual Trigger Endpoint for No-Pickup Evaluation Swe
       expect(mockAuditService.log).not.toHaveBeenCalled();
     });
 
-    it('refuses tokens restricted to totp_setup scope with 403 Forbidden', async () => {
+    it('refuses a token that still carries the old totp_setup scope with 403 Forbidden', async () => {
       const totpSetupToken = createToken('ceo', { scope: 'totp_setup' });
 
       await request(app.getHttpServer())

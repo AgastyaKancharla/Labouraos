@@ -16,6 +16,8 @@ export interface AwaitingCodeResponse {
   loginRequestProof: string;
   /** ISO time the code request expires (5 minutes). */
   expiresAt: string;
+  /** Who reads the code out: the Team Lead, or a CEO for an owner account that reports to a CEO. */
+  codeFrom?: 'team_lead' | 'ceo';
 }
 
 /** Shown once, at the first sign-in after a password reset. */

@@ -291,6 +291,7 @@ export class AuthService {
       loginRequestId: request.id,
       loginRequestProof: loginRequestProofFor(request.id, deviceId),
       expiresAt: request.expiresAt,
+      codeFrom: await this.agentSenior(staff),
     };
     return awaiting;
   }
@@ -300,11 +301,17 @@ export class AuthService {
    * agent account that reports straight to a CEO, the CEO (rev 174–175).
    */
   private async devicePendingMessage(staff: Staff): Promise<string> {
+    if ((await this.agentSenior(staff)) === 'ceo') return 'This device is waiting for approval by the CEO';
+    return 'This device is waiting for approval by your Team Lead';
+  }
+
+  /** Who an agent asks for device approval and login codes: their Team Lead, or a CEO for an owner account under a CEO. */
+  private async agentSenior(staff: Staff): Promise<'team_lead' | 'ceo'> {
     if (staff.reportsToId && !staff.teamLeadId) {
       const boss = await this.prisma.staff.findUnique({ where: { id: staff.reportsToId }, select: { role: true } });
-      if (boss?.role === 'ceo') return 'This device is waiting for approval by the CEO';
+      if (boss?.role === 'ceo') return 'ceo';
     }
-    return 'This device is waiting for approval by your Team Lead';
+    return 'team_lead';
   }
 
   /** True when the password is this account's temporary password (expired or not). */
@@ -967,7 +974,6 @@ export class AuthService {
       teamLeadId: actor.teamLeadId,
       sid: sessionId,
       ...(actor.app ? { app: actor.app } : {}),
-      ...(actor.scope ? { scope: actor.scope } : {}),
     };
     return this.jwtService.signAsync(payload, { expiresIn: '15m' });
   }

@@ -61,8 +61,9 @@ export class StaffSetupService {
   /**
    * The account a set-up ticket belongs to, checked against the device it was
    * given to. Anything wrong (unknown, other device, ended, temporary password
-   * ended or replaced, account deactivated or locked by a senior) is the same
-   * 401: start again from the sign-in page.
+   * ended or replaced, account deactivated) is the same 401: start again from
+   * the sign-in page. A locked account (by a senior, or by 5 wrong tries)
+   * gets the lock answer and the ticket ends.
    */
   async holderOf(rawTicket: unknown, rawDeviceId: unknown): Promise<Staff> {
     const ticket = text(rawTicket).trim();
@@ -82,8 +83,36 @@ export class StaffSetupService {
       throw refuse('temp_password_ended');
     }
     if (staff.status !== 'active' && staff.status !== 'pending_invite') throw refuse('account_not_active');
-    if (staff.lockedByStaffId) throw refuse('account_locked');
+    // Locked (by a senior, or by wrong passwords / authenticator codes): the
+    // ticket ends with the lock, so guessing cannot carry on after it.
+    try {
+      await this.auth.assertNotLocked(staff);
+    } catch (locked) {
+      await this.endTicket(staff, 'account_locked');
+      throw new UnauthorizedException({ message: (locked as Error).message, reason: 'account_locked' });
+    }
     return staff;
+  }
+
+  /** Ends this set-up ticket (the temporary password stays: after a lock ends, sign in with it again). */
+  private async endTicket(staff: Staff, reason: string): Promise<void> {
+    const ended = await this.prisma.staff.updateMany({
+      where: { id: staff.id, setupTicketHash: staff.setupTicketHash },
+      data: { setupTicketHash: null, setupTicketDeviceId: null, setupTicketExpiresAt: null },
+    });
+    if (ended.count === 1) {
+      await this.audit.log({ actorId: staff.id, action: 'auth.setup.ended', entityType: 'staff', entityCode: staff.code, after: { reason } });
+    }
+  }
+
+  /** A wrong authenticator code counts like a wrong password; the one that locks the account ends the ticket. */
+  private async wrongCode(staff: Staff, reason: 'totp_invalid' | 'totp_reused', message: string): Promise<never> {
+    const lockedUntil = await this.auth.countWrongSecondFactor(staff, reason);
+    if (lockedUntil) {
+      await this.endTicket(staff, 'account_locked');
+      throw new UnauthorizedException({ message: `Account is locked until ${lockedUntil.toISOString()}`, reason: 'account_locked' });
+    }
+    throw new BadRequestException({ message, reason });
   }
 
   /** The live camera selfie, taken before the password (moved here from the old invite page). */
@@ -119,6 +148,10 @@ export class StaffSetupService {
 
   async complete(input: SetupCompleteInput): Promise<{ success: true; code: string; signInAt: 'field_app' | 'web' }> {
     const staff = await this.holderOf(input?.setupTicket, input?.deviceId);
+    // The live selfie comes first whenever one is needed (no photo on file, or the CEO asked for a new one).
+    if (staffPhotoNeeded(staff)) {
+      throw new BadRequestException({ message: 'Take your live selfie first.', reason: 'photo_required' });
+    }
     const password = text(input?.newPassword);
     const problem = passwordRuleProblem(password);
     if (problem) throw new BadRequestException({ message: problem, reason: 'password_rules' });
@@ -147,12 +180,10 @@ export class StaffSetupService {
       }
       const step = this.totp.verifyStep(totpCode, staff.totpSecret);
       if (step === null) {
-        await this.auth.countWrongSecondFactor(staff, 'totp_invalid');
-        throw new BadRequestException({ message: 'The authenticator code is not right. Check the app and try again.', reason: 'totp_invalid' });
+        await this.wrongCode(staff, 'totp_invalid', 'The authenticator code is not right. Check the app and try again.');
       }
-      if (!(await claimTotpStep(this.prisma, staff.id, step))) {
-        await this.auth.countWrongSecondFactor(staff, 'totp_reused');
-        throw new BadRequestException({ message: TOTP_REUSED, reason: 'totp_reused' });
+      if (!(await claimTotpStep(this.prisma, staff.id, step!))) {
+        await this.wrongCode(staff, 'totp_reused', TOTP_REUSED);
       }
       enableTotp = !enrolled;
     }
@@ -182,6 +213,7 @@ export class StaffSetupService {
           tempPasswordExpiresAt: { gt: now },
           status: { in: ['active', 'pending_invite'] },
           lockedByStaffId: null,
+          OR: [{ lockedUntil: null }, { lockedUntil: { lte: now } }],
           ...(enableTotp ? { totpSecret: staff.totpSecret, totpEnabled: false } : {}),
         },
         data: {
