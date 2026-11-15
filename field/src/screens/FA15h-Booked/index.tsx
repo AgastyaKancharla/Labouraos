@@ -47,8 +47,8 @@ function Booked({ interview: i }: { interview: InterviewView }) {
   const dayShort = day.split(' ')[0];
   return (
     <>
-      <Banner tone="ok" title={t('fa15h.booked', { when })} testID="booked" />
-      <Card title={t('fa15h.next')}>
+      <Banner tone="ok" icon="calendar" title={t('fa15h.booked', { when })} testID="booked" />
+      <Card title={t('fa15h.next')} icon="calendar" accent="royal">
         <StepRow
           label={i.interviewType === 'phone' ? t('fa15h.phoneCall', { name: i.candidate.firstName }) : t('fa15h.candidateMessages', { name: i.candidate.firstName })}
           chip={i.offerMessagesSent > 0 ? t('fa15q.sent') : t('fa15h.sending')}

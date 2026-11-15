@@ -75,7 +75,7 @@ export function OtherIdPhoto({ jobSeekerId, onFinished, onClose }: { jobSeekerId
   }
 
   return (
-    <Card testID="other-id">
+    <Card testID="other-id" stripe accent="cyan">
       <View style={styles.gap}>
         <Text variant="h2">{t('fa10b.otherId.title')}</Text>
         <Text variant="muted">{t('fa10b.otherId.note')}</Text>

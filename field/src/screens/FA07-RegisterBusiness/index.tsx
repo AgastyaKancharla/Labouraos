@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useI18n, type MessageKey } from '@/i18n';
-import { Banner, Button, Card, CodeInput, LoadingState, Screen, StatusChip, Text, TextField } from '@/components';
+import { Banner, Button, Card, CodeInput, Emoji, LoadingState, Screen, StatusChip, Text, TextField } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { isApiError } from '@/api/errors';
@@ -14,7 +14,7 @@ import { locationProvider } from '@/device/location/provider';
 import { formatTimeIst } from '@/lib/format';
 import { DEFAULT_AREA_AUTO_FILL_MAX_METERS, distanceText, nearestArea } from '@/lib/nearestArea';
 import { routes } from '@/navigation/routes';
-import { colors, fonts, radius, touch } from '@/theme';
+import { type Accent, accents, colors, fonts, radius, touch } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { SelectField } from '../_visits/SelectField';
 import { DatePicker } from '../_visits/DatePicker';
@@ -264,11 +264,14 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
     <View style={styles.flex} testID="screen-FA07">
       <AppHeader title={t('fa07.header')} />
       <Screen>
-        <Text variant="h1">{t('fa07.title')}</Text>
+        <View style={styles.titleRow}>
+          <Text variant="h1" style={styles.flex1}>{t('fa07.title')}</Text>
+          <Emoji symbol="🏪" size={28} />
+        </View>
         <Text variant="muted">{t('fa07.sameForm')}</Text>
         <Banner tone="info" message={t('fa07.requiredNote')} />
 
-        <Card style={styles.gapCard}>
+        <Card style={styles.gapCard} stripe accent={SECTION_ACCENTS[0]}>
           <Section n={1} title={t('fa07.s1')} />
           <TextField label={t('fa07.contactName')} value={form.contactName} onChangeText={(v) => set({ contactName: v })} error={err('contactName') ? t('fa07.required') : null} testID="fa07-contact-name" />
           <SelectField label={t('fa07.contactRole')} value={form.contactRole} choices={choice(ROLES, 'role')} onChange={(v) => set({ contactRole: v })} error={err('contactRole')} testID="fa07-role" />
@@ -282,7 +285,7 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
           <SelectField label={t('fa07.heardFrom')} value={form.heardFrom} choices={choice(HEARD, 'heard')} onChange={(v) => set({ heardFrom: v })} error={err('heardFrom')} />
         </Card>
 
-        <Card style={styles.gapCard}>
+        <Card style={styles.gapCard} stripe accent={SECTION_ACCENTS[1]}>
           <Section n={2} title={t('fa07.s2')} />
           <TextField label={t('fa07.boardName')} value={form.boardName} onChangeText={(v) => set({ boardName: v })} error={err('boardName') ? t('fa07.required') : null} testID="fa07-board-name" />
           {household ? (
@@ -305,7 +308,7 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
           <Text variant="muted">{t('fa07.householdHint')}</Text>
         </Card>
 
-        <Card style={styles.gapCard}>
+        <Card style={styles.gapCard} stripe accent={SECTION_ACCENTS[2]}>
           <Section n={3} title={t('fa07.s3')} />
           <TextField label={t('fa07.shopNumber')} value={form.shopNumber} onChangeText={(v) => set({ shopNumber: v })} error={err('shopNumber') ? t('fa07.required') : null} />
           <TextField label={t('fa07.street')} value={form.street} onChangeText={(v) => set({ street: v })} error={err('street') ? t('fa07.required') : null} />
@@ -352,7 +355,7 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
         </Card>
 
         {!household ? (
-          <Card style={styles.gapCard}>
+          <Card style={styles.gapCard} stripe accent={SECTION_ACCENTS[3]}>
             <Section n={4} title={t('fa07.s4')} />
             {!form.noDocuments ? (
               <>
@@ -367,7 +370,7 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
           </Card>
         ) : null}
 
-        <Card style={styles.gapCard}>
+        <Card style={styles.gapCard} stripe accent={SECTION_ACCENTS[4]}>
           <Section n={5} title={t('fa07.s5')} />
           {form.staff.map((row, i) => {
             const trade = findTrade(row);
@@ -407,7 +410,7 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
           <Button label={t('fa07.addRole')} variant="secondary" onPress={() => set({ staff: [...form.staff, emptyRow()] })} testID="fa07-add-role" />
         </Card>
 
-        <Card style={styles.gapCard}>
+        <Card style={styles.gapCard} stripe accent={SECTION_ACCENTS[5]}>
           <Section n={6} title={t('fa07.s6')} />
           {(['kn', 'hi', 'en'] as ScriptLanguage[]).map((lang) => (
             <View key={lang} style={styles.script}>
@@ -425,11 +428,15 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
   );
 }
 
+/** Each section of the form has its own calm accent: the stripe and the numbered disc. */
+const SECTION_ACCENTS: Accent[] = ['royal', 'cyan', 'gold', 'navy', 'orange', 'green'];
+
 function Section({ n, title }: { n: number; title: string }) {
+  const a = accents[SECTION_ACCENTS[(n - 1) % SECTION_ACCENTS.length]];
   return (
     <View style={styles.section}>
-      <View style={styles.num}>
-        <Text style={styles.numText}>{n}</Text>
+      <View style={[styles.num, { backgroundColor: a.raw }]}>
+        <Text style={[styles.numText, { color: a.on }]}>{n}</Text>
       </View>
       <Text variant="h2" style={styles.flex1}>
         {title}
@@ -471,7 +478,8 @@ const styles = StyleSheet.create({
   mobileInput: {},
   inline: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   section: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
-  num: { width: 26, height: 26, borderRadius: 13, backgroundColor: colors.navy, alignItems: 'center', justifyContent: 'center' },
+  num: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   numText: { color: colors.white, fontFamily: fonts.display700, fontSize: 13 },
   toggle: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: touch.min },
   box: { width: 22, height: 22, borderRadius: 5, borderWidth: 2, borderColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
@@ -481,5 +489,5 @@ const styles = StyleSheet.create({
   branch: { gap: 10, paddingVertical: 12, borderTopWidth: 1, borderTopColor: colors.border },
   money: { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
   rupee: { fontFamily: fonts.body700, fontSize: 18, color: colors.ink, paddingBottom: 12 },
-  script: { gap: 4, padding: 12, borderRadius: radius.md, backgroundColor: colors.blue100, marginBottom: 8 },
+  script: { gap: 4, padding: 12, borderRadius: radius.md, backgroundColor: colors.blue100, borderLeftWidth: 4, borderLeftColor: colors.cyanRaw, marginBottom: 8 },
 });

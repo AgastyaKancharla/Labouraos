@@ -6,7 +6,7 @@ import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import type { CandidateCard } from '@/api/endpoints';
 import { useAuth } from '@/auth/AuthProvider';
-import { Banner, Button, Screen, Text } from '@/components';
+import { Banner, Button, Icon, IconTile, Screen, Text } from '@/components';
 import { RadioGroup, SelectField } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useI18n } from '@/i18n';
@@ -103,8 +103,11 @@ function Calling({ card, vacancyId }: { card: CandidateCard; vacancyId: string }
     <>
       {callId ? (
         <View style={[styles.live, answered && styles.liveOn]} testID="on-call">
-          <Text style={styles.liveTitle}>{t('fa15e.onCallWith', { name: card.firstName, time: elapsed })}</Text>
-          <Text style={styles.liveSub}>{answered ? t('fa15e.recorded') : t('fa15e.ringing')}</Text>
+          <IconTile icon="phone" accent={answered ? 'green' : 'gold'} size={38} />
+          <View style={styles.liveText}>
+            <Text style={styles.liveTitle}>{t('fa15e.onCallWith', { name: card.firstName, time: elapsed })}</Text>
+            <Text style={styles.liveSub}>{answered ? t('fa15e.recorded') : t('fa15e.ringing')}</Text>
+          </View>
         </View>
       ) : null}
       <Banner tone="warn" title={t('fa15e.beforeTitle')} message={t('fa15e.beforeBody')} testID="ask-owner" />
@@ -121,6 +124,7 @@ function Calling({ card, vacancyId }: { card: CandidateCard; vacancyId: string }
       {!callId ? (
         <Button
           label={place.isPending ? t('fa15e.calling') : t('fa15e.call', { name: card.firstName })}
+          icon={<Icon name="phone" color={colors.white} />}
           loading={place.isPending}
           onPress={() => place.mutate()}
           testID="place-call"
@@ -177,8 +181,9 @@ const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
   flex1: { flex: 1 },
   row: { flexDirection: 'row', gap: 10 },
-  live: { borderRadius: radius.lg, borderWidth: 1, borderColor: colors.amberBorder, backgroundColor: colors.amber100, padding: 14 },
-  liveOn: { borderColor: '#A9DEC7', backgroundColor: colors.green100 },
-  liveTitle: { fontFamily: fonts.display700, color: colors.green, fontSize: 15 },
-  liveSub: { color: colors.green, fontFamily: fonts.body600, fontSize: 12.5 },
+  live: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.amberBorder, borderLeftWidth: 4, borderLeftColor: colors.gold, backgroundColor: colors.amber100, padding: 14 },
+  liveOn: { borderColor: '#A9DEC7', borderLeftColor: colors.green, backgroundColor: colors.green100 },
+  liveText: { flex: 1, gap: 2 },
+  liveTitle: { fontFamily: fonts.display700, color: colors.greenText, fontSize: 15 },
+  liveSub: { color: colors.greenText, fontFamily: fonts.body600, fontSize: 12.5 },
 });

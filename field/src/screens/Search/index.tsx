@@ -5,10 +5,10 @@ import { useQuery } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { isSearchable, type SearchResult, type SearchRow, type SearchType } from '@/api/endpoints';
-import { Button, Card, EmptyState, ErrorState, LoadingState, Screen, StatusChip, Text, TextField } from '@/components';
+import { Button, Card, EmptyState, ErrorState, Icon, IconTile, LoadingState, Screen, StatusChip, Text, TextField, type IconName } from '@/components';
 import { useI18n, type MessageKey } from '@/i18n';
 import { routes } from '@/navigation/routes';
-import { colors, fonts, radius, touch, type Tone } from '@/theme';
+import { type Accent, colors, fonts, radius, shadow, type Tone, touch } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { useParam } from '../_selling';
 import { ChipChoices } from '../_visits/ChoiceList';
@@ -139,7 +139,7 @@ export default function SearchScreen() {
         </View>
 
         {!isSearchable(q) ? (
-          <EmptyState title={t('search.typeMore')} message={t('search.help')} />
+          <EmptyState emoji="🔍" title={t('search.typeMore')} message={t('search.help')} />
         ) : result.isPending ? (
           <LoadingState />
         ) : result.isError ? (
@@ -175,14 +175,23 @@ function Results({ data, tab, onTab }: { data: SearchResult; tab: Tab; onTab: (t
       <Card testID="search-register">
         <Text variant="muted">{data.results.length ? t('search.notRight') : t('search.register')}</Text>
         <View style={styles.registerRow}>
-          <Button label={t('search.registerSeeker')} variant="secondary" style={styles.half} onPress={() => router.push(routes.jobSeekerNew)} testID="search-register-seeker" />
-          <Button label={t('search.registerBusiness')} variant="secondary" style={styles.half} onPress={() => router.push(routes.visitStart)} testID="search-register-business" />
+          <Button label={t('search.registerSeeker')} variant="secondary" icon={<Icon name="user-plus" color={colors.cyan} />} style={styles.half} onPress={() => router.push(routes.jobSeekerNew)} testID="search-register-seeker" />
+          <Button label={t('search.registerBusiness')} variant="secondary" icon={<Icon name="store" color={colors.blue} />} style={styles.half} onPress={() => router.push(routes.visitStart)} testID="search-register-business" />
         </View>
       </Card>
       <Text variant="muted">{t('search.help')}</Text>
     </>
   );
 }
+
+/** Each kind of result has its own colour and icon, so a mixed list reads at a glance. */
+const TYPE_LOOK: Record<SearchRow['type'], { icon: IconName; accent: Accent }> = {
+  job_seeker: { icon: 'user', accent: 'cyan' },
+  business: { icon: 'store', accent: 'royal' },
+  referral: { icon: 'users', accent: 'gold' },
+  vacancy: { icon: 'briefcase', accent: 'orange' },
+  placement: { icon: 'trophy', accent: 'green' },
+};
 
 function ResultRow({ row }: { row: SearchRow }) {
   const { t, tn } = useI18n();
@@ -211,6 +220,7 @@ function ResultRow({ row }: { row: SearchRow }) {
   }
   const body = (
     <>
+      <IconTile icon={TYPE_LOOK[row.type].icon} accent={TYPE_LOOK[row.type].accent} size={36} />
       <View style={styles.rowText}>
         <Text style={styles.name}>{row.name}</Text>
         <Text variant="muted">{sub}</Text>
@@ -254,6 +264,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
+    ...shadow.card,
   },
   pressed: { borderColor: colors.cyanRaw },
   rowText: { flex: 1, minWidth: 0, gap: 2 },

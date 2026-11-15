@@ -2,7 +2,7 @@ import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useI18n } from '@/i18n';
-import { Button, Card, EmptyState, ErrorState, Icon, ListRow, LoadingState, Screen, StatusChip } from '@/components';
+import { Button, Card, EmptyState, ErrorState, Icon, IconTile, ListRow, LoadingState, Screen, StatusChip } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import type { FieldVisits } from '@/api/endpoints';
@@ -40,8 +40,8 @@ export default function VisitsScreen() {
           <ErrorState error={q.error} onRetry={() => void q.refetch()} />
         ) : (
           <>
-            <Card title={t('fa05.planned')} testID="fa05-planned">
-              {q.data.planned.length === 0 ? <EmptyState compact message={t('fa05.noPlanned')} /> : null}
+            <Card title={t('fa05.planned')} icon="calendar" accent="royal" testID="fa05-planned">
+              {q.data.planned.length === 0 ? <EmptyState compact emoji="🗓️" message={t('fa05.noPlanned')} /> : null}
               {q.data.planned.map((p, i) => {
                 // An app sign-up's visit (business_signup) is its verification visit: the same steps.
                 const verify = p.purpose === 'verification' || p.purpose === 'business_signup';
@@ -50,6 +50,7 @@ export default function VisitsScreen() {
                   <ListRow
                     key={p.assignmentId}
                     title={p.business.name}
+                    leading={<IconTile icon={signup ? 'user-plus' : verify ? 'shield' : 'users'} accent={signup ? 'green' : verify ? 'royal' : 'cyan'} size={34} />}
                     subtitle={
                       p.interview
                         ? `${formatDayIst(p.interview.startsAt)} ${formatTimeIst(p.interview.startsAt)} · ${p.interview.candidateName}`
@@ -81,12 +82,13 @@ export default function VisitsScreen() {
               })}
             </Card>
 
-            <Card title={t('fa05.revisits')} testID="fa05-revisits">
-              {q.data.revisitsDue.length === 0 ? <EmptyState compact message={t('fa05.noRevisits')} /> : null}
+            <Card title={t('fa05.revisits')} icon="store" accent="gold" testID="fa05-revisits">
+              {q.data.revisitsDue.length === 0 ? <EmptyState compact emoji="🏪" message={t('fa05.noRevisits')} /> : null}
               {q.data.revisitsDue.map((r, i) => (
                 <ListRow
                   key={r.visitId}
                   title={r.name}
+                  leading={<IconTile icon={r.when === 'overdue' ? 'alert' : 'clock'} accent={r.when === 'overdue' ? 'red' : 'gold'} size={34} />}
                   subtitle={r.note ? t('fa05.ownerSaid', { note: r.note }) : r.locality ?? undefined}
                   trailing={
                     <StatusChip
@@ -106,8 +108,8 @@ export default function VisitsScreen() {
               ))}
             </Card>
 
-            <Card title={t('fa05.done')} testID="fa05-done">
-              {q.data.doneToday.length === 0 ? <EmptyState compact message={t('fa05.noDone')} /> : null}
+            <Card title={t('fa05.done')} icon="check-circle" accent="green" testID="fa05-done">
+              {q.data.doneToday.length === 0 ? <EmptyState compact emoji="👟" message={t('fa05.noDone')} /> : null}
               {q.data.doneToday.map((v, i) => {
                 const minutes = minutesOf(v.durationSeconds);
                 const proof = [v.hasBoardPhoto ? '📷' : null, v.hasSelfie ? t('fa05.plusSelfie') : null].filter(Boolean).join(' ');
@@ -118,6 +120,7 @@ export default function VisitsScreen() {
                   <ListRow
                     key={v.id}
                     title={v.name ?? t('fa05.unnamedShop')}
+                    leading={<DoneTile visit={v} />}
                     subtitle={subtitle}
                     trailing={
                       v.needsProof ? (
@@ -148,6 +151,16 @@ export default function VisitsScreen() {
       </Screen>
     </View>
   );
+}
+
+/** The coloured tile beside a visit done today: what is left to do, or how it went. */
+function DoneTile({ visit: v }: { visit: FieldVisits['doneToday'][number] }) {
+  if (v.needsProof) return <IconTile icon="camera" accent="gold" size={34} />;
+  if (v.needsOutcome) return <IconTile icon="clipboard" accent="gold" size={34} />;
+  if (v.outcome === 'onboarded') return <IconTile icon="check-circle" accent="green" size={34} />;
+  if (v.outcome === 'not_interested') return <IconTile icon="x-circle" accent="orange" size={34} />;
+  if (v.outcome === 'owner_not_there') return <IconTile icon="clock" accent="navy" size={34} />;
+  return <IconTile icon="star" accent="cyan" size={34} />;
 }
 
 const styles = StyleSheet.create({

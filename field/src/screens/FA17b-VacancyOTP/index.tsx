@@ -2,7 +2,7 @@ import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
-import { Banner, Button, Card, Screen, Text } from '@/components';
+import { Banner, Button, Card, HeroCard, Screen } from '@/components';
 import { formatDateKey } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useI18n } from '@/i18n';
@@ -58,10 +58,7 @@ export default function VacancyOtpScreen() {
             const confirmed = status === 'open';
             return (
               <>
-                <View>
-                  <Text variant="h2" style={styles.title}>{t('fa17b.title')}</Text>
-                  <Text variant="muted">{details}</Text>
-                </View>
+                <HeroCard title={t('fa17b.title')} subtitle={details} emoji="🔐" />
                 {confirmed ? (
                   <Banner
                     tone="ok"
@@ -69,7 +66,7 @@ export default function VacancyOtpScreen() {
                     testID="vacancy-confirmed"
                   />
                 ) : (
-                  <Card>
+                  <Card stripe accent="gold">
                     <OtpStep
                       testID="vacancy-otp"
                       initial={otpParam ? { otpRequestId: otpParam, sentToLast4: last4Param || last4, contactName: contact } : null}
@@ -111,5 +108,4 @@ export default function VacancyOtpScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
-  title: { fontSize: 17 },
 });

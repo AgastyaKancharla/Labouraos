@@ -54,14 +54,15 @@ function Paid({ placement: p }: { placement: PlacementView }) {
       {paid ? (
         <Banner
           tone="ok"
+          icon="check-circle"
           title={t('fa15q.received', { amount: formatRupees(p.totalPaise) })}
           message={t('fa15q.byBank', { time: p.paymentConfirmedAt || p.paidAt ? formatTimeIst((p.paymentConfirmedAt ?? p.paidAt)!) : '' })}
           testID="paid"
         />
       ) : (
-        <Banner tone="warn" title={t('fa15q.waiting', { amount: formatRupees(p.totalPaise) })} message={t('fa15q.waitingBody')} testID="waiting-bank" />
+        <Banner tone="warn" icon="clock" title={t('fa15q.waiting', { amount: formatRupees(p.totalPaise) })} message={t('fa15q.waitingBody')} testID="waiting-bank" />
       )}
-      <Card title={t('fa15q.auto')}>
+      <Card title={t('fa15q.auto')} icon="check-circle" accent="green">
         <StepRow label={t('fa15q.detailsShared', { name: p.candidate.firstName, owner: p.business.contactName ?? p.business.name })} chip={paid ? t('fa15q.sent') : t('fa15q.afterPayment')} tone={paid ? 'green' : 'neutral'} />
         <StepRow label={t('fa15q.toldJoining', { name: p.candidate.firstName, date: joining })} chip={paid ? t('fa15q.smsWhatsapp') : t('fa15q.afterPayment')} tone={paid ? 'green' : 'neutral'} />
         <StepRow label={t('fa15q.invoice', { business: p.business.name })} chip={p.invoiceCode ? t('fa15q.emailed') : t('fa15q.afterPayment')} tone={p.invoiceCode ? 'green' : 'neutral'} />

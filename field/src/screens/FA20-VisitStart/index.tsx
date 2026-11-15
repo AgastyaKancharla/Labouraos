@@ -3,7 +3,8 @@ import { StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useI18n } from '@/i18n';
-import { Banner, Button, Card, Icon, Screen, StatusChip, Text } from '@/components';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Banner, Button, Card, Icon, IconTile, Screen, StatusChip, Text } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { isApiError } from '@/api/errors';
@@ -14,7 +15,7 @@ import type { CapturedPhoto } from '@/device/camera';
 import { formatStampIst } from '@/lib/format';
 import { newId } from '@/lib/uuid';
 import { routes } from '@/navigation/routes';
-import { colors, radius } from '@/theme';
+import { colors, heroGradient, radius } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { CameraSheet } from '../_visits/CameraSheet';
 import { StepHeader } from '../_visits/StepHeader';
@@ -98,18 +99,18 @@ export default function VisitStartScreen() {
       <AppHeader title={t('fa20.title')} />
       <Screen>
         <StepHeader step={1} label={t('fa20.step')} />
-        {!queue.online ? <Banner tone="info" message={t('common.offline')} /> : null}
-        <Card title={t('fa20.photoTitle')}>
+        {!queue.online ? <Banner tone="info" icon="wifi-off" message={t('common.offline')} /> : null}
+        <Card title={t('fa20.photoTitle')} icon="camera" accent="royal">
           <View style={styles.gps} testID="fa20-gps">
-            <Icon name="location" color={fix ? colors.green : colors.soft} />
+            <IconTile icon="location" accent={fix ? 'green' : 'navy'} size={30} />
             <Text variant="small" style={styles.flex1}>
               {fix ? `${t('fa20.gpsFound')} · ${formatCoordinates(fix)}` : location.errorKey ? t(location.errorKey) : t('fa20.gpsFinding')}
             </Text>
             {fix ? <StatusChip tone={fix.level === 'good' ? 'green' : 'amber'} label={t('device.location.accuracy', { meters: Math.round(fix.accuracy) })} /> : null}
           </View>
           {location.errorKey ? <Button label={t('common.retry')} variant="secondary" onPress={() => void read()} /> : null}
-          <View style={styles.photoBox}>
-            <Icon name="camera" size={34} color={colors.white} />
+          <LinearGradient colors={heroGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.photoBox}>
+            <IconTile icon="camera" accent="cyan" size={60} />
             <Text variant="h2" align="center" color={colors.white}>
               {t('fa20.pointAt')}
             </Text>
@@ -121,7 +122,7 @@ export default function VisitStartScreen() {
                 {`${formatCoordinates(fix)} · ${formatStampIst(openedAt)}`}
               </Text>
             ) : null}
-          </View>
+          </LinearGradient>
           {params.name ? <Text variant="small">{t('fa20.visiting', { name: params.name })}</Text> : null}
         </Card>
 
@@ -167,8 +168,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     padding: 18,
-    paddingVertical: 48,
+    paddingVertical: 40,
     borderRadius: radius.card,
-    backgroundColor: colors.navy,
+    overflow: 'hidden',
   },
 });

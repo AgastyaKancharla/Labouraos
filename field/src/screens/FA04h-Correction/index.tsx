@@ -72,7 +72,7 @@ export default function CorrectionScreen() {
     <View style={styles.flex} testID="screen-FA04h">
       <AppHeader title={t('fa04h.title')} />
       <Screen>
-        <Card>
+        <Card stripe accent="gold">
           <View style={styles.gap}>
             <DateField label={t('fa04h.day')} required value={date} max={todayKeyIst()} onChange={setDate} testID="fa04h-date" />
             <View style={styles.row}>

@@ -3,6 +3,7 @@ import { useI18n } from '@/i18n';
 import { isApiError } from '@/api/errors';
 import { colors } from '@/theme';
 import { Button } from './Button';
+import { Emoji } from './Emoji';
 import { Text } from './Text';
 
 /** Spinner with "Loading…" — for a whole screen or a card. */
@@ -30,11 +31,12 @@ export function ErrorState({ error, onRetry, compact }: { error?: unknown; onRet
   );
 }
 
-/** Nothing to show yet. */
-export function EmptyState({ title, message, compact }: { title?: string; message?: string; compact?: boolean }) {
+/** Nothing to show yet. `emoji` adds a friendly picture above the words (never the only meaning). */
+export function EmptyState({ title, message, compact, emoji }: { title?: string; message?: string; compact?: boolean; emoji?: string }) {
   const { t } = useI18n();
   return (
     <View style={[styles.box, compact && styles.compact]}>
+      {emoji ? <Emoji symbol={emoji} size={compact ? 24 : 36} /> : null}
       {title ? (
         <Text variant="h2" align="center">
           {title}
@@ -49,5 +51,5 @@ export function EmptyState({ title, message, compact }: { title?: string; messag
 
 const styles = StyleSheet.create({
   box: { alignItems: 'center', justifyContent: 'center', gap: 12, paddingVertical: 32, paddingHorizontal: 16 },
-  compact: { paddingVertical: 12 },
+  compact: { paddingVertical: 12, gap: 6 },
 });

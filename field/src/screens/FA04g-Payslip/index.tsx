@@ -116,17 +116,19 @@ function PayslipCard({ slip }: { slip: Payslip }) {
         <KeyValue label={t('fa04g.notOnStaff')} value={t('fa04g.notOnStaffDays', { days: slip.days.notEmployedDays })} last />
       ) : null}
 
-      <Text variant="label" style={styles.section}>
-        {t('fa04g.earnings')}
-      </Text>
+      <View style={styles.sectionRow}>
+        <View style={[styles.sectionBar, { backgroundColor: colors.green }]} />
+        <Text variant="label">{t('fa04g.earnings')}</Text>
+      </View>
       {slip.earnings.map((e) => (
         <KeyValue key={e.key} label={EARN_KEY[e.key] ? t(EARN_KEY[e.key]) : e.label} value={formatRupees(e.paise)} />
       ))}
       <KeyValue label={t('fa04g.gross')} value={formatRupees(slip.grossPaise)} strong last testID="fa04g-gross" />
 
-      <Text variant="label" style={styles.section}>
-        {t('fa04g.deductions')}
-      </Text>
+      <View style={styles.sectionRow}>
+        <View style={[styles.sectionBar, { backgroundColor: colors.orangeRaw }]} />
+        <Text variant="label">{t('fa04g.deductions')}</Text>
+      </View>
       {slip.deductions.map((d) => (
         <KeyValue key={d.key} label={deductionLabel(d.key, d.label)} value={d.note && d.paise === 0 ? t('fa04g.afterRegistration') : formatRupees(d.paise)} />
       ))}
@@ -152,9 +154,10 @@ function PayslipCard({ slip }: { slip: Payslip }) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
-  head: { borderBottomWidth: 2, borderBottomColor: colors.navy, paddingBottom: 10, marginBottom: 4, gap: 2 },
+  head: { borderBottomWidth: 3, borderBottomColor: colors.blue, paddingBottom: 10, marginBottom: 4, gap: 2 },
   company: { fontFamily: fonts.display700, color: colors.navy, fontSize: 16 },
-  section: { marginTop: 14, marginBottom: 2 },
+  sectionRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14, marginBottom: 2 },
+  sectionBar: { width: 4, height: 14, borderRadius: 2 },
   net: {
     marginTop: 14,
     marginBottom: 12,
@@ -162,10 +165,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.green,
+    borderLeftWidth: 4,
     backgroundColor: colors.green100,
     gap: 2,
   },
-  netLabel: { fontFamily: fonts.body700, color: colors.green, fontSize: 13.5 },
-  netValue: { fontFamily: fonts.display700, color: colors.green, fontSize: 22 },
-  netWords: { fontFamily: fonts.body600, color: colors.green, fontSize: 12.5 },
+  netLabel: { fontFamily: fonts.body700, color: colors.greenText, fontSize: 13.5 },
+  netValue: { fontFamily: fonts.display700, color: colors.greenText, fontSize: 22 },
+  netWords: { fontFamily: fonts.body600, color: colors.greenText, fontSize: 12.5 },
 });

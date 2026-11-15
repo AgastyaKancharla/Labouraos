@@ -4,14 +4,14 @@ import { router } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
-import { Banner, Button, Card, Screen, Text, TextField } from '@/components';
+import { Banner, Button, Card, Emoji, Screen, Text, TextField } from '@/components';
 import { addDays, Checkbox, ChipPicker, DateField, MobileField, MoneyField, Segmented, SelectField, todayKeyIst } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useLocation } from '@/device/location/useLocation';
 import { useI18n, type MessageKey } from '@/i18n';
 import { formatTimeIst } from '@/lib/format';
 import { sellingRoutes } from '@/navigation/routes';
-import { colors, fonts } from '@/theme';
+import { type Accent, accents, colors, fonts } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { ErrorBanner, formatRupees, Script, UserFacingError } from '../_selling';
 import { OtpStep } from '../_selling/OtpStep';
@@ -118,10 +118,13 @@ export default function CaptureSeekerScreen() {
     <View style={styles.flex}>
       <AppHeader title={t('fa03.headerTitle')} subtitle={t('fa10.subtitle')} />
       <Screen testID="screen-FA10">
-        <View>
-          <Text variant="h1">{t('fa10.title')}</Text>
-          <Text variant="muted">{t('fa10.sameForm')}</Text>
-          <Text variant="tiny" style={styles.top}>{t('fa10.requiredNote')}</Text>
+        <View style={styles.titleRow}>
+          <View style={styles.flex1}>
+            <Text variant="h1">{t('fa10.title')}</Text>
+            <Text variant="muted">{t('fa10.sameForm')}</Text>
+            <Text variant="tiny" style={styles.top}>{t('fa10.requiredNote')}</Text>
+          </View>
+          <Emoji symbol="🧑‍🔧" size={30} />
         </View>
 
         <Section n={1} title={t('fa10.s1')}>
@@ -337,12 +340,16 @@ export default function CaptureSeekerScreen() {
   );
 }
 
+/** Each section of the form has its own calm accent: the stripe and the numbered disc. */
+const SECTION_ACCENTS: Accent[] = ['royal', 'cyan', 'gold', 'green', 'orange', 'navy'];
+
 function Section({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+  const accent = SECTION_ACCENTS[(n - 1) % SECTION_ACCENTS.length];
   return (
-    <Card>
+    <Card stripe accent={accent}>
       <View style={styles.sectionHead}>
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>{n}</Text>
+        <View style={[styles.badge, { backgroundColor: accents[accent].raw }]}>
+          <Text style={[styles.badgeText, { color: accents[accent].on }]}>{n}</Text>
         </View>
         <Text variant="h2">{title}</Text>
       </View>
@@ -395,9 +402,11 @@ const styles = StyleSheet.create({
   gap: { gap: 12 },
   top: { marginTop: 4 },
   link: { color: colors.blue, fontFamily: fonts.body700, paddingVertical: 8 },
-  sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  badge: { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.blue, alignItems: 'center', justifyContent: 'center' },
-  badgeText: { color: colors.white, fontFamily: fonts.body700, fontSize: 12 },
+  sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  flex1: { flex: 1 },
+  badge: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  badgeText: { fontFamily: fonts.display700, fontSize: 13 },
   pinRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   pinText: { color: colors.ink, flex: 1 },
   tradeRow: { gap: 8, paddingBottom: 4 },

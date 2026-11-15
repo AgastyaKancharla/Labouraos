@@ -86,6 +86,6 @@ const styles = StyleSheet.create({
   },
   optionOn: { borderColor: colors.green, backgroundColor: colors.green100 },
   optionText: { fontFamily: fonts.body600, fontSize: 16, color: colors.ink },
-  optionTextOn: { color: colors.green },
+  optionTextOn: { color: colors.greenText },
   pressed: { opacity: 0.7 },
 });

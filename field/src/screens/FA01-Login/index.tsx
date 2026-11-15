@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { Image, KeyboardAvoidingView, Platform, StyleSheet, View, type TextInputInstance } from 'react-native';
 import { router } from 'expo-router';
-import { Banner, Button, Screen, Text, TextField, TopBar } from '@/components';
+import { Banner, Button, Card, Screen, Text, TextField, TopBar } from '@/components';
 import { useAuth } from '@/auth/AuthProvider';
 import { shortDeviceId } from '@/auth/device';
 import { isApiError } from '@/api/errors';
@@ -66,49 +66,51 @@ export default function LoginScreen() {
             </Text>
           </View>
           {reasonKey && !errorKey ? <Banner tone="info" message={t(reasonKey)} testID="session-ended" /> : null}
-          <TextField
-            label={t('fa01.staffCode')}
-            value={staffCode}
-            onChangeText={setStaffCode}
-            placeholder={t('fa01.staffCodePlaceholder')}
-            autoCapitalize="characters"
-            autoCorrect={false}
-            autoComplete="username"
-            textContentType="username"
-            returnKeyType="next"
-            onSubmitEditing={() => passwordRef.current?.focus()}
-            testID="staff-code"
-          />
-          <TextField
-            ref={passwordRef}
-            label={t('fa01.password')}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            autoComplete="current-password"
-            textContentType="password"
-            returnKeyType="go"
-            onSubmitEditing={() => void submit()}
-            testID="password"
-          />
-          {errorKey ? (
-            <Banner
-              tone="error"
-              message={
-                errorKey === 'fa01.devicePending'
-                  ? t(errorKey, { device: deviceId ? shortDeviceId(deviceId) : '' })
-                  : (serverMessage ?? t(errorKey))
-              }
-              testID="login-error"
+          <Card stripe accent="royal" style={styles.card}>
+            <TextField
+              label={t('fa01.staffCode')}
+              value={staffCode}
+              onChangeText={setStaffCode}
+              placeholder={t('fa01.staffCodePlaceholder')}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              autoComplete="username"
+              textContentType="username"
+              returnKeyType="next"
+              onSubmitEditing={() => passwordRef.current?.focus()}
+              testID="staff-code"
             />
-          ) : null}
-          <Button
-            label={busy ? t('fa01.signingIn') : t('fa01.signIn')}
-            onPress={() => void submit()}
-            loading={busy}
-            fullWidth
-            testID="sign-in"
-          />
+            <TextField
+              ref={passwordRef}
+              label={t('fa01.password')}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoComplete="current-password"
+              textContentType="password"
+              returnKeyType="go"
+              onSubmitEditing={() => void submit()}
+              testID="password"
+            />
+            {errorKey ? (
+              <Banner
+                tone="error"
+                message={
+                  errorKey === 'fa01.devicePending'
+                    ? t(errorKey, { device: deviceId ? shortDeviceId(deviceId) : '' })
+                    : (serverMessage ?? t(errorKey))
+                }
+                testID="login-error"
+              />
+            ) : null}
+            <Button
+              label={busy ? t('fa01.signingIn') : t('fa01.signIn')}
+              onPress={() => void submit()}
+              loading={busy}
+              fullWidth
+              testID="sign-in"
+            />
+          </Card>
           <Text variant="muted">{t('fa01.approvedPhoneNote')}</Text>
         </View>
       </Screen>
@@ -122,4 +124,5 @@ const styles = StyleSheet.create({
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   logo: { width: 40, height: 40, borderRadius: radius.md },
   title: { flexShrink: 1 },
+  card: { gap: 16 },
 });

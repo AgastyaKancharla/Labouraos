@@ -3,7 +3,7 @@ import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
-import { Banner, Button, Card, Screen, Text } from '@/components';
+import { Banner, Button, Card, HeroCard, Screen } from '@/components';
 import { useI18n } from '@/i18n';
 import { sellingRoutes } from '@/navigation/routes';
 import { colors } from '@/theme';
@@ -29,16 +29,15 @@ export default function NoMoreScreen() {
         <QueryView query={why}>
           {(w) => (
             <>
-              <View>
-                <Text variant="h2" style={styles.title}>{t('fa15x.title')}</Text>
-                <Text variant="muted">
-                  {t('fa15x.sub', { business: w.businessName, trade: w.headcount > 1 ? `${w.trade} × ${w.headcount}` : w.trade, count: w.totalShown })}
-                </Text>
-              </View>
-              <Card title={t('fa15x.why')}>
-                <KeyValue label={t('fa15x.within', { trade: w.trade })} value={String(w.withinDistance)} strong testID="within" />
-                <KeyValue label={t('fa15x.salaryAbove', { amount: formatRupees(w.vacancyMaxPaise) })} value={String(w.leftOutSalaryAbove)} strong testID="salary-above" />
-                <KeyValue label={t('fa15x.shift')} value={String(w.leftOutShift)} strong last testID="shift" />
+              <HeroCard
+                title={t('fa15x.title')}
+                subtitle={t('fa15x.sub', { business: w.businessName, trade: w.headcount > 1 ? `${w.trade} × ${w.headcount}` : w.trade, count: w.totalShown })}
+                emoji="🔍"
+              />
+              <Card title={t('fa15x.why')} icon="chart" accent="cyan">
+                <KeyValue icon="location" accent="cyan" label={t('fa15x.within', { trade: w.trade })} value={String(w.withinDistance)} strong testID="within" />
+                <KeyValue icon="rupee" accent="gold" label={t('fa15x.salaryAbove', { amount: formatRupees(w.vacancyMaxPaise) })} value={String(w.leftOutSalaryAbove)} strong testID="salary-above" />
+                <KeyValue icon="clock" accent="orange" label={t('fa15x.shift')} value={String(w.leftOutShift)} strong last testID="shift" />
               </Card>
               <Banner
                 tone="info"
@@ -69,5 +68,4 @@ const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
   flex1: { flex: 1 },
   row: { flexDirection: 'row', gap: 10 },
-  title: { fontSize: 17 },
 });

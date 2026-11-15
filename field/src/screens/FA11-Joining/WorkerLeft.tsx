@@ -4,9 +4,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import type { PlacementView } from '@/api/endpoints';
-import { Banner, Button, Card, Text } from '@/components';
+import { Banner, Button, Card, Icon, Text } from '@/components';
 import { DateField, SelectField, todayKeyIst } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
+import { colors } from '@/theme';
 import { useI18n, type MessageKey } from '@/i18n';
 import { formatCountdown, formatDayIst, formatTimeIst } from '@/lib/format';
 import { ErrorBanner } from '../_selling';
@@ -68,16 +69,19 @@ export function WorkerLeft({ placement: p }: { placement: PlacementView }) {
     <View style={styles.form} testID="left-previous">
       <Text variant="label">{t('fa11.left.previous')}</Text>
       {d.previousClaims.map((c) => (
-        <Text key={c.code} variant="muted">
-          {`${c.code} · ${formatDayIst(c.reportedAt)} · ${c.decision === 'accepted' ? t('fa11.left.accepted') : t('fa11.left.rejected')}${c.rejectionCode ? ` · ${t(`fa11.left.rejection.${c.rejectionCode}` as MessageKey)}` : ''}${c.decisionReason ? ` · “${c.decisionReason}”` : ''}`}
-        </Text>
+        <View key={c.code} style={styles.prev}>
+          <View style={[styles.prevDot, { backgroundColor: c.decision === 'accepted' ? colors.green : colors.redRaw }]} />
+          <Text variant="muted" style={styles.flex}>
+            {`${c.code} · ${formatDayIst(c.reportedAt)} · ${c.decision === 'accepted' ? t('fa11.left.accepted') : t('fa11.left.rejected')}${c.rejectionCode ? ` · ${t(`fa11.left.rejection.${c.rejectionCode}` as MessageKey)}` : ''}${c.decisionReason ? ` · “${c.decisionReason}”` : ''}`}
+          </Text>
+        </View>
       ))}
     </View>
   ) : null;
   // Rejected before and not allowed again for this person: say why (owner decision 14 Nov).
   if (d.blocked === 'not_again' && d.reportAgain) {
     return (
-      <Card title={t('fa11.left.title')}>
+      <Card title={t('fa11.left.title')} icon="alert" accent="orange" stripe>
         <Banner tone="warn" message={d.reportAgain.who === 'nobody' ? t('fa11.left.againNever') : t('fa11.left.againManager')} testID="left-not-again" />
         {earlier}
       </Card>
@@ -96,12 +100,12 @@ export function WorkerLeft({ placement: p }: { placement: PlacementView }) {
   const max = d.leftOnLatest < today ? d.leftOnLatest : today;
   const ready = !!leftOn && !!reason && !!ownerCall;
   return (
-    <Card title={t('fa11.left.title')}>
+    <Card title={t('fa11.left.title')} icon="alert" accent="orange" stripe testID="left-card">
       <Text variant="muted">{t('fa11.left.intro', { name: p.candidate.firstName, days: d.guarantee.windowDays, hours: d.guarantee.decisionHours })}</Text>
       {d.reportAgain?.allowed && d.reportAgain.until ? <Banner tone="info" message={t('fa11.left.againOnce', { date: formatDayIst(`${d.reportAgain.until}T12:00:00+05:30`) })} testID="left-again-once" /> : null}
       {earlier}
       {!open ? (
-        <Button label={t('fa11.left.open')} variant="secondary" loading={form.isRefetching} onPress={() => void openForm()} testID="left-open" />
+        <Button label={t('fa11.left.open')} variant="secondary" icon={<Icon name="alert" color={colors.crit} />} loading={form.isRefetching} onPress={() => void openForm()} testID="left-open" />
       ) : (
         <View style={styles.form}>
           <DateField
@@ -143,4 +147,7 @@ export function WorkerLeft({ placement: p }: { placement: PlacementView }) {
 const styles = StyleSheet.create({
   form: { gap: 12, marginTop: 8 },
   row: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  flex: { flex: 1 },
+  prev: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  prevDot: { width: 8, height: 8, borderRadius: 4, marginTop: 6 },
 });

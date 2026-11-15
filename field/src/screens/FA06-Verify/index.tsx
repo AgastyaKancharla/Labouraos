@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useI18n } from '@/i18n';
-import { Banner, Button, Card, CodeInput, EmptyState, ErrorState, LoadingState, Screen, StatusChip, Text } from '@/components';
+import { Banner, Button, Card, CodeInput, EmptyState, ErrorState, IconTile, LoadingState, Screen, StatusChip, Text } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { isApiError } from '@/api/errors';
@@ -130,8 +130,9 @@ export default function VerifyScreen() {
       <AppHeader title={t('fa06.title')} />
       <Screen>
         <Text variant="h1">{t('fa06.verify', { name: b.name })}</Text>
-        <Card>
+        <Card stripe accent="royal">
           <View style={styles.row}>
+            <IconTile icon="location" accent="royal" size={30} />
             <Text variant="bodyStrong" style={styles.flex1}>{t('fa06.step1')}</Text>
             {atShop ? done : null}
           </View>
@@ -140,8 +141,9 @@ export default function VerifyScreen() {
           </Text>
           {!atShop ? <Button label={t('common.retry')} variant="secondary" onPress={() => void read()} /> : null}
         </Card>
-        <Card>
+        <Card stripe accent="cyan">
           <View style={styles.row}>
+            <IconTile icon="camera" accent="cyan" size={30} />
             <Text variant="bodyStrong" style={styles.flex1}>{t('fa06.step2')}</Text>
             {boardDone && selfieDone ? done : null}
           </View>
@@ -151,8 +153,11 @@ export default function VerifyScreen() {
             <Button label={selfieDone ? `✓ ${t('fa06.selfie')}` : t('fa06.selfie')} variant={selfieDone ? 'secondary' : 'primary'} disabled={!boardDone || selfieDone} loading={busy === 'selfie'} onPress={() => setCamera('selfie')} style={styles.flex1} testID="fa06-selfie" />
           </View>
         </Card>
-        <Card>
-          <Text variant="bodyStrong">{t('fa06.step3')}</Text>
+        <Card stripe accent="gold">
+          <View style={styles.row}>
+            <IconTile icon="phone" accent="gold" size={30} />
+            <Text variant="bodyStrong" style={styles.flex1}>{t('fa06.step3')}</Text>
+          </View>
           {otp ? (
             <>
               <Text variant="muted">{t('fa06.otpSent', { phone: otp.phone })}</Text>
@@ -161,8 +166,9 @@ export default function VerifyScreen() {
           ) : null}
           <Button label={otp ? t('fa06.resend') : t('fa06.sendCode')} variant="secondary" loading={busy === 'otp'} onPress={() => void sendCode()} testID="fa06-send-code" />
         </Card>
-        <Card>
+        <Card stripe accent="green">
           <View style={styles.row}>
+            <IconTile icon="document" accent="green" size={30} />
             <Text variant="bodyStrong" style={styles.flex1}>{t('fa06.step4')}</Text>
             {b.agreement ? <StatusChip tone="green" label={t('fa06.signed')} /> : agreementSent ? <StatusChip tone="amber" label={t('fa06.linkSent')} /> : null}
           </View>
@@ -193,7 +199,7 @@ export default function VerifyScreen() {
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
   flex1: { flex: 1 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 6 },
   buttons: { flexDirection: 'row', gap: 8, marginTop: 10 },
   title: { fontFamily: fonts.display700 },
 });

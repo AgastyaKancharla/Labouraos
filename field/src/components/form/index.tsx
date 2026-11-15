@@ -583,7 +583,7 @@ const styles = StyleSheet.create({
   radioOn: { borderColor: colors.green, backgroundColor: colors.green100 },
   radioBad: { borderColor: colors.tomato, backgroundColor: colors.tomato100 },
   radioText: { fontFamily: fonts.body600, color: colors.ink },
-  radioTextOn: { fontFamily: fonts.body700, color: colors.green },
+  radioTextOn: { fontFamily: fonts.body700, color: colors.greenText },
   radioTextBad: { fontFamily: fonts.body700, color: colors.tomato },
   dot: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5, borderColor: colors.soft, alignItems: 'center', justifyContent: 'center' },
   dotOn: { borderColor: colors.blue },

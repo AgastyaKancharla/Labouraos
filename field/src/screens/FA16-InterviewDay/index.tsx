@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import type { InterviewView } from '@/api/endpoints';
-import { Banner, Button, Card, Screen, StatusChip, Text } from '@/components';
+import { Banner, Button, Card, HeroCard, Screen, StatusChip, Text } from '@/components';
 import { formatClock, RadioGroup } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { distanceMeters } from '@/device/location/location';
@@ -72,19 +72,20 @@ function Day({ interview: i }: { interview: InterviewView }) {
   const deadline = settings.data ? formatClock(settings.data.interviewResultDeadline) : '';
   return (
     <>
-      <View>
-        <Text variant="h2" style={styles.title}>{t('fa16.title', { business: i.business.name })}</Text>
-        <Text variant="muted">
-          {[
-            i.candidate.firstName,
-            i.vacancy.trade,
-            `${formatDayIst(i.slotStartsAt).split(' ')[0]} ${formatTimeIst(i.slotStartsAt)}`,
-            i.firstWithBusiness ? t('fa16.first') : null,
-          ].filter(Boolean).join(' · ')}
-        </Text>
-      </View>
+      <HeroCard
+        title={t('fa16.title', { business: i.business.name })}
+        subtitle={[
+          i.candidate.firstName,
+          i.vacancy.trade,
+          `${formatDayIst(i.slotStartsAt).split(' ')[0]} ${formatTimeIst(i.slotStartsAt)}`,
+          i.firstWithBusiness ? t('fa16.first') : null,
+        ].filter(Boolean).join(' · ')}
+        emoji="🤝"
+      />
       <Card>
         <KeyValue
+          icon="location"
+          accent={distance !== null && distance <= 200 ? 'green' : 'gold'}
           label={distance !== null && distance > 200 ? t('fa16.farFromShop') : t('fa16.atShop')}
           last
           testID="gps"
@@ -117,7 +118,7 @@ function Day({ interview: i }: { interview: InterviewView }) {
         </>
       )}
       <ErrorBanner error={save.error} />
-      <Card title={t('fa16.after')}>
+      <Card title={t('fa16.after')} icon="clock" accent="cyan">
         <StepRow label={t('fa16.ownerResult', { time: deadline })} chip={i.resultRecordedAt ? t('fa16.done') : t('fa16.waiting')} tone={i.resultRecordedAt ? 'green' : 'amber'} />
         <StepRow
           label={t('fa16.candidateAsked', { name: i.candidate.firstName })}
@@ -134,5 +135,4 @@ function Day({ interview: i }: { interview: InterviewView }) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
-  title: { fontSize: 17 },
 });

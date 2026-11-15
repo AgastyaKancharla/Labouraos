@@ -1,6 +1,6 @@
 import { View, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
-import { Button, Card, Screen, Text } from '@/components';
+import { Button, Card, Emoji, Screen, Text } from '@/components';
 import { useI18n, type MessageKey } from '@/i18n';
 import { routes } from '@/navigation/routes';
 import { colors } from '@/theme';
@@ -24,7 +24,8 @@ export function Placeholder({ design, titleKey, inTabs }: Props) {
     <View style={styles.flex} testID={`placeholder-${design}`}>
       <AppHeader title={t(titleKey)} />
       <Screen>
-        <Card>
+        <Card stripe accent="gold">
+          <Emoji symbol="🚧" size={30} style={styles.emoji} />
           <Text variant="h2">{t('placeholder.title')}</Text>
           <Text variant="muted" style={styles.body}>
             {t('placeholder.body', { design })}
@@ -39,4 +40,5 @@ export function Placeholder({ design, titleKey, inTabs }: Props) {
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
   body: { marginTop: 6 },
+  emoji: { textAlign: 'left', marginBottom: 6 },
 });

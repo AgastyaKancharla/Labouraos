@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import type { BusinessDetail, CreatedVacancy } from '@/api/endpoints';
-import { Banner, Button, Card, Screen, Text, TextField } from '@/components';
+import { Banner, Button, Card, Emoji, Screen, Text, TextField } from '@/components';
 import { Checkbox, DateField, MoneyField, SelectField, todayKeyIst } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useI18n } from '@/i18n';
@@ -46,7 +46,10 @@ export default function AddVacancyScreen() {
     <View style={styles.flex}>
       <AppHeader title={t('fa03.headerTitle')} subtitle={t('fa17.subtitle')} />
       <Screen testID="screen-FA17">
-        <Text variant="h2" style={styles.title}>{t('fa17.title')}</Text>
+        <View style={styles.titleRow}>
+          <Text variant="h2" style={styles.title}>{t('fa17.title')}</Text>
+          <Emoji symbol="🧑‍🍳" size={24} />
+        </View>
         {businessId ? (
           <QueryView query={business}>{(b) => <Form business={b} />}</QueryView>
         ) : (
@@ -122,7 +125,7 @@ function Form({ business }: { business: BusinessDetail }) {
       <Card>
         <BusinessHeader name={business.name} sub={[business.code, business.locality].filter(Boolean).join(' · ')} onChange={() => router.replace(routes.vacancies)} />
       </Card>
-      <Card>
+      <Card stripe accent="orange">
         <View style={styles.gap}>
           <SelectField label={t('fa17.role')} required value={form.trade} choices={tradeChoices} onChange={(v) => set('trade', v)} error={err('trade')} testID="role" />
           {form.trade === OTHER_TRADE ? (
@@ -186,7 +189,8 @@ function Form({ business }: { business: BusinessDetail }) {
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
   gap: { gap: 12 },
-  title: { fontSize: 17 },
+  title: { fontSize: 17, flex: 1 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   extrasLabel: { color: colors.soft },
   extras: { flexDirection: 'row', flexWrap: 'wrap' },
   extra: { width: '50%' },

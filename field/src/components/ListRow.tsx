@@ -6,6 +6,8 @@ import { Text } from './Text';
 interface Props {
   title: string;
   subtitle?: string;
+  /** Left side: usually an IconTile (a drawn icon or emoji in a coloured round tile). */
+  leading?: ReactNode;
   /** Right side: usually a StatusChip. */
   trailing?: ReactNode;
   onPress?: () => void;
@@ -14,10 +16,11 @@ interface Props {
   testID?: string;
 }
 
-/** `.row` from the designs: text on the left, chip on the right, divider below. */
-export function ListRow({ title, subtitle, trailing, onPress, last, testID }: Props) {
+/** `.row` from the designs: optional coloured tile, text, chip on the right, divider below. */
+export function ListRow({ title, subtitle, leading, trailing, onPress, last, testID }: Props) {
   const content = (
     <>
+      {leading}
       <View style={styles.text}>
         <Text>{title}</Text>
         {subtitle ? <Text variant="muted">{subtitle}</Text> : null}

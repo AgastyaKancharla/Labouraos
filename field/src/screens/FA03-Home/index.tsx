@@ -2,14 +2,14 @@ import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useI18n } from '@/i18n';
-import { Banner, Button, Card, EmptyState, ErrorState, Icon, ListRow, LoadingState, ProgressBar, Screen, SearchBar, StatStrip, StatusChip, Text } from '@/components';
+import { Banner, Button, Card, EmptyState, ErrorState, HeroCard, HeroPill, Icon, IconTile, ListRow, LoadingState, ProgressBar, Screen, SearchBar, StatGrid, StatTile, StatusChip, Text } from '@/components';
 import { useAuth } from '@/auth/AuthProvider';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { LOCATION_ERROR_KEYS } from '@/device/location/useLocation';
 import { isApiError } from '@/api/errors';
 import { formatDayIst, formatShiftTime, formatTimeIst } from '@/lib/format';
 import { routes, sellingRoutes } from '@/navigation/routes';
-import { colors } from '@/theme';
+import { colors, fonts, fontSize } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { isLocationError, placementsProgress, useAttendanceLogin, useAttendanceToday, useFieldHome, useTargetDashboard } from './useHome';
 import type { HomeAlert, HomeTodo } from '@/api/endpoints';
@@ -62,7 +62,7 @@ export default function HomeScreen() {
     <View style={styles.flex}>
       <AppHeader title={t('fa03.headerTitle')} subtitle={subtitle} />
       <Screen onRefresh={refresh} refreshing={today.isRefetching} testID="screen-FA03">
-        {!queue.online ? <Banner tone="info" message={t('common.offline')} testID="offline-banner" /> : null}
+        {!queue.online ? <Banner tone="info" icon="wifi-off" message={t('common.offline')} testID="offline-banner" /> : null}
 
         {/* Attendance: Login button, or logged-in time and status */}
         {today.isPending ? (
@@ -72,6 +72,7 @@ export default function HomeScreen() {
         ) : !today.data.loginAt ? (
           <Banner
             tone="warn"
+            icon="clock"
             title={t('fa03.notLoggedIn')}
             message={t('fa03.shift', {
               start: formatShiftTime(today.data.clocks.shiftStart),
@@ -89,7 +90,7 @@ export default function HomeScreen() {
             }
           />
         ) : today.data.logoutAt ? (
-          <Banner tone="info" title={t('fa03.dayEndedAt', { time: formatTimeIst(today.data.logoutAt) })} testID="attendance-ended" />
+          <Banner tone="info" icon="clock" title={t('fa03.dayEndedAt', { time: formatTimeIst(today.data.logoutAt) })} testID="attendance-ended" />
         ) : (
           <Banner
             tone="ok"
@@ -108,18 +109,30 @@ export default function HomeScreen() {
 
         <SearchBar onPress={() => router.push(routes.search)} />
 
-        <Card title={t('fa03.today')} compact>
-          <StatStrip
-            items={[
-              { key: 'shops', value: n(counts?.shopsVisited), label: t('fa03.shopsVisited') },
-              { key: 'onboarded', value: n(counts?.onboarded), label: t('fa03.onboarded') },
-              { key: 'vacancies', value: n(counts?.vacanciesAdded), label: t('fa03.vacancies') },
-              { key: 'shown', value: n(counts?.candidatesShown), label: t('fa03.shown') },
-              { key: 'interviews', value: n(counts?.interviewsBooked), label: t('fa03.interviews') },
-            ]}
-          />
-          {home.isError ? <ErrorState error={home.error} onRetry={() => void home.refetch()} compact /> : null}
-        </Card>
+        {/* The agent's day: a blue hero with today's five numbers as mixed-colour tiles and the month's placements. */}
+        <HeroCard eyebrow={t('fa03.today')} corner={<HeroPill label={formatDayIst(today.data?.clocks.now ?? openedAt)} />} testID="today-hero">
+          <StatGrid>
+            <StatTile accent="royal" value={n(counts?.shopsVisited)} label={t('fa03.shopsVisited')} testID="stat-shops" />
+            <StatTile accent="green" value={n(counts?.onboarded)} label={t('fa03.onboarded')} testID="stat-onboarded" />
+            <StatTile accent="gold" value={n(counts?.vacanciesAdded)} label={t('fa03.vacancies')} testID="stat-vacancies" />
+            <StatTile accent="cyan" value={n(counts?.candidatesShown)} label={t('fa03.shown')} testID="stat-shown" />
+            <StatTile accent="orange" value={n(counts?.interviewsBooked)} label={t('fa03.interviews')} testID="stat-interviews" />
+          </StatGrid>
+          {progress ? (
+            <View testID="placements-card" style={styles.placements}>
+              <View style={styles.placementsHead}>
+                <IconTile icon="trophy" accent="gold" size={30} />
+                <Text style={styles.onBlueLabel}>{t('fa03.placementsThisMonth')}</Text>
+              </View>
+              <View style={styles.statRow}>
+                <Text style={styles.bigOnBlue}>{progress.achieved}</Text>
+                <Text style={styles.onBlueSoft}>{progress.target !== null ? ` / ${progress.target}` : ` · ${t('fa03.noTarget')}`}</Text>
+              </View>
+              <ProgressBar value={progress.ratio} color={colors.gold} onBlue />
+            </View>
+          ) : null}
+        </HeroCard>
+        {home.isError ? <ErrorState error={home.error} onRetry={() => void home.refetch()} compact /> : null}
 
         <View style={styles.grid}>
           <Button
@@ -129,18 +142,40 @@ export default function HomeScreen() {
             onPress={() => router.push(routes.visitStart)}
             testID="quick-visit"
           />
-          <Button label={t('fa03.addJobSeeker')} variant="secondary" style={styles.cell} onPress={() => router.push(routes.jobSeekerNew)} testID="quick-job-seeker" />
-          <Button label={t('fa03.addVacancy')} variant="secondary" style={styles.cell} onPress={() => router.push(routes.vacancyNew)} testID="quick-vacancy" />
-          <Button label={t('fa03.feeCalculator')} variant="secondary" style={styles.cell} onPress={() => router.push(routes.feeCalculator)} testID="quick-fee" />
+          <Button
+            label={t('fa03.addJobSeeker')}
+            variant="secondary"
+            icon={<Icon name="user-plus" color={colors.cyan} />}
+            style={styles.cell}
+            onPress={() => router.push(routes.jobSeekerNew)}
+            testID="quick-job-seeker"
+          />
+          <Button
+            label={t('fa03.addVacancy')}
+            variant="secondary"
+            icon={<Icon name="briefcase" color={colors.crit} />}
+            style={styles.cell}
+            onPress={() => router.push(routes.vacancyNew)}
+            testID="quick-vacancy"
+          />
+          <Button
+            label={t('fa03.feeCalculator')}
+            variant="secondary"
+            icon={<Icon name="rupee" color={colors.amber} />}
+            style={styles.cell}
+            onPress={() => router.push(routes.feeCalculator)}
+            testID="quick-fee"
+          />
         </View>
 
-        <Card title={t('fa03.alerts')}>
+        <Card title={t('fa03.alerts')} icon="bell" accent="orange">
           {(home.data?.alerts ?? []).map((alert, i) => (
             <AlertRow key={`${alert.kind}-${alert.business.id}-${i}`} alert={alert} last={i === (home.data?.alerts.length ?? 0) - 1 && queue.summary.total === 0} />
           ))}
           {queue.summary.total > 0 ? (
             <ListRow
               title={queue.summary.failed > 0 ? t('fa03.waitingToSendFailed') : t('fa03.waitingToSend')}
+              leading={<IconTile icon="wifi-off" accent={queue.summary.failed > 0 ? 'red' : 'gold'} size={34} />}
               trailing={
                 <StatusChip
                   tone={queue.summary.failed > 0 ? 'tomato' : 'amber'}
@@ -158,29 +193,17 @@ export default function HomeScreen() {
               testID="queue-row"
             />
           ) : (home.data?.alerts.length ?? 0) === 0 ? (
-            <EmptyState compact message={t('fa03.noAlerts')} />
+            <EmptyState compact emoji="🌤️" message={t('fa03.noAlerts')} />
           ) : null}
         </Card>
 
-        <Card title={t('fa03.todo')} testID="todo-card">
-          {(home.data?.todos ?? []).length === 0 ? <EmptyState compact message={t('fa03.noTodos')} /> : null}
+        <Card title={t('fa03.todo')} icon="clipboard" accent="cyan" testID="todo-card">
+          {(home.data?.todos ?? []).length === 0 ? <EmptyState compact emoji="✅" message={t('fa03.noTodos')} /> : null}
           {(home.data?.todos ?? []).map((todo, i) => (
             <TodoRow key={`${todo.kind}-${i}`} todo={todo} last={i === (home.data?.todos.length ?? 0) - 1} />
           ))}
         </Card>
 
-        {progress ? (
-          <Card testID="placements-card">
-            <Text variant="label">{t('fa03.placementsThisMonth')}</Text>
-            <View style={styles.statRow}>
-              <Text variant="stat" style={styles.big}>
-                {progress.achieved}
-              </Text>
-              <Text variant="muted">{progress.target !== null ? ` / ${progress.target}` : ` · ${t('fa03.noTarget')}`}</Text>
-            </View>
-            <ProgressBar value={progress.ratio} />
-          </Card>
-        ) : null}
       </Screen>
     </View>
   );
@@ -192,6 +215,7 @@ function AlertRow({ alert, last }: { alert: HomeAlert; last: boolean }) {
     return (
       <ListRow
         title={t('fa03.alertSigned', { name: alert.business.name })}
+        leading={<IconTile icon="check-circle" accent="green" size={34} />}
         trailing={alert.canShowCandidates ? <StatusChip tone="green" label={t('fa03.showCandidates')} /> : <StatusChip tone="green" label={t('fa03.signed')} />}
         onPress={() =>
           alert.canShowCandidates
@@ -207,6 +231,7 @@ function AlertRow({ alert, last }: { alert: HomeAlert; last: boolean }) {
   return (
     <ListRow
       title={t('fa03.alertResult', { name: alert.business.name })}
+      leading={<IconTile icon={alert.result === 'selected' ? 'star' : 'user'} accent={alert.result === 'selected' ? 'royal' : 'navy'} size={34} />}
       trailing={<StatusChip tone={alert.result === 'selected' ? 'blue' : 'neutral'} label={t(resultKey)} />}
       onPress={() => router.push(`${routes.business}/${alert.business.id}`)}
       last={last}
@@ -224,6 +249,7 @@ function TodoRow({ todo, last }: { todo: HomeTodo; last: boolean }) {
       <ListRow
         title={t('fa03.todoRevisit', { name: todo.name })}
         subtitle={todo.outcome === 'owner_not_there' ? t('fa03.todoOwnerAway') : t('fa03.todoComeBack')}
+        leading={<IconTile icon="store" accent="gold" size={34} />}
         trailing={chip}
         onPress={() =>
           router.push({ pathname: routes.visitStart, params: todo.businessId ? { businessId: todo.businessId, name: todo.name } : { revisitOf: todo.visitId, name: todo.name } })
@@ -237,6 +263,7 @@ function TodoRow({ todo, last }: { todo: HomeTodo; last: boolean }) {
     return (
       <ListRow
         title={t('fa03.todoJoining', { candidate: todo.candidateFirstName, name: todo.name })}
+        leading={<IconTile icon="briefcase" accent="green" size={34} />}
         trailing={chip}
         onPress={() => router.push(sellingRoutes.joining(todo.placementId))}
         last={last}
@@ -254,6 +281,7 @@ function TodoRow({ todo, last }: { todo: HomeTodo; last: boolean }) {
   return (
     <ListRow
       title={title}
+      leading={<IconTile icon="phone" accent="royal" size={34} />}
       trailing={chip}
       onPress={target ? () => router.push(target) : undefined}
       last={last}
@@ -288,7 +316,10 @@ const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   cell: { flexBasis: '48%', flexGrow: 1 },
-  note: { marginTop: 8 },
-  statRow: { flexDirection: 'row', alignItems: 'baseline', marginVertical: 6 },
-  big: { fontSize: 22 },
+  placements: { gap: 8, paddingTop: 4 },
+  placementsHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  onBlueLabel: { fontFamily: fonts.body700, fontSize: fontSize.label, letterSpacing: 0.6, textTransform: 'uppercase', color: colors.onBlueSoft, flex: 1 },
+  statRow: { flexDirection: 'row', alignItems: 'baseline' },
+  bigOnBlue: { fontFamily: fonts.display700, fontSize: 30, lineHeight: 36, color: colors.white, fontVariant: ['tabular-nums'] },
+  onBlueSoft: { fontFamily: fonts.body600, fontSize: fontSize.body, color: colors.onBlueSoft },
 });

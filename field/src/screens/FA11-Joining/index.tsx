@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import type { CallRow, PlacementView } from '@/api/endpoints';
-import { Banner, Button, Card, Screen, StatusChip, Text } from '@/components';
+import { Banner, Button, Card, HeroCard, Screen, StatusChip, Text } from '@/components';
 import { addDays, DateField, RadioGroup, todayKeyIst } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useI18n } from '@/i18n';
@@ -92,15 +92,19 @@ function Joining({ placement: p }: { placement: PlacementView }) {
   const ready = says === 'joined' ? !!bothAnswered : says === 'didnt_come' ? !!p.ownerCall?.answered : says === 'moved' ? !!p.ownerCall?.answered && !!newDate : false;
   return (
     <>
-      <Text variant="h2" style={styles.title}>{t('fa11.title', { name: p.candidate.firstName, business: p.business.name })}</Text>
+      <HeroCard title={t('fa11.title', { name: p.candidate.firstName, business: p.business.name })} emoji="💼" />
       {p.joinedDate ? <Banner tone="ok" message={t('fa11.joinedOn', { date: formatDayIst(p.joinedDate) })} testID="joined" /> : null}
       <Card>
         <KeyValue
+          icon="rupee"
+          accent={paid ? 'green' : 'gold'}
           label={t('fa11.feePaid', { business: p.business.name })}
           trailing={<StatusChip label={paid ? t('fa11.byBank') : t('fa11.notPaid')} tone={paid ? 'green' : 'amber'} />}
         />
-        <KeyValue label={t('fa11.joiningDate')} value={p.joiningDate ? formatDayIst(p.joiningDate) : '—'} strong />
+        <KeyValue icon="calendar" accent="royal" label={t('fa11.joiningDate')} value={p.joiningDate ? formatDayIst(p.joiningDate) : '—'} strong />
         <KeyValue
+          icon="phone"
+          accent="cyan"
           label={t('fa11.callWorker', { name: p.candidate.firstName })}
           trailing={
             <View style={styles.callCell}>
@@ -110,6 +114,8 @@ function Joining({ placement: p }: { placement: PlacementView }) {
           }
         />
         <KeyValue
+          icon="phone"
+          accent="navy"
           label={t('fa11.callOwner')}
           last
           trailing={
@@ -146,7 +152,7 @@ function Joining({ placement: p }: { placement: PlacementView }) {
       ) : null}
       {p.joinedDate && p.status === 'active' ? <WorkerLeft placement={p} /> : null}
       <Text variant="muted">{t('fa11.guaranteeNote')}</Text>
-      <Card title={t('fa11.comingUp')}>
+      <Card title={t('fa11.comingUp')} icon="calendar" accent="cyan">
         <StepRow label={t('fa11.day7', { name: p.candidate.firstName })} chip={p.comingUp.dayCheckIn7 ? formatDayIst(p.comingUp.dayCheckIn7).slice(4) : '—'} />
         <StepRow label={t('fa11.day30')} chip={p.comingUp.dayCheckIn30 ? formatDayIst(p.comingUp.dayCheckIn30).slice(4) : '—'} />
         <StepRow label={t('fa11.complete')} chip={p.comingUp.completesAt ? formatDayIst(p.comingUp.completesAt).slice(4) : '—'} last />
@@ -157,6 +163,5 @@ function Joining({ placement: p }: { placement: PlacementView }) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
-  title: { fontSize: 17 },
   callCell: { flexDirection: 'row', alignItems: 'center', gap: 8 },
 });

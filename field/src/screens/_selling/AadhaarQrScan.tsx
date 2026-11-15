@@ -89,7 +89,7 @@ export function AadhaarQrScan({ jobSeekerId, onFinished, onClose }: { jobSeekerI
   }
 
   return (
-    <Card testID="aadhaar-scan">
+    <Card testID="aadhaar-scan" stripe accent="royal">
       <Text variant="h2">{t('fa10b.scanTitle')}</Text>
       <View style={styles.camera}>
         <CameraView
@@ -115,5 +115,5 @@ export function AadhaarQrScan({ jobSeekerId, onFinished, onClose }: { jobSeekerI
 const styles = StyleSheet.create({
   gap: { gap: 12, marginTop: 12 },
   camera: { aspectRatio: 1, borderRadius: radius.md, overflow: 'hidden', backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center', marginVertical: 12 },
-  frame: { width: '78%', aspectRatio: 1, borderWidth: 3, borderColor: colors.white, borderRadius: radius.md },
+  frame: { width: '78%', aspectRatio: 1, borderWidth: 3, borderColor: colors.cyanRaw, borderRadius: radius.md },
 });

@@ -1,14 +1,17 @@
 import { Pressable, StyleSheet, View } from 'react-native';
-import { Text } from '@/components';
-import { colors, radius, touch } from '@/theme';
+import { IconTile, Text, type IconName } from '@/components';
+import { colors, radius, touch, type Accent } from '@/theme';
 
 export interface Choice<V extends string = string> {
   value: V;
   label: string;
   disabled?: boolean;
+  /** A drawn icon in a coloured round tile at the start of the row (ChoiceList only). */
+  icon?: IconName;
+  accent?: Accent;
 }
 
-/** A radio list (`input radio` in the designs): one tall row per choice. */
+/** A radio list (`input radio` in the designs): one tall row per choice, optionally with a coloured icon tile. */
 export function ChoiceList<V extends string>({
   choices,
   value,
@@ -36,6 +39,7 @@ export function ChoiceList<V extends string>({
             testID={testID ? `${testID}-${c.value}` : undefined}
           >
             <View style={[styles.dot, on && styles.dotOn]}>{on ? <View style={styles.inner} /> : null}</View>
+            {c.icon ? <IconTile icon={c.icon} accent={c.accent} size={30} /> : null}
             <Text variant={on ? 'bodyStrong' : 'body'} style={styles.label}>
               {c.label}
             </Text>
