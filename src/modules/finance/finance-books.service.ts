@@ -96,7 +96,7 @@ export class FinanceBooksService {
         where: {
           confirmedBy: 'gateway',
           status: { in: RECEIVED_STATUSES },
-          type: { in: ['activation', 'reactivation', 'placement_fee', 'bypass_charge'] },
+          type: { in: ['activation', 'reactivation', 'placement_fee', 'replacement_upgrade', 'bypass_charge'] },
           confirmedAt: { gte: range.from, lte: range.to },
           ...(filters.search ? { OR: [{ code: contains(filters.search) }, { gatewayReference: contains(filters.search) }, { jobSeeker: { name: contains(filters.search) } }, { business: { name: contains(filters.search) } }] } : {}),
         },
@@ -232,7 +232,7 @@ export class FinanceBooksService {
       ? await this.prisma.payment.findMany({
           where: {
             status: 'pending',
-            type: { in: ['activation', 'reactivation', 'placement_fee', 'bypass_charge'] },
+            type: { in: ['activation', 'reactivation', 'placement_fee', 'replacement_upgrade', 'bypass_charge'] },
             createdAt: { gte: since, lte: new Date(credit.receivedAt.getTime() + 60_000) },
             OR: [{ amount: { gte: credit.amountPaise } }, { expectedAmountPaise: { gte: credit.amountPaise } }],
           },

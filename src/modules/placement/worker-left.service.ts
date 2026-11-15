@@ -11,9 +11,10 @@ import { PlacementService } from './placement.service';
 export const WORKER_LEFT_ROLES = ['field_agent', 'call_agent', 'team_lead', 'manager', 'ceo'] as const;
 
 /**
- * "Accepted but never joined" is not offered here: this form is reached only
- * after joining was recorded (a worker who did not come is FA11's "He didn't
- * come"). The server still accepts the reason.
+ * "Accepted but never joined" is offered only for a selected, paid candidate
+ * whose joining day has come and who has no joining recorded (D2, rev 176):
+ * the replacement does not count toward the free replacements. For a worker
+ * who joined, the usual covered reasons.
  */
 const FORM_COVERED_REASONS = ACCEPT_CLAIM_REASONS.filter((r) => r !== 'never_joined');
 
@@ -73,7 +74,8 @@ export class WorkerLeftService {
       ],
     };
     const rows = await this.prisma.placement.findMany({
-      where: { AND: [scope, match, { status: 'active' }] },
+      // Confirmed too: a selected candidate who never joined is reported here (D2).
+      where: { AND: [scope, match, { status: { in: ['active', 'confirmed'] } }] },
       select: {
         id: true,
         code: true,
@@ -97,6 +99,7 @@ export class WorkerLeftService {
         code: true,
         status: true,
         joinedDate: true,
+        joiningDate: true,
         rootPlacementId: true,
         businessId: true,
         jobSeeker: { select: { name: true } },
@@ -133,8 +136,11 @@ export class WorkerLeftService {
     const root = placement.rootPlacementId
       ? await this.prisma.placement.findUnique({ where: { id: placement.rootPlacementId }, select: { joinedDate: true } })
       : placement;
+    const today0 = istDayOf(now)!;
+    // D2: confirmed (fee paid), joining day reached, nobody recorded him joining.
+    const neverJoined = placement.status === 'confirmed' && !placement.joinedDate && Boolean(placement.joiningDate) && istDayOf(placement.joiningDate!)! <= today0;
     const rootJoined = root?.joinedDate ?? null;
-    const ownJoined = placement.joinedDate ?? rootJoined;
+    const ownJoined = placement.joinedDate ?? (neverJoined ? placement.joiningDate : rootJoined);
     const policy = await this.pricing.current();
     const lastDay = rootJoined ? addDays(istDayOf(rootJoined)!, policy.replacementWindowDays) : null;
     const guaranteeEndsAt = lastDay ? istDayStart(addDays(lastDay, 1)) : null;
@@ -145,8 +151,8 @@ export class WorkerLeftService {
     const refile = refileRule(placement.replacementClaims, actor.role, today, policy.claimReportDays);
 
     let blocked: WorkerLeftBlocked | null = null;
-    if (placement.status !== 'active') blocked = 'not_active';
-    else if (!rootJoined) blocked = 'not_joined';
+    if (placement.status !== 'active' && !neverJoined) blocked = 'not_active';
+    else if (!rootJoined && !neverJoined) blocked = 'not_joined';
     else if (openClaim) blocked = 'open_claim';
     else if (!refile.allowed) blocked = 'not_again';
 
@@ -207,7 +213,10 @@ export class WorkerLeftService {
           decidedAt: c.decidedAt,
         })),
       ownerCalls: calls.map((c) => ({ id: c.id, code: c.code, at: c.answeredAt ?? c.startedAt ?? c.createdAt, durationSec: c.durationSec, by: c.staff?.name ?? null })),
-      reasons: { covered: [...FORM_COVERED_REASONS], notCovered: [...REJECT_CLAIM_REASONS] },
+      reasons: neverJoined
+        ? { covered: ['never_joined'], notCovered: [] }
+        : { covered: [...FORM_COVERED_REASONS], notCovered: [...REJECT_CLAIM_REASONS] },
+      neverJoined,
     };
   }
 }

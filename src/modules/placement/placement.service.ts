@@ -201,16 +201,26 @@ export class PlacementService {
           );
         }
 
+        // D2 (rev 176): replacing a selected candidate who never joined does not use up a free
+        // replacement — it takes the same place in the chain and is not counted.
+        const neverJoinedSwap = !droppedPlacement.joinedDate;
         const previousReplacements = await tx.placement.count({
-          where: { rootPlacementId: rootId, replacementNumber: { gt: 0 } },
+          where: { rootPlacementId: rootId, replacementNumber: { gt: 0 }, countsAsReplacement: true },
         });
-        const replacementNumber = previousReplacements + 1;
+        const replacementNumber = neverJoinedSwap ? droppedPlacement.replacementNumber : previousReplacements + 1;
         const policy = await this.getPolicy();
-        if (replacementNumber > policy.maxFreeReplacements) {
+        if (!neverJoinedSwap && replacementNumber > policy.maxFreeReplacements) {
           throw new BadRequestException(
             `A third replacement is refused; maximum free replacements is ${policy.maxFreeReplacements}`,
           );
         }
+
+        // D3 (rev 176): a replacement hired at a higher salary than the person replaced — the
+        // business pays the fee percent of the positive difference plus GST before release.
+        const upgradeDifference = Math.max(0, interview.selectedSalaryPaise - droppedPlacement.agreedSalary);
+        const upgradeFee = upgradeDifference > 0 ? calculatePlacementFee(upgradeDifference, rootPlacement.feePercentAtCreation ?? agreement.feePercent) : 0;
+        const upgradeGst = upgradeFee > 0 ? calculateGst(upgradeFee, rootPlacement.gstPercentAtCreation ?? agreement.gstPercent) : 0;
+        const upgradeDue = upgradeFee > 0;
 
         const id = randomUUID();
         const code = await this.idService.generateCode('placement');
@@ -225,17 +235,21 @@ export class PlacementService {
             createdByStaffId: interview.proposedByStaffId,
             interviewId: interview.id,
             selectedAt: now,
-            paymentDueAt: null,
-            paidAt: now,
+            paymentDueAt: upgradeDue ? new Date(now.getTime() + policy.placementPaymentDueHours * 60 * 60 * 1000) : null,
+            paidAt: upgradeDue ? null : now,
             joiningDate: interview.selectedJoiningDate,
             rootPlacementId: rootId,
             replacementNumber,
+            countsAsReplacement: !neverJoinedSwap,
+            replacedSalaryPaise: droppedPlacement.agreedSalary,
+            salaryUpgradeDifferencePaise: upgradeDue ? upgradeDifference : null,
             feePercentAtCreation: rootPlacement.feePercentAtCreation,
             gstPercentAtCreation: rootPlacement.gstPercentAtCreation,
             agreedSalary: interview.selectedSalaryPaise,
-            placementFee: 0,
-            gstAmount: 0,
-            status: 'confirmed',
+            placementFee: upgradeFee,
+            gstAmount: upgradeGst,
+            // Released (joining date confirmed) only once the difference is paid.
+            status: upgradeDue ? 'awaiting_payment' : 'confirmed',
           },
           include: { business: true, jobSeeker: true, vacancy: true, payments: true },
         });
@@ -244,10 +258,10 @@ export class PlacementService {
           subjectType: 'placement',
           subjectId: placement.id,
           fromStatus: null,
-          toStatus: 'confirmed',
+          toStatus: upgradeDue ? 'awaiting_payment' : 'confirmed',
           changedByStaffId: interview.proposedByStaffId,
           changedAt: now,
-          reason: 'free_replacement_selected',
+          reason: upgradeDue ? 'replacement_salary_upgrade_payment_due' : neverJoinedSwap ? 'never_joined_replacement_selected' : 'free_replacement_selected',
         });
 
         // Job seeker becomes placed at selection
@@ -282,9 +296,10 @@ export class PlacementService {
 
         return {
           placement,
-          totalAmount: 0,
+          totalAmount: upgradeFee + upgradeGst,
           existing: false,
           isReplacement: true,
+          upgradeDue,
           actorId: interview.proposedByStaffId,
         };
       }
@@ -332,22 +347,55 @@ export class PlacementService {
 
     if (created.isReplacement) {
       await this.auditService.log({
-        action: 'placement.replacement_confirmed',
+        action: created.upgradeDue ? 'placement.replacement_upgrade_payment_requested' : 'placement.replacement_confirmed',
         entityType: 'Placement',
         entityCode: created.placement.code,
         actorId: created.actorId,
         city: created.placement.city,
         after: {
-          status: 'confirmed',
+          status: created.placement.status,
           rootPlacementId: created.placement.rootPlacementId,
           replacementNumber: created.placement.replacementNumber,
-          placementFee: 0,
-          gstAmount: 0,
+          countsAsReplacement: created.placement.countsAsReplacement,
+          salaryUpgradeDifferencePaise: created.placement.salaryUpgradeDifferencePaise ?? null,
+          placementFee: created.placement.placementFee,
+          gstAmount: created.placement.gstAmount,
         },
       });
+      if (!created.upgradeDue) {
+        return {
+          ...created.placement,
+          payment: null,
+        };
+      }
+      // D3: the salary-upgrade difference is collected like a placement fee (UPI request, Finance sees it).
+      const upgradeBranch = created.placement.vacancy?.branchId
+        ? await this.prisma.businessBranch.findUnique({ where: { id: created.placement.vacancy.branchId } })
+        : null;
+      const upgradeRequest = await this.upiCollectionService.createRequest({
+        type: 'replacement_upgrade',
+        subjectType: 'placement',
+        subjectId: created.placement.id,
+        amountPaise: created.totalAmount,
+        city: created.placement.city,
+        businessId: created.placement.businessId,
+        placementId: created.placement.id,
+        notifySubjectType: 'business',
+        notifySubjectId: created.placement.businessId,
+        notifyRecipientPhone: upgradeBranch?.contactPersonPhone,
+      });
+      const upgradePayment = await this.prisma.payment.findUnique({ where: { id: upgradeRequest.paymentId } });
       return {
         ...created.placement,
-        payment: null,
+        payment: upgradePayment ? {
+          id: upgradePayment.id,
+          code: upgradePayment.code,
+          amount: upgradePayment.amount,
+          status: upgradePayment.status,
+          paymentLink: upgradeRequest.paymentLink,
+          gatewayReference: upgradePayment.gatewayReference,
+          upiReference: upgradePayment.upiReference,
+        } : null,
       };
     }
 
@@ -897,7 +945,10 @@ export class PlacementService {
     }
     await this.assertClaimScope(actor, placement);
 
-    if (placement.status !== 'active') {
+    // D2 (rev 176): a selected, paid candidate who never joined (confirmed, no joining recorded) is
+    // reported with "never_joined" on or after the joining day; the replacement does not count.
+    const neverJoined = dto.reason === 'never_joined' && placement.status === 'confirmed' && !placement.joinedDate && Boolean(placement.joiningDate);
+    if (placement.status !== 'active' && !neverJoined) {
       throw new BadRequestException(
         `Cannot report claim on placement in status '${placement.status}'; placement must be active`,
       );
@@ -910,7 +961,12 @@ export class PlacementService {
         })
       : placement;
 
-    if (!rootPlacement || !rootPlacement.joinedDate) {
+    // The 60 days run from the first employee's joining day: the root's, or — when the root never
+    // joined and was swapped (D2) — the first joining recorded in the chain.
+    const guaranteeStart = rootPlacement
+      ? rootPlacement.joinedDate ?? (await this.firstJoinedInChain(rootPlacement.id))
+      : null;
+    if (!rootPlacement || (!guaranteeStart && !neverJoined)) {
       throw new BadRequestException(
         'Placement has no recorded joinedDate; cannot evaluate replacement claim',
       );
@@ -925,17 +981,19 @@ export class PlacementService {
     const workerLeftOn = new Date(dto.workerLeftOn);
     const policy = await this.pricingService.current();
     const windowDays = policy.replacementWindowDays;
-    const rootJoinedDay = istDayOf(rootPlacement.joinedDate)!;
-    const ownJoinedDay = istDayOf(placement.joinedDate ?? rootPlacement.joinedDate)!;
+    const rootJoinedDay = guaranteeStart ? istDayOf(guaranteeStart)! : null;
+    const ownJoinedDay = istDayOf(placement.joinedDate ?? (neverJoined ? placement.joiningDate! : guaranteeStart!))!;
     const today = istDayOf(now)!;
 
     if (leftDay < ownJoinedDay) {
       throw new BadRequestException(
-        `workerLeftOn cannot be earlier than the joining day (${ownJoinedDay}); employee cannot leave before they started`,
+        neverJoined
+          ? `A candidate who never joined is reported on or after the joining day (${ownJoinedDay})`
+          : `workerLeftOn cannot be earlier than the joining day (${ownJoinedDay}); employee cannot leave before they started`,
       );
     }
 
-    if (leftDay > addDays(rootJoinedDay, windowDays)) {
+    if (rootJoinedDay && leftDay > addDays(rootJoinedDay, windowDays)) {
       throw new BadRequestException(
         `Worker left outside the ${windowDays}-day replacement guarantee window`,
       );
@@ -1121,6 +1179,16 @@ export class PlacementService {
     return claim;
   }
 
+  /** The first joining day recorded among a root placement's chain (the root itself never joined). */
+  private async firstJoinedInChain(rootId: string): Promise<Date | null> {
+    const first = await this.prisma.placement.findFirst({
+      where: { rootPlacementId: rootId, joinedDate: { not: null } },
+      orderBy: { joinedDate: 'asc' },
+      select: { joinedDate: true },
+    });
+    return first?.joinedDate ?? null;
+  }
+
   async decideClaim(
     placementIdOrCode: string,
     claimIdOrCode: string,
@@ -1249,13 +1317,15 @@ export class PlacementService {
         const rootPlacement = claim.placement.rootPlacementId
           ? await tx.placement.findUniqueOrThrow({ where: { id: rootId } })
           : claim.placement;
-        const lastReplacement = claim.placement.replacementNumber >= policy.maxFreeReplacements;
+        // D2: a candidate who never joined is replaced without using a free replacement.
+        const neverJoined = claim.reason === 'never_joined' && claim.placement.status === 'confirmed' && !claim.placement.joinedDate;
+        const lastReplacement = !neverJoined && claim.placement.replacementNumber >= policy.maxFreeReplacements;
 
         // Only an active placement can be accepted: two acceptances (or an
         // accept after the worker was already replaced) never create a second
         // replacement vacancy.
         const moved = await tx.placement.updateMany({
-          where: { id: claim.placementId, status: 'active' },
+          where: { id: claim.placementId, status: neverJoined ? 'confirmed' : 'active' },
           data: lastReplacement
             ? { status: 'guarantee_ended', guaranteeEndedReason: 'second_replacement_left', dropoutReportedAt: claim.reportedAt }
             : { status: 'dropped_out', dropoutReportedAt: claim.reportedAt },
@@ -2146,7 +2216,7 @@ export class PlacementService {
       placementCode: placement.code,
       candidateCode: placement.jobSeeker.code,
       candidateName: placement.jobSeeker.name,
-      candidatePhone: placement.jobSeeker.phone,
+      // D17 (rev 176): the candidate's phone is never on the business's invoice (masked until the joining day).
       tradeSkill: placement.vacancy.tradeSkill,
       monthlySalaryPaise: placement.agreedSalary,
       joinedDate: placement.joinedDate ? placement.joinedDate.toISOString() : null,
@@ -2168,7 +2238,10 @@ export class PlacementService {
       lineItems: [
         {
           itemNumber: 1,
-          description: `Placement fee for trade: ${placement.vacancy.tradeSkill} (${feePercent}% of monthly salary)`,
+          // D3: a replacement hired at a higher salary is invoiced for the fee on the difference only.
+          description: placement.salaryUpgradeDifferencePaise
+            ? `Replacement salary difference for trade: ${placement.vacancy.tradeSkill} (${feePercent}% of ${formatINR(placement.salaryUpgradeDifferencePaise)} a month more than ${formatINR(placement.replacedSalaryPaise ?? 0)})`
+            : `Placement fee for trade: ${placement.vacancy.tradeSkill} (${feePercent}% of monthly salary)`,
           sacCode: '9985',
           baseAmountPaise,
           taxRatePercent: gstPercent,

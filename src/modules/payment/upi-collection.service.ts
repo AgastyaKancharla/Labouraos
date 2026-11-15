@@ -313,7 +313,7 @@ export class UpiCollectionService {
     });
     return {
       type: payment.type,
-      description: payment.type === 'activation' ? 'Job seeker registration' : payment.type === 'bypass_charge' ? 'No-bypass charge (agreement)' : 'Placement fee',
+      description: payment.type === 'activation' ? 'Job seeker registration' : payment.type === 'bypass_charge' ? 'No-bypass charge (agreement)' : payment.type === 'replacement_upgrade' ? 'Replacement salary difference' : 'Placement fee',
       amountPaise: payment.expectedAmountPaise,
       amount: amountInRupees(payment.expectedAmountPaise),
       payeeName,
@@ -337,7 +337,7 @@ export class UpiCollectionService {
         placement: {
           select: {
             id: true, agreedSalary: true, placementFee: true, gstAmount: true, feePercentAtCreation: true,
-            gstPercentAtCreation: true, paymentDueAt: true,
+            gstPercentAtCreation: true, paymentDueAt: true, joiningDate: true,
             jobSeeker: { select: { name: true } },
             business: { select: { name: true, contactLanguage: true } },
           },
@@ -359,7 +359,9 @@ export class UpiCollectionService {
     const firstName = (name: string | undefined) => name?.trim().split(/\s+/)[0] ?? null;
     const placement = payment.placement;
     return {
-      type: payment.type as 'activation' | 'placement_fee',
+      // A replacement's salary-upgrade difference (D3) uses the business fee page.
+      type: (payment.type === 'replacement_upgrade' ? 'placement_fee' : payment.type) as 'activation' | 'placement_fee',
+      upgrade: payment.type === 'replacement_upgrade',
       state,
       amountPaise: payment.expectedAmountPaise,
       upiReference: payment.upiReference,
@@ -371,6 +373,10 @@ export class UpiCollectionService {
       placement: placement
         ? {
           candidateFirstName: firstName(placement.jobSeeker.name),
+          // D17 (rev 176): once the fee is in the bank the business gets the full name and the
+          // joining details; the candidate's phone stays masked (never sent) until the joining day.
+          candidateFullName: state === 'received' ? placement.jobSeeker.name : null,
+          joiningDate: state === 'received' ? (placement.joiningDate ?? null) : null,
           businessName: placement.business.name,
           agreedSalaryPaise: placement.agreedSalary,
           feePercent: placement.feePercentAtCreation,

@@ -251,7 +251,7 @@ export class FinanceTaxService {
     const { from, to } = monthBounds(month);
     const [received, bypass, out, expenses, salaries, returns, unmatched, matchedLater, setAside] = await Promise.all([
       this.prisma.payment.findMany({
-        where: { type: { in: ['activation', 'reactivation', 'placement_fee'] }, status: { in: RECEIVED_STATUSES }, OR: [{ confirmedAt: { gte: from, lte: to } }, { confirmedAt: null, paidAt: { gte: from, lte: to } }] },
+        where: { type: { in: ['activation', 'reactivation', 'placement_fee', 'replacement_upgrade'] }, status: { in: RECEIVED_STATUSES }, OR: [{ confirmedAt: { gte: from, lte: to } }, { confirmedAt: null, paidAt: { gte: from, lte: to } }] },
         select: { code: true, type: true, amount: true, confirmedAt: true, paidAt: true, bankUtr: true, method: true, jobSeeker: { select: { code: true, name: true } }, placement: { select: { code: true, invoiceCode: true, placementFee: true, gstAmount: true, business: { select: { name: true } } } }, tdsReceivable: { select: { amountPaise: true } } },
       }),
       this.bypassInvoicesIn(month),
@@ -275,10 +275,11 @@ export class FinanceTaxService {
     const lines: Row[] = [];
     for (const p of received) {
       const at = p.confirmedAt ?? p.paidAt!;
-      const isFee = p.type === 'placement_fee';
+      const isUpgrade = p.type === 'replacement_upgrade';
+      const isFee = p.type === 'placement_fee' || isUpgrade;
       const gst = isFee && p.placement ? p.placement.gstAmount : 0;
       const party = isFee ? (p.placement?.business?.name ?? '') : `${p.jobSeeker?.code ?? ''} ${p.jobSeeker?.name ?? ''}`.trim();
-      lines.push({ at, cells: [istDay(at), 'In', isFee ? 'Placement fee' : 'Registration fee', party, isFee ? (p.placement?.invoiceCode ?? '') : p.code, rupees(p.amount), rupees(gst), rupees(p.tdsReceivable?.amountPaise ?? 0), p.bankUtr ?? '', p.method === 'gateway_card' ? 'Card' : 'UPI'] });
+      lines.push({ at, cells: [istDay(at), 'In', isUpgrade ? 'Replacement salary difference' : isFee ? 'Placement fee' : 'Registration fee', party, isFee ? (p.placement?.invoiceCode ?? '') : p.code, rupees(p.amount), rupees(gst), rupees(p.tdsReceivable?.amountPaise ?? 0), p.bankUtr ?? '', p.method === 'gateway_card' ? 'Card' : 'UPI'] });
     }
     for (const b of bypass) {
       lines.push({ at: b.at, cells: [istDay(b.at), 'In', 'No-bypass charge', b.business?.name ?? '', b.invoiceCode, rupees(b.payment.amount), rupees(b.gstPaise), rupees(b.payment.tdsReceivable?.amountPaise ?? 0), b.payment.bankUtr ?? '', b.payment.method === 'gateway_card' ? 'Card' : 'UPI'] });

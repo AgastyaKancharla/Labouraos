@@ -353,7 +353,8 @@ export class PaymentService {
         placement: Prisma.PlacementGetPayload<{ include: { jobSeeker: true } }>;
         invoiceCode: string;
       } | null = null;
-      if (payment.type === 'placement_fee' && payment.placementId) {
+      // D3 (rev 176): the salary-upgrade difference of a replacement releases it exactly like a placement fee.
+      if ((payment.type === 'placement_fee' || payment.type === 'replacement_upgrade') && payment.placementId) {
         const placement = await tx.placement.findUnique({
           where: { id: payment.placementId }, include: { jobSeeker: true },
         });
