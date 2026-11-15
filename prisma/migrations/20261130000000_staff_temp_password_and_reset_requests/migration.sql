@@ -23,6 +23,8 @@ CREATE UNIQUE INDEX "Staff_setupTicketHash_key" ON "Staff"("setupTicketHash");
 ALTER TABLE "StaffPasswordReset" ADD COLUMN "kind" TEXT NOT NULL DEFAULT 'link';
 ALTER TABLE "StaffPasswordReset" ALTER COLUMN "tokenHash" DROP NOT NULL;
 ALTER TABLE "StaffPasswordReset" ALTER COLUMN "issuedByStaffId" DROP NOT NULL;
+ALTER TABLE "StaffPasswordReset" DROP CONSTRAINT "StaffPasswordReset_issuedByStaffId_fkey";
+ALTER TABLE "StaffPasswordReset" ADD CONSTRAINT "StaffPasswordReset_issuedByStaffId_fkey" FOREIGN KEY ("issuedByStaffId") REFERENCES "Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- "Forgot password" requests approved by a senior with a reset code.
 CREATE TABLE "PasswordResetRequest" (

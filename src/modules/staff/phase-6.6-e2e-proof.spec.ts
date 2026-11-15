@@ -5,7 +5,7 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { applyTrustProxy } from '../../common/http/trust-proxy';
 import { stableTotpCode } from '../../test-support/enrolled-login-spec';
-import { loginCodeFor } from '../../modules/login-code/login-code.crypto';
+import { authenticator } from 'otplib';
 import { RBAC_MATRIX } from '../../common/rbac/rbac.types';
 import { seed } from '../../../prisma/seed';
 
@@ -24,8 +24,39 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
   let ipCounter = 1;
   const freshIp = () => `10.99.${Math.floor(ipCounter / 250)}.${(ipCounter++ % 250) + 1}`;
 
+  /**
+   * First-login set-up (rev 174–175): staff code + temporary password → set-up
+   * ticket → (authenticator roles) QR + first code → the new password.
+   * Returns the authenticator secret when one was set up.
+   */
+  async function setUp(code: string, tempPassword: string, deviceId: string, newPassword: string): Promise<string | null> {
+    const start = await request(app.getHttpServer())
+      .post('/auth/login')
+      .set('X-Forwarded-For', freshIp())
+      .send({ staffCode: code, password: tempPassword, deviceId });
+    expect(start.status).toBe(200);
+    expect(start.body.status).toBe('setup_required');
+    const ticket = { setupTicket: start.body.setupTicket, deviceId };
+    let secret: string | null = null;
+    let totpCode: string | undefined;
+    if (start.body.authenticatorSetupRequired) {
+      const qr = await request(app.getHttpServer()).post('/auth/setup/authenticator').set('X-Forwarded-For', freshIp()).send(ticket).expect(200);
+      secret = qr.body.secret as string;
+      totpCode = await stableTotpCode(secret);
+    }
+    await request(app.getHttpServer())
+      .post('/auth/setup/complete')
+      .set('X-Forwarded-For', freshIp())
+      .send({ ...ticket, newPassword, ...(totpCode ? { totpCode } : {}) })
+      .expect(200);
+    return secret;
+  }
+
   async function clearAllStaff() {
     await prisma.staffSession.deleteMany({});
+    await prisma.passwordResetRequest.deleteMany({});
+    await prisma.staffPasswordReset.deleteMany({});
+    await prisma.statusHistory.deleteMany({ where: { subjectType: 'staff' } });
     await prisma.businessVisit.deleteMany({});
     await prisma.contactAttempt.deleteMany({});
     await prisma.callbackTask.deleteMany({});
@@ -33,7 +64,7 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
     await prisma.jobSeeker.updateMany({ data: { registeredByStaffId: null } });
     await prisma.placement.updateMany({ data: { createdByStaffId: null } });
     await prisma.vacancy.updateMany({ data: { capturedByStaffId: null } });
-    await prisma.staff.updateMany({ data: { teamLeadId: null } });
+    await prisma.staff.updateMany({ data: { teamLeadId: null, reportsToId: null, tempPasswordIssuedByStaffId: null } });
     await prisma.auditLog.deleteMany({});
     await prisma.staff.deleteMany({});
   }
@@ -63,124 +94,67 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
     await clearAllStaff();
 
     // =========================================================================
-    // STEP 1: Bootstrap a CEO using the secret, on an empty database
+    // STEP 1: Bootstrap a CEO using the secret, on an empty database (temporary password, shown once)
     // =========================================================================
     console.log('\n--- STEP 1: Bootstrap CEO on empty database ---');
-    const bootstrapPayload = {
-      name: 'Agastya CEO',
-      email: 'agastya.ceo@laboura.local',
-      password: 'SuperSecureCeoPassword2026!',
-    };
     const bootstrapRes = await request(app.getHttpServer())
       .post('/staff/bootstrap')
       .set('X-Forwarded-For', freshIp())
       .set('x-bootstrap-secret', BOOTSTRAP_SECRET)
-      .send(bootstrapPayload);
+      .send({ name: 'Agastya CEO' });
 
     expect(bootstrapRes.status).toBe(201);
+    expect(bootstrapRes.headers['cache-control']).toContain('no-store');
     expect(bootstrapRes.body.staff.role).toBe('ceo');
+    expect(bootstrapRes.body.staff.status).toBe('pending_invite');
+    expect(bootstrapRes.body.tempPassword).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
     expect(bootstrapRes.body.totpSecret).toBeUndefined(); // no secret returned
-    const staffRow = await prisma.staff.findUniqueOrThrow({
-      where: { id: bootstrapRes.body.staff.id },
-    });
+    const staffRow = await prisma.staff.findUniqueOrThrow({ where: { id: bootstrapRes.body.staff.id } });
     expect(staffRow.totpEnabled).toBe(false);
     expect(staffRow.totpSecret).toBeNull();
     console.log('Step 1 Output: HTTP 201 Created');
-    console.log(JSON.stringify(bootstrapRes.body, null, 2));
+    console.log(JSON.stringify({ ...bootstrapRes.body, tempPassword: '(shown once)' }, null, 2));
 
     // =========================================================================
-    // STEP 2: Log in — confirm restricted totp_setup scope and operational endpoints refused
+    // STEP 2: The temporary password gives a set-up ticket — no session, nothing operational
     // =========================================================================
-    console.log('\n--- STEP 2: First login returns totp_setup scope & blocks operational endpoints ---');
+    console.log('\n--- STEP 2: First login gives only a set-up ticket ---');
     const firstLoginRes = await request(app.getHttpServer())
       .post('/auth/login')
       .set('X-Forwarded-For', freshIp())
-        .send({
-          staffCode: bootstrapRes.body.staff.code,
-          password: bootstrapPayload.password,
-          deviceId: 'e2e-ceo-device',
-        });
-
+      .send({ staffCode: bootstrapRes.body.staff.code, password: bootstrapRes.body.tempPassword, deviceId: 'e2e-ceo-device' });
     expect(firstLoginRes.status).toBe(200);
-    expect(firstLoginRes.body.totpEnrollmentRequired).toBe(true);
-    const setupToken = firstLoginRes.body.accessToken;
-    expect(setupToken).toBeDefined();
-    console.log('Step 2 Output: First Login Response (restricted scope):');
-    console.log(JSON.stringify({
-      statusCode: firstLoginRes.status,
-      totpEnrollmentRequired: firstLoginRes.body.totpEnrollmentRequired,
-      accessTokenPrefix: setupToken.slice(0, 20) + '...',
-    }, null, 2));
-
-    // Probe operational endpoint (/staff) with setupToken
+    expect(firstLoginRes.body.status).toBe('setup_required');
+    expect(firstLoginRes.body.accessToken).toBeUndefined();
     const probeRes = await request(app.getHttpServer())
       .get('/staff')
-      .set('Authorization', `Bearer ${setupToken}`)
+      .set('Authorization', `Bearer ${firstLoginRes.body.setupTicket}`)
       .set('X-Forwarded-For', freshIp());
-
-    expect(probeRes.status).toBe(403);
-    console.log('Step 2 Output: Operational probe with setupToken (refused):');
-    console.log(JSON.stringify({
-      statusCode: probeRes.status,
-      body: probeRes.body,
-    }, null, 2));
+    expect(probeRes.status).toBe(401);
+    console.log('Step 2 Output: set-up ticket refused as a bearer token:', probeRes.status);
 
     // =========================================================================
-    // STEP 3: Enrol 2FA, then log in fully
+    // STEP 3: Set the password and the authenticator in the set-up, then log in fully
     // =========================================================================
-    console.log('\n--- STEP 3: Enrol 2FA and perform full login ---');
-    const setup2faRes = await request(app.getHttpServer())
-      .post('/staff/2fa/setup')
-      .set('Authorization', `Bearer ${setupToken}`)
-      .set('X-Forwarded-For', freshIp())
-      .send();
-
-    expect(setup2faRes.status).toBe(200);
-    const ceoTotpSecret = setup2faRes.body.secret;
-    const ceoCode = await stableTotpCode(ceoTotpSecret);
-
-    const enable2faRes = await request(app.getHttpServer())
-      .post('/staff/2fa/enable')
-      .set('Authorization', `Bearer ${setupToken}`)
-      .set('X-Forwarded-For', freshIp())
-      .send({ totpCode: ceoCode });
-
-    expect(enable2faRes.status).toBe(200);
-    expect(enable2faRes.body.success).toBe(true);
-
+    console.log('\n--- STEP 3: Set-up (password + authenticator) and full login ---');
+    const ceoPassword = 'SuperSecureCeoPassword2026!';
+    const ceoTotpSecret = (await setUp(bootstrapRes.body.staff.code, bootstrapRes.body.tempPassword, 'e2e-ceo-device', ceoPassword))!;
+    expect(ceoTotpSecret).toBeTruthy();
     const fullLoginRes = await request(app.getHttpServer())
       .post('/auth/login')
       .set('X-Forwarded-For', freshIp())
-        .send({
-          staffCode: bootstrapRes.body.staff.code,
-          password: bootstrapPayload.password,
-          deviceId: 'e2e-ceo-device',
-          totpCode: await stableTotpCode(ceoTotpSecret),
-        });
-
+      .send({ staffCode: bootstrapRes.body.staff.code, password: ceoPassword, deviceId: 'e2e-ceo-device', totpCode: await stableTotpCode(ceoTotpSecret) });
     expect(fullLoginRes.status).toBe(200);
-    expect(fullLoginRes.body.totpEnrollmentRequired).toBeUndefined();
     const ceoFullToken = fullLoginRes.body.accessToken;
     expect(ceoFullToken).toBeDefined();
-
-    const ceoStaffList = await request(app.getHttpServer())
-      .get('/staff')
-      .set('Authorization', `Bearer ${ceoFullToken}`)
-      .set('X-Forwarded-For', freshIp());
+    const ceoStaffList = await request(app.getHttpServer()).get('/staff').set('Authorization', `Bearer ${ceoFullToken}`).set('X-Forwarded-For', freshIp());
     expect(ceoStaffList.status).toBe(200);
-
-    console.log('Step 3 Output: Full Login Successful:');
-    console.log(JSON.stringify({
-      statusCode: fullLoginRes.status,
-      hasFullToken: !!ceoFullToken,
-      staffEndpointAccessible: ceoStaffList.status === 200,
-      totalStaffCount: ceoStaffList.body.length,
-    }, null, 2));
+    console.log('Step 3 Output: Full Login Successful:', JSON.stringify({ statusCode: fullLoginRes.status, staffEndpointAccessible: ceoStaffList.status === 200 }));
 
     // =========================================================================
     // STEP 4: Create a Team Lead and two agents under them
     // =========================================================================
-    console.log('\n--- STEP 4: Create Team Lead 1, accept invite, enrol 2FA, and add 2 agents under them ---');
+    console.log('\n--- STEP 4: Create Team Lead 1, set up with the temporary password (authenticator), and add 2 agents under them ---');
     const ceoId = bootstrapRes.body.staff.id as string;
     const createManagerRes = await request(app.getHttpServer())
       .post('/staff')
@@ -193,14 +167,7 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
         reportsToId: ceoId,
       });
     expect(createManagerRes.status).toBe(201);
-    const acceptManagerRes = await request(app.getHttpServer())
-      .post('/staff/accept-invite')
-      .set('X-Forwarded-For', freshIp())
-      .send({
-        token: createManagerRes.body.inviteToken,
-        password: 'Manager1Password2026!',
-      });
-    expect(acceptManagerRes.status).toBe(200);
+    await setUp(createManagerRes.body.staff.code, createManagerRes.body.tempPassword, 'e2e-mgr-device', 'Manager1Password2026!');
     const managerId = createManagerRes.body.staff.id as string;
     // 4a. Create Team Lead 1
     const createTl1Res = await request(app.getHttpServer())
@@ -215,27 +182,21 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
       });
     expect(createTl1Res.status).toBe(201);
     const tl1Id = createTl1Res.body.staff.id;
-    const tl1InviteToken = createTl1Res.body.inviteToken;
 
-    // 4b. TL1 accepts invite
+    // 4b. TL1 sets up: new password and their own authenticator (Team Leads use one since rev 174–175)
     const tl1Password = 'Lead1Password2026!';
-    const acceptTl1Res = await request(app.getHttpServer())
-      .post('/staff/accept-invite')
-      .set('X-Forwarded-For', freshIp())
-      .send({
-        token: tl1InviteToken,
-        password: tl1Password,
-      });
-    expect(acceptTl1Res.status).toBe(200);
-
-    // 4c. TL1's device waits for approval. Team leads do not enrol in TOTP.
     const tl1Code = createTl1Res.body.staff.code as string;
     const tl1DeviceId = 'e2e-tl1-device';
+    const tl1Secret = (await setUp(tl1Code, createTl1Res.body.tempPassword, tl1DeviceId, tl1Password))!;
+    expect(tl1Secret).toBeTruthy();
+
+    // 4c. TL1's device waits for approval by a Manager or the CEO.
     const tl1WaitingDevice = await request(app.getHttpServer())
       .post('/auth/login')
       .set('X-Forwarded-For', freshIp())
-      .send({ staffCode: tl1Code, password: tl1Password, deviceId: tl1DeviceId });
+      .send({ staffCode: tl1Code, password: tl1Password, deviceId: tl1DeviceId, totpCode: await stableTotpCode(tl1Secret) });
     expect(tl1WaitingDevice.status).toBe(401);
+    expect(tl1WaitingDevice.body.message).toBe('This device is waiting for approval by a Manager or the CEO');
     const tl1Device = await prisma.staffDevice.findUniqueOrThrow({
       where: { staffId_deviceId: { staffId: tl1Id, deviceId: tl1DeviceId } },
     });
@@ -287,17 +248,8 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
       });
     expect(createTl2Res.status).toBe(201);
     const tl2Id = createTl2Res.body.staff.id;
-    const tl2InviteToken = createTl2Res.body.inviteToken;
-
-    // TL2 accepts invite to become active so an agent can reference them as team lead
-    const acceptTl2Res = await request(app.getHttpServer())
-      .post('/staff/accept-invite')
-      .set('X-Forwarded-For', freshIp())
-      .send({
-        token: tl2InviteToken,
-        password: 'Lead2Password2026!',
-      });
-    expect(acceptTl2Res.status).toBe(200);
+    // TL2 has not signed in yet: an agent can already be put under them (rev 174–175).
+    expect(createTl2Res.body.staff.status).toBe('pending_invite');
 
     const createAgent3Res = await request(app.getHttpServer())
       .post('/staff')
@@ -325,26 +277,12 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
     // STEP 5: Log in as the Team Lead. Confirm they see their own team
     // =========================================================================
     console.log('\n--- STEP 5: Log in as Team Lead 1 & confirm own team visibility ---');
-    const tl1CodeLogin = await request(app.getHttpServer())
+    const tl1FullLogin = await request(app.getHttpServer())
       .post('/auth/login')
       .set('X-Forwarded-For', freshIp())
-      .send({ staffCode: tl1Code, password: tl1Password, deviceId: tl1DeviceId });
-    expect(tl1CodeLogin.body.status).toBe('awaiting_code');
-    const tl1Shown = await request(app.getHttpServer())
-      .post(`/login-codes/${tl1CodeLogin.body.loginRequestId}/reveal`)
-      .set('Authorization', `Bearer ${ceoFullToken}`)
-      .set('X-Forwarded-For', freshIp());
-    expect(tl1Shown.status).toBe(200);
-    const tl1FullLogin = await request(app.getHttpServer())
-      .post('/auth/login/verify-code')
-      .set('X-Forwarded-For', freshIp())
-      .send({
-        loginRequestId: tl1CodeLogin.body.loginRequestId,
-        code: tl1Shown.body.code,
-        deviceId: tl1DeviceId,
-        loginRequestProof: tl1CodeLogin.body.loginRequestProof,
-      });
+      .send({ staffCode: tl1Code, password: tl1Password, deviceId: tl1DeviceId, totpCode: await stableTotpCode(tl1Secret) });
     expect(tl1FullLogin.status).toBe(200);
+    expect(tl1FullLogin.body.status).toBeUndefined(); // no login code step for a Team Lead
     const tl1Token = tl1FullLogin.body.accessToken;
 
     const tl1StaffList = await request(app.getHttpServer())
@@ -426,90 +364,41 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
     }, null, 2));
 
     // =========================================================================
-    // STEP 8: Re-issue Team Lead's invite. Confirm old password AND old TOTP code both fail, sessions gone
+    // STEP 8: Reset Team Lead 1's sign-in completely. Old password, authenticator and sessions all end
     // =========================================================================
-    console.log('\n--- STEP 8: Re-issue invite: old password, old TOTP code, and old sessions all fail ---');
+    console.log('\n--- STEP 8: Reset sign-in completely: old password, authenticator and sessions all end ---');
     const reissueRes = await request(app.getHttpServer())
-      .post(`/staff/${tl1Id}/reissue-invite`)
+      .post(`/staff/${tl1Id}/reset-sign-in`)
       .set('Authorization', `Bearer ${ceoFullToken}`)
       .set('X-Forwarded-For', freshIp())
       .send();
-
     expect(reissueRes.status).toBe(200);
-    const newInviteToken = reissueRes.body.inviteToken;
-    expect(newInviteToken).toBeDefined();
-
-    // 8a. Old password fails
+    expect(reissueRes.body.tempPassword).toBeDefined();
     const oldLoginAttempt = await request(app.getHttpServer())
       .post('/auth/login')
       .set('X-Forwarded-For', freshIp())
-        .send({
-          staffCode: tl1Code,
-          password: tl1Password,
-          deviceId: tl1DeviceId,
-        });
+      .send({ staffCode: tl1Code, password: tl1Password, deviceId: tl1DeviceId, totpCode: authenticator.generate(tl1Secret) });
     expect(oldLoginAttempt.status).toBe(401);
-
-    // 8b. Prior session token is revoked
-    const oldSessionProbe = await request(app.getHttpServer())
-      .get('/staff/sessions')
-      .set('Authorization', `Bearer ${tl1Token}`)
-      .set('X-Forwarded-For', freshIp());
+    const oldSessionProbe = await request(app.getHttpServer()).get('/staff/sessions').set('Authorization', `Bearer ${tl1Token}`).set('X-Forwarded-For', freshIp());
     expect(oldSessionProbe.status).toBe(401);
-
-    console.log('Step 8 Output: Invite Re-issued & Credentials Voided:');
-    console.log(JSON.stringify({
-      reissueStatus: reissueRes.status,
-      inviteExpiresAt: reissueRes.body.inviteExpiresAt,
-      oldCredentialsLoginAttempt: { statusCode: oldLoginAttempt.status, message: oldLoginAttempt.body.message },
-      oldSessionProbe: { statusCode: oldSessionProbe.status, message: oldSessionProbe.body.message },
-    }, null, 2));
+    const resetRow = await prisma.staff.findUniqueOrThrow({ where: { id: tl1Id } });
+    expect(resetRow).toMatchObject({ status: 'pending_invite', totpEnabled: false, totpSecret: null });
+    console.log('Step 8 Output:', JSON.stringify({ resetStatus: reissueRes.status, oldLogin: oldLoginAttempt.status, oldSession: oldSessionProbe.status }));
 
     // =========================================================================
-    // STEP 9: Accept new invite, confirm 2FA re-enrolment is forced, access restored
+    // STEP 9: Set up again with the temporary password (new authenticator) and verify restored access
     // =========================================================================
-    console.log('\n--- STEP 9: Accept new invite, force 2FA re-enrolment, and verify restored access ---');
+    console.log('\n--- STEP 9: Set up again and verify restored access ---');
     const newTlPassword = 'BrandNewLead1Password2026!';
-    const acceptNewInviteRes = await request(app.getHttpServer())
-      .post('/staff/accept-invite')
-      .set('X-Forwarded-For', freshIp())
-      .send({
-        token: newInviteToken,
-        password: newTlPassword,
-      });
-    expect(acceptNewInviteRes.status).toBe(200);
-    expect(acceptNewInviteRes.body.success).toBe(true);
-
-    // New password reaches the login-code step. Team leads are not sent back to TOTP.
-    const newPasswordLogin = await request(app.getHttpServer())
+    const newTlSecret = (await setUp(tl1Code, reissueRes.body.tempPassword, tl1DeviceId, newTlPassword))!;
+    expect(newTlSecret).not.toBe(tl1Secret);
+    const restoredLoginRes = await request(app.getHttpServer())
       .post('/auth/login')
       .set('X-Forwarded-For', freshIp())
-      .send({
-        staffCode: tl1Code,
-        password: newTlPassword,
-        deviceId: tl1DeviceId,
-      });
-    expect(newPasswordLogin.status).toBe(200);
-    expect(newPasswordLogin.body.status).toBe('awaiting_code');
-    expect(newPasswordLogin.body.accessToken).toBeUndefined();
-
-    const restoredShown = await request(app.getHttpServer())
-      .post(`/login-codes/${newPasswordLogin.body.loginRequestId}/reveal`)
-      .set('Authorization', `Bearer ${ceoFullToken}`)
-      .set('X-Forwarded-For', freshIp());
-    expect(restoredShown.body.code).toBe(loginCodeFor(newPasswordLogin.body.loginRequestId));
-
-    const restoredLoginRes = await request(app.getHttpServer())
-      .post('/auth/login/verify-code')
-      .set('X-Forwarded-For', freshIp())
-      .send({
-        loginRequestId: newPasswordLogin.body.loginRequestId,
-        code: restoredShown.body.code,
-        deviceId: tl1DeviceId,
-        loginRequestProof: newPasswordLogin.body.loginRequestProof,
-      });
+      .send({ staffCode: tl1Code, password: newTlPassword, deviceId: tl1DeviceId, totpCode: await stableTotpCode(newTlSecret) });
     expect(restoredLoginRes.status).toBe(200);
-    expect(restoredLoginRes.body.accessToken).toBeDefined();
+    // Approved devices stay after a reset; the notice says who reset it.
+    expect(restoredLoginRes.body.passwordResetNotice).toMatchObject({ how: 'full_reset' });
     const restoredToken = restoredLoginRes.body.accessToken;
 
     // Verify access is fully restored to their team
@@ -525,9 +414,8 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
     expect(restoredStaffIds).not.toContain(tl2Id);
     expect(restoredStaffIds).not.toContain(agent3Id);
 
-    console.log('Step 9 Output: 2FA Re-enrolled and Full Access Restored:');
+    console.log('Step 9 Output: Authenticator set up again and Full Access Restored:');
     console.log(JSON.stringify({
-      codeStep: newPasswordLogin.body.status === 'awaiting_code',
       restoredLoginStatus: restoredLoginRes.status,
       teamListRestoredStatus: restoredStaffList.status,
       restoredTeamStaffCount: restoredStaffList.body.length,

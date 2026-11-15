@@ -71,6 +71,8 @@ describe('Phase 10 Task 4: staff-code login', () => {
     await prisma.staffSession.deleteMany({ where: { staffId: { in: createdIds } } });
     await prisma.reviewFlag.deleteMany({ where: { raisedForStaffId: { in: createdIds } } });
     await prisma.auditLog.deleteMany({ where: { actorId: { in: createdIds } } });
+    await prisma.statusHistory.deleteMany({ where: { subjectType: 'staff', subjectId: { in: createdIds } } });
+    await prisma.staff.updateMany({ where: { id: { in: createdIds } }, data: { reportsToId: null, teamLeadId: null, tempPasswordIssuedByStaffId: null } });
     await prisma.staff.deleteMany({ where: { id: { in: createdIds } } });
     await app.close();
   });
@@ -141,29 +143,15 @@ describe('Phase 10 Task 4: staff-code login', () => {
     });
     expect(pending.status).toBe('pending');
 
-    const leadLogin = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ staffCode: lead.code, password, deviceId: 'lead-device' });
-    expect(leadLogin.body.status).toBe('awaiting_code');
-    const revealed = await request(app.getHttpServer())
-      .post(`/login-codes/${leadLogin.body.loginRequestId}/reveal`)
-      .set('Authorization', `Bearer ${tokenFor(lead)}`);
-    // The Team Lead cannot reveal their own code. A manager reveals it.
-    expect(revealed.status).toBe(403);
-    const manager = await makeStaff('manager', {
-      totpSecret: authenticator.generateSecret(),
-      totpEnabled: true,
-    });
-    await prisma.staff.update({ where: { id: lead.id }, data: { reportsToId: manager.id } });
-    const managerToken = tokenFor(manager);
-    const shown = await request(app.getHttpServer())
-      .post(`/login-codes/${leadLogin.body.loginRequestId}/reveal`)
-      .set('Authorization', `Bearer ${managerToken}`)
-      .expect(200);
+    // The Team Lead signs in with their own authenticator (rev 174–175): no login code.
+    const leadSecret = authenticator.generateSecret();
+    await prisma.staff.update({ where: { id: lead.id }, data: { totpSecret: leadSecret, totpEnabled: true } });
     const leadToken = await request(app.getHttpServer())
-      .post('/auth/login/verify-code')
-      .send({ loginRequestId: leadLogin.body.loginRequestId, code: shown.body.code, deviceId: 'lead-device', loginRequestProof: leadLogin.body.loginRequestProof });
+      .post('/auth/login')
+      .send({ staffCode: lead.code, password, deviceId: 'lead-device', totpCode: await stableTotpCode(leadSecret) });
     expect(leadToken.status).toBe(200);
+    expect(leadToken.body.status).toBeUndefined();
+    expect(await prisma.loginCodeRequest.count({ where: { staffId: lead.id } })).toBe(0);
 
     const queue = await request(app.getHttpServer())
       .get('/staff/devices/pending')
@@ -325,49 +313,20 @@ describe('Phase 10 Task 4: staff-code login', () => {
     },
   );
 
-  it('lets a CEO who has not enrolled TOTP enrol and then log in', async () => {
+  it('gives a CEO without an authenticator no session from a password alone (enrolment is inside first-login set-up)', async () => {
     const ceo = await makeStaff('ceo');
     const deviceId = 'ceo-first-device';
-
-    const setupLogin = await request(app.getHttpServer())
+    const refused = await request(app.getHttpServer())
       .post('/auth/login')
       .send({ staffCode: ceo.code, password, deviceId });
-    expect(setupLogin.status).toBe(200);
-    expect(setupLogin.body.totpEnrollmentRequired).toBe(true);
-    const setupToken = setupLogin.body.accessToken as string;
-
-    const blocked = await request(app.getHttpServer())
-      .get('/staff')
-      .set('Authorization', `Bearer ${setupToken}`);
-    expect(blocked.status).toBe(403);
-
-    const setup = await request(app.getHttpServer())
-      .post('/staff/2fa/setup')
-      .set('Authorization', `Bearer ${setupToken}`)
-      .expect(200);
-    const enable = await request(app.getHttpServer())
-      .post('/staff/2fa/enable')
-      .set('Authorization', `Bearer ${setupToken}`)
-      .send({ totpCode: await stableTotpCode(setup.body.secret) });
-    expect(enable.status).toBe(200);
-
-    const device = await prisma.staffDevice.findUniqueOrThrow({
-      where: { staffId_deviceId: { staffId: ceo.id, deviceId } },
-    });
-    expect(device.status).toBe('approved');
-    expect(device.approvedByStaffId).toBe(ceo.id);
-
-    const full = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({
-        staffCode: ceo.code,
-        password,
-        deviceId,
-        totpCode: await stableTotpCode(setup.body.secret),
-      });
-    expect(full.status).toBe(200);
-    expect(full.body.totpEnrollmentRequired).toBeUndefined();
-    expect(full.body.accessToken).toBeDefined();
+    expect(refused.status).toBe(401);
+    expect(refused.body.accessToken).toBeUndefined();
+    expect(refused.body.message).toContain('authenticator is not set up yet');
+    expect(await prisma.staffSession.count({ where: { staffId: ceo.id } })).toBe(0);
+    // The old enrolment endpoints are gone.
+    const token = tokenFor(ceo);
+    expect((await request(app.getHttpServer()).post('/staff/2fa/setup').set('Authorization', `Bearer ${token}`)).status).toBe(404);
+    expect((await request(app.getHttpServer()).post('/staff/2fa/enable').set('Authorization', `Bearer ${token}`).send({ totpCode: '123456' })).status).toBe(404);
   });
 
   // Owner decision 14 Nov: no office-network rule. This replaces the old test that refused an
@@ -472,18 +431,19 @@ describe('Phase 10 Task 4: staff-code login', () => {
     expect(nightFlags).toBe(1);
   });
 
-  it('requires an email for Finance and allows a call agent to have none', async () => {
+  it('takes no email for any role (rev 174–175): Finance and a call agent alike', async () => {
     const ceo = await makeStaff('ceo', {
       totpSecret: authenticator.generateSecret(),
       totpEnabled: true,
     });
     const ceoToken = tokenFor(ceo);
-    const missing = await request(app.getHttpServer())
+    const finance = await request(app.getHttpServer())
       .post('/staff')
       .set('Authorization', `Bearer ${ceoToken}`)
-      .send({ name: 'No Email Finance', role: 'finance' });
-    expect(missing.status).toBe(400);
-    expect(missing.body.message).toContain('email');
+      .send({ name: 'No Email Finance', role: 'finance', reportsToId: ceo.id });
+    expect(finance.status).toBe(201);
+    expect(finance.body.staff.email).toBeNull();
+    createdIds.push(finance.body.staff.id);
 
     const managerForLead = await makeStaff('manager');
     await prisma.staff.update({

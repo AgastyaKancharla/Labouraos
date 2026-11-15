@@ -2,7 +2,6 @@ import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as bcrypt from 'bcrypt';
-import { createHash } from 'node:crypto';
 import * as request from 'supertest';
 import { AppModule } from '../../app.module';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
@@ -11,11 +10,11 @@ import { applyTrustProxy } from '../../common/http/trust-proxy';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { formatCode } from '../../common/id/id.service';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
-import {
-  INVITE_TTL_MS,
-  StaffService,
-  hashInviteToken,
-} from './staff.service';
+import { StaffService } from './staff.service';
+import { TEMP_PASSWORD_TTL_MS, normaliseTemporaryPassword } from '../../common/auth/temporary-password';
+import { TEMP_PASSWORD_EXPIRED } from '../../common/auth/auth.service';
+
+const TEMP_FORMAT = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/;
 
 type Actor = { id: string; code: string; email: string; role: string };
 
@@ -100,11 +99,20 @@ describe('Phase 8 Task 9: Staff account management', () => {
     ...extra,
   });
 
-  async function accept(token: string, password = goodPassword) {
+  /** First login (rev 174–175): staff code + temporary password → set-up ticket → the new password. */
+  async function startSetup(h: { code: string; tempPassword: string }) {
     return request(app.getHttpServer())
-      .post('/staff/accept-invite')
+      .post('/auth/login')
       .set('X-Forwarded-For', freshIp())
-      .send({ token, password });
+      .send({ staffCode: h.code, password: h.tempPassword, deviceId: `setup-${h.code}` });
+  }
+  async function accept(h: { code: string; tempPassword: string }, password = goodPassword) {
+    const start = await startSetup(h);
+    if (start.body?.status !== 'setup_required') return start;
+    return request(app.getHttpServer())
+      .post('/auth/setup/complete')
+      .set('X-Forwarded-For', freshIp())
+      .send({ setupTicket: start.body.setupTicket, deviceId: `setup-${h.code}`, newPassword: password });
   }
 
   async function login(email: string | null, passwordForLogin: string) {
@@ -171,7 +179,7 @@ describe('Phase 8 Task 9: Staff account management', () => {
       code: res.body.staff.code as string,
       email: res.body.staff.email as string,
       role,
-      inviteToken: res.body.inviteToken as string,
+      tempPassword: res.body.tempPassword as string,
       body: res.body,
     };
   }
@@ -216,6 +224,11 @@ describe('Phase 8 Task 9: Staff account management', () => {
     await prisma.staffSession.deleteMany({
       where: { staffId: { in: ids } },
     });
+    await prisma.statusHistory.deleteMany({ where: { subjectType: 'staff', subjectId: { in: ids } } });
+    await prisma.staffDevice.deleteMany({ where: { staffId: { in: ids } } });
+    await prisma.loginCodeRequest.deleteMany({ where: { staffId: { in: ids } } });
+    await prisma.staffAwayPeriod.deleteMany({ where: { staffId: { in: ids } } });
+    await prisma.staff.updateMany({ where: { id: { in: ids } }, data: { teamLeadId: null, reportsToId: null, tempPasswordIssuedByStaffId: null } });
     await prisma.auditLog.deleteMany({
       where: {
         OR: [
@@ -229,15 +242,13 @@ describe('Phase 8 Task 9: Staff account management', () => {
   });
 
   describe('POST /staff — creation', () => {
-    it('CEO creates a call agent: role-prefixed code, pending invite, one-time token returned', async () => {
+    it('CEO creates a call agent: role-prefixed code, "Not signed in yet", temporary password returned once', async () => {
       const h = await hire('call_agent');
 
       expect(h.body.staff.code).toMatch(/^CA-\d{5}$/);
       expect(h.body.staff.status).toBe('pending_invite');
-      expect(h.inviteToken).toMatch(/^[0-9a-f]{64}$/);
-      expect(new Date(h.body.inviteExpiresAt).getTime()).toBeGreaterThan(
-        Date.now(),
-      );
+      expect(h.tempPassword).toMatch(TEMP_FORMAT);
+      expect(new Date(h.body.tempPasswordExpiresAt).getTime()).toBeGreaterThan(Date.now());
     });
 
     it('Manager can create a field agent without an assigned area', async () => {
@@ -253,25 +264,24 @@ describe('Phase 8 Task 9: Staff account management', () => {
       expect(res.body.staff.teamLeadId).toBe(teamLead.id);
     });
 
-    it('never returns or stores secrets: no password hash in the response, token stored only as a SHA-256 hash', async () => {
+    it('never returns or stores secrets: no hash in the response, the temporary password stored only as a bcrypt hash', async () => {
       const h = await hire('finance');
 
       const raw = JSON.stringify(h.body);
       expect(raw).not.toContain('passwordHash');
-      expect(raw).not.toContain('inviteTokenHash');
+      expect(raw).not.toContain('tempPasswordHash');
       expect(raw).not.toContain('totpSecret');
 
       const row = await prisma.staff.findUniqueOrThrow({ where: { id: h.id } });
-      expect(row.inviteTokenHash).toBe(
-        createHash('sha256').update(h.inviteToken).digest('hex'),
-      );
-      expect(row.inviteTokenHash).not.toBe(h.inviteToken);
-      expect(JSON.stringify(row)).not.toContain(h.inviteToken);
+      expect(row.tempPasswordHash).toMatch(/^\$2[aby]\$/);
+      expect(await bcrypt.compare(normaliseTemporaryPassword(h.tempPassword)!, row.tempPasswordHash!)).toBe(true);
+      expect(JSON.stringify(row)).not.toContain(h.tempPassword);
+      expect(JSON.stringify(row)).not.toContain(normaliseTemporaryPassword(h.tempPassword)!);
       // The creator never sets the password: the stored hash matches no input
       expect(await bcrypt.compare(goodPassword, row.passwordHash)).toBe(false);
     });
 
-    it('invite expiry is exactly INVITE_TTL_MS after creation (injectable clock)', async () => {
+    it('the temporary password ends exactly 24 hours after creation (injectable clock)', async () => {
       const at = new Date('2026-01-10T00:00:00.000Z');
       const result = await staffService.createStaff(
         newHire('call_agent', { teamLeadId: teamLead.id }),
@@ -280,7 +290,7 @@ describe('Phase 8 Task 9: Staff account management', () => {
       );
       createdStaffIds.push(result.staff.id);
 
-      expect(result.inviteExpiresAt.getTime()).toBe(at.getTime() + INVITE_TTL_MS);
+      expect(result.tempPasswordExpiresAt.getTime()).toBe(at.getTime() + TEMP_PASSWORD_TTL_MS);
     });
 
     it('normalises the email to lower case', async () => {
@@ -309,7 +319,7 @@ describe('Phase 8 Task 9: Staff account management', () => {
         role: 'call_agent',
         status: 'pending_invite',
       });
-      expect(JSON.stringify(log!.after)).not.toContain(h.inviteToken);
+      expect(JSON.stringify(log!.after)).not.toContain(h.tempPassword);
       expect(JSON.stringify(log!.after)).not.toContain('Hash');
     });
 
@@ -403,119 +413,115 @@ describe('Phase 8 Task 9: Staff account management', () => {
     });
   });
 
-  describe('Invite flow — a new account cannot log in until the invite is accepted', () => {
-    it('cannot log in before accepting the invite, whatever password is tried', async () => {
+  describe('First login — a new account cannot sign in until it finishes set-up with its temporary password', () => {
+    it('no session whatever password is tried; the temporary password gives only a set-up ticket', async () => {
       const h = await hire('call_agent');
-
-      for (const guess of [goodPassword, h.inviteToken, 'password123456']) {
+      for (const guess of [goodPassword, 'password123456']) {
         const res = await login(h.email, guess);
         expect(res.status).toBe(401);
         expect(res.body.accessToken).toBeUndefined();
       }
+      const start = await startSetup(h);
+      expect(start.status).toBe(200);
+      expect(start.body.status).toBe('setup_required');
+      expect(start.body.accessToken).toBeUndefined();
     });
 
-    it('accepting the invite sets the hire’s own password and activates the account', async () => {
+    it('finishing set-up sets the hire’s own password and activates the account', async () => {
       const h = await hire('call_agent');
-
-      const accepted = await accept(h.inviteToken);
+      const accepted = await accept(h);
       expect(accepted.status).toBe(200);
       expect(accepted.body).toMatchObject({ success: true, code: h.code });
-
       const row = await prisma.staff.findUniqueOrThrow({ where: { id: h.id } });
       expect(row.status).toBe('active');
-      expect(row.inviteTokenHash).toBeNull();
-      expect(row.inviteExpiresAt).toBeNull();
-
+      expect(row.tempPasswordHash).toBeNull();
+      expect(row.tempPasswordExpiresAt).toBeNull();
       const loggedIn = await login(h.email, goodPassword);
       expect(loggedIn.status).toBe(200);
       expect(loggedIn.body.accessToken).toBeDefined();
       expect(loggedIn.body.staff.code).toBe(h.code);
     });
 
-    it('audit-logs invite acceptance with the new hire as actor', async () => {
+    it('audit-logs the set-up with the new hire as actor', async () => {
       const h = await hire('call_agent');
-      await accept(h.inviteToken);
-
-      const log = await prisma.auditLog.findFirst({
-        where: { action: 'staff.invite_accepted', entityCode: h.code },
-      });
+      await accept(h);
+      const log = await prisma.auditLog.findFirst({ where: { action: 'staff.setup_completed', entityCode: h.code } });
       expect(log).not.toBeNull();
       expect(log!.actorId).toBe(h.id);
-      expect(log!.before).toEqual({ status: 'pending_invite' });
-      expect(log!.after).toEqual({ status: 'active' });
+      expect(log!.before).toMatchObject({ status: 'pending_invite' });
+      expect(log!.after).toMatchObject({ status: 'active' });
     });
 
-    it('the token is single-use: a second redemption fails and cannot change the password', async () => {
+    it('the temporary password works once: a second set-up fails and cannot change the password', async () => {
       const h = await hire('call_agent');
-      expect((await accept(h.inviteToken)).status).toBe(200);
-
-      const second = await accept(h.inviteToken, 'Attacker-Chosen-Pass-1');
-      expect(second.status).toBe(400);
-      expect(second.body.message).toBe('Invalid or expired invite token');
-
+      expect((await accept(h)).status).toBe(200);
+      const second = await accept(h, 'Attacker-Chosen-Pass-1');
+      expect(second.status).toBe(401);
       expect((await login(h.email, 'Attacker-Chosen-Pass-1')).status).toBe(401);
       expect((await login(h.email, goodPassword)).status).toBe(200);
     });
 
-    it('two simultaneous redemptions of one token: exactly one wins', async () => {
+    it('two simultaneous completions with one ticket: exactly one wins', async () => {
       const h = await hire('call_agent');
-
-      const results = await Promise.all([
-        accept(h.inviteToken, 'First-Password-Chosen-1'),
-        accept(h.inviteToken, 'Second-Password-Chosen-2'),
-      ]);
-
-      expect(results.map((r) => r.status).sort()).toEqual([200, 400]);
+      const start = await startSetup(h);
+      const done = (password: string) =>
+        request(app.getHttpServer())
+          .post('/auth/setup/complete')
+          .set('X-Forwarded-For', freshIp())
+          .send({ setupTicket: start.body.setupTicket, deviceId: `setup-${h.code}`, newPassword: password });
+      const results = await Promise.all([done('First-Password-Chosen-1'), done('Second-Password-Chosen-2')]);
+      expect(results.map((r) => r.status).sort()).toEqual([200, 401]);
     });
 
-    it('an expired invite is rejected (clock injected past the TTL)', async () => {
+    it('an expired temporary password is refused and the account stays "Not signed in yet"', async () => {
       const h = await hire('call_agent');
-      const afterExpiry = new Date(Date.now() + INVITE_TTL_MS + 60_000);
-
-      await expect(
-        staffService.acceptInvite(
-          { token: h.inviteToken, password: goodPassword },
-          afterExpiry,
-        ),
-      ).rejects.toThrow('Invalid or expired invite token');
-
+      await prisma.staff.update({ where: { id: h.id }, data: { tempPasswordExpiresAt: new Date(Date.now() - 60_000) } });
+      const res = await startSetup(h);
+      expect(res.status).toBe(401);
+      expect(res.body.message).toBe(TEMP_PASSWORD_EXPIRED);
       const row = await prisma.staff.findUniqueOrThrow({ where: { id: h.id } });
       expect(row.status).toBe('pending_invite');
     });
 
-    it('rejects unknown and empty tokens with the same generic message', async () => {
-      for (const token of ['f'.repeat(64), '', '   ']) {
-        const res = await accept(token);
-        expect(res.status).toBe(400);
-        expect(res.body.message).toBe('Invalid or expired invite token');
+    it('rejects unknown and empty set-up tickets with the same answer', async () => {
+      for (const setupTicket of ['f'.repeat(64), '', '   ']) {
+        const res = await request(app.getHttpServer())
+          .post('/auth/setup/complete')
+          .set('X-Forwarded-For', freshIp())
+          .send({ setupTicket, deviceId: 'any', newPassword: goodPassword });
+        expect(res.status).toBe(401);
+        expect(res.body.message).toContain('This set-up has ended');
       }
     });
 
-    it('rejects too-short and over-long passwords, leaving the invite usable', async () => {
+    it('rejects too-short (under 8) and over-long passwords, leaving the temporary password usable', async () => {
       const h = await hire('call_agent');
-
-      const short = await accept(h.inviteToken, 'short');
+      const start = await startSetup(h);
+      const send = (newPassword: string) =>
+        request(app.getHttpServer())
+          .post('/auth/setup/complete')
+          .set('X-Forwarded-For', freshIp())
+          .send({ setupTicket: start.body.setupTicket, deviceId: `setup-${h.code}`, newPassword });
+      const short = await send('short12');
       expect(short.status).toBe(400);
-      const long = await accept(h.inviteToken, 'a'.repeat(73));
-      expect(long.status).toBe(400);
-
+      expect(short.body.message).toContain('at least 8 characters');
+      expect((await send('a'.repeat(73))).status).toBe(400);
       const row = await prisma.staff.findUniqueOrThrow({ where: { id: h.id } });
       expect(row.status).toBe('pending_invite');
-      expect((await accept(h.inviteToken)).status).toBe(200);
+      expect((await send('eight-ch')).status).toBe(200);
     });
 
-    it('accept-invite is public (no auth) but throttled', async () => {
+    it('set-up is public (no bearer token) but throttled', async () => {
       const ip = freshIp();
       const statuses: number[] = [];
       for (let i = 0; i < 8; i++) {
         const res = await request(app.getHttpServer())
-          .post('/staff/accept-invite')
+          .post('/auth/setup/complete')
           .set('X-Forwarded-For', ip)
-          .send({ token: 'e'.repeat(64), password: goodPassword });
+          .send({ setupTicket: 'e'.repeat(64), deviceId: 'x', newPassword: goodPassword });
         statuses.push(res.status);
       }
-
-      expect(statuses[0]).toBe(400); // reached the handler without a bearer token
+      expect(statuses[0]).toBe(401); // reached the handler without a bearer token
       expect(statuses).toContain(429);
     });
   });
@@ -526,7 +532,7 @@ describe('Phase 8 Task 9: Staff account management', () => {
       const lead = await mkStaff('team_lead', { reportsToId: manager.id });
       const a = await hire('field_agent', { teamLeadId: lead.id });
       const b = await hire('call_agent', { teamLeadId: lead.id });
-      await accept(a.inviteToken);
+      await accept(a);
 
       for (const actor of [ceo, manager]) {
         const byTeam = await request(app.getHttpServer())
@@ -605,7 +611,7 @@ describe('Phase 8 Task 9: Staff account management', () => {
   describe('POST /staff/:id/deactivate', () => {
     async function activeHireWithSession() {
       const h = await hire('call_agent');
-      await accept(h.inviteToken);
+      await accept(h);
       // Enrolled, as a real employee would be, so the token is not scope-limited.
       const loggedIn = await enrolledLogin(app.getHttpServer(), {
         email: h.email,
@@ -716,14 +722,15 @@ describe('Phase 8 Task 9: Staff account management', () => {
       expect(entries).toBe(1);
     });
 
-    it('voids an unused invite, so a deactivated pending account cannot be revived by its token', async () => {
+    it('voids an unused temporary password, so a deactivated pending account cannot be revived by it', async () => {
       const h = await hire('call_agent');
       await request(app.getHttpServer())
         .post(`/staff/${h.id}/deactivate`)
         .set('Authorization', auth(ceo));
 
-      const res = await accept(h.inviteToken);
-      expect(res.status).toBe(400);
+      const res = await accept(h);
+      expect(res.status).toBe(401);
+      expect((await prisma.staff.findUniqueOrThrow({ where: { id: h.id } })).tempPasswordHash).toBeNull();
 
       const row = await prisma.staff.findUniqueOrThrow({ where: { id: h.id } });
       expect(row.status).toBe('deactivated');
@@ -858,11 +865,15 @@ describe('Phase 8 Task 9: Staff account management', () => {
     });
   });
 
-  describe('token hashing', () => {
-    it('hashInviteToken is a deterministic SHA-256 hex digest', () => {
-      expect(hashInviteToken('abc')).toBe(
-        'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
-      );
+  describe('temporary password form', () => {
+    it('is accepted in any case, with or without the dash; anything else is never compared', () => {
+      expect(normaliseTemporaryPassword('k7m4-q2px')).toBe('K7M4Q2PX');
+      expect(normaliseTemporaryPassword('K7M4Q2PX')).toBe('K7M4Q2PX');
+      expect(normaliseTemporaryPassword(' k7m4 q2px ')).toBe('K7M4Q2PX');
+      expect(normaliseTemporaryPassword('K7M4-Q2P')).toBeNull();
+      expect(normaliseTemporaryPassword('K7M4-Q2P0')).toBeNull(); // 0 is never used
+      expect(normaliseTemporaryPassword('Correct-Horse-Battery-9')).toBeNull();
+      expect(normaliseTemporaryPassword(12345678)).toBeNull();
     });
   });
 });

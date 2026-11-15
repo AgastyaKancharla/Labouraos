@@ -9,7 +9,7 @@ import { TotpService } from './totp.service';
 import { JwtPayload } from './jwt-payload.interface';
 import { stableTotpCode } from '../../test-support/enrolled-login-spec';
 
-describe('Phase 8: 2FA is mandatory — password-only tokens are scope-limited to TOTP enrolment', () => {
+describe('2FA is mandatory: a password alone never opens a session for an authenticator role (rev 174–175)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let jwt: JwtService;
@@ -74,47 +74,21 @@ describe('Phase 8: 2FA is mandatory — password-only tokens are scope-limited t
     await prisma.staffDevice.deleteMany({ where: { staffId: { in: createdIds } } });
     await prisma.staffSession.deleteMany({ where: { staffId: { in: createdIds } } });
     await prisma.auditLog.deleteMany({ where: { actorId: { in: createdIds } } });
+    await prisma.statusHistory.deleteMany({ where: { subjectType: 'staff', subjectId: { in: createdIds } } });
     await prisma.staff.deleteMany({ where: { id: { in: createdIds } } });
     await app.close();
   });
 
   describe('an account that has not enrolled yet', () => {
-    it('can log in with just the password, but is told it must enrol and gets a scope-limited token', async () => {
-      const { email } = await mkStaff('ceo');
-
-      const res = await passwordOnlyLogin(email);
-
-      expect(res.status).toBe(200);
-      expect(res.body.totpEnrollmentRequired).toBe(true);
-      const claims = jwt.decode(res.body.accessToken) as JwtPayload;
-      expect(claims.scope).toBe('totp_setup');
-    });
-
-    it('is refused (403) on an ordinary endpoint such as GET /staff, even for a CEO', async () => {
-      const { email } = await mkStaff('ceo');
-      const { body } = await passwordOnlyLogin(email);
-
-      const res = await get('/staff', body.accessToken);
-
-      expect(res.status).toBe(403);
-      expect(res.body.message).toContain('Two-factor enrolment required');
-    });
-
-    it.each(['ceo', 'manager', 'finance'])(
-      'a password-only %s token is rejected on authenticated endpoints across the API',
+    it.each(['ceo', 'manager', 'finance', 'team_lead'])(
+      'a %s with a password but no authenticator gets no token at all and is told to ask for a temporary password',
       async (role) => {
-        const { email } = await mkStaff(role);
-        const { body } = await passwordOnlyLogin(email);
-        expect(body.totpEnrollmentRequired).toBe(true);
-
-        for (const path of ['/staff/sessions', '/staff', '/pricing', '/job-seekers']) {
-          const res = await get(path, body.accessToken);
-          expect({ path, status: res.status }).toEqual({ path, status: 403 });
-        }
-        const write = await post('/staff', body.accessToken, { name: 'x' });
-        expect(write.status).toBe(403);
-        const otp = await post('/otp/send', body.accessToken, { phone: '9876543210' });
-        expect(otp.status).toBe(403);
+        const { id, email } = await mkStaff(role);
+        const res = await passwordOnlyLogin(email);
+        expect(res.status).toBe(401);
+        expect(res.body.accessToken).toBeUndefined();
+        expect(res.body.message).toContain('Ask a senior for a temporary password');
+        expect(await prisma.staffSession.count({ where: { staffId: id } })).toBe(0);
       },
     );
 
@@ -129,129 +103,71 @@ describe('Phase 8: 2FA is mandatory — password-only tokens are scope-limited t
       },
     );
 
-    it('succeeds on the TOTP setup endpoint and the enable endpoint', async () => {
-      const { id, email } = await mkStaff('manager');
-      const { body } = await passwordOnlyLogin(email);
-
-      const setup = await post('/staff/2fa/setup', body.accessToken);
-      expect(setup.status).toBe(200);
-      expect(setup.body.secret).toBeDefined();
-      expect(setup.body.otpauthUrl).toContain('otpauth://totp/');
-
-      const enable = await post('/staff/2fa/enable', body.accessToken, {
-        totpCode: await stableTotpCode(setup.body.secret),
-      });
-      expect(enable.status).toBe(200);
-
-      const row = await prisma.staff.findUniqueOrThrow({ where: { id } });
-      expect(row.totpEnabled).toBe(true);
-    });
-
-    it('enabling with a wrong code fails and the account stays unenrolled', async () => {
-      const { id, email } = await mkStaff('finance');
-      const { body } = await passwordOnlyLogin(email);
-      await post('/staff/2fa/setup', body.accessToken);
-
-      const enable = await post('/staff/2fa/enable', body.accessToken, {
-        totpCode: '000000',
-      });
-
-      expect(enable.status).toBe(401);
-      const row = await prisma.staff.findUniqueOrThrow({ where: { id } });
-      expect(row.totpEnabled).toBe(false);
-    });
-
     it('an account flagged enabled but missing its secret is treated as unenrolled (fails closed)', async () => {
       const { email } = await mkStaff('manager', { totpEnabled: true, totpSecret: null });
+      const res = await passwordOnlyLogin(email);
+      expect(res.status).toBe(401);
+      expect(res.body.accessToken).toBeUndefined();
+    });
 
-      const { body } = await passwordOnlyLogin(email);
+    it('a token that still carries the old totp_setup scope is refused on ordinary endpoints', async () => {
+      const { id, code } = await mkStaff('ceo');
+      const session = await prisma.staffSession.create({
+        data: { staffId: id, expiresAt: new Date(Date.now() + 900_000), absoluteExpiresAt: new Date(Date.now() + 7_200_000), lastActivityAt: new Date() },
+      });
+      const limited = jwt.sign({ sub: id, role: 'ceo', email: null, code, sid: session.id, scope: 'totp_setup' } as JwtPayload);
+      for (const path of ['/staff/sessions', '/staff', '/pricing', '/job-seekers']) {
+        const res = await get(path, limited);
+        expect({ path, status: res.status }).toEqual({ path, status: 403 });
+      }
+      expect((await post('/staff', limited, { name: 'x' })).status).toBe(403);
+    });
 
-      expect(body.totpEnrollmentRequired).toBe(true);
-      expect((await get('/staff', body.accessToken)).status).toBe(403);
+    it('enrolment happens only inside the first-login set-up, with a temporary password: the old 2FA endpoints are gone', async () => {
+      const { id, code } = await mkStaff('manager', { totpEnabled: false });
+      const session = await prisma.staffSession.create({
+        data: { staffId: id, expiresAt: new Date(Date.now() + 900_000), absoluteExpiresAt: new Date(Date.now() + 7_200_000), lastActivityAt: new Date() },
+      });
+      const token = jwt.sign({ sub: id, role: 'manager', email: null, code, sid: session.id } as JwtPayload);
+      expect((await post('/staff/2fa/setup', token)).status).toBe(404);
+      expect((await post('/staff/2fa/enable', token, { totpCode: '123456' })).status).toBe(404);
     });
   });
 
   describe('once enrolled', () => {
     async function enrolledAccount(role = 'manager') {
-      const { id, email } = await mkStaff(role);
-      const { body: limited } = await passwordOnlyLogin(email);
-      const setup = await post('/staff/2fa/setup', limited.accessToken);
-      await post('/staff/2fa/enable', limited.accessToken, {
-        totpCode: await stableTotpCode(setup.body.secret),
-      });
+      const secret = totp.generateSecret();
+      const { id, email } = await mkStaff(role, { totpEnabled: true, totpSecret: secret });
       if (role !== 'ceo') {
-        // Enrolling does not approve a Manager's or Finance's device; the CEO
-        // does (decided 11 Nov). Stand in for that approval here.
-        const device = await prisma.staffDevice.findUniqueOrThrow({
-          where: { staffId_deviceId: { staffId: id, deviceId: 'tfa-test-device' } },
-        });
-        expect(device.status).toBe('pending');
-        await prisma.staffDevice.update({
-          where: { id: device.id },
-          data: { status: 'approved', approvedAt: new Date() },
+        await prisma.staffDevice.create({
+          data: { staffId: id, deviceId: 'tfa-test-device', label: 'x', platform: 'web', status: 'approved', approvedAt: new Date() },
         });
       }
-      return { id, email, secret: setup.body.secret as string, limitedToken: limited.accessToken as string };
+      return { id, email, secret };
     }
 
     it('a plain password-only login is rejected outright — no token at all', async () => {
       const { email } = await enrolledAccount();
-
       const res = await passwordOnlyLogin(email);
-
       expect(res.status).toBe(401);
       expect(res.body.accessToken).toBeUndefined();
       expect(res.body.message).toContain('TOTP 2FA code is required');
     });
 
-    it('a wrong code is rejected, a correct code yields a full-scope token that reaches GET /staff', async () => {
-      const { email, secret } = await enrolledAccount();
-
+    it.each(['manager', 'team_lead'])('a wrong code is rejected, a correct code yields a full-scope token (%s)', async (role) => {
+      const { email, secret } = await enrolledAccount(role);
       const staff = await prisma.staff.findUniqueOrThrow({ where: { email } });
       const wrong = await request(app.getHttpServer())
         .post('/auth/login')
         .send({ staffCode: staff.code, password, deviceId: 'tfa-test-device', totpCode: '000000' });
       expect(wrong.status).toBe(401);
-
       const right = await request(app.getHttpServer())
         .post('/auth/login')
-        .send({
-          staffCode: staff.code,
-          password,
-          deviceId: 'tfa-test-device',
-          totpCode: await stableTotpCode(secret),
-        });
+        .send({ staffCode: staff.code, password, deviceId: 'tfa-test-device', totpCode: await stableTotpCode(secret) });
       expect(right.status).toBe(200);
-      expect(right.body.totpEnrollmentRequired).toBeUndefined();
+      expect(right.body.status).toBeUndefined();
       expect((jwt.decode(right.body.accessToken) as JwtPayload).scope).toBeUndefined();
       expect((await get('/staff', right.body.accessToken)).status).toBe(200);
-    });
-
-    it('the pre-enrolment token stays limited after enrolment — it does not upgrade itself', async () => {
-      const { limitedToken } = await enrolledAccount();
-
-      expect((await get('/staff', limitedToken)).status).toBe(403);
-    });
-
-    it('setup cannot be re-run on an enrolled account, so 2FA cannot be silently switched off', async () => {
-      const { id, email, secret } = await enrolledAccount();
-      const staff = await prisma.staff.findUniqueOrThrow({ where: { email } });
-      const login = await request(app.getHttpServer())
-        .post('/auth/login')
-        .send({
-          staffCode: staff.code,
-          password,
-          deviceId: 'tfa-test-device',
-          totpCode: await stableTotpCode(secret),
-        });
-
-      const rerun = await post('/staff/2fa/setup', login.body.accessToken);
-
-      expect(rerun.status).toBe(409);
-      const row = await prisma.staff.findUniqueOrThrow({ where: { id } });
-      expect(row.totpEnabled).toBe(true);
-      expect(row.totpSecret).toBe(secret);
-      expect(totp.verify(await stableTotpCode(secret), row.totpSecret!)).toBe(true);
     });
   });
 });

@@ -2270,7 +2270,7 @@ model StaffPasswordReset {
   staffId         String
   staff           Staff     @relation("PasswordResetFor", fields: [staffId], references: [id], onDelete: Cascade)
   issuedByStaffId String?
-  issuedBy        Staff?    @relation("PasswordResetIssuedBy", fields: [issuedByStaffId], references: [id], onDelete: Restrict)
+  issuedBy        Staff?    @relation("PasswordResetIssuedBy", fields: [issuedByStaffId], references: [id], onDelete: SetNull)
   /// link (older reset links), temp_password, full_reset, reactivation, break_glass.
   kind            String    @default("link")
   /// Older reset links only: SHA-256 of the link token.

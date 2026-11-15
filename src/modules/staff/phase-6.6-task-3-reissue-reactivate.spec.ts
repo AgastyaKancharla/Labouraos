@@ -6,11 +6,14 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { applyTrustProxy } from '../../common/http/trust-proxy';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
-import { INVITE_TTL_MS } from './staff.service';
+import { TEMP_PASSWORD_TTL_MS } from '../../common/auth/temporary-password';
+import { loginCodeFor } from '../login-code/login-code.crypto';
+
+const TEMP_FORMAT = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/;
 
 type Actor = { id: string; code: string; email: string; role: string };
 
-describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
+describe('Phase 6.6 Task 3 (rev 174–175): Reset sign-in completely and reactivate, with a temporary password', () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
@@ -111,6 +114,12 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       await prisma.staffSession.deleteMany({
         where: { staffId: { in: cleanStaffIds } },
       });
+      await prisma.statusHistory.deleteMany({ where: { subjectType: 'staff', subjectId: { in: cleanStaffIds } } });
+      await prisma.staffPasswordReset.deleteMany({ where: { staffId: { in: cleanStaffIds } } });
+      await prisma.staffAwayPeriod.deleteMany({ where: { staffId: { in: cleanStaffIds } } });
+      await prisma.loginCodeRequest.deleteMany({ where: { staffId: { in: cleanStaffIds } } });
+      await prisma.staffDevice.deleteMany({ where: { staffId: { in: cleanStaffIds } } });
+      await prisma.staff.updateMany({ where: { id: { in: cleanStaffIds } }, data: { teamLeadId: null, reportsToId: null, tempPasswordIssuedByStaffId: null } });
       await prisma.staff.deleteMany({
         where: { id: { in: cleanStaffIds } },
       });
@@ -118,8 +127,8 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
     await app.close();
   });
 
-  describe('POST /staff/:id/reissue-invite', () => {
-    it('after re-issue, the old password fails and the old TOTP code fails', async () => {
+  describe('POST /staff/:id/reset-sign-in', () => {
+    it('after the reset, the old password fails and the old TOTP code is gone', async () => {
       // 1. Create a hire and enrol in 2FA
       const hire = await mkStaff('call_agent');
       const enrollRes = await enrolledLogin(app.getHttpServer(), {
@@ -147,19 +156,18 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
 
       // 2. Re-issue invite via CEO
       const reissueRes = await request(app.getHttpServer())
-        .post(`/staff/${hire.id}/reissue-invite`)
+        .post(`/staff/${hire.id}/reset-sign-in`)
         .set('Authorization', `Bearer ${ceoToken}`)
         .set('X-Forwarded-For', freshIp())
         .send();
 
       expect(reissueRes.status).toBe(200);
       expect(reissueRes.body.staff.status).toBe('pending_invite');
-      expect(typeof reissueRes.body.inviteToken).toBe('string');
-      expect(reissueRes.body.inviteToken.length).toBe(64);
-      expect(reissueRes.body.inviteExpiresAt).toBeTruthy();
-      const expiresAtMs = new Date(reissueRes.body.inviteExpiresAt).getTime();
-      expect(expiresAtMs - Date.now()).toBeLessThanOrEqual(INVITE_TTL_MS);
-      expect(expiresAtMs - Date.now()).toBeGreaterThan(INVITE_TTL_MS - 60_000);
+      expect(reissueRes.body.tempPassword).toMatch(TEMP_FORMAT);
+      expect(reissueRes.body.inviteToken).toBeUndefined();
+      const expiresAtMs = new Date(reissueRes.body.tempPasswordExpiresAt).getTime();
+      expect(expiresAtMs - Date.now()).toBeLessThanOrEqual(TEMP_PASSWORD_TTL_MS);
+      expect(expiresAtMs - Date.now()).toBeGreaterThan(TEMP_PASSWORD_TTL_MS - 60_000);
 
       // 3. Verify in DB that TOTP is cleared, passwordHash is scrambled, and status is pending_invite
       const rowAfter = await prisma.staff.findUniqueOrThrow({ where: { id: hire.id } });
@@ -190,7 +198,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       // 6. Verify audit log entry
       const auditLog = await prisma.auditLog.findFirst({
         where: {
-          action: 'staff.invite_reissued',
+          action: 'staff.sign_in_reset',
           entityCode: hire.code,
         },
       });
@@ -206,54 +214,39 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       });
     });
 
-    it('after re-issue, the new token activates the account and forces 2FA enrolment', async () => {
-      // 1. Create a hire and enrol in 2FA
+    it('after the reset, the temporary password opens set-up; the new password then reaches the login code step', async () => {
       const hire = await mkStaff('call_agent');
-      await enrolledLogin(app.getHttpServer(), {
-        email: hire.email,
-        password: goodPassword,
-      });
-
-      // 2. Re-issue invite
+      await enrolledLogin(app.getHttpServer(), { email: hire.email, password: goodPassword });
       const reissueRes = await request(app.getHttpServer())
-        .post(`/staff/${hire.id}/reissue-invite`)
+        .post(`/staff/${hire.id}/reset-sign-in`)
         .set('Authorization', `Bearer ${managerToken}`)
         .set('X-Forwarded-For', freshIp())
         .send();
       expect(reissueRes.status).toBe(200);
-      const newInviteToken = reissueRes.body.inviteToken as string;
-
-      // 3. Accept invite with new password
-      const newPassword = 'New-Secret-Password-123';
-      const acceptRes = await request(app.getHttpServer())
-        .post('/staff/accept-invite')
+      const setup = await request(app.getHttpServer())
+        .post('/auth/login')
         .set('X-Forwarded-For', freshIp())
-        .send({
-          token: newInviteToken,
-          password: newPassword,
-        });
-      expect(acceptRes.status).toBe(200);
-      expect(acceptRes.body.success).toBe(true);
-
-      // Verify row is activated
+        .send({ staffCode: hire.code, password: reissueRes.body.tempPassword, deviceId: `test-device-${hire.id}` });
+      expect(setup.status).toBe(200);
+      expect(setup.body.status).toBe('setup_required');
+      const newPassword = 'New-Secret-Password-123';
+      const done = await request(app.getHttpServer())
+        .post('/auth/setup/complete')
+        .set('X-Forwarded-For', freshIp())
+        .send({ setupTicket: setup.body.setupTicket, deviceId: `test-device-${hire.id}`, newPassword });
+      expect(done.status).toBe(200);
       const row = await prisma.staff.findUniqueOrThrow({ where: { id: hire.id } });
       expect(row.status).toBe('active');
-      expect(row.inviteTokenHash).toBeNull();
+      expect(row.tempPasswordHash).toBeNull();
+      // A reset: their boss and the CEO get a bell, and the notice waits for the next sign-in.
+      expect(row.passwordResetNotice).toMatchObject({ how: 'full_reset' });
 
-      // 4. The new password does not issue a token until the login code is entered.
       const loginRes = await request(app.getHttpServer())
         .post('/auth/login')
         .set('X-Forwarded-For', freshIp())
-        .send({
-          staffCode: hire.code,
-          password: newPassword,
-          deviceId: `test-device-${hire.id}`,
-        });
+        .send({ staffCode: hire.code, password: newPassword, deviceId: `test-device-${hire.id}` });
       expect(loginRes.status).toBe(200);
       expect(loginRes.body.status).toBe('awaiting_code');
-      expect(loginRes.body.accessToken).toBeUndefined();
-
-      const { loginCodeFor } = await import('../../modules/login-code/login-code.crypto');
       const fullLoginRes = await request(app.getHttpServer())
         .post('/auth/login/verify-code')
         .set('X-Forwarded-For', freshIp())
@@ -264,41 +257,35 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
           loginRequestProof: loginRes.body.loginRequestProof,
         });
       expect(fullLoginRes.status).toBe(200);
-      expect(fullLoginRes.body.accessToken).toBeDefined();
-      const fullToken = fullLoginRes.body.accessToken as string;
-
-      // Can now access ordinary endpoints
-      const fullProbeRes = await request(app.getHttpServer())
-        .get('/staff/sessions')
-        .set('Authorization', `Bearer ${fullToken}`);
+      expect(fullLoginRes.body.passwordResetNotice).toMatchObject({ how: 'full_reset' });
+      const fullProbeRes = await request(app.getHttpServer()).get('/staff/sessions').set('Authorization', `Bearer ${fullLoginRes.body.accessToken}`);
       expect(fullProbeRes.status).toBe(200);
-      expect(Array.isArray(fullProbeRes.body)).toBe(true);
     });
 
-    it('a Manager is refused re-issuing an invite to a CEO', async () => {
+    it('a Manager is refused resetting a CEO', async () => {
       const res = await request(app.getHttpServer())
-        .post(`/staff/${ceo.id}/reissue-invite`)
+        .post(`/staff/${ceo.id}/reset-sign-in`)
         .set('Authorization', `Bearer ${managerToken}`)
         .set('X-Forwarded-For', freshIp())
         .send();
 
       expect(res.status).toBe(403);
-      expect(res.body.message).toBe("Only a CEO can re-issue invites for 'ceo' accounts");
+      expect(res.body.message).toBe("A Manager cannot do this for a 'ceo' account; only the CEO can");
     });
 
-    it('a Manager is refused re-issuing an invite to another Manager', async () => {
+    it('a Manager is refused resetting another Manager', async () => {
       const otherManager = await mkStaff('manager');
       const res = await request(app.getHttpServer())
-        .post(`/staff/${otherManager.id}/reissue-invite`)
+        .post(`/staff/${otherManager.id}/reset-sign-in`)
         .set('Authorization', `Bearer ${managerToken}`)
         .set('X-Forwarded-For', freshIp())
         .send();
 
       expect(res.status).toBe(403);
-      expect(res.body.message).toBe("Only a CEO can re-issue invites for 'manager' accounts");
+      expect(res.body.message).toBe("A Manager cannot do this for a 'manager' account; only the CEO can");
     });
 
-    it('refuses re-issuing an invite for a deactivated account', async () => {
+    it('refuses resetting a deactivated account', async () => {
       const hire = await mkStaff('call_agent');
       await request(app.getHttpServer())
         .post(`/staff/${hire.id}/deactivate`)
@@ -306,31 +293,29 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
         .send();
 
       const res = await request(app.getHttpServer())
-        .post(`/staff/${hire.id}/reissue-invite`)
+        .post(`/staff/${hire.id}/reset-sign-in`)
         .set('Authorization', `Bearer ${ceoToken}`)
         .set('X-Forwarded-For', freshIp())
         .send();
 
       expect(res.status).toBe(400);
-      expect(res.body.message).toBe(
-        'Cannot re-issue invite for a deactivated account. Reactivate the account first.',
-      );
+      expect(res.body.message).toBe('This account is deactivated. Reactivate it first.');
     });
 
-    it('a Team Lead resets the password of an agent in their own team', async () => {
+    it('a Team Lead resets the sign-in of an agent in their own team', async () => {
       // Master Guide, Passwords and email: an agent's forgotten password is
       // reset by their Team Lead, a Manager or the CEO.
       const target = await mkStaff('call_agent');
       const res = await request(app.getHttpServer())
-        .post(`/staff/${target.id}/reissue-invite`)
+        .post(`/staff/${target.id}/reset-sign-in`)
         .set('Authorization', `Bearer ${teamLeadToken}`)
         .set('X-Forwarded-For', freshIp())
         .send();
       expect(res.status).toBe(200);
-      expect(res.body.inviteToken).toMatch(/^[0-9a-f]{64}$/);
+      expect(res.body.tempPassword).toMatch(TEMP_FORMAT);
     });
 
-    it('non-executive roles are refused re-issuing invites outside their own team', async () => {
+    it('non-executive roles are refused resetting outside their own team', async () => {
       const otherLead = await mkStaff('team_lead');
       const target = await mkStaff('call_agent', {
         teamLeadId: otherLead.id,
@@ -339,7 +324,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
 
       for (const token of [teamLeadToken, callAgentToken, fieldAgentToken, financeToken]) {
         const res = await request(app.getHttpServer())
-          .post(`/staff/${target.id}/reissue-invite`)
+          .post(`/staff/${target.id}/reset-sign-in`)
           .set('Authorization', `Bearer ${token}`)
           .set('X-Forwarded-For', freshIp())
           .send();
@@ -347,14 +332,14 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       }
     });
 
-    it('re-issue invite is throttled via AuthThrottlerGuard (5 req/min)', async () => {
+    it('reset sign-in is throttled via AuthThrottlerGuard (5 req/min)', async () => {
       const target = await mkStaff('call_agent');
       const ip = freshIp();
       const statuses: number[] = [];
 
       for (let i = 0; i < 8; i++) {
         const res = await request(app.getHttpServer())
-          .post(`/staff/${target.id}/reissue-invite`)
+          .post(`/staff/${target.id}/reset-sign-in`)
           .set('Authorization', `Bearer ${ceoToken}`)
           .set('X-Forwarded-For', ip)
           .send();
@@ -367,104 +352,63 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
   });
 
   describe('POST /staff/:id/reactivate', () => {
-    it('a reactivated account cannot log in until a fresh invite is accepted', async () => {
-      // 1. Active hire
+    it('a reactivated account gets a temporary password and is "Not signed in yet" until it sets up (the old password never works)', async () => {
       const hire = await mkStaff('call_agent');
-      await enrolledLogin(app.getHttpServer(), {
-        email: hire.email,
-        password: goodPassword,
-      });
-
-      // 2. Deactivate the hire
-      const deactRes = await request(app.getHttpServer())
-        .post(`/staff/${hire.id}/deactivate`)
-        .set('Authorization', `Bearer ${ceoToken}`)
-        .send();
+      await enrolledLogin(app.getHttpServer(), { email: hire.email, password: goodPassword });
+      const deactRes = await request(app.getHttpServer()).post(`/staff/${hire.id}/deactivate`).set('Authorization', `Bearer ${ceoToken}`).send();
       expect(deactRes.status).toBe(200);
-
-      // Verify login fails while deactivated
       const deactLogin = await request(app.getHttpServer())
         .post('/auth/login')
         .set('X-Forwarded-For', freshIp())
-        .send({
-          staffCode: hire.code,
-          password: goodPassword,
-          deviceId: `test-device-${hire.id}`,
-        });
+        .send({ staffCode: hire.code, password: goodPassword, deviceId: `test-device-${hire.id}` });
       expect(deactLogin.status).toBe(401);
 
-      // 3. Reactivate the hire via Manager (or CEO)
       const reactivateRes = await request(app.getHttpServer())
         .post(`/staff/${hire.id}/reactivate`)
         .set('Authorization', `Bearer ${managerToken}`)
         .set('X-Forwarded-For', freshIp())
         .send();
-
       expect(reactivateRes.status).toBe(200);
-      expect(reactivateRes.body.staff.status).toBe('active');
+      expect(reactivateRes.headers['cache-control']).toContain('no-store');
+      expect(reactivateRes.body.staff.status).toBe('pending_invite');
       expect(reactivateRes.body.staff.deactivatedAt).toBeNull();
+      expect(reactivateRes.body.tempPassword).toMatch(TEMP_FORMAT);
 
-      // 4. Verify DB state: password is unguessable random hash, TOTP cleared, no invite token
       const reactivatedRow = await prisma.staff.findUniqueOrThrow({ where: { id: hire.id } });
-      expect(reactivatedRow.status).toBe('active');
-      expect(reactivatedRow.deactivatedAt).toBeNull();
+      expect(reactivatedRow.status).toBe('pending_invite');
       expect(reactivatedRow.totpEnabled).toBe(false);
       expect(reactivatedRow.totpSecret).toBeNull();
-      expect(reactivatedRow.inviteTokenHash).toBeNull();
+      expect(reactivatedRow.tempPasswordHash).toBeTruthy();
 
-      // 5. Verify the reactivated account CANNOT log in with old password
       const oldPassLogin = await request(app.getHttpServer())
         .post('/auth/login')
         .set('X-Forwarded-For', freshIp())
-        .send({
-          staffCode: hire.code,
-          password: goodPassword,
-          deviceId: `test-device-${hire.id}`,
-        });
+        .send({ staffCode: hire.code, password: goodPassword, deviceId: `test-device-${hire.id}` });
       expect(oldPassLogin.status).toBe(401);
       expect(oldPassLogin.body.message).toBe('Invalid staff code or password');
 
-      // 6. Verify audit log entry
-      const auditLog = await prisma.auditLog.findFirst({
-        where: {
-          action: 'staff.reactivated',
-          entityCode: hire.code,
-        },
-      });
+      const auditLog = await prisma.auditLog.findFirst({ where: { action: 'staff.reactivated', entityCode: hire.code } });
       expect(auditLog).toBeTruthy();
       expect(auditLog!.actorId).toBe(manager.id);
       expect(auditLog!.before).toMatchObject({ status: 'deactivated' });
-      expect(auditLog!.after).toMatchObject({ status: 'active', deactivatedAt: null });
+      expect(auditLog!.after).toMatchObject({ status: 'pending_invite', deactivatedAt: null });
+      expect(JSON.stringify(auditLog)).not.toContain(reactivateRes.body.tempPassword);
 
-      // 7. Compose with reissue-invite to make the account usable again
-      const reissueRes = await request(app.getHttpServer())
-        .post(`/staff/${hire.id}/reissue-invite`)
-        .set('Authorization', `Bearer ${ceoToken}`)
+      const setup = await request(app.getHttpServer())
+        .post('/auth/login')
         .set('X-Forwarded-For', freshIp())
-        .send();
-      expect(reissueRes.status).toBe(200);
-      const freshToken = reissueRes.body.inviteToken as string;
-
-      // 8. Accept fresh invite
+        .send({ staffCode: hire.code, password: reactivateRes.body.tempPassword, deviceId: `test-device-${hire.id}` });
+      expect(setup.body.status).toBe('setup_required');
       const freshPassword = 'Fresh-Password-After-Reactivation-456';
-      const acceptRes = await request(app.getHttpServer())
-        .post('/staff/accept-invite')
+      await request(app.getHttpServer())
+        .post('/auth/setup/complete')
         .set('X-Forwarded-For', freshIp())
-        .send({
-          token: freshToken,
-          password: freshPassword,
-        });
-      expect(acceptRes.status).toBe(200);
-
-      // 9. Login now reaches the code step. A call agent is not sent to TOTP enrolment.
+        .send({ setupTicket: setup.body.setupTicket, deviceId: `test-device-${hire.id}`, newPassword: freshPassword })
+        .expect(200);
       const freshLogin = await request(app.getHttpServer())
         .post('/auth/login')
         .set('X-Forwarded-For', freshIp())
-        .send({
-          staffCode: hire.code,
-          password: freshPassword,
-          deviceId: `test-device-${hire.id}`,
-        });
+        .send({ staffCode: hire.code, password: freshPassword, deviceId: `test-device-${hire.id}` });
       expect(freshLogin.status).toBe(200);
       expect(freshLogin.body.status).toBe('awaiting_code');
       expect(freshLogin.body.accessToken).toBeUndefined();

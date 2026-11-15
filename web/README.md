@@ -14,7 +14,7 @@ to Laboura Field). See `src/modules/web-app/site-routing.middleware.ts`.
   reach the API. Never fetch an API path without that header.
 - A new top-level route must be added to the server's `WEB_APP_ROOTS` (and
   `WEB_ROOTS` in `vite.config.ts`); `src/App.root.test.tsx` checks the list.
-- Old `/app/...` links (invites, resets, `/app/p/...` sent by SMS or WhatsApp)
+- Old `/app/...` links (`/app/p/...` sent by SMS or WhatsApp; old `/p/invite/...` links now go to `/login`: invite links were replaced by temporary passwords)
   are redirected permanently by the server to the same path without `/app`.
 - Links in screens: use router paths (`navigate('/ceo/refunds')`, `useHref`),
   never a hard-coded prefix.

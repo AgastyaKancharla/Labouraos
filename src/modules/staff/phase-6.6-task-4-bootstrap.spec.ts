@@ -24,7 +24,9 @@ describe('Phase 6.6 Task 4: Harden the CEO bootstrap', () => {
     await prisma.jobSeeker.updateMany({ data: { registeredByStaffId: null } });
     await prisma.placement.updateMany({ data: { createdByStaffId: null } });
     await prisma.vacancy.updateMany({ data: { capturedByStaffId: null } });
-    await prisma.staff.updateMany({ data: { teamLeadId: null } });
+    await prisma.staff.updateMany({ data: { teamLeadId: null, reportsToId: null, tempPasswordIssuedByStaffId: null } });
+    await prisma.passwordResetRequest.deleteMany({});
+    await prisma.staffPasswordReset.deleteMany({});
     await prisma.auditLog.deleteMany({});
     await prisma.staff.deleteMany({});
   }
@@ -50,130 +52,70 @@ describe('Phase 6.6 Task 4: Harden the CEO bootstrap', () => {
     await app.close();
   });
 
-  describe('Full E2E Lifecycle: Bootstrap → First Login (Setup Scope) → Enrol 2FA → Full Access', () => {
+  describe('Full E2E Lifecycle: Bootstrap → temporary password → first-login set-up (password + authenticator) → Full Access', () => {
     beforeEach(async () => {
       process.env.STAFF_BOOTSTRAP_SECRET = BOOTSTRAP_SECRET;
       await clearAllStaff();
     });
 
-    it('creates CEO with totpEnabled: false, returns no secret, forces 2FA enrolment on first login, and grants full access upon enrolment', async () => {
-      const payload = {
-        name: 'First CEO',
-        email: 'ceo.e2e@laboura.local',
-        password: 'SuperSecurePassword2026!',
-      };
-
-      // 1. Bootstrap with secret header
+    it('creates the CEO "Not signed in yet" with a temporary password (shown once), no authenticator secret; set-up switches password and authenticator on together; then full access', async () => {
+      // 1. Bootstrap with secret header; email is optional.
       const bootstrapRes = await request(app.getHttpServer())
         .post('/staff/bootstrap')
         .set('X-Forwarded-For', freshIp())
         .set('x-bootstrap-secret', BOOTSTRAP_SECRET)
-        .send(payload);
+        .send({ name: 'First CEO' });
 
       expect(bootstrapRes.status).toBe(201);
-      expect(bootstrapRes.body.staff).toBeDefined();
-      expect(bootstrapRes.body.staff.role).toBe('ceo');
-      expect(bootstrapRes.body.staff.status).toBe('active');
-      expect(bootstrapRes.body.staff.email).toBe('ceo.e2e@laboura.local');
-      expect(bootstrapRes.body.staff.name).toBe('First CEO');
+      expect(bootstrapRes.headers['cache-control']).toContain('no-store');
+      expect(bootstrapRes.body.staff).toMatchObject({ role: 'ceo', status: 'pending_invite', email: null, name: 'First CEO' });
       expect(bootstrapRes.body.staff.code).toMatch(/^CEO-\d{5}$/);
-
-      // Bootstrap NO LONGER sets totpEnabled: true and NO LONGER returns a secret
+      expect(bootstrapRes.body.tempPassword).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
       expect(bootstrapRes.body.totpSecret).toBeUndefined();
       expect(bootstrapRes.body.secret).toBeUndefined();
       expect(bootstrapRes.body.otpauthUrl).toBeUndefined();
 
-      // Verify DB row has totpEnabled: false and totpSecret: null
-      const staffRow = await prisma.staff.findUniqueOrThrow({
-        where: { id: bootstrapRes.body.staff.id },
-      });
+      const staffRow = await prisma.staff.findUniqueOrThrow({ where: { id: bootstrapRes.body.staff.id } });
       expect(staffRow.totpEnabled).toBe(false);
       expect(staffRow.totpSecret).toBeNull();
-
-      // Verify audit log recorded with sentinel 'bootstrap' actor
-      const audit = await prisma.auditLog.findFirst({
-        where: { entityCode: staffRow.code, action: 'staff.created' },
-      });
-      expect(audit).toBeDefined();
+      const audit = await prisma.auditLog.findFirst({ where: { entityCode: staffRow.code, action: 'staff.created' } });
       expect(audit?.actorId).toBe('bootstrap');
+      expect(JSON.stringify(audit)).not.toContain(bootstrapRes.body.tempPassword);
 
-      // 2. First login with password only: receives restricted 'totp_setup' scope
+      // 2. The temporary password gives a set-up ticket, never a session.
       const firstLoginRes = await request(app.getHttpServer())
         .post('/auth/login')
         .set('X-Forwarded-For', freshIp())
-        .send({
-          staffCode: bootstrapRes.body.staff.code,
-          password: payload.password,
-          deviceId: 'phase66-ceo-device',
-        });
-
+        .send({ staffCode: staffRow.code, password: bootstrapRes.body.tempPassword, deviceId: 'phase66-ceo-device' });
       expect(firstLoginRes.status).toBe(200);
-      expect(firstLoginRes.body.totpEnrollmentRequired).toBe(true);
-      const setupToken = firstLoginRes.body.accessToken as string;
-      expect(setupToken).toBeDefined();
+      expect(firstLoginRes.body).toMatchObject({ status: 'setup_required', authenticatorSetupRequired: true });
+      expect(firstLoginRes.body.accessToken).toBeUndefined();
+      const ticket = { setupTicket: firstLoginRes.body.setupTicket, deviceId: 'phase66-ceo-device' };
 
-      // 3. Probing ordinary endpoints with setupToken is refused (403 Forbidden)
-      const probeRes = await request(app.getHttpServer())
-        .get('/staff')
-        .set('Authorization', `Bearer ${setupToken}`)
-        .set('X-Forwarded-For', freshIp());
-
-      expect(probeRes.status).toBe(403);
-      expect(probeRes.body.message).toContain('enrolment required');
-
-      // 4. CEO initiates 2FA enrolment via /staff/2fa/setup
-      const setupRes = await request(app.getHttpServer())
-        .post('/staff/2fa/setup')
-        .set('Authorization', `Bearer ${setupToken}`)
-        .set('X-Forwarded-For', freshIp())
-        .send();
-
+      // 3. Authenticator QR inside the set-up, then the new password and first code together.
+      const setupRes = await request(app.getHttpServer()).post('/auth/setup/authenticator').set('X-Forwarded-For', freshIp()).send(ticket);
       expect(setupRes.status).toBe(200);
-      expect(typeof setupRes.body.secret).toBe('string');
-      expect(setupRes.body.secret.length).toBeGreaterThanOrEqual(16);
       expect(setupRes.body.otpauthUrl).toContain('otpauth://totp/');
       const totpSecret = setupRes.body.secret as string;
-
-      // 5. CEO confirms and enables 2FA via /staff/2fa/enable
-      const totpCode = await stableTotpCode(totpSecret);
-      const enableRes = await request(app.getHttpServer())
-        .post('/staff/2fa/enable')
-        .set('Authorization', `Bearer ${setupToken}`)
+      const password = 'SuperSecurePassword2026!';
+      const done = await request(app.getHttpServer())
+        .post('/auth/setup/complete')
         .set('X-Forwarded-For', freshIp())
-        .send({ totpCode });
+        .send({ ...ticket, newPassword: password, totpCode: await stableTotpCode(totpSecret) });
+      expect(done.status).toBe(200);
+      const staffAfterEnrol = await prisma.staff.findUniqueOrThrow({ where: { id: staffRow.id } });
+      expect(staffAfterEnrol).toMatchObject({ status: 'active', totpEnabled: true, totpSecret, tempPasswordHash: null });
 
-      expect(enableRes.status).toBe(200);
-      expect(enableRes.body.success).toBe(true);
-
-      // Verify DB now has totpEnabled: true
-      const staffAfterEnrol = await prisma.staff.findUniqueOrThrow({
-        where: { id: staffRow.id },
-      });
-      expect(staffAfterEnrol.totpEnabled).toBe(true);
-      expect(staffAfterEnrol.totpSecret).toBe(totpSecret);
-
-      // 6. Next login with password + TOTP code issues full token
-      const stableCode = await stableTotpCode(totpSecret);
+      // 4. Password + authenticator code: full token (the CEO approves his own device with it).
       const fullLoginRes = await request(app.getHttpServer())
         .post('/auth/login')
         .set('X-Forwarded-For', freshIp())
-        .send({
-          staffCode: staffRow.code,
-          password: payload.password,
-          deviceId: 'phase66-ceo-device',
-          totpCode: stableCode,
-        });
-
+        .send({ staffCode: staffRow.code, password, deviceId: 'phase66-ceo-device', totpCode: await stableTotpCode(totpSecret) });
       expect(fullLoginRes.status).toBe(200);
-      expect(fullLoginRes.body.totpEnrollmentRequired).toBeUndefined();
-      const fullToken = fullLoginRes.body.accessToken as string;
-
-      // 7. Full token can access ordinary endpoints
       const fullProbeRes = await request(app.getHttpServer())
         .get('/staff')
-        .set('Authorization', `Bearer ${fullToken}`)
+        .set('Authorization', `Bearer ${fullLoginRes.body.accessToken}`)
         .set('X-Forwarded-For', freshIp());
-
       expect(fullProbeRes.status).toBe(200);
       expect(Array.isArray(fullProbeRes.body)).toBe(true);
     });

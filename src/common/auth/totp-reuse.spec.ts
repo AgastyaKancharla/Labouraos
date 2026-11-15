@@ -68,6 +68,7 @@ describe('L9: an authenticator code is accepted only once', () => {
     await prisma.staffSession.deleteMany({ where: { staffId: { in: createdIds } } });
     await prisma.staffDevice.deleteMany({ where: { staffId: { in: createdIds } } });
     await prisma.auditLog.deleteMany({ where: { actorId: { in: createdIds } } });
+    await prisma.statusHistory.deleteMany({ where: { subjectType: 'staff', subjectId: { in: createdIds } } });
     await prisma.staff.deleteMany({ where: { id: { in: createdIds } } });
     await app.close();
   }, 60000);
@@ -86,15 +87,24 @@ describe('L9: an authenticator code is accepted only once', () => {
     expect(row.totpLastStep).toBe(Math.floor(Date.now() / 1000 / TOTP_STEP_SECONDS));
   }, 60000);
 
-  it('refuses a login with the code that just switched the authenticator on', async () => {
-    const { staff, secret, deviceId } = await makeManager(false);
-    const setupLogin = await login({ staffCode: staff.code, password, deviceId });
+  it('refuses a login with the code that just switched the authenticator on (first-login set-up)', async () => {
+    const { staff, deviceId } = await makeManager(false);
+    // A temporary password from a senior: the authenticator is switched on inside the set-up.
+    const temp = 'K7M4-Q2PX';
+    await prisma.staff.update({
+      where: { id: staff.id },
+      data: { tempPasswordHash: await bcrypt.hash('K7M4Q2PX', 4), tempPasswordExpiresAt: new Date(Date.now() + 3600_000), totpSecret: null },
+    });
+    const setupLogin = await login({ staffCode: staff.code, password: temp, deviceId });
     expect(setupLogin.status).toBe(200);
-    const code = await codeWithTimeLeft(secret);
+    expect(setupLogin.body.status).toBe('setup_required');
+    const ticket = { setupTicket: setupLogin.body.setupTicket, deviceId };
+    const qr = await request(app.getHttpServer()).post('/auth/setup/authenticator').set('X-Forwarded-For', freshIp()).send(ticket).expect(200);
+    const code = await codeWithTimeLeft(qr.body.secret);
     await request(app.getHttpServer())
-      .post('/staff/2fa/enable')
-      .set('Authorization', `Bearer ${setupLogin.body.accessToken}`)
-      .send({ totpCode: code })
+      .post('/auth/setup/complete')
+      .set('X-Forwarded-For', freshIp())
+      .send({ ...ticket, newPassword: password, totpCode: code })
       .expect(200);
     const reused = await login({ staffCode: staff.code, password, deviceId, totpCode: code });
     expect(reused.status).toBe(401);
