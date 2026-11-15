@@ -62,7 +62,7 @@ export default function IncomingCall() {
 
   return (
     <div className="lb-page lb-ca">
-      <TopBar icon="callCenter" iconTone="good" title={t('screen.CA17-IncomingCall')} titleHidden />
+      <TopBar title={t('screen.CA17-IncomingCall')} titleHidden />
       {!task && <EmptyState emoji="📞" title={t('ca.in.none')} />}
       {card.error && <ErrorState error={card.error} onRetry={() => void card.refetch()} />}
       {task && !c && !card.error && <SkeletonCard height={260} />}

@@ -1,4 +1,5 @@
 import { Link, useParams } from 'react-router-dom';
+import { ToneTile } from '../../../components/ToneTile';
 import { ErrorState } from '../../../components/ErrorState';
 import { SkeletonCard } from '../../../components/Skeleton';
 import { TopBar } from '../../../components/TopBar';
@@ -29,7 +30,7 @@ export default function NoAnswer() {
 
   return (
     <div className="lb-page lb-ca">
-      <TopBar icon="callCenter" iconTone="orange" title={t('screen.CA05n-NoAnswer')} titleHidden />
+      <TopBar title={t('screen.CA05n-NoAnswer')} titleHidden />
       {call.error && <ErrorState error={call.error} onRetry={() => void call.refetch()} />}
       {!c && !call.error && <SkeletonCard height={260} />}
       {c && (
@@ -41,7 +42,10 @@ export default function NoAnswer() {
             </strong>
           </div>
           <div>
-            <h2 className="h2" style={{ marginBottom: 6 }}>{t('ca.na.auto')}</h2>
+            <h2 className="h2 lb-h-tile" style={{ marginBottom: 6 }}>
+              <ToneTile icon="callCenter" tone="orange" size="sm" />
+              {t('ca.na.auto')}
+            </h2>
             {c.subjectType === 'job_seeker' && (
               <div className="row">
                 <span>{t('ca.na.whatsapp')}</span>

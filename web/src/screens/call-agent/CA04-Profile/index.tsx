@@ -31,7 +31,7 @@ export default function PersonProfile() {
   const data = profile.data;
   return (
     <div className="lb-page lb-ca">
-      <TopBar icon="jobSeekers" iconTone="royal" title={data?.name ?? t('screen.CA04-Profile')} titleHidden />
+      <TopBar title={data?.name ?? t('screen.CA04-Profile')} titleHidden />
       <div className="lb-ca-split">
         <WorkListAside currentId={data?.id} />
         <div className="lb-ca-main">

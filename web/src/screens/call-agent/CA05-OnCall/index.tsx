@@ -51,7 +51,7 @@ export default function OnCall() {
 
   return (
     <div className="lb-page lb-ca">
-      <TopBar icon="callCenter" iconTone="cyan" title={t('screen.CA05-OnCall')} titleHidden />
+      <TopBar title={t('screen.CA05-OnCall')} titleHidden />
       {call.error && <ErrorState error={call.error} onRetry={() => void call.refetch()} />}
       {!c && !call.error && <SkeletonCard height={300} />}
       {c && (

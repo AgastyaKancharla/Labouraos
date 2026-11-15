@@ -25,7 +25,7 @@ export default function UnknownCaller() {
   const from = (id: string) => `${to(id)}?incomingCall=${encodeURIComponent(task ?? '')}`;
   return (
     <div className="lb-page lb-ca">
-      <TopBar icon="callCenter" iconTone="navy" title={t('screen.CA17b-UnknownCaller')} titleHidden />
+      <TopBar title={t('screen.CA17b-UnknownCaller')} titleHidden />
       {!task && <EmptyState emoji="📞" title={t('ca.in.none')} />}
       {card.error && <ErrorState error={card.error} onRetry={() => void card.refetch()} />}
       {task && !c && !card.error && <SkeletonCard height={200} />}

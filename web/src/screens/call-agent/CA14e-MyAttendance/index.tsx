@@ -45,7 +45,7 @@ export default function MyAttendance() {
 
   return (
     <div className="lb-page lb-att-page">
-      <TopBar icon="attendance" iconTone="royal" title={t('screen.CA14e-MyAttendance')} titleHidden />
+      <TopBar title={t('screen.CA14e-MyAttendance')} titleHidden />
       <div className="lb-att-titlebar">
         <span className="lb-att-monthnav">
           <button type="button" aria-label={t('att.mine.prev')} disabled={month <= oldest} onClick={() => setMonth(shiftMonth(month, -1))}>
@@ -75,11 +75,13 @@ export default function MyAttendance() {
 
       <div className="lb-att-grid3">
         <div className="card lb-att-stat">
+          <span className="lb-ca-bar" style={{ background: 'var(--royal)' }} aria-hidden="true" />
           <span className="lbl">{t('att.mine.production')}</span>
           <b>{data ? hm(data.productionSeconds) : <Skeleton height={26} />}</b>
           <span className="sub">{data ? t('att.mine.neededSoFar', { needed: hm(needed), days: expectedDays(data.days, istDateKey(now)) }) : ''}</span>
         </div>
         <div className="card lb-att-stat">
+          <span className="lb-ca-bar" style={{ background: 'var(--orange-raw)' }} aria-hidden="true" />
           <span className="lbl">{t('att.mine.makeUp')}</span>
           <b style={owed > 0 ? { color: 'var(--tomato)' } : undefined}>{data ? hm(owed) : <Skeleton height={26} />}</b>
           <span className="sub">
@@ -87,6 +89,7 @@ export default function MyAttendance() {
           </span>
         </div>
         <div className="card lb-att-stat">
+          <span className="lb-ca-bar" style={{ background: 'var(--gold-raw)' }} aria-hidden="true" />
           <span className="lbl">{t('att.mine.leave')}</span>
           <b>{balance.data ? t('att.mine.leaveLeft', { count: balance.data.casual.left + balance.data.emergency.left }) : <Skeleton height={26} />}</b>
           <span className="sub">{balance.data ? t('att.mine.leaveLine', { casual: balance.data.casual.left, emergency: balance.data.emergency.left }) : ''}</span>
