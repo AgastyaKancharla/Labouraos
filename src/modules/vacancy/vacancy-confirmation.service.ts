@@ -6,7 +6,6 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { publicPageOtpPurpose } from '../../common/otp/public-page-otp';
-import { OtpSendResult } from '../../common/otp/otp.interface';
 import { PublicLinkStoreService } from '../../common/public-link-store.service';
 import { publicLink } from '../../common/public-link';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
@@ -168,7 +167,9 @@ export class VacancyConfirmationService {
       throw new BadRequestException(`Only a vacancy awaiting confirmation can be sent a code (this one is ${vacancy.status})`);
     }
     const contact = this.contactOf(vacancy);
-    const result = await this.otpService.sendOtp(contact.phone, 'vacancy_confirm', actor.id, actor.role, otpRequestId) as OtpSendResult;
+    // M2: the code confirms this vacancy in its current confirmation round only; editing the
+    // vacancy starts a new round, so a code the owner got for the old details stops working.
+    const result = await this.otpService.sendBoundOtp(contact.phone, await this.codePurpose(vacancy.id), actor.id, otpRequestId);
     if (!otpRequestId) {
       await this.messagingService.send({
         channel: 'sms',
@@ -209,10 +210,30 @@ export class VacancyConfirmationService {
     const contact = this.contactOf(vacancy);
     const valid = await this.otpService.verifyOtp(body.otpRequestId, body.code, actor.id);
     if (!valid) throw new BadRequestException('Wrong or expired code');
-    if (!(await this.otpService.consumeVerified(body.otpRequestId, contact.phone))) {
-      throw new BadRequestException("This code was not sent to the vacancy's contact person");
+    if (!(await this.otpService.consumeVerified(body.otpRequestId, contact.phone, await this.codePurpose(vacancy.id)))) {
+      throw new BadRequestException("This code was not sent to the vacancy's contact person for these details. Send a new code.");
     }
     return this.markConfirmed(vacancy, contact, method, actor.id);
+  }
+
+  /**
+   * M2: the OTP purpose of this vacancy's current confirmation round: the vacancy and
+   * the latest move to awaiting_confirmation (a details change writes a new one).
+   */
+  async codePurpose(vacancyId: string): Promise<string> {
+    const round = typeof this.prisma.statusHistory?.findFirst === 'function'
+      ? await this.prisma.statusHistory.findFirst({
+        where: { subjectType: 'vacancy', subjectId: vacancyId, toStatus: 'awaiting_confirmation' },
+        orderBy: { changedAt: 'desc' },
+        select: { id: true },
+      })
+      : null;
+    return `vacancy_confirm:${vacancyId}:${round?.id ?? 'first'}`;
+  }
+
+  /** M2: after a details change, no earlier link confirms the vacancy (earlier codes die with the round). */
+  async revokeLiveConfirmations(vacancyId: string, now: Date = new Date()): Promise<void> {
+    await this.publicLinks.revokeActive('vacancy_confirm', 'vacancy', vacancyId, now);
   }
 
   /** Sends a 48-hour link so the contact person can confirm later; the vacancy stays awaiting confirmation. */

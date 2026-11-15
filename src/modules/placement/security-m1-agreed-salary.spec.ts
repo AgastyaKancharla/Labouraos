@@ -29,7 +29,7 @@ describe('Security M1: a placement’s agreed salary is CEO only and the unpaid 
   async function placement(overrides: Record<string, unknown> = {}) {
     const n = ids.placements.length + 1;
     const seeker = await prisma.jobSeeker.create({
-      data: { code: `JS-M1-${suffix}-${n}`, name: `M1 Worker ${n}`, phone: `+9195${digits}0${n}`.slice(0, 13), city: 'Bengaluru', minSalary: 1, maxSalary: 2, preferredCallWindowStart: '09:00', preferredCallWindowEnd: '21:00' },
+      data: { code: `JS-M1-${suffix}-${n}`, name: `M1 Worker ${n}`, phone: `+9195${digits}00${n}`, city: 'Bengaluru', minSalary: 1, maxSalary: 2, preferredCallWindowStart: '09:00', preferredCallWindowEnd: '21:00' },
     });
     ids.seekers.push(seeker.id);
     const id = randomUUID();
@@ -63,7 +63,7 @@ describe('Security M1: a placement’s agreed salary is CEO only and the unpaid 
       ids.staff.push(s.id);
       tokens[key] = await jwt.signAsync({ sub: s.id, role, email: s.email, code: s.code });
     }
-    const business = await prisma.business.create({ data: { code: `BZ-M1-${suffix}`, name: `M1 Shop ${suffix}`, phone: `+9194${digits}11`.slice(0, 13), city: 'Bengaluru' } });
+    const business = await prisma.business.create({ data: { code: `BZ-M1-${suffix}`, name: `M1 Shop ${suffix}`, phone: `+9194${digits}110`, city: 'Bengaluru' } });
     ids.business = business.id;
     const vacancy = await prisma.vacancy.create({ data: { code: `VC-M1-${suffix}`, businessId: business.id, tradeSkill: 'Cook', city: 'Bengaluru' } });
     ids.vacancy = vacancy.id;

@@ -129,6 +129,25 @@ export class OtpService {
   }
 
   /**
+   * A staff-sent code bound to one record (e.g. `vacancy_confirm:<vacancyId>:<round>`),
+   * so it only confirms that record in that round. Never reachable from POST /otp/send
+   * (OTP_PURPOSES). Audited like any staff send.
+   */
+  async sendBoundOtp(rawPhone: string, purpose: string, actorId: string, requestId?: string): Promise<OtpSendResult> {
+    const phone = requireIndianMobile(rawPhone);
+    const result = await this.provider.sendOtp(phone, { purpose, requestId });
+    await this.auditService.log({
+      actorId,
+      action: 'otp.send_attempt',
+      entityType: 'otp_request',
+      entityCode: result.requestId,
+      after: { phoneMasked: `******${phoneLast4(phone)}`, purpose: purpose.split(':')[0], isResend: Boolean(requestId) },
+      city: 'Bengaluru',
+    });
+    return result;
+  }
+
+  /**
    * "Send code" on a person's own public page (/p/...): the code goes to the
    * number the link was issued for, with a purpose bound to that link
    * (public-page-otp.ts). Only isVerifiedForPage / consumeVerifiedForPage with

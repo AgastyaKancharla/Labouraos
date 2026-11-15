@@ -1,6 +1,7 @@
 import { OwnTeam, businessesOwnedBy } from '../../common/rbac/own-team';
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -58,6 +59,12 @@ export const ALLOWED_VACANCY_UPDATE_FIELDS: ReadonlySet<string> = new Set([
   'interviewContactName',
 ]);
 
+/** M2: the salary periods the vacancy form takes. */
+export const VACANCY_SALARY_PERIODS = ['monthly', 'daily'] as const;
+
+/** M2: a change to any of these runs the legal minimum wage check again. */
+const MINIMUM_WAGE_FIELDS = ['tradeSkill', 'salaryMinPaise', 'salaryMaxPaise', 'salaryPeriod', 'headcount'];
+
 /** Statuses a vacancy can be closed from (POST /vacancies/:id/close). */
 export const CLOSABLE_VACANCY_STATUSES = ['open', 'draft', 'awaiting_confirmation'];
 
@@ -91,8 +98,10 @@ export class VacancyService {
     }
 
     const reason = typeof dto.reason === 'string' ? dto.reason : undefined;
+    // The "I told the owner about the minimum wage" tick goes with a salary change; it is not a column write.
+    const { ownerToldMinimumWage, ...body } = dto;
     // Security (AC-1): job details only; status, confirmation and links have their own routes.
-    const updates = pickEditableFields(dto, ALLOWED_VACANCY_UPDATE_FIELDS, 'vacancy');
+    const updates = pickEditableFields(body, ALLOWED_VACANCY_UPDATE_FIELDS, 'vacancy');
     if ('headcount' in updates && (!Number.isInteger(updates.headcount) || (updates.headcount as number) < 1)) {
       throw new BadRequestException('headcount must be a whole number of at least 1');
     }
@@ -100,6 +109,13 @@ export class VacancyService {
       if (key in updates && updates[key] !== null && (!Number.isInteger(updates[key]) || (updates[key] as number) < 0)) {
         throw new BadRequestException(`${key} must be a whole number of paise`);
       }
+    }
+    // M2: the same checks as the vacancy form.
+    if ('salaryPeriod' in updates && !(VACANCY_SALARY_PERIODS as readonly unknown[]).includes(updates.salaryPeriod)) {
+      throw new BadRequestException('salaryPeriod must be monthly or daily');
+    }
+    if ('tradeSkill' in updates && (typeof updates.tradeSkill !== 'string' || !normalizeTradeName(updates.tradeSkill))) {
+      throw new BadRequestException('tradeSkill is required');
     }
 
     const { record, diff } = await this.editPolicyService.assertCanEdit({
@@ -113,6 +129,9 @@ export class VacancyService {
     if (!diff || !diff.hasChange) {
       return record;
     }
+    if (['filled', 'cancelled', 'closed'].includes(record.status as string)) {
+      throw new ConflictException('This vacancy is closed and cannot be edited');
+    }
 
     const data: Record<string, unknown> = {};
     for (const key of diff.changedFields) {
@@ -125,19 +144,59 @@ export class VacancyService {
       }
     }
 
-    const updated = await this.prisma.vacancy.update({
-      where: { id: record.id as string },
-      data,
-    });
-    if (typeof data.tradeSkill === 'string') {
-      await this.prisma.$transaction((tx) => this.tradeService.recordSuggestion(
-        tx,
-        data.tradeSkill as string,
-        editActor.id,
-        'vacancy',
-        updated.id,
+    // M2: the salary range must make sense, and a change to the trade, salary, period or
+    // headcount runs the legal minimum wage check again (the tick is asked for again). A draft
+    // is checked when it is sent for confirmation (submitForConfirmation), as at creation.
+    const fromStatus = record.status as string;
+    const effective = <T>(key: string): T => (key in data ? data[key] : record[key]) as T;
+    const salaryMin = effective<number | null>('salaryMinPaise');
+    const salaryMax = effective<number | null>('salaryMaxPaise');
+    if (salaryMin !== null && salaryMin !== undefined && salaryMax !== null && salaryMax !== undefined && salaryMin > salaryMax) {
+      throw new BadRequestException('salaryMinPaise cannot be more than salaryMaxPaise');
+    }
+    if (fromStatus !== 'draft' && diff.changedFields.some((field) => MINIMUM_WAGE_FIELDS.includes(field)) && typeof salaryMin === 'number') {
+      Object.assign(data, await this.confirmationService.legalMinimumFields(
+        effective<string>('tradeSkill'),
+        salaryMin,
+        effective<string | null>('salaryPeriod'),
+        ownerToldMinimumWage,
       ));
     }
+
+    // M2: the owner confirmed the old details. Any change to a vacancy past the draft clears that
+    // confirmation and sends it back to "waiting for the owner's OTP" (also when it was already
+    // waiting): earlier codes and links no longer confirm it, and the agent is told.
+    const reconfirm = fromStatus !== 'draft';
+    if (reconfirm) {
+      Object.assign(data, {
+        status: 'awaiting_confirmation',
+        confirmedAt: null,
+        confirmationMethod: null,
+        confirmedByName: null,
+        confirmedByRole: null,
+        confirmedPhoneLast4: null,
+        confirmationRecordedByStaffId: null,
+      });
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.vacancy.update({ where: { id: record.id as string }, data });
+      if (reconfirm) {
+        await recordStatusChange(tx, {
+          subjectType: 'vacancy',
+          subjectId: row.id,
+          fromStatus,
+          toStatus: 'awaiting_confirmation',
+          changedByStaffId: editActor.id,
+          reason: 'details_changed_owner_must_confirm_again',
+        });
+      }
+      if (typeof data.tradeSkill === 'string') {
+        await this.tradeService.recordSuggestion(tx, data.tradeSkill, editActor.id, 'vacancy', row.id);
+      }
+      return row;
+    });
+    if (reconfirm) await this.confirmationService.revokeLiveConfirmations(updated.id);
 
     await this.editPolicyService.logEdit({
       actorId: editActor.id,
@@ -147,6 +206,20 @@ export class VacancyService {
       reason,
       city: record.city as string | undefined,
     });
+    if (reconfirm) {
+      await this.auditService.log({
+        actorId: editActor.id,
+        action: 'vacancy.confirmation_reset',
+        entityType: 'vacancy',
+        entityCode: updated.code,
+        before: { status: fromStatus, confirmed: Boolean(record.confirmedAt) },
+        after: { status: 'awaiting_confirmation', confirmed: false },
+        changedFields: ['status', 'confirmedAt'],
+        reason: 'Vacancy details changed: the owner must confirm again',
+        city: updated.city,
+      });
+      return { ...updated, ownerMustConfirmAgain: true, message: 'Details saved. The owner must confirm the vacancy again: send them a new code or link.' };
+    }
 
     return updated;
   }

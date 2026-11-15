@@ -198,9 +198,11 @@ describe('Security AC-1: edit routes write only their allowlisted columns', () =
     it('a referral partner’s name and a vacancy’s job details', async () => {
       expect((await patch(tokens.callAgent, `/referrals/${referralId}`, { name: 'AC1 Partner Kumar', reason: 'spelling' })).status).toBe(200);
       // The vacancy has a paid placement by now (above), so its Team Lead edits it.
-      const vac = await patch(tokens.teamLead, `/vacancies/${vacancyId}`, { salaryMaxPaise: 1900000, startDate: '2026-12-01T00:00:00.000Z', reason: 'owner asked' });
+      // M2: a salary change runs the minimum-wage check again (tick needed) and the owner confirms again.
+      const vac = await patch(tokens.teamLead, `/vacancies/${vacancyId}`, { salaryMaxPaise: 1900000, startDate: '2026-12-01T00:00:00.000Z', ownerToldMinimumWage: true, reason: 'owner asked' });
       expect(vac.status).toBe(200);
       expect(vac.body.salaryMaxPaise).toBe(1900000);
+      expect(vac.body.ownerMustConfirmAgain).toBe(true);
     });
   });
 
