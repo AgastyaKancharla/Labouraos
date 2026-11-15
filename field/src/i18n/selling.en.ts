@@ -385,6 +385,7 @@ export const sellingEn = {
   'fa11.left.reason.repeated_absence': 'Repeated unexplained absence',
   'fa11.left.reason.skill_gap_15_days': 'Couldn’t do the work, within the first 15 days',
   'fa11.left.reason.misrepresentation': 'Lied about skills or experience',
+  'fa11.left.reason.medically_unfit_or_relocated': 'Medically unfit, or moved out of the city',
   'fa11.left.reason.business_closed': 'Business closed, downsized, or job gone',
   'fa11.left.reason.role_changed': 'Business changed role, salary, hours, shift or place',
   'fa11.left.reason.salary_unpaid': 'Salary not paid, or paid late',

@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { Optional } from '@nestjs/common';
+import { LegalDocumentService } from '../legal/legal-document.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CustomerAuthClock } from '../../common/customer-auth/customer-auth.clock';
 import { CustomerScopeService, ScopedProfile } from '../../common/customer-auth/customer-scope.service';
@@ -31,13 +33,34 @@ export class CustomerHomeService {
     private readonly scope: CustomerScopeService,
     private readonly pricing: PricingService,
     private readonly journey: RegistrationJourneyService,
+    @Optional() private readonly legal?: LegalDocumentService,
   ) {}
 
   async home(accountId: string, profileId: string) {
     const profile = await this.scope.profile(accountId, profileId);
-    if (profile.kind === 'job_seeker') return this.jobSeekerHome(profile);
-    if (profile.kind === 'business') return this.businessHome(profile);
-    return this.referralHome(profile);
+    const body =
+      profile.kind === 'job_seeker' ? await this.jobSeekerHome(profile) : profile.kind === 'business' ? await this.businessHome(profile) : await this.referralHome(profile);
+    return { ...body, legal: await this.legalFor(profile) };
+  }
+
+  /**
+   * Which terms version this profile accepted (rev 176). `needsReconsent`
+   * makes the app show the blocking "We've updated our terms" screen first.
+   * For a business only the owner signs; a branch manager is never blocked.
+   */
+  private async legalFor(profile: ScopedProfile) {
+    if (!this.legal) return null;
+    const subjectType = profile.kind as 'job_seeker' | 'business' | 'referral';
+    const subjectId = profile.jobSeekerId ?? profile.referralId ?? profile.businessId;
+    if (!subjectId) return null;
+    const status = await this.legal.status(subjectType, subjectId);
+    const canAccept = subjectType !== 'business' || (profile.role === 'owner' && !profile.branchId);
+    return {
+      documentKey: status.documentKey,
+      currentVersion: status.currentVersion,
+      acceptedVersion: status.acceptedVersion,
+      needsReconsent: status.needsReconsent && canAccept,
+    };
   }
 
   // ─── Job seeker ───────────────────────────────────────────────────────

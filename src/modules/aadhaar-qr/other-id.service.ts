@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import { partnerIdCheckConsentId } from '../consent/partner-id-consent';
 import { Prisma } from '@prisma/client';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -128,12 +129,10 @@ export class OtherIdService {
       select: { id: true, code: true, city: true, photoStoragePath: true, anonymisedAt: true, registeredByStaffId: true },
     });
     if (!referral || referral.anonymisedAt) throw new NotFoundException('Referral partner not found');
-    const consent = await this.prisma.consent.findFirst({
-      where: { subjectType: 'referral', subjectId: referral.id, purpose: 'agreement_terms', granted: true, grantedAt: { not: null }, withdrawnAt: null },
-      orderBy: { grantedAt: 'desc' },
-      select: { id: true },
-    });
-    if (!consent) throw new BadRequestException('Referral terms and call-recording consent are required before ID verification');
+    // S2 (rev 176): the partner's separate ID-check consent (legacy signers: their agreed terms).
+    const consentId = await partnerIdCheckConsentId(this.prisma, referral.id);
+    if (!consentId) throw new BadRequestException('The ID-check consent is required before ID verification');
+    const consent = { id: consentId };
     if (!referral.photoStoragePath) throw new BadRequestException('Complete the live-camera selfie before the ID check');
     return this.submit({ type: 'referral', id: referral.id, code: referral.code, city: referral.city, registeredByStaffId: referral.registeredByStaffId }, consent.id, input, context);
   }

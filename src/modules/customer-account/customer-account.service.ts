@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { grievanceContact } from '../legal/legal-documents';
+import { legalCompanyFrom } from '../legal/legal-document.service';
 import { HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CUSTOMER_ERROR_CODES, CustomerApiError } from '../../common/customer-auth/customer-auth.errors';
@@ -104,8 +106,14 @@ export class CustomerAccountService {
     if (!account) {
       throw new CustomerApiError(HttpStatus.NOT_FOUND, CUSTOMER_ERROR_CODES.SESSION_ENDED, 'Account not found');
     }
+    // The Grievance Officer from Settings (rev 176), for the Privacy screen.
+    const policy = await this.prisma.pricingPolicy
+      ?.findFirst({ where: { effectiveFrom: { lte: this.clock.now() } }, orderBy: [{ effectiveFrom: 'desc' }, { createdAt: 'desc' }] })
+      .catch(() => null);
+    const legalLanguage = account.language === 'kn' || account.language === 'hi' ? account.language : 'en';
     return {
       id: account.id,
+      grievanceContact: policy ? grievanceContact(legalCompanyFrom(policy), legalLanguage) : null,
       phone: account.phone,
       phoneVerified: Boolean(account.phoneVerifiedAt),
       email: account.email,

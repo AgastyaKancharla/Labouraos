@@ -386,6 +386,7 @@ export const sellingKn: Record<keyof typeof sellingEn, string> = {
   'fa11.left.reason.repeated_absence': 'ಕಾರಣವಿಲ್ಲದೆ ಮತ್ತೆ ಮತ್ತೆ ಗೈರು',
   'fa11.left.reason.skill_gap_15_days': 'ಮೊದಲ 15 ದಿನಗಳಲ್ಲಿ ಕೆಲಸ ಮಾಡಲು ಆಗಲಿಲ್ಲ',
   'fa11.left.reason.misrepresentation': 'ಕೌಶಲ್ಯ ಅಥವಾ ಅನುಭವದ ಬಗ್ಗೆ ಸುಳ್ಳು',
+  'fa11.left.reason.medically_unfit_or_relocated': 'ವೈದ್ಯಕೀಯವಾಗಿ ಅನರ್ಹ, ಅಥವಾ ನಗರ ಬಿಟ್ಟರು',
   'fa11.left.reason.business_closed': 'ವ್ಯಾಪಾರ ಮುಚ್ಚಿತು, ಸಿಬ್ಬಂದಿ ಕಡಿಮೆ, ಅಥವಾ ಕೆಲಸ ಇಲ್ಲ',
   'fa11.left.reason.role_changed': 'ಕೆಲಸ, ಸಂಬಳ, ಸಮಯ, ಶಿಫ್ಟ್ ಅಥವಾ ಸ್ಥಳ ಬದಲಾಯಿತು',
   'fa11.left.reason.salary_unpaid': 'ಸಂಬಳ ಕೊಡಲಿಲ್ಲ, ಅಥವಾ ತಡವಾಗಿ ಕೊಟ್ಟರು',

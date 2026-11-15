@@ -61,6 +61,7 @@ interface WireAccount {
   signInMethods?: ('phone' | 'google' | 'apple')[];
   lastProfileId?: string | null;
   profiles?: WireProfile[];
+  grievanceContact?: string | null;
 }
 interface WireSession {
   accessToken?: string;
@@ -105,6 +106,7 @@ export function toAccount(w: WireAccount): CustomerAccount {
     lastProfileId: w.lastProfileId ?? null,
     contactMe: w.contactMeConsent,
     status: w.status,
+    grievanceContact: w.grievanceContact ?? null,
   };
 }
 

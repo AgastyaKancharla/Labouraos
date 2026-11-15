@@ -1,10 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import { ConsentClock } from '../consent/consent-clock';
 import { receiptToken } from '../payment/receipt-link';
 import { calculateAge } from './job-seeker.validator';
 import { buildJourneyStatus, JourneyStatus, maskPublicPhone, publicLanguage, PublicLanguage } from './registration-journey';
+import { LegalDocumentService, LegalStatus } from '../legal/legal-document.service';
 
 export interface JourneyLocked {
   otpRequired: true;
@@ -14,7 +15,7 @@ export interface JourneyLocked {
   registrationComplete: boolean;
 }
 
-export type JourneyResponse = JourneyLocked | (JourneyStatus & { receiptToken: string | null });
+export type JourneyResponse = JourneyLocked | (JourneyStatus & { receiptToken: string | null; reconsent: LegalStatus | null });
 
 /** Loads what the public registration pages need (see registration-journey.ts). */
 @Injectable()
@@ -23,6 +24,7 @@ export class RegistrationJourneyService {
     private readonly prisma: PrismaService,
     private readonly pricing: PricingService,
     private readonly clock: ConsentClock,
+    @Optional() private readonly legal?: LegalDocumentService,
   ) {}
 
   async status(jobSeekerId: string, otpVerified: boolean): Promise<JourneyResponse> {
@@ -82,9 +84,12 @@ export class RegistrationJourneyService {
       under18Stop: Boolean(under18Stop),
       anyVerifiedCheck: Boolean(anyVerified),
     });
+    // Accepted an older terms / notice version: "We've updated our terms" comes first (rev 176).
+    const legalStatus = status.currentStep !== 'consent' && this.legal ? await this.legal.status('job_seeker', seeker.id) : null;
     return {
       ...status,
       receiptToken: status.payment.paymentId ? receiptToken(status.payment.paymentId) : null,
+      reconsent: legalStatus?.needsReconsent ? legalStatus : null,
     };
   }
 }

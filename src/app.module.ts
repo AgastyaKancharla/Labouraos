@@ -32,6 +32,7 @@ import { LoginCodeModule } from './modules/login-code/login-code.module';
 import { RefundModule } from './modules/refund/refund.module';
 import { ObservabilityModule } from './common/observability/observability.module';
 import { ConsentModule } from './modules/consent/consent.module';
+import { LegalModule } from './modules/legal/legal.module';
 import { FollowUpModule } from './modules/follow-up/follow-up.module';
 import { PayoutAccountModule } from './modules/payout-account/payout-account.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
@@ -102,6 +103,7 @@ import { PublicRateLimitGuard } from './common/http/public-rate-limit.guard';
     LoginCodeModule,
     TargetModule,
     ConsentModule,
+    LegalModule,
     FollowUpModule,
     PayoutAccountModule,
     AttendanceModule,

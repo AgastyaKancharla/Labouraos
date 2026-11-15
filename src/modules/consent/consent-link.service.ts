@@ -17,16 +17,12 @@ import { DEFAULT_NOTICE_VERSION, JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } from './
 import { PricingService } from '../pricing/pricing.service';
 import {
   AgreementLanguage,
-  BUSINESS_AGREEMENT_VERSION,
   AgreementTermsNumbers,
   maskAgreementPhone,
-  renderBusinessAgreementTerms,
   renderSignedAgreementDocument,
 } from './business-agreement.template';
-import {
-  REFERRAL_TERMS_VERSION,
-  renderReferralTerms,
-} from './referral-terms.template';
+import { LegalDocumentService, LegalStatus } from '../legal/legal-document.service';
+import { formatIstDateTime } from '../legal/legal-dates';
 import { AGREEMENT_DOCUMENT_STORAGE, AgreementDocumentStorage } from './agreement-document.storage';
 import { AuditService } from '../../common/audit/audit.service';
 import { BusinessVerificationService } from '../business/business-verification.service';
@@ -70,6 +66,9 @@ export type ConsentLinkTokenRecord = ConsentLinkTokenBase & (
         language: AgreementLanguage;
         termsHtml: string;
         termsHash: string;
+        /** "In short" and the full text of termsHtml, for P04 (v1.1). */
+        summaryHtml?: string;
+        bodyHtml?: string;
       };
     }
   | {
@@ -85,6 +84,8 @@ export type ConsentLinkTokenRecord = ConsentLinkTokenBase & (
         language: AgreementLanguage;
         termsHtml: string;
         termsHash: string;
+        summaryHtml?: string;
+        bodyHtml?: string;
       };
     }
   | InterviewActionLinkRecord
@@ -108,6 +109,12 @@ export type ConsentLinkDetails =
       maskedPhone: string;
       preferredLanguage: AgreementLanguage;
       agreementTermsHtml: string;
+      /** v1.1: the "In short" box and the full text shown under "Read the full terms". */
+      agreementSummaryHtml: string | null;
+      agreementBodyHtml: string | null;
+      version: string;
+      /** The version this business accepted before (re-signing a newer version), if any. */
+      previousVersion: string | null;
       /** Pre-fills "Your full name" (P04); the signer can change it. */
       ownerName: string | null;
       /** The numbers frozen when the link was sent, for the summary cards (P04). */
@@ -123,6 +130,8 @@ export type ConsentLinkDetails =
       preferredLanguage: string;
       currentStep: 'consent' | 'selfie' | 'id_check' | 'payment' | 'complete';
       otpRequired: false;
+      /** Accepted an older version of the terms / consent notice: the blocking re-consent screen first. */
+      reconsent: LegalStatus | null;
     }
   | {
       valid: true;
@@ -147,7 +156,11 @@ export type ConsentLinkDetails =
       maskedPhone: string;
       preferredLanguage: AgreementLanguage;
       termsHtml: string;
+      summaryHtml: string | null;
+      bodyHtml: string | null;
+      version: string;
       referralPayoutPaise: number;
+      reconsent: LegalStatus | null;
     };
 
 @Injectable()
@@ -169,6 +182,7 @@ export class ConsentLinkService {
     private readonly businessVerificationService: BusinessVerificationService,
     @Inject(AGREEMENT_DOCUMENT_STORAGE) private readonly agreementStorage: AgreementDocumentStorage,
     private readonly otpLimiter: PublicOtpLimiter,
+    private readonly legal: LegalDocumentService,
   ) {}
 
   setTtlMs(ttlMs: number) {
@@ -280,8 +294,15 @@ export class ConsentLinkService {
       gstPercent: policy.gstPercent,
     };
     const agreementLanguage = language as AgreementLanguage;
-    const termsHtml = renderBusinessAgreementTerms(numbers, agreementLanguage);
-    const termsHash = createHash('sha256').update(termsHtml, 'utf8').digest('hex');
+    // The FULL v1.1 agreement (S1), with the numbers frozen as of today.
+    const rendered = await this.legal.render('business_agreement', agreementLanguage, {
+      placementFeePercent: numbers.feePercent,
+      gstPercent: numbers.gstPercent,
+      noBypassMonths: numbers.noBypassMonths,
+      noBypassPenaltyPercent: numbers.noBypassPenaltyPercent,
+    });
+    const termsHtml = rendered.html;
+    const termsHash = rendered.hash;
     const now = this.clock.now();
     const expiresAt = new Date(now.getTime() + this.ttlMs);
     const { token } = await this.publicLinks.create({
@@ -289,10 +310,12 @@ export class ConsentLinkService {
       phone: business.phone, language, createdByStaffId: staffId ?? undefined, expiresAt,
       metadata: { ...(options.issuedTo ? { issuedTo: options.issuedTo } : {}), agreement: {
         ...numbers,
-        version: BUSINESS_AGREEMENT_VERSION,
+        version: rendered.version,
         language: agreementLanguage,
         termsHtml,
         termsHash,
+        summaryHtml: rendered.summaryHtml,
+        bodyHtml: rendered.bodyHtml,
       } },
     });
 
@@ -316,8 +339,10 @@ export class ConsentLinkService {
     const policy = await this.pricingService.current();
     const referralPayoutPaise = policy.referralPayoutPaise;
     const agreementLanguage = language as AgreementLanguage;
-    const termsHtml = renderReferralTerms(referralPayoutPaise, agreementLanguage);
-    const termsHash = createHash('sha256').update(termsHtml, 'utf8').digest('hex');
+    // Referral Partner Terms v1.0, the full text (rev 176), with today's reward.
+    const rendered = await this.legal.render('referral_terms', agreementLanguage, { referralPayoutPaise });
+    const termsHtml = rendered.html;
+    const termsHash = rendered.hash;
     const now = this.clock.now();
     if (options.revokeOthers !== false) await this.publicLinks.revokeActive('referral_registration', 'referral', referral.id, now);
     const expiresAt = new Date(now.getTime() + (await this.registrationTtl(false)));
@@ -326,10 +351,12 @@ export class ConsentLinkService {
       phone: referral.phone, language, createdByStaffId: staffId ?? undefined, expiresAt,
       metadata: { partnerName: referral.name, ownerName: referral.name, resumable: true, ...(options.issuedTo ? { issuedTo: options.issuedTo } : {}), terms: {
         referralPayoutPaise,
-        version: REFERRAL_TERMS_VERSION,
+        version: rendered.version,
         language: agreementLanguage,
         termsHtml,
         termsHash,
+        summaryHtml: rendered.summaryHtml,
+        bodyHtml: rendered.bodyHtml,
       } },
     });
 
@@ -475,6 +502,9 @@ export class ConsentLinkService {
       const business = await this.prisma.business.findUnique({ where: { id: record.businessId } });
       if (!business) throw new NotFoundException('Business not found');
       const policy = await this.pricingService.current();
+      const previous = await this.prisma.businessAgreement.findFirst({
+        where: { businessId: business.id }, orderBy: { signedAt: 'desc' }, select: { version: true },
+      });
       return {
         valid: true,
         subjectType: 'business',
@@ -483,6 +513,10 @@ export class ConsentLinkService {
         maskedPhone: maskAgreementPhone(record.businessPhone),
         preferredLanguage: record.agreement.language,
         agreementTermsHtml: record.agreement.termsHtml,
+        agreementSummaryHtml: record.agreement.summaryHtml ?? null,
+        agreementBodyHtml: record.agreement.bodyHtml ?? null,
+        version: record.agreement.version,
+        previousVersion: previous?.version ?? null,
         ownerName: business.ownerName ?? null,
         terms: {
           feePercent: record.agreement.feePercent,
@@ -521,7 +555,11 @@ export class ConsentLinkService {
         maskedPhone: maskAgreementPhone(record.partnerPhone),
         preferredLanguage: record.terms.language,
         termsHtml: record.terms.termsHtml,
+        summaryHtml: record.terms.summaryHtml ?? null,
+        bodyHtml: record.terms.bodyHtml ?? null,
+        version: record.terms.version,
         referralPayoutPaise: record.terms.referralPayoutPaise,
+        reconsent: await this.reconsentFor('referral', referral.id),
       };
     }
 
@@ -585,7 +623,14 @@ export class ConsentLinkService {
       preferredLanguage,
       currentStep,
       otpRequired: false,
+      reconsent: currentStep === 'consent' ? null : await this.reconsentFor('job_seeker', seeker.id),
     };
+  }
+
+  /** The re-consent check, or null when the current version is accepted. */
+  private async reconsentFor(subjectType: 'job_seeker' | 'referral', subjectId: string): Promise<LegalStatus | null> {
+    const status = await this.legal.status(subjectType, subjectId);
+    return status.needsReconsent ? status : null;
   }
 
   async sendOtp(token: string) {
@@ -693,6 +738,16 @@ export class ConsentLinkService {
 
     // Move a lead forward after first consent, or reactivate a paused seeker once all required purposes are restored.
     const hasAll = await this.consentService.hasAllRequired('job_seeker', seeker.id);
+    if (hasAll) {
+      // The terms and notice version, language, OTP and exact text he accepted (P01, rev 176).
+      const legalLanguage = (['kn', 'hi', 'en'].includes(language) ? language : 'en') as AgreementLanguage;
+      await this.legal.recordAcceptance({
+        subjectType: 'job_seeker', subjectId: seeker.id,
+        rendered: await this.legal.render('job_seeker_terms', legalLanguage),
+        context: 'registration', method: consentMethodFor(record), otpRequestId: dto.otpRequestId,
+        noticeVersion: DEFAULT_NOTICE_VERSION, purposes, acceptedAt: this.clock.now(),
+      });
+    }
     let finalStatus = seeker.status;
 
     if (hasAll && (seeker.status === 'lead' || seeker.status === 'paused')) {
@@ -727,13 +782,13 @@ export class ConsentLinkService {
     record: Extract<ConsentLinkTokenRecord, { subjectType: 'business' }>,
     dto: SubmitConsentDto,
   ) {
+    // Business agreement v1.1, "Signing by OTP": three ticks — terms, authority, call recording.
+    // agreement_terms and call_recording are consent purposes; the authority tick is kept on the acceptance.
     const requiredPurposes = ['agreement_terms', 'call_recording'];
+    const signedTicks = ['agreement_terms', 'agreement_authority', 'call_recording'];
     const purposes = Array.isArray(dto.purposes) ? dto.purposes : [];
-    if (
-      purposes.length !== requiredPurposes.length ||
-      requiredPurposes.some((purpose) => !purposes.includes(purpose))
-    ) {
-      throw new BadRequestException('Agreement terms and call recording consent are both required');
+    if (purposes.length !== signedTicks.length || signedTicks.some((purpose) => !purposes.includes(purpose))) {
+      throw new BadRequestException('Agreement terms, authority to sign and call recording consent are all required');
     }
     const signedName = dto.signedName?.trim();
     if (!signedName) throw new BadRequestException('signedName is required');
@@ -750,15 +805,34 @@ export class ConsentLinkService {
     if (!business) throw new NotFoundException('Business not found');
 
     const documentStoragePath = `business-agreements/${record.businessId}/${this.publicLinks.hashToken(record.token)}.html`;
-    const document = renderSignedAgreementDocument(record.agreement.termsHtml);
-    const documentBytes = Buffer.from(document, 'utf8');
-    const documentHash = createHash('sha256').update(documentBytes).digest('hex');
-    if (documentHash !== record.agreement.termsHash) {
+    // The terms on the link are exactly the ones shown (hash frozen when the link was sent).
+    const shownHash = createHash('sha256').update(record.agreement.termsHtml, 'utf8').digest('hex');
+    if (shownHash !== record.agreement.termsHash) {
       throw new BadRequestException('Agreement document does not match the shown terms');
     }
+    const signedAt = this.clock.now();
+    const previous = await this.prisma.businessAgreement.findFirst({ where: { businessId: business.id }, orderBy: { signedAt: 'desc' }, select: { id: true } });
+    const onboardedBy = record.createdByStaffId
+      ? (await this.prisma.staff.findUnique({ where: { id: record.createdByStaffId }, select: { code: true } }).catch(() => null))?.code ?? null
+      : null;
+    // The stored signed copy: the FULL agreement text the owner accepted, then the acceptance record.
+    const document = renderSignedAgreementDocument(record.agreement.termsHtml, {
+      businessName: business.legalName || business.name,
+      businessCode: business.code,
+      signedName,
+      signedRole: business.contactRole ?? 'owner',
+      maskedPhone: maskAgreementPhone(record.businessPhone),
+      otpRequestId: dto.otpRequestId,
+      signedAtIst: formatIstDateTime(signedAt),
+      version: record.agreement.version,
+      language: record.agreement.language,
+      ticks: signedTicks,
+      onboardedBy,
+      billingEmail: business.billingEmail ?? null,
+    });
+    const documentBytes = Buffer.from(document, 'utf8');
     await this.agreementStorage.put(documentStoragePath, documentBytes, 'text/html; charset=utf-8');
 
-    const signedAt = this.clock.now();
     const agreement = await this.prisma.$transaction(async (tx) => {
       const created = await tx.businessAgreement.create({
         data: {
@@ -791,6 +865,12 @@ export class ConsentLinkService {
           tx,
         );
       }
+      await this.legal.recordAcceptance({
+        subjectType: 'business', subjectId: business.id,
+        rendered: { hash: record.agreement.termsHash, key: 'business_agreement', version: record.agreement.version, language: record.agreement.language, html: record.agreement.termsHtml },
+        context: previous ? 'reconsent' : 'agreement', method: consentMethodFor(record), otpRequestId: dto.otpRequestId,
+        purposes: signedTicks, acceptedAt: signedAt,
+      }, tx);
       return created;
     });
 
@@ -824,13 +904,14 @@ export class ConsentLinkService {
     record: Extract<ConsentLinkTokenRecord, { subjectType: 'referral' }>,
     dto: SubmitConsentDto,
   ) {
-    const requiredPurposes = ['agreement_terms', 'call_recording'];
+    // Referral Partner Terms v1.0, "Your consent": terms, call recording and (S2) the separate ID-check consent.
+    const requiredPurposes = ['agreement_terms', 'call_recording', 'aadhaar_verification'];
     const purposes = Array.isArray(dto.purposes) ? dto.purposes : [];
     if (
       purposes.length !== requiredPurposes.length ||
       requiredPurposes.some((p) => !purposes.includes(p))
     ) {
-      throw new BadRequestException('Agreement terms and call recording consent are both required');
+      throw new BadRequestException('The terms, call recording consent and ID-check consent are all required');
     }
 
     // A fresh code, or (as on the job seeker's link) the code the partner verified
@@ -849,7 +930,15 @@ export class ConsentLinkService {
     if (!referral) throw new NotFoundException('Referral partner not found');
 
     const signedAt = this.clock.now();
+    const previousAcceptance = await this.legal.status('referral', referral.id);
     await this.prisma.$transaction(async (tx) => {
+      // The signed copy: the exact terms text shown on this link, with version, language and OTP.
+      await this.legal.recordAcceptance({
+        subjectType: 'referral', subjectId: referral.id,
+        rendered: { hash: record.terms.termsHash, key: 'referral_terms', version: record.terms.version, language: record.terms.language, html: record.terms.termsHtml },
+        context: previousAcceptance.needsReconsent ? 'reconsent' : 'partner_terms', method: consentMethodFor(record), otpRequestId: dto.otpRequestId,
+        purposes: requiredPurposes, acceptedAt: signedAt,
+      }, tx);
       for (const purpose of requiredPurposes) {
         await this.consentService.grant(
           {
@@ -887,5 +976,77 @@ export class ConsentLinkService {
       signedAt,
       grantedPurposes: requiredPurposes,
     };
+  }
+
+  /**
+   * Re-consent (rev 176): someone who accepted an older version opens their
+   * link and accepts the current one — "In short", "Read the full terms",
+   * the itemised ticks and the OTP they verified on opening the link. The
+   * acceptance is recorded with version, language, OTP and the exact text. A
+   * running job seeker guarantee keeps the terms version it was paid under
+   * (JobSeeker.termsAcceptedVersion is not touched; terms 18.2).
+   */
+  async submitReconsent(dto: SubmitConsentDto) {
+    const record = await this.validateToken(dto.token);
+    if (record.subjectType !== 'job_seeker' && record.subjectType !== 'referral') {
+      throw new BadRequestException('Re-consent is on the job seeker\'s or the partner\'s link (a business signs the new agreement on P04)');
+    }
+    const phone = record.subjectType === 'referral'
+      ? record.partnerPhone
+      : (await this.prisma.jobSeeker.findUnique({ where: { id: record.jobSeekerId }, select: { phone: true } }))?.phone;
+    if (!phone) throw new NotFoundException('Not found');
+    const otpOk = dto.otpCode
+      ? (await this.otpService.verifyOtp(dto.otpRequestId, dto.otpCode)) && (await this.otpService.isVerified(dto.otpRequestId, phone))
+      : await this.otpService.isVerified(dto.otpRequestId, phone);
+    if (!otpOk) throw new BadRequestException('OTP verification is required before submission');
+    const language = (['kn', 'hi', 'en'].includes(dto.language ?? '') ? dto.language : 'en') as AgreementLanguage;
+    const subjectId = record.subjectType === 'referral' ? record.referralId : record.jobSeekerId;
+    return this.recordReconsent(record.subjectType, subjectId, {
+      purposes: Array.isArray(dto.purposes) ? dto.purposes : [],
+      language,
+      method: consentMethodFor(record),
+      otpRequestId: dto.otpRequestId,
+    });
+  }
+
+  /** Shared by the link (above) and the customer app (OTP proved by its step-up). */
+  async recordReconsent(
+    subjectType: 'job_seeker' | 'referral',
+    subjectId: string,
+    input: { purposes: string[]; language: AgreementLanguage; method: string; otpRequestId: string | null },
+  ) {
+    const required = subjectType === 'job_seeker' ? [...JOB_SEEKER_REQUIRED_CONSENT_PURPOSES] : ['agreement_terms', 'call_recording', 'aadhaar_verification'];
+    const allowed = subjectType === 'job_seeker' ? [...required, 'promotions'] : required;
+    const purposes = [...new Set(input.purposes)];
+    if (required.some((p) => !purposes.includes(p)) || purposes.some((p) => !allowed.includes(p))) {
+      throw new BadRequestException('Tick every required permission to accept the updated terms');
+    }
+    const status = await this.legal.status(subjectType, subjectId);
+    const key = subjectType === 'job_seeker' ? 'job_seeker_terms' : 'referral_terms';
+    const rendered = await this.legal.render(key, input.language);
+    const noticeVersion = subjectType === 'job_seeker' ? DEFAULT_NOTICE_VERSION : rendered.version;
+    const acceptedAt = this.clock.now();
+    await this.prisma.$transaction(async (tx) => {
+      for (const purpose of purposes) {
+        await this.consentService.grant({
+          subjectType, subjectId, purpose, noticeVersion, language: input.language, method: input.method, otpRequestId: input.otpRequestId,
+        }, tx);
+      }
+      await this.legal.recordAcceptance({
+        subjectType, subjectId, rendered, context: 'reconsent', method: input.method, otpRequestId: input.otpRequestId,
+        noticeVersion: subjectType === 'job_seeker' ? DEFAULT_NOTICE_VERSION : null, purposes, acceptedAt,
+      }, tx);
+    });
+    await this.auditService.log({
+      actorId: 'system',
+      action: 'legal.reconsent_accepted',
+      entityType: subjectType,
+      entityCode: subjectId,
+      before: { version: status.acceptedVersion, noticeVersion: status.noticeVersion },
+      after: { version: rendered.version, noticeVersion: subjectType === 'job_seeker' ? DEFAULT_NOTICE_VERSION : null, language: input.language, textHash: rendered.hash, otpRequestId: input.otpRequestId },
+      changedFields: ['legalAcceptance'],
+      reason: 'Accepted the updated terms by OTP',
+    });
+    return { success: true, version: rendered.version, acceptedAt };
   }
 }

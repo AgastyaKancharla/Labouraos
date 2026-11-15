@@ -9,6 +9,8 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
+import { LegalDocumentService } from '../legal/legal-document.service';
+import { LEGAL_DOCUMENT_VERSIONS } from '../legal/legal-documents';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { decisionTime } from '../../common/time/decision-time';
 import { IdService } from '../../common/id/id.service';
@@ -139,6 +141,7 @@ export class JobSeekerService {
     @Optional() @Inject(CANDIDATE_PHOTO_STORAGE) private readonly photoStorage?: CandidatePhotoStorage,
     @Optional() private readonly publicLinks?: PublicLinkStoreService,
     @Optional() private readonly messagingService?: MessagingService,
+    @Optional() private readonly legalDocuments?: LegalDocumentService,
   ) {}
 
   private async getPolicy() {
@@ -543,26 +546,51 @@ export class JobSeekerService {
       guaranteeDays: policy.jobSeekerGuaranteeDays,
       amountPaise: policy.activationFeePaise,
       termsAcceptedAt: seeker.termsAcceptedAt,
+      /** Job seeker terms version shown with these numbers (rev 176) and the one he accepted, if any. */
+      termsVersion: LEGAL_DOCUMENT_VERSIONS.job_seeker_terms,
+      termsAcceptedVersion: seeker.termsAcceptedVersion ?? null,
     };
   }
 
   /** He ticks to agree to the terms shown; the ₹499 payment request is then created (or the open one returned). */
-  async acceptTermsAndCreatePayment(jobSeekerId: string, acceptTerms: unknown) {
+  async acceptTermsAndCreatePayment(
+    jobSeekerId: string,
+    acceptTerms: unknown,
+    options: { language?: string; otpRequestId?: string | null; method?: string } = {},
+  ) {
     if (acceptTerms !== true) throw new BadRequestException('Tick to agree to the terms before paying');
     const terms = await this.registrationTerms(jobSeekerId);
     const now = this.consentClock?.now() ?? new Date();
-    await this.prisma.jobSeeker.updateMany({
+    // Terms versioning (rev 176): the version, language and sha256 of the exact text shown. A guarantee
+    // already paid keeps the version it was paid under, so nothing changes once the ₹499 is in.
+    const language = (['kn', 'hi', 'en'].includes(options.language ?? '') ? options.language : 'en') as 'kn' | 'hi' | 'en';
+    const rendered = this.legalDocuments ? await this.legalDocuments.render('job_seeker_terms', language) : null;
+    const changed = await this.prisma.jobSeeker.updateMany({
       where: { id: jobSeekerId, paymentReceivedAt: null },
-      data: { termsAcceptedAt: now, termsAcceptedFloorPaise: terms.guaranteeFloorPaise },
+      data: {
+        termsAcceptedAt: now,
+        termsAcceptedFloorPaise: terms.guaranteeFloorPaise,
+        ...(rendered ? { termsAcceptedVersion: rendered.version, termsAcceptedLanguage: language, termsAcceptedHash: rendered.hash } : {}),
+      },
     });
     const seeker = await this.prisma.jobSeeker.findUniqueOrThrow({ where: { id: jobSeekerId } });
+    if (rendered && changed.count === 1 && this.legalDocuments) {
+      await this.legalDocuments.recordAcceptance({
+        subjectType: 'job_seeker', subjectId: jobSeekerId, rendered, context: 'payment_terms',
+        method: options.method ?? 'sms_link', otpRequestId: options.otpRequestId ?? null,
+        purposes: ['guarantee_terms'], acceptedAt: now,
+      });
+    }
     await this.auditService.log({
       actorId: 'system',
       action: 'job_seeker.terms_accepted',
       entityType: 'job_seeker',
       entityCode: seeker.code,
-      after: { termsAcceptedAt: now.toISOString(), guaranteeFloorPaise: terms.guaranteeFloorPaise },
-      changedFields: ['termsAcceptedAt', 'termsAcceptedFloorPaise'],
+      after: {
+        termsAcceptedAt: now.toISOString(), guaranteeFloorPaise: terms.guaranteeFloorPaise,
+        termsVersion: rendered?.version ?? null, termsLanguage: rendered ? language : null, termsHash: rendered?.hash ?? null,
+      },
+      changedFields: ['termsAcceptedAt', 'termsAcceptedFloorPaise', 'termsAcceptedVersion', 'termsAcceptedLanguage', 'termsAcceptedHash'],
       city: seeker.city,
     });
     const payment = await this.createActivationPayment(jobSeekerId);

@@ -158,13 +158,18 @@ export class RegistrationController {
   @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async acceptTermsAndPay(
     @Param('token') token: string,
-    @Body() body: { requestId?: string; acceptTerms?: boolean },
+    @Body() body: { requestId?: string; acceptTerms?: boolean; language?: string },
   ) {
     const link = await this.requireRegistrationLink(token);
     if (!body.requestId || !(await this.otp.isVerified(body.requestId, link.phone ?? ''))) {
       throw new BadRequestException('OTP to the registered mobile is required');
     }
-    return this.jobSeekers.acceptTermsAndCreatePayment(link.subjectId, body.acceptTerms);
+    const issuedTo = (link.metadata as { issuedTo?: unknown } | null)?.issuedTo;
+    return this.jobSeekers.acceptTermsAndCreatePayment(link.subjectId, body.acceptTerms, {
+      language: body.language,
+      otpRequestId: body.requestId,
+      method: typeof issuedTo === 'string' && issuedTo.startsWith('customer:') ? 'in_app' : 'sms_link',
+    });
   }
 
   @Post(':token/payment-only-link')

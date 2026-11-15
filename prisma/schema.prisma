@@ -107,6 +107,13 @@ model JobSeeker {
   guaranteeFloorPaise       Int?        // frozen salary guarantee term once activation is paid
   termsAcceptedAt           DateTime?   // when he ticked the exact terms on the registration link (Phase 20 Task 5)
   termsAcceptedFloorPaise   Int?        // the salary floor shown when he agreed
+  /// Legal documents v1.1 (Master Guide rev 176): the job seeker terms version,
+  /// language and sha256 of the exact text shown when he ticked the guarantee
+  /// terms. A running guarantee keeps this version (terms 18.2); the full text
+  /// is in LegalDocumentText under this hash.
+  termsAcceptedVersion      String?
+  termsAcceptedLanguage     String?
+  termsAcceptedHash         String?
   messageLanguage           String?
   heardFrom                 String?
   placements                Placement[]
@@ -469,6 +476,13 @@ model Business {
   pausedAt                 DateTime?
   pausedByStaffId          String?
   pauseReason              String?
+  /// D6 (rev 176): suspended by the CEO for 30–90 days (suspendedUntil) or
+  /// permanently (suspendedUntil null). While suspended: no new vacancies, no
+  /// candidates shown, no bookings; placements, guarantees and payments go on.
+  suspendedAt              DateTime?
+  suspendedUntil           DateTime?
+  suspendedByStaffId       String?
+  suspensionReason         String?
   branches      BusinessBranch[]
   vacancies     Vacancy[]
   placements    Placement[]
@@ -737,6 +751,14 @@ model Placement {
   dropoutDateCallerSupplied  Boolean     @default(false)
   /// FA11: the owner said on the joining call that the worker didn't come.
   joiningNoShowReportedAt    DateTime?
+  /// D2 (rev 176): false for a replacement of a selected candidate who never
+  /// joined — it does not count toward the free replacements.
+  countsAsReplacement        Boolean     @default(true)
+  /// D3 (rev 176): a replacement hired at a higher salary — the salary of the
+  /// person replaced and the positive difference; the business pays the fee
+  /// percent of the difference + GST (placementFee/gstAmount) before release.
+  replacedSalaryPaise        Int?
+  salaryUpgradeDifferencePaise Int?
   /// FA11: how many times the owner moved the joining date on the joining call.
   joiningMovedCount          Int         @default(0)
   status                     String      @default("awaiting_payment") // awaiting_payment, cancelled, confirmed, active, dropped_out, replaced, completed, guarantee_ended; legacy statuses remain readable
@@ -1550,6 +1572,12 @@ model PricingPolicy {
   companyLegalName             String    @default("Laboura Private Limited")
   companyGstin                 String?
   companyAddress               String?
+  // Legal documents (rev 176): company CIN and the Grievance Officer shown on
+  // every legal text and public page. Empty until Laboura is registered.
+  companyCin                   String?
+  grievanceOfficerName         String?
+  grievanceOfficerPhone        String?
+  grievanceOfficerEmail        String?
   effectiveFrom                DateTime  @default(now())
   setByStaffId                 String?
   setByStaff                   Staff?    @relation("PricingPolicySetBy", fields: [setByStaffId], references: [id], onDelete: SetNull)
@@ -3130,4 +3158,62 @@ model CustomerVacancyDraft {
 
   @@index([businessId, status])
   @@index([accountId, status])
+}
+
+/// The exact text of a legal document version as shown to someone (Master
+/// Guide rev 176): one row per distinct rendering, keyed by its sha256.
+model LegalDocumentText {
+  hash         String   @id
+  documentKey  String   // job_seeker_terms, business_agreement, referral_terms
+  version      String
+  language     String   // kn, hi, en
+  html         String
+  createdAt    DateTime @default(now())
+  acceptances  LegalAcceptance[]
+}
+
+/// Who accepted which legal document version, in which language, by which
+/// OTP, with the exact text (textHash). Re-consent adds a new row; nothing is
+/// overwritten.
+model LegalAcceptance {
+  id                    String   @id @default(uuid())
+  subjectType           String   // job_seeker, business, referral
+  subjectId             String
+  documentKey           String
+  version               String
+  language              String
+  textHash              String
+  text                  LegalDocumentText @relation(fields: [textHash], references: [hash])
+  /// registration, payment_terms, agreement, partner_terms, reconsent
+  context               String
+  method                String   // sms_link, in_app
+  otpRequestId          String?
+  /// The consent notice version the ticks were given under (job seekers).
+  noticeVersion         String?
+  purposes              String[] @default([])
+  acceptedAt            DateTime
+  createdAt             DateTime @default(now())
+
+  @@index([subjectType, subjectId, documentKey])
+}
+
+/// D11 (rev 176): a permanent ban for a forged ID, fraud, theft or violence,
+/// decided by a Manager or the CEO. Blocks registering again with the same
+/// phone (phoneHash) or the same ID (idFingerprints). Hashes only — no number.
+model PermanentBan {
+  id              String   @id @default(uuid())
+  subjectType     String   // job_seeker, business, referral
+  subjectId       String
+  subjectCode     String?
+  /// forged_id, fraud, theft, violence
+  category        String
+  reason          String
+  phoneHash       String
+  idFingerprints  String[] @default([])
+  bannedByStaffId String
+  bannedAt        DateTime
+  createdAt       DateTime @default(now())
+
+  @@unique([subjectType, subjectId])
+  @@index([phoneHash])
 }

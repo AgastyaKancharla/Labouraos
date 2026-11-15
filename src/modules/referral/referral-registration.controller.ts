@@ -1,4 +1,6 @@
 import { ID_PHOTO_EXPIRED_REASON } from '../aadhaar-qr/id-check-photo.service';
+import { partnerIdCheckConsentId } from '../consent/partner-id-consent';
+import { LegalDocumentService } from '../legal/legal-document.service';
 import {
   BadRequestException,
   Body,
@@ -11,6 +13,7 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
+  Optional,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { PublicLinkStoreService } from '../../common/public-link-store.service';
@@ -49,6 +52,7 @@ export class ReferralRegistrationController {
     private readonly aadhaarQr: AadhaarQrService,
     private readonly otherIds: OtherIdService,
     private readonly stops: Under18StopService,
+    @Optional() private readonly legal?: LegalDocumentService,
   ) {}
 
   /**
@@ -95,13 +99,16 @@ export class ReferralRegistrationController {
   @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async getTerms(@Param('token') token: string, @Query('requestId') requestId: string | undefined) {
     const link = await this.requireVerifiedLink(token, requestId);
-    const terms = ((link.metadata ?? {}) as { terms?: { referralPayoutPaise?: number; version?: string; language?: string; termsHtml?: string } }).terms ?? {};
+    const terms = ((link.metadata ?? {}) as { terms?: { referralPayoutPaise?: number; version?: string; language?: string; termsHtml?: string; summaryHtml?: string; bodyHtml?: string } }).terms ?? {};
     const policy = await this.pricing.current();
     return {
       referralPayoutPaise: terms.referralPayoutPaise ?? policy.referralPayoutPaise,
       version: terms.version ?? null,
       language: publicLanguage(terms.language ?? null),
       termsHtml: terms.termsHtml ?? '',
+      /** v1.0 (rev 176): "In short" first, the full text under "Read the full terms". */
+      summaryHtml: terms.summaryHtml ?? null,
+      bodyHtml: terms.bodyHtml ?? null,
       payoutDetailsCoolingHours: policy.payoutDetailsCoolingHours,
       activationFeePaise: policy.activationFeePaise,
     };
@@ -196,6 +203,9 @@ export class ReferralRegistrationController {
   private async assertReadyForIdCheck(referralId: string) {
     if (!(await this.consent.hasConsent('referral', referralId, 'agreement_terms')) || !(await this.consent.hasConsent('referral', referralId, 'call_recording'))) {
       throw new BadRequestException('Referral terms and call-recording consent are required before ID verification');
+    }
+    if (!(await partnerIdCheckConsentId(this.prisma, referralId))) {
+      throw new BadRequestException('The ID-check consent is required before ID verification');
     }
     const referral = await this.prisma.referral.findUnique({ where: { id: referralId } });
     if (!referral) throw new BadRequestException('Referral partner not found');
@@ -330,8 +340,11 @@ export class ReferralRegistrationController {
               : identity.failureReason === ID_PHOTO_EXPIRED_REASON
                 ? 'photo_expired'
                 : 'failed';
+    // Accepted an older version: "We've updated our terms" before anything else (rev 176).
+    const legalStatus = base.currentStep !== 'terms' && this.legal ? await this.legal.status('referral', link.subjectId) : null;
     return {
       ...base,
+      reconsent: legalStatus?.needsReconsent ? legalStatus : null,
       otpRequired: false,
       maskedPhone: this.maskPhone(link.phone ?? ''),
       language: publicLanguage(link.language ?? referral.language),

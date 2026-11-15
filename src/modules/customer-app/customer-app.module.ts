@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { LegalModule } from '../legal/legal.module';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { CustomerAccountModule } from '../customer-account/customer-account.module';
 import { JobSeekerModule } from '../job-seeker/job-seeker.module';
@@ -21,7 +22,7 @@ import { CustomerOptionsService } from './customer-options.service';
  * business, referral, consent and vacancy services. Agent A owns this folder.
  */
 @Module({
-  imports: [PrismaModule, CustomerAccountModule, JobSeekerModule, BusinessModule, ReferralModule, ConsentModule, PricingModule, VacancyModule],
+  imports: [PrismaModule, CustomerAccountModule, JobSeekerModule, BusinessModule, ReferralModule, ConsentModule, PricingModule, VacancyModule, LegalModule],
   controllers: [CustomerAppController],
   providers: [CustomerRegistrationService, CustomerHomeService, CustomerRequestsService, CustomerOptionsService, RegistrationJourneyService],
 })

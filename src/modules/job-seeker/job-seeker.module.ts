@@ -1,3 +1,4 @@
+import { LegalModule } from '../legal/legal.module';
 import { Module } from '@nestjs/common';
 import { JobSeekerController } from './job-seeker.controller';
 import { JobSeekerHitController } from './job-seeker-hit.controller';
@@ -19,7 +20,7 @@ import {
 } from './photo-storage';
 
 @Module({
-  imports: [PaymentModule, PricingModule, ConsentModule, ReviewFlagModule, TradeModule, MessageModule, OtpModule, AadhaarQrModule],
+  imports: [PaymentModule, PricingModule, ConsentModule, ReviewFlagModule, TradeModule, MessageModule, OtpModule, AadhaarQrModule, LegalModule],
   controllers: [JobSeekerController, JobSeekerHitController, RegistrationController],
   providers: [
     JobSeekerService,

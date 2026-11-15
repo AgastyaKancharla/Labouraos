@@ -386,6 +386,7 @@ export const sellingHi: Record<keyof typeof sellingEn, string> = {
   'fa11.left.reason.repeated_absence': 'बिना वजह बार-बार गैरहाज़िर',
   'fa11.left.reason.skill_gap_15_days': 'पहले 15 दिनों में काम नहीं कर पाया',
   'fa11.left.reason.misrepresentation': 'हुनर या अनुभव के बारे में झूठ',
+  'fa11.left.reason.medically_unfit_or_relocated': 'चिकित्सकीय रूप से अयोग्य, या शहर छोड़ गया',
   'fa11.left.reason.business_closed': 'व्यापार बंद, स्टाफ़ घटाया, या काम नहीं रहा',
   'fa11.left.reason.role_changed': 'काम, तनख़्वाह, समय, शिफ़्ट या जगह बदली',
   'fa11.left.reason.salary_unpaid': 'तनख़्वाह नहीं दी, या देर से दी',

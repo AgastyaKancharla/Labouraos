@@ -31,6 +31,7 @@ describe('registration link expiry comes from Settings', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
     return { s, publicLinks };
   }

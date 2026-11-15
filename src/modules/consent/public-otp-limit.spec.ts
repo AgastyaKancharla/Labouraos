@@ -25,7 +25,7 @@ describe('Public OTP sends through the consent link service', () => {
     const publicLinks = { findByToken: jest.fn(async (token: string) => rows[token]), hashToken: (token: string) => `hash-${token}` };
     service = new ConsentLinkService(
       prisma as never, publicLinks as never, { now: () => now } as never, {} as never, {} as never, otp as never,
-      {} as never, {} as never, {} as never, {} as never, limiter as never,
+      {} as never, {} as never, {} as never, {} as never, limiter as never, {} as never,
     );
   });
 
