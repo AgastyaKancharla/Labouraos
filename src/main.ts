@@ -36,6 +36,8 @@ export async function bootstrap() {
   const logger = new StructuredLogger('Bootstrap');
   app.useLogger(logger);
   applyTrustProxy(app);
+  // INF-12: Express never announces itself (X-Powered-By).
+  app.getHttpAdapter().getInstance().disable('x-powered-by');
   app.use(securityHeaders());
   const alertService = app.get(AlertService);
   app.useGlobalFilters(new GlobalExceptionFilter(alertService));

@@ -409,6 +409,48 @@ describe('Web addresses (decided 14 Nov): app.laboura.com, field.laboura.com and
     });
   });
 
+  describe('IN-6 / INF-12: Content-Security-Policy on every page, no X-Powered-By', () => {
+    it.each([
+      [APP, '/ceo', 'web'],
+      [APP, '/p/register/tok123', 'web'],
+      [RENDER, '/field/visits', 'field'],
+      [FIELD, '/', 'field'],
+    ])('%s%s carries a strict policy', async (host, url, appName) => {
+      const res = await get(host, url);
+      expect(res.status).toBe(200);
+      expect(res.headers['x-powered-by']).toBeUndefined();
+      const csp = String(res.headers['content-security-policy']);
+      expect(csp).toContain("script-src 'self' 'wasm-unsafe-eval'");
+      expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
+      expect(csp).not.toMatch(/script-src[^;]*'unsafe-eval'/);
+      expect(csp).toContain("frame-ancestors 'none'");
+      expect(csp).toContain("object-src 'self' blob:");
+      if (appName === 'field') expect(csp).toContain('https://tile.openstreetmap.org');
+      else expect(csp).toContain('https://fonts.gstatic.com');
+    });
+
+    it('only on pages: files are served without it, and API answers are untouched', async () => {
+      const asset = await get(APP, '/assets/index-abc123.js', '*/*');
+      expect(asset.headers['content-security-policy']).toBeUndefined();
+      expect(asset.headers['x-powered-by']).toBeUndefined();
+    });
+
+    it('report-only and off are a setting (CONTENT_SECURITY_POLICY)', async () => {
+      process.env.CONTENT_SECURITY_POLICY = 'report-only';
+      try {
+        const res = await get(APP, '/login');
+        expect(res.headers['content-security-policy']).toBeUndefined();
+        expect(res.headers['content-security-policy-report-only']).toContain("script-src 'self'");
+        process.env.CONTENT_SECURITY_POLICY = 'off';
+        const off = await get(APP, '/login');
+        expect(off.headers['content-security-policy']).toBeUndefined();
+        expect(off.headers['content-security-policy-report-only']).toBeUndefined();
+      } finally {
+        delete process.env.CONTENT_SECURITY_POLICY;
+      }
+    });
+  });
+
   describe('host helpers', () => {
     it('normalises host names and reads FIELD_HOST', () => {
       expect(normaliseHost('https://Field.Laboura.com:443/')).toBe('field.laboura.com');

@@ -8,12 +8,14 @@ import type { NextFunction, Request, Response } from 'express';
  *   - Referrer-Policy: no full address (which may carry a link token) is sent
  *     to another site.
  *   - X-Frame-Options: SAMEORIGIN — no other site can frame the staff screens.
- * A content-security-policy for /app and /field is not set here: it needs
- * checking against every screen first.
+ *   - no X-Powered-By (INF-12): the framework is not announced.
+ * The Content-Security-Policy of the web app and Laboura Field pages is set
+ * where those pages are served (content-security-policy.ts, SiteRoutingMiddleware).
  */
 export function securityHeaders(env: NodeJS.ProcessEnv = process.env) {
   const production = env.NODE_ENV === 'production';
   return (_req: Request, res: Response, next: NextFunction) => {
+    res.removeHeader?.('X-Powered-By');
     if (production) res.setHeader('Strict-Transport-Security', 'max-age=15552000; includeSubDomains');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     if (!res.getHeader('Referrer-Policy')) res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
