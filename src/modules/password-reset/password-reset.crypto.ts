@@ -1,5 +1,6 @@
 import { createHmac } from 'node:crypto';
 import { getLoginCodeSecret } from '../login-code/login-code.secret';
+import { sixDigitCode } from '../login-code/login-code.crypto';
 
 /**
  * Reset codes (Forgot password, rev 174–175) are worked out from the request
@@ -7,8 +8,8 @@ import { getLoginCodeSecret } from '../login-code/login-code.secret';
  * never be a login code (and a login code never a reset code). Never stored.
  */
 export function resetCodeFor(requestId: string, secret = getLoginCodeSecret()): string {
-  const digest = createHmac('sha256', secret).update(`password-reset-code:${requestId}`).digest('hex');
-  return BigInt(`0x${digest}`).toString(10).slice(0, 6).padStart(6, '0');
+  // Uniform six digits (AUTH-1), as login codes.
+  return sixDigitCode(createHmac('sha256', secret).update(`password-reset-code:${requestId}`).digest('hex'));
 }
 
 /**
