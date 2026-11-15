@@ -177,6 +177,10 @@ export class PricingService {
         companyLegalName: updates.companyLegalName ?? before.companyLegalName,
         companyGstin: updates.companyGstin !== undefined ? updates.companyGstin : before.companyGstin,
         companyAddress: updates.companyAddress !== undefined ? updates.companyAddress : before.companyAddress,
+        companyCin: updates.companyCin !== undefined ? updates.companyCin : before.companyCin,
+        grievanceOfficerName: updates.grievanceOfficerName !== undefined ? updates.grievanceOfficerName : before.grievanceOfficerName,
+        grievanceOfficerPhone: updates.grievanceOfficerPhone !== undefined ? updates.grievanceOfficerPhone : before.grievanceOfficerPhone,
+        grievanceOfficerEmail: updates.grievanceOfficerEmail !== undefined ? updates.grievanceOfficerEmail : before.grievanceOfficerEmail,
         followUpGraceDays: updates.followUpGraceDays ?? before.followUpGraceDays,
         patternWindowDays: updates.patternWindowDays ?? before.patternWindowDays,
         patternBusinessMinInterviews:
@@ -360,6 +364,10 @@ export class PricingService {
     legalName: string;
     gstin?: string | null;
     address?: string | null;
+    cin?: string | null;
+    grievanceOfficerName?: string | null;
+    grievanceOfficerPhone?: string | null;
+    grievanceOfficerEmail?: string | null;
   }, actorId: string): Promise<PricingPolicy> {
     const legalName = typeof input?.legalName === 'string' ? input.legalName.trim() : '';
     if (!legalName) throw new BadRequestException('legalName is required');
@@ -368,10 +376,25 @@ export class PricingService {
       throw new BadRequestException('gstin must be 15 characters: a 2-digit state code then 13 letters or digits');
     }
     const address = typeof input.address === 'string' ? input.address.trim() : null;
+    // Legal documents (rev 176): CIN and the Grievance Officer, placeholders until registration.
+    // A field left out keeps its value; an empty one clears it.
+    const text = (value: unknown, max: number) => (typeof value === 'string' ? value.trim().slice(0, max) || null : null);
+    const cin = input.cin === undefined ? undefined : text(input.cin, 21)?.toUpperCase() ?? null;
+    if (cin && !/^[LU][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$/.test(cin)) {
+      throw new BadRequestException('cin must be the 21-character Corporate Identification Number');
+    }
+    const email = input.grievanceOfficerEmail === undefined ? undefined : text(input.grievanceOfficerEmail, 120);
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new BadRequestException('grievanceOfficerEmail must be an email address');
+    const phone = input.grievanceOfficerPhone === undefined ? undefined : text(input.grievanceOfficerPhone, 20);
+    if (phone && !/^\+?[0-9 -]{8,20}$/.test(phone)) throw new BadRequestException('grievanceOfficerPhone must be a phone number');
     return this.createVersion({
       companyLegalName: legalName,
       companyGstin: gstin || null,
       companyAddress: address || null,
+      ...(cin !== undefined ? { companyCin: cin } : {}),
+      ...(input.grievanceOfficerName !== undefined ? { grievanceOfficerName: text(input.grievanceOfficerName, 120) } : {}),
+      ...(phone !== undefined ? { grievanceOfficerPhone: phone } : {}),
+      ...(email !== undefined ? { grievanceOfficerEmail: email } : {}),
     }, actorId);
   }
 

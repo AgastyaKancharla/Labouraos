@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { isBusinessSuspended } from '../business/business-candidate-access';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
@@ -237,6 +238,10 @@ export class CeoBusinessesService {
       status: b.pausedAt ? 'paused' : (b.verificationStatus ?? 'lead'),
       pausedAt: b.pausedAt?.toISOString() ?? null,
       pauseReason: b.pauseReason,
+      // D6 (rev 176): CEO suspension (30–90 days or permanent).
+      suspension: isBusinessSuspended(b, now)
+        ? { since: b.suspendedAt?.toISOString() ?? null, until: b.suspendedUntil?.toISOString() ?? null, permanent: !b.suspendedUntil, reason: b.suspensionReason }
+        : null,
       noDocuments: b.documentsStatus === 'no_documents',
       createdAt: b.createdAt.toISOString(),
       tiles: {

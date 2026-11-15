@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { isBusinessSuspended } from '../business/business-candidate-access';
 import { Optional } from '@nestjs/common';
 import { LegalDocumentService } from '../legal/legal-document.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -203,7 +204,7 @@ export class CustomerHomeService {
     const [business, branch, agreement, visit, doneVisit, vacancies, drafts] = await Promise.all([
       this.prisma.business.findUniqueOrThrow({
         where: { id: businessId },
-        select: { code: true, name: true, verificationStatus: true, verifiedAt: true, inPersonOnboardedAt: true },
+        select: { code: true, name: true, verificationStatus: true, verifiedAt: true, inPersonOnboardedAt: true, suspendedAt: true, suspendedUntil: true, suspensionReason: true },
       }),
       branchId ? this.prisma.businessBranch.findUnique({ where: { id: branchId }, select: { name: true } }) : null,
       this.prisma.businessAgreement.findFirst({ where: { businessId }, select: { signedAt: true } }),
@@ -247,12 +248,17 @@ export class CustomerHomeService {
         : !verified
           ? 'wait_for_approval'
           : vacancyRows.length === 0 ? 'add_vacancy' : 'none';
+    // D6 (rev 176): the suspension banner — no new vacancies, candidates or interviews while it lasts.
+    const suspended = isBusinessSuspended(business, now);
     return {
       kind: 'business',
       profileId: profile.id,
       code: business.code,
       name: business.name,
       role: profile.role,
+      suspension: suspended
+        ? { until: business.suspendedUntil, permanent: !business.suspendedUntil, reason: business.suspensionReason }
+        : null,
       branch: branch ? { name: branch.name } : null,
       verificationStatus: business.verificationStatus ?? 'lead',
       tracker: {
