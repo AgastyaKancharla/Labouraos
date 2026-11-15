@@ -42,4 +42,24 @@ describe('FA05 My visits', () => {
     await fireEvent.press(screen.getByTestId('fa05-visit-shop'));
     expect(router.push).toHaveBeenCalledWith('/visit/start');
   });
+
+  it('shows a business that signed up in the app as a sign-up visit with the time the owner picked, opening the verification steps', async () => {
+    const signup = {
+      ...visits,
+      planned: [
+        {
+          assignmentId: 'a-9',
+          purpose: 'business_signup',
+          business: { id: 'b-9', code: 'BZ-00456', name: 'Sri Sai Bakery', locality: 'Jayanagar', latitude: 12.93, longitude: 77.58 },
+          interview: null,
+          requestedFor: '2026-11-10T05:30:00Z',
+        },
+      ],
+    };
+    await renderWithApp(<VisitsScreen />, { signedInAs: kiran, route: (url) => (url.endsWith('/field-work/visits') ? { status: 200, body: signup } : undefined) });
+    await waitFor(() => screen.getByTestId('fa05-planned-a-9'));
+    expect(screen.getByTestId('fa05-planned-a-9')).toHaveTextContent(/Sri Sai Bakery.*Owner picked.*11:00 AM.*Jayanagar.*App sign-up visit/);
+    await fireEvent.press(screen.getByTestId('fa05-planned-a-9'));
+    expect(router.push).toHaveBeenCalledWith({ pathname: '/visit/verify', params: { businessId: 'b-9', assignmentId: 'a-9' } });
+  });
 });

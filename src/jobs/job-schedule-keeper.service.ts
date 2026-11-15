@@ -21,6 +21,7 @@ import { WinBackJob } from './win-back.job';
 import { WeeklyReportJob } from './weekly-report.job';
 import { InterviewReplyJob } from './interview-reply.job';
 import { NotificationSweepJob } from './notification-sweep.job';
+import { SignupTrackerJob } from './signup-tracker.job';
 
 /** How often the keeper checks that every schedule is still in Redis. */
 export const DEFAULT_SCHEDULE_CHECK_INTERVAL_MS = 10 * 60 * 1000;
@@ -111,6 +112,7 @@ export class JobScheduleKeeper implements OnApplicationBootstrap, OnModuleDestro
     weeklyReport: WeeklyReportJob,
     interviewReply: InterviewReplyJob,
     notificationSweep: NotificationSweepJob,
+    signupTracker: SignupTrackerJob,
     @Optional() private readonly prisma?: PrismaService,
     @Optional() private readonly alerts?: AlertService,
   ) {
@@ -128,6 +130,7 @@ export class JobScheduleKeeper implements OnApplicationBootstrap, OnModuleDestro
       weeklyReport: { schedule: () => weeklyReport.schedule(), run: () => weeklyReport.process() },
       interviewReply: { schedule: () => interviewReply.schedule(), run: () => interviewReply.process() },
       notificationSweep: { schedule: () => notificationSweep.schedule(), run: () => notificationSweep.process() },
+      signupTracker: { schedule: () => signupTracker.schedule(), run: () => signupTracker.process() },
     };
   }
 

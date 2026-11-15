@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { AppSignupBadge, useAppLabels } from '../../shared/AppSignupBadge';
 import { useNavigate } from 'react-router-dom';
 import { ButtonLink } from '../../../components/Button';
 import type { Column } from '../../../components/DataTable';
@@ -77,6 +78,7 @@ export default function JobSeekersList() {
   const s = list.query.data?.summary;
   const loading = list.query.isPending;
 
+  const appLabels = useAppLabels('job_seeker', (list.query.data?.rows ?? []).map((r) => r.id));
   const columns: Column<JobSeekerRow>[] = [
     { key: 'code', header: 'Code', cell: (r) => <span className="code">{r.code}</span>, csv: (r) => r.code },
     {
@@ -84,7 +86,10 @@ export default function JobSeekersList() {
       header: 'Name',
       cell: (r) => (
         <div>
-          <div style={{ fontWeight: 600 }}>{r.name}</div>
+          <div style={{ fontWeight: 600 }}>
+            {r.name}
+            <AppSignupBadge label={appLabels.data?.[r.id]} />
+          </div>
           <div className="ceo-cell-sub">{r.phone.includes('*') ? r.phone : formatMobile(r.phone.replace(/^\+91/, ''))}</div>
         </div>
       ),

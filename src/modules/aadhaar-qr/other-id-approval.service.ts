@@ -16,6 +16,10 @@ export type OtherIdSubjectType = 'job_seeker' | 'referral';
  *   - manager_or_ceo: there is no other active Team Lead in that city — a
  *     Manager of that city or the CEO approves it.
  * Nobody ever approves the ID of a person they registered themselves.
+ *
+ * An app self-registration (nobody registered it) that is assigned to an agent
+ * (SignupTracker.assignedStaffId, #144) counts for that agent's team: own_team.
+ * Only an unassigned one is "no team".
  */
 export type OtherIdApprovalMode = 'own_team' | 'another_team_lead' | 'manager_or_ceo';
 
@@ -23,8 +27,10 @@ export interface OtherIdApprovalRoute {
   mode: OtherIdApprovalMode;
   city: string;
   registeredByStaffId: string | null;
-  /** own_team: the Team Lead who approves (the registering agent's Team Lead, teamLeadOf). */
+  /** own_team: the Team Lead who approves (the owning agent's Team Lead, teamLeadOf). */
   ownTeamLead: string | null;
+  /** Who answers for the registration: the registering staff member, or the agent an app sign-up is assigned to. */
+  ownerStaffId: string | null;
 }
 
 export interface OtherIdDecisionRight {
@@ -37,6 +43,9 @@ export interface OtherIdDecisionRight {
 export interface ApprovalSubject {
   registeredByStaffId: string | null;
   city: string;
+  /** With the id, an app sign-up nobody registered counts for the agent it is assigned to (SignupTracker, #144). */
+  id?: string;
+  subjectType?: OtherIdSubjectType;
 }
 
 export const SELF_APPROVAL_REFUSED = 'You registered this person, so another Team Lead checks the ID.';
@@ -71,7 +80,18 @@ export class OtherIdApprovalService {
    */
   async routeMany(subjects: ApprovalSubject[], now = new Date()): Promise<OtherIdApprovalRoute[]> {
     if (!subjects.length) return [];
-    const registrarIds = [...new Set(subjects.map((s) => s.registeredByStaffId).filter((id): id is string => Boolean(id)))];
+    // App sign-ups nobody registered: the agent each is assigned to (the newest assignment).
+    const appIds = subjects.filter((s) => !s.registeredByStaffId && s.id && (s.subjectType ?? 'job_seeker') === 'job_seeker').map((s) => s.id!);
+    const trackers = appIds.length
+      ? await this.prisma.signupTracker.findMany({
+        where: { subjectType: 'job_seeker', subjectId: { in: appIds }, assignedStaffId: { not: null } },
+        orderBy: { updatedAt: 'asc' },
+        select: { subjectId: true, assignedStaffId: true },
+      })
+      : [];
+    const assigned = new Map(trackers.map((t) => [t.subjectId!, t.assignedStaffId!]));
+    const ownerOf = (s: ApprovalSubject) => s.registeredByStaffId ?? (s.id && (s.subjectType ?? 'job_seeker') === 'job_seeker' ? (assigned.get(s.id) ?? null) : null);
+    const registrarIds = [...new Set(subjects.map(ownerOf).filter((id): id is string => Boolean(id)))];
     const registrars = registrarIds.length
       ? await this.prisma.staff.findMany({ where: { id: { in: registrarIds } }, select: { id: true, role: true, teamLeadId: true, reportsToId: true } })
       : [];
@@ -83,8 +103,9 @@ export class OtherIdApprovalService {
     const cities = [...new Set(subjects.map((s) => s.city))];
     const cityLeads = await this.prisma.staff.findMany({ where: { role: 'team_lead', city: { in: cities }, ...usableStaffWhere(now) }, select: { id: true, city: true } });
     return subjects.map((subject) => {
-      const base = { city: subject.city, registeredByStaffId: subject.registeredByStaffId };
-      const registrar = subject.registeredByStaffId ? registrarById.get(subject.registeredByStaffId) : undefined;
+      const owner = ownerOf(subject);
+      const base = { city: subject.city, registeredByStaffId: subject.registeredByStaffId, ownerStaffId: owner };
+      const registrar = owner ? registrarById.get(owner) : undefined;
       const leadId = registrar ? leadIdOf.get(registrar.id) : null;
       const lead = leadId && leadId !== registrar?.id ? leadById.get(leadId) : undefined;
       if (lead && lead.role === 'team_lead' && usableStaff(lead, now)) return { ...base, mode: 'own_team' as const, ownTeamLead: lead.id };
@@ -106,7 +127,7 @@ export class OtherIdApprovalService {
     if (!me || !usableStaff(me) || me.role !== actor.role) return no('Not an active staff account');
     if (r.mode === 'own_team') {
       // The registering agent is in this Team Lead's own team (OwnTeam: teamLeadId or the reporting line).
-      return actor.role === 'team_lead' && (await new OwnTeam(this.prisma).includes(actor.id, subject.registeredByStaffId))
+      return actor.role === 'team_lead' && (await new OwnTeam(this.prisma).includes(actor.id, r.ownerStaffId))
         ? { allowed: true, mode: r.mode, reason: null }
         : no('The Team Lead of the agent who registered this person checks the ID.');
     }

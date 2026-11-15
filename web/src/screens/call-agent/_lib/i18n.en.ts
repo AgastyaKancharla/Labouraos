@@ -1,3 +1,4 @@
+import { signupEn } from './i18n.signup';
 /**
  * English strings for the call agent console's daily-work screens and the
  * search bar. Spread into src/i18n/en.ts. Kannada is in i18n.kn.ts and Hindi
@@ -406,4 +407,5 @@ export const callAgentEn = {
   'ca.pop.incoming': 'Incoming call · {name}',
   'ca.pop.unknown': 'Incoming call · new number',
   'ca.pop.open': 'Open',
+  ...signupEn,
 } as const;

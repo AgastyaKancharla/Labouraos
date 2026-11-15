@@ -95,6 +95,10 @@ export function reasonTag(item: WorkItem, t: Translate, now: Date): { text: stri
       return { text: stuckLabel(String(d.step ?? ''), Number(d.failures ?? 0), t), tone: 'tn' };
     case 'win_back':
       return { text: t('ca.reason.winBack'), tone: 'tg' };
+    case 'signup_payment':
+      return { text: t('ca.reason.signupPayment'), tone: 'tr' };
+    case 'signup_help':
+      return { text: t('ca.reason.signupHelp', { step: signupStepLabel(String(d.step ?? ''), t) }), tone: 'tb' };
     default:
       return { text: item.kind, tone: 'tn' };
   }
@@ -160,8 +164,40 @@ export function whyText(item: WorkItem, t: Translate): string {
       return t('ca.why.stuck_registration');
     case 'win_back':
       return t('ca.why.win_back');
+    case 'signup_help':
+    case 'signup_payment':
+      return t('ca.why.signup_help', { step: signupStepLabel(String(d.step ?? ''), t) });
     default:
       return '';
   }
 }
 
+
+const SIGNUP_STEPS = [
+  'profile', 'business_form', 'details', 'consent', 'selfie', 'id_check', 'terms', 'payment', 'payment_failed',
+  'agreement', 'visit_booked', 'visit_done', 'approval', 'upi', 'complete',
+] as const;
+
+/** An app sign-up step in the agent's language ("selfie", "ID check"…). */
+export function signupStepLabel(step: string, t: Translate): string {
+  return (SIGNUP_STEPS as readonly string[]).includes(step) ? t(`ca.signup.step.${step}` as MessageKey) : step;
+}
+
+/** The script hint for a sign-up help call (falls back to the general one). */
+export function signupScript(hint: string, t: Translate): string {
+  const key = `ca.signup.script.${hint}`;
+  return key in SIGNUP_SCRIPT_KEYS ? t(key as MessageKey) : t('ca.signup.script.default');
+}
+
+const SIGNUP_SCRIPT_KEYS: Record<string, true> = Object.fromEntries(
+  [
+    'job_seeker.consent', 'job_seeker.selfie', 'job_seeker.id_check', 'job_seeker.terms', 'job_seeker.payment', 'job_seeker.payment_failed',
+    'business.agreement', 'business.visit_booked', 'business.visit_done', 'business.approval',
+    'referral.terms', 'referral.selfie', 'referral.id_check', 'referral.upi',
+  ].map((k) => [`ca.signup.script.${k}`, true]),
+);
+
+/** True for the two app sign-up kinds on the work list. */
+export function isSignupItem(item: { kind: string }): boolean {
+  return item.kind === 'signup_help' || item.kind === 'signup_payment';
+}

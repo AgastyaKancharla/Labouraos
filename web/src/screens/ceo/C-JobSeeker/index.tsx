@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { AppSignupBadgeFor } from '../../shared/AppSignupBadge';
 import { Link, useParams } from 'react-router-dom';
 import { Button } from '../../../components/Button';
 import { Card } from '../../../components/Card';
@@ -156,6 +157,7 @@ export default function JobSeekerDetail() {
       <TopBar
         back={back}
         title={`${d.name} · ${d.code}`}
+        titleBadge={<AppSignupBadgeFor type="job_seeker" id={d.id} />}
         subtitle={subtitle}
         actions={
           <div className="ceo-actions">

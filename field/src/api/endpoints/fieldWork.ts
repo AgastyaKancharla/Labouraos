@@ -62,6 +62,8 @@ export interface FieldVisits {
     purpose: string;
     business: { id: string; code: string; name: string; locality: string | null; latitude: number | null; longitude: number | null };
     interview: { id: string; startsAt: string; candidateName: string; candidateArrivedAt: string | null } | null;
+    /** business_signup (a business that signed up in the Laboura app): the time the owner picked. */
+    requestedFor?: string | null;
   }[];
   revisitsDue: RevisitDue[];
   doneToday: {

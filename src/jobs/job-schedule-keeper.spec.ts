@@ -20,6 +20,7 @@ import { WinBackJob } from './win-back.job';
 import { WeeklyReportJob } from './weekly-report.job';
 import { InterviewReplyJob } from './interview-reply.job';
 import { NotificationSweepJob } from './notification-sweep.job';
+import { SignupTrackerJob } from './signup-tracker.job';
 
 type Fake = { schedule: jest.Mock; scheduleDailyJob: jest.Mock; process: jest.Mock; evaluateNoPickups: jest.Mock };
 
@@ -33,7 +34,7 @@ function fakeJob(result: unknown = { done: 1 }): Fake {
 }
 
 function buildWithFakes() {
-  const jobs = Array.from({ length: 13 }, () => fakeJob());
+  const jobs = Array.from({ length: 15 }, () => fakeJob());
   const prisma = { jobRun: { create: jest.fn().mockResolvedValue({}) } };
   const alerts = { sendAlert: jest.fn().mockResolvedValue(true) };
   const keeper = new (JobScheduleKeeper as unknown as new (...args: unknown[]) => JobScheduleKeeper)(
@@ -56,11 +57,11 @@ describe('H3: JobScheduleKeeper keeps every schedule in Redis and runs any job o
     expect(keeper.keys().sort()).toEqual(JOB_CATALOG.map((e) => e.key).sort());
   });
 
-  it('re-registers all 13 schedules (no-pickup through its own daily scheduler)', async () => {
+  it('re-registers all 15 schedules (no-pickup through its own daily scheduler)', async () => {
     const { keeper, jobs } = buildWithFakes();
     const result = await keeper.ensureAll('test');
     expect(result.failed).toEqual([]);
-    expect(result.registered).toHaveLength(13);
+    expect(result.registered).toHaveLength(15);
     expect(jobs[0].scheduleDailyJob).toHaveBeenCalledTimes(1);
     for (const job of jobs.slice(1)) expect(job.schedule).toHaveBeenCalledTimes(1);
   });
@@ -69,7 +70,7 @@ describe('H3: JobScheduleKeeper keeps every schedule in Redis and runs any job o
     const { keeper, jobs } = buildWithFakes();
     jobs[3].schedule.mockRejectedValue(new Error('Redis down'));
     const result = await keeper.ensureAll('test');
-    expect(result.registered).toHaveLength(12);
+    expect(result.registered).toHaveLength(14);
     expect(result.failed).toEqual([{ key: 'claimOverdue', error: 'Redis down' }]);
   });
 
@@ -173,6 +174,7 @@ describe('H3 with a real Redis: a Key Value restart wipes the schedules; the hea
     construct(WeeklyReportJob),
     construct(InterviewReplyJob),
     construct(NotificationSweepJob),
+    construct(SignupTrackerJob),
   ];
 
   beforeAll(async () => {

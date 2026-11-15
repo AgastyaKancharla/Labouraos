@@ -204,7 +204,7 @@ export class AadhaarQrController {
     const person = subjectType === 'job_seeker' ? await this.prisma.jobSeeker.findUnique({ where: { id }, select }) : await this.prisma.referral.findUnique({ where: { id }, select });
     if (!person || person.anonymisedAt) throw new NotFoundException('Not found');
     // The same rule as T-Verify: only the fallback (no other Team Lead of the city), never one's own.
-    const right = await this.approvals.rightFor(actor, person);
+    const right = await this.approvals.rightFor(actor, { ...person, id, subjectType });
     if (!right.allowed) throw new ForbiddenException(right.reason ?? 'Not yours to check');
     const decided = await this.otherIds.recordDecision(subjectType, id, verdict, actor);
     let flagId: string | null = null;
@@ -246,11 +246,19 @@ export class AadhaarQrController {
     const actor = { id: req.user.sub, role: req.user.role };
     const check = await this.idPhotos.latestFor(subjectType, subject.id);
     // Rev 169: whoever may check this registration (another Team Lead of the city, or a Manager / the
-    // CEO where there is none) may open it too, besides the usual team scope.
+    // CEO where there is none) may open it too — but only while something waits for it (an other ID
+    // pending, or no registration check yet; M-B). Otherwise only the usual team scope.
     const pendingOtherId = check?.status === 'pending' && check.method !== 'aadhaar_qr';
-    const anyRight = await this.approvals.rightFor(actor, subject);
+    const waiting = pendingOtherId || !(await this.prisma.teamLeadCheck.findFirst({ where: { subjectType, subjectId: subject.id }, select: { id: true } }));
+    const anyRight = waiting ? await this.approvals.rightFor(actor, { ...subject, subjectType }) : null;
     const right = pendingOtherId ? anyRight : null;
-    if (!anyRight.allowed) await this.access.assertCanView(actor, subject.registeredByStaffId);
+    if (!anyRight?.allowed) {
+      // The team scope counts an app sign-up for the agent it is assigned to (#144).
+      const assigned = !subject.registeredByStaffId && subjectType === 'job_seeker'
+        ? (await this.prisma.signupTracker.findFirst({ where: { subjectType: 'job_seeker', subjectId: subject.id, assignedStaffId: { not: null } }, orderBy: { updatedAt: 'desc' }, select: { assignedStaffId: true } }))?.assignedStaffId ?? null
+        : null;
+      await this.access.assertCanView(actor, subject.registeredByStaffId ?? assigned);
+    }
     const idPhoto = check?.photo.kept ? await this.idPhotos.photoLink(check.verificationId) : null;
     const selfieUrl = subject.photoStoragePath ? await this.photos.signedUrl(subject.photoStoragePath, CANDIDATE_PHOTO_LINK_TTL_SECONDS) : null;
     await this.audit.log({

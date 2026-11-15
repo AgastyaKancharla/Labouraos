@@ -216,7 +216,7 @@ export class OtherIdService {
       city: subject.city,
     });
     // Where no other Team Lead of the city can check it, a Manager or the CEO is told (rev 169).
-    const route = await this.approvals.routeFor(subject);
+    const route = await this.approvals.routeFor({ ...subject, subjectType: subject.type });
     if (route.mode === 'manager_or_ceo' && this.flags) {
       await this.flags.raise({
         kind: 'other_id_needs_manager',
@@ -261,7 +261,7 @@ export class OtherIdService {
         : await this.prisma.referralIdentityVerification.findFirst({ where: { referralId: subjectId, status: 'pending', vendor: 'team_lead_check' }, orderBy: { createdAt: 'desc' }, select: { id: true, method: true, last4: true, createdAt: true } });
     let otherIdDecided: 'verified' | 'failed' | null = null;
     if (pending) {
-      const right = await this.approvals.rightFor(actor, subject);
+      const right = await this.approvals.rightFor(actor, { ...subject, subjectType: subject.type });
       if (!right.allowed) throw new ForbiddenException(right.reason);
       if (verdict === 'ok') {
         const detail = await this.prisma.idCheckDetail.findUnique({ where: { verificationId: pending.id }, select: { photoPath: true } });

@@ -91,15 +91,44 @@ export class TeamLeadChecksService {
   // ---------------------------------------------------------------- work
 
   /** T-Work: registrations stuck, follow-ups overdue, interviews today and results overdue, the team's businesses. */
+  /**
+   * App sign-ups (customer app): a job seeker who registered in the app has no
+   * registering agent; the agent the sign-up is assigned to
+   * (SignupTracker.assignedStaffId) stands in for it in these lists.
+   */
+  private async appSignupAgents(people: string[]): Promise<Map<string, string>> {
+    const rows = await this.prisma.signupTracker.findMany({
+      where: { subjectType: 'job_seeker', subjectId: { not: null }, assignedStaffId: { in: people } },
+      select: { subjectId: true, assignedStaffId: true },
+    });
+    return new Map(rows.map((r) => [r.subjectId!, r.assignedStaffId!]));
+  }
+
+  /** Who answers for a registration: the agent who registered it, or for an app sign-up the agent it is assigned to. */
+  private async registrationOwner(jobSeekerId: string, registeredByStaffId: string | null): Promise<string | null> {
+    if (registeredByStaffId) return registeredByStaffId;
+    const tracker = await this.prisma.signupTracker.findFirst({
+      where: { subjectType: 'job_seeker', subjectId: jobSeekerId, assignedStaffId: { not: null } },
+      orderBy: { updatedAt: 'desc' },
+      select: { assignedStaffId: true },
+    });
+    return tracker?.assignedStaffId ?? null;
+  }
+
+  private registeredOrAssigned(people: string[], appAgents: Map<string, string>): Prisma.JobSeekerWhereInput {
+    return { OR: [{ registeredByStaffId: { in: people } }, { id: { in: [...appAgents.keys()] }, registeredByStaffId: null }] };
+  }
+
   async work(actor: Actor) {
     const team = await this.screens.members(actor);
     const ids = team.map((row) => row.id);
     const people = [...ids, actor.id];
     const now = this.clock.now();
     const dayStart = istStartOfDay(istDayKey(now));
+    const appAgents = await this.appSignupAgents(people);
     const [stuck, followUpsOverdue, interviewsToday, overdue, businesses] = await Promise.all([
       this.prisma.jobSeeker.findMany({
-        where: { registeredByStaffId: { in: people }, status: { in: Object.keys(STUCK_STATUSES) }, createdAt: { lte: new Date(now.getTime() - DAY_MS), gte: new Date(now.getTime() - 30 * DAY_MS) }, anonymisedAt: null },
+        where: { ...this.registeredOrAssigned(people, appAgents), status: { in: Object.keys(STUCK_STATUSES) }, createdAt: { lte: new Date(now.getTime() - DAY_MS), gte: new Date(now.getTime() - 30 * DAY_MS) }, anonymisedAt: null },
         select: { id: true, code: true, name: true, status: true, createdAt: true, registeredByStaffId: true },
         orderBy: { createdAt: 'asc' },
         take: 50,
@@ -133,7 +162,7 @@ export class TeamLeadChecksService {
       summary: { stuck: stuck.length, followUpsOverdue, interviewsToday: interviewsToday.length, resultsOverdue: overdue.length },
       stuck: stuck.map((row) => ({
         jobSeeker: { id: row.id, code: row.code, firstName: row.name.split(' ')[0] },
-        agent: nameOf(row.registeredByStaffId),
+        agent: nameOf(row.registeredByStaffId ?? appAgents.get(row.id)),
         where: STUCK_STATUSES[row.status] ?? row.status,
         hours: Math.floor((now.getTime() - row.createdAt.getTime()) / HOUR_MS),
       })),
@@ -224,15 +253,17 @@ export class TeamLeadChecksService {
       trades: { select: { trade: true }, orderBy: { isPrimary: 'desc' as const }, take: 1 },
       identityVerifications: { orderBy: { createdAt: 'desc' as const }, take: 1, select: { id: true, method: true, vendor: true, status: true, nameMatches: true, isAdult: true, phoneLinked: true, last4: true } },
     };
+    // An app sign-up with no registering agent counts for the team of the agent it is assigned to (#144).
+    const appAgents = await this.appSignupAgents(people);
     const [recent, waiting, referrals] = await Promise.all([
       this.prisma.jobSeeker.findMany({
-        where: { registeredByStaffId: { in: people }, createdAt: { gte: new Date(now.getTime() - 7 * DAY_MS) }, anonymisedAt: null, status: { notIn: ['lead'] } },
+        where: { ...this.registeredOrAssigned(people, appAgents), createdAt: { gte: new Date(now.getTime() - 7 * DAY_MS) }, anonymisedAt: null, status: { notIn: ['lead'] } },
         select: seekerSelect,
         orderBy: { createdAt: 'desc' },
         take: 100,
       }),
       this.prisma.jobSeeker.findMany({
-        where: { registeredByStaffId: { in: people }, anonymisedAt: null, identityVerifications: { some: { status: 'pending', vendor: 'team_lead_check' } } },
+        where: { ...this.registeredOrAssigned(people, appAgents), anonymisedAt: null, identityVerifications: { some: { status: 'pending', vendor: 'team_lead_check' } } },
         select: seekerSelect,
         orderBy: { createdAt: 'desc' },
         take: 50,
@@ -343,7 +374,7 @@ export class TeamLeadChecksService {
         person: { id: seeker.id, code: seeker.code, name: seeker.name },
         jobSeeker: { id: seeker.id, code: seeker.code, name: seeker.name },
         trade: seeker.trades[0]?.trade ?? null,
-        registeredBy: registrarOf(seeker.registeredByStaffId),
+        registeredBy: registrarOf(seeker.registeredByStaffId ?? appAgents.get(seeker.id) ?? null),
         registeredAt: seeker.createdAt.toISOString(),
         paid: Boolean(seeker.paymentReceivedAt),
         hasSelfie: Boolean(seeker.photoStoragePath),
@@ -394,9 +425,11 @@ export class TeamLeadChecksService {
   }
 
   /**
-   * A registration this Team Lead may open ('view') or check ('decide'): one from their team, or —
-   * rev 169 — a pending other ID they may decide for another team (OtherIdApprovalService).
-   * Checking one's own registration is refused for every kind of check.
+   * A registration this Team Lead may open ('view') or check ('decide'): one from their team (the
+   * registering agent, or for an app sign-up the agent it is assigned to — #144), or — rev 169 — one
+   * they may check for another team of their city (OtherIdApprovalService), and that only while
+   * something waits for it (an other ID pending, or no registration check yet). Checking one's own
+   * registration is refused for every kind of check.
    */
   private async requireTeamSubject(actor: Actor, subjectType: 'job_seeker' | 'referral', id: string, purpose: 'view' | 'decide') {
     const team = await this.screens.members(actor);
@@ -407,7 +440,9 @@ export class TeamLeadChecksService {
         : await this.prisma.referral.findUnique({ where: { id }, select });
     if (!subject) throw new NotFoundException('Not a registration from your team');
     const own = subject.registeredByStaffId === actor.id;
-    const inTeam = own || team.some((row) => row.id === subject.registeredByStaffId);
+    const owner = subjectType === 'job_seeker' ? await this.registrationOwner(subject.id, subject.registeredByStaffId) : subject.registeredByStaffId;
+    const inTeam = own || (owner !== null && team.some((row) => row.id === owner));
+    const routed = { ...subject, subjectType };
     const pendingWhere = { status: 'pending', vendor: 'team_lead_check' };
     const pending = this.approvals
       ? subjectType === 'job_seeker'
@@ -415,17 +450,18 @@ export class TeamLeadChecksService {
         : await this.prisma.referralIdentityVerification.findFirst({ where: { referralId: subject.id, ...pendingWhere }, select: { id: true } })
       : null;
     if (pending && this.approvals) {
-      const right = await this.approvals.rightFor(actor, subject);
+      const right = await this.approvals.rightFor(actor, routed);
       if (right.allowed) return subject;
       if (inTeam && purpose === 'view') return subject;
       if (inTeam) throw new ForbiddenException(right.reason ?? SELF_APPROVAL_REFUSED);
       throw new NotFoundException('Not a registration from your team');
     }
-    // The general check follows the same rule (rev 169): one's own team's agents, or — for a person
-    // a Team Lead registered or nobody's team did — another Team Lead of the city. Never one's own.
+    // The general check follows the same rule (rev 169). Never one's own.
     if (purpose === 'decide' && own) throw new ForbiddenException(SELF_CHECK_REFUSED);
     if (inTeam) return subject;
-    if (this.approvals && (await this.approvals.rightFor(actor, subject)).allowed) return subject;
+    // Another team's registration: only while it still waits for its check (M-B), never afterwards.
+    const checked = await this.prisma.teamLeadCheck.findFirst({ where: { subjectType, subjectId: subject.id }, select: { id: true } });
+    if (!checked && this.approvals && (await this.approvals.rightFor(actor, routed)).allowed) return subject;
     throw new NotFoundException('Not a registration from your team');
   }
 

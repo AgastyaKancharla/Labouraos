@@ -44,6 +44,7 @@ export const JOB_CATALOG: readonly JobCatalogEntry[] = [
   { key: 'winBack', queue: SHARED_JOB_QUEUE, jobName: 'daily-win-back', schedulerId: 'daily-win-back-scheduler', runName: 'daily-win-back', label: 'Win-back call list', legacyQueue: 'win-back' },
   { key: 'weeklyReport', queue: SHARED_JOB_QUEUE, jobName: 'monday-weekly-report', schedulerId: 'monday-weekly-report-scheduler', runName: 'monday-weekly-report', label: 'Weekly report (Monday 9 AM)', legacyQueue: 'weekly-report' },
   { key: 'interviewReply', queue: SHARED_JOB_QUEUE, jobName: 'process-due-interview-replies', schedulerId: 'interview-reply-deadline-scheduler', runName: 'process-due-interview-replies', label: 'Offer reply and payment deadlines', legacyQueue: 'interview-reply-deadlines' },
+  { key: 'signupTracker', queue: SHARED_JOB_QUEUE, jobName: 'sweep-signup-tracker', schedulerId: 'signup-tracker-scheduler', runName: 'sweep-signup-tracker', label: 'App sign-ups: reminders, call tasks, closing' },
   { key: 'notificationSweep', queue: SHARED_JOB_QUEUE, jobName: 'sweep-notifications', schedulerId: 'notification-sweep-scheduler', runName: 'sweep-notifications', label: 'Notification bells that change with the clock', legacyQueue: 'notification-sweep' },
 ];
 

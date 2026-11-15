@@ -1,3 +1,4 @@
+import { signupHi } from './i18n.signup';
 import type { callAgentEn } from './i18n.en';
 
 /**
@@ -410,4 +411,5 @@ export const callAgentHi: Record<keyof typeof callAgentEn, string> = {
   'ca.pop.incoming': 'आने वाली कॉल · {name}',
   'ca.pop.unknown': 'आने वाली कॉल · नया नंबर',
   'ca.pop.open': 'खोलें',
+  ...signupHi,
 };

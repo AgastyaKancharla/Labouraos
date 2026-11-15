@@ -8,6 +8,7 @@ import type { MessageKey } from '../../../i18n/en';
 import { isSearchable, resultPath, useSearch, type SearchRow, type SearchType } from '../../../lib/search/searchApi';
 import { usePortal } from '../../../portals/PortalContext';
 import { screenPath } from '../../../portals';
+import { AppSignupBadge, useAppLabels, type AppLabel } from '../../shared/AppSignupBadge';
 import { useAuth } from '../../../auth/AuthProvider';
 import { ReportWorkerLeft } from '../../../claims/WorkerLeft';
 
@@ -32,6 +33,12 @@ export default function Search() {
   const tab = (params.get('type') as SearchType | null) ?? null;
   const search = useSearch(q, tab);
   const counts = search.data?.counts;
+  const rows = search.data?.results ?? [];
+  const labels = {
+    job_seeker: useAppLabels('job_seeker', rows.filter((r) => r.type === 'job_seeker').map((r) => r.id)).data,
+    business: useAppLabels('business', rows.filter((r) => r.type === 'business').map((r) => r.id)).data,
+    referral: useAppLabels('referral', rows.filter((r) => r.type === 'referral').map((r) => r.id)).data,
+  } as Partial<Record<string, Record<string, AppLabel> | undefined>>;
   const can = (id: string) => portal.screens.some((s) => s.id === id);
   const register = [
     can('CA08-Register') && { id: 'CA08-Register', label: 'ca.search.registerSeeker' as MessageKey },
@@ -71,7 +78,7 @@ export default function Search() {
           <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {search.data.results.length === 0 && <p className="sub">{t('ca.search.none', { q })}</p>}
             {search.data.results.map((row) => (
-              <ResultRow key={`${row.type}-${row.id}`} row={row} to={resultPath(portal, row)} />
+              <ResultRow key={`${row.type}-${row.id}`} row={row} to={resultPath(portal, row)} appLabel={labels[row.type]?.[row.id]} />
             ))}
           </div>
           {register.length > 0 && (
@@ -91,7 +98,7 @@ export default function Search() {
   );
 }
 
-function ResultRow({ row, to }: { row: SearchRow; to: string | null }) {
+function ResultRow({ row, to, appLabel }: { row: SearchRow; to: string | null; appLabel?: AppLabel }) {
   const t = useT();
   const sub = [t(`ca.search.type.${row.type}` as MessageKey), row.code, row.maskedPhone, row.trade, row.locality].filter(Boolean).join(' · ');
   let tag = row.status ?? '';
@@ -100,7 +107,10 @@ function ResultRow({ row, to }: { row: SearchRow; to: string | null }) {
   const body = (
     <>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="nm">{row.name}</div>
+        <div className="nm">
+          {row.name}
+          <AppSignupBadge label={appLabel} />
+        </div>
         <div className="sub">{sub}</div>
       </div>
       {tag && <span className="tag tn">{tag.replace(/_/g, ' ')}</span>}

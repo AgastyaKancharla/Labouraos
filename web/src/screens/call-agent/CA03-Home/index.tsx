@@ -26,6 +26,7 @@ const FILTERS: Array<{ key: 'all' | Exclude<WorkCategory, 'priority'>; label: Me
   { key: 'follow_ups', label: 'ca.filter.followUps' },
   { key: 'offers', label: 'ca.filter.offers' },
   { key: 'new_leads', label: 'ca.filter.newLeads' },
+  { key: 'app_signups', label: 'ca.filter.appSignups' },
 ];
 
 function metricValue(m: MetricView, percent = false): string {

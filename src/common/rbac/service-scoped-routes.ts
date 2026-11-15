@@ -391,6 +391,18 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
     test: 'modules/screens-team-lead/team-lead.e2e.spec.ts',
     proof: "post(lead, `/team-lead/quality/${theirs.id}/score`",
   },
+
+  // ---------------------------------------------------------------- app sign-ups (customer app)
+  'SignupTrackerController.reassign': {
+    reason: "A Team Lead moves only their own team's sign-ups (OwnTeam: assigned agent, else the record's registering agent) and only to their own call agents; a no-team sign-up is for Managers and the CEO.",
+    test: 'modules/signup-tracker/signup-tracker.e2e.spec.ts',
+    proof: "post(`/signup-tracker/${noTeam.id}/reassign`).set('Authorization', `Bearer ${token(lead1)}`)",
+  },
+  'SignupTrackerController.assignVisit': {
+    reason: "A Team Lead assigns a business sign-up visit only for their own team's business (businessOwners, else the suggested field agent's team) and only to their own field agent.",
+    test: 'modules/signup-tracker/signup-tracker.e2e.spec.ts',
+    proof: "post(`/signup-tracker/visit-requests/${va1.id}/assign`).set('Authorization', `Bearer ${token(lead2)}`)",
+  },
 };
 
 /**

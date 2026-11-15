@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { AppSignupBadgeFor } from '../../shared/AppSignupBadge';
 import { Link, useParams } from 'react-router-dom';
 import { Card } from '../../../components/Card';
 import { ErrorState } from '../../../components/ErrorState';
@@ -63,7 +64,12 @@ export default function PartnerDetail() {
         back={back}
         title={`${d.name} · ${d.code}`}
         subtitle={`${c.referred} referred · ${c.registered} registered · ${c.joined} joined · ${formatINR(c.earnedPaise)} earned · ${formatINR(c.duePaise)} due.`}
-        titleBadge={d.paused ? <StatusPill tone="danger">Paused</StatusPill> : undefined}
+        titleBadge={
+          <>
+            {d.paused ? <StatusPill tone="danger">Paused</StatusPill> : null}
+            <AppSignupBadgeFor type="referral" id={d.id} />
+          </>
+        }
         actions={
           <>
           {d.paused ? (

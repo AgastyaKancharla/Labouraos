@@ -1,3 +1,4 @@
+import { signupKn } from './i18n.signup';
 import type { callAgentEn } from './i18n.en';
 
 /**
@@ -409,4 +410,5 @@ export const callAgentKn: Record<keyof typeof callAgentEn, string> = {
   'ca.search.help':
     'ಹೆಸರು, ಮೊಬೈಲ್ ನಂಬರ್ (ಪೂರ್ತಿ ಅಥವಾ ಕೊನೆಯ 4 ಅಂಕೆ) ಅಥವಾ ಯಾವುದೇ ID ಯಿಂದ ಹುಡುಕಿ: JS- ಉದ್ಯೋಗಾಕಾಂಕ್ಷಿ, BZ- ವ್ಯಾಪಾರ, RF- ರೆಫರಲ್ ಪಾಲುದಾರ, VC- ಹುದ್ದೆ, PL- ಪ್ಲೇಸ್‌ಮೆಂಟ್. ಫೋನ್ ನಂಬರ್‌ಗಳು ಮರೆಯಾಗಿರುತ್ತವೆ.',
   'ca.in.note': 'ಕರೆ ರಿಂಗ್ ಆದ ತಕ್ಷಣ ಅವರ ಪ್ರೊಫೈಲ್ ತೆರೆಯುತ್ತದೆ, ಹಾಗಾಗಿ ಹಲೋ ಹೇಳುವ ಮೊದಲೇ ಯಾರು ಎಂದು ನಿಮಗೆ ಗೊತ್ತಿರುತ್ತದೆ.',
+  ...signupKn,
 };

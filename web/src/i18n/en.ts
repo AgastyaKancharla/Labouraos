@@ -9,6 +9,7 @@ import { staffInviteEn } from './staffInvite';
 import { referralTermsEn } from './referralTerms';
 import { referralPartnerEn } from './referralPartner';
 import { staffPhotoEn } from './staffPhoto';
+import { appSignupsEn } from './appSignups';
 
 import { callAgentEn } from '../screens/call-agent/_lib/i18n.en';
 export const en = {
@@ -597,6 +598,7 @@ export const en = {
   ...referralPartnerEn,
   ...aadhaarQrEn,
   ...staffPhotoEn,
+  ...appSignupsEn,
   ...callAgentEn,
   ...payslipEn,
   ...attendanceEn,

@@ -18,7 +18,7 @@ describe('follow-up calls: retried next day, Team Lead told after 3 tries', () =
       callRecord: { count: jest.fn().mockResolvedValue(unansweredSoFar) },
       messageLog: { findFirst: jest.fn().mockResolvedValue({ id: 'sent-today' }) },
       jobSeeker: { findUnique: jest.fn().mockResolvedValue({ preferredCallWindowStart: '10:00', preferredCallWindowEnd: '18:00' }) },
-      callTask: { create: jest.fn(), updateMany: jest.fn() },
+      callTask: { create: jest.fn(), updateMany: jest.fn(), findFirst: jest.fn().mockResolvedValue(null) },
     };
     const pricing = { current: jest.fn().mockResolvedValue({ callingHoursStart: '09:00', callingHoursEnd: '21:00' }) };
     const messaging = { send: jest.fn() };

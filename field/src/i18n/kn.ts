@@ -274,6 +274,8 @@ export const kn: Messages = {
   'fa05.planned': 'ಇಂದಿನ ಯೋಜನೆ',
   'fa05.verification': 'ಪರಿಶೀಲನೆ',
   'fa05.attendInterview': 'ಸಂದರ್ಶನಕ್ಕೆ ಹಾಜರಾಗಿ',
+  'fa05.signupVisit': 'ಆ್ಯಪ್ ನೋಂದಣಿ ಭೇಟಿ',
+  'fa05.ownerPicked': 'ಮಾಲೀಕರು ಆಯ್ಕೆ ಮಾಡಿದ ಸಮಯ {when}',
   'fa05.revisits': 'ಬಾಕಿ ಇರುವ ಮರುಭೇಟಿಗಳು',
   'fa05.comeBackToday': 'ಇಂದು ಮತ್ತೆ ಹೋಗಿ',
   'fa05.overdueSince': '{date} ರಿಂದ ಬಾಕಿ',
