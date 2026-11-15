@@ -7,6 +7,7 @@ import type { Messages } from './en';
 import { registrationHi } from './registration';
 import { staffInviteHi } from './staffInvite';
 import { referralTermsHi } from './referralTerms';
+import { legalHi } from './legal';
 import { referralPartnerHi } from './referralPartner';
 import { staffPhotoHi } from './staffPhoto';
 import { appSignupsHi } from './appSignups';
@@ -253,9 +254,9 @@ export const hi: Messages = {
   "pub.fee.total": "कुल",
   "pub.fee.payBy": "भुगतान की आख़िरी तारीख़",
   "pub.fee.payUpi": "UPI से {amount} भुगतान करें",
-  "pub.fee.note": "आपका भुगतान हमारे बैंक में पहुँचते ही हम {name} को जॉइनिंग की तारीख़ बताएँगे और उनकी पूरी जानकारी आपको देंगे। आपका GST इनवॉइस अपने-आप बन जाएगा।",
+  "pub.fee.note": "आपका भुगतान हमारे बैंक में पहुँचते ही हम {name} को जॉइनिंग की तारीख़ बताएँगे और उनका पूरा नाम व जॉइनिंग की जानकारी आपको देंगे। जॉइनिंग के दिन तक उनका फ़ोन नंबर छिपा रहता है। आपका GST इनवॉइस अपने-आप बन जाएगा।",
   "pub.fee.received": "भुगतान मिल गया · {amount}",
-  "pub.fee.receivedNote": "हमने {name} को जॉइनिंग की तारीख़ बता दी है और उनकी जानकारी आपको भेज दी है।",
+  "pub.fee.receivedNote": "हमने {name} को जॉइनिंग की तारीख़ बता दी है और उनका पूरा नाम व जॉइनिंग की जानकारी आपको भेज दी है। जॉइनिंग के दिन तक उनका फ़ोन नंबर छिपा रहता है।",
   "pub.fee.invoice": "GST इनवॉइस",
   "pub.fee.viewInvoice": "इनवॉइस देखें",
   "pub.fee.closed": "यह भुगतान लिंक बंद हो गया है। अगर अब भी भुगतान करना है तो लेबूरा से नया लिंक माँगें।",
@@ -596,6 +597,7 @@ export const hi: Messages = {
   ...registrationHi,
   ...staffInviteHi,
   ...referralTermsHi,
+  ...legalHi,
   ...referralPartnerHi,
   ...aadhaarQrHi,
   ...staffPhotoHi,

@@ -6,6 +6,7 @@ import type { MessageKey } from '../../../i18n/en';
 import { api } from '../../../lib/api/client';
 import { formatINR } from '../../../lib/format/money';
 import { LinkProblem, Loading, Muted, PageTitle, usePersonLanguage } from '../shared/ui';
+import { LegalSummary, useLegalDocument } from '../shared/legal';
 import './referral-terms.css';
 
 /**
@@ -43,6 +44,8 @@ export default function ReferralTerms() {
     queryFn: () => api.get<Terms>('/referral-terms', { auth: false }),
     retry: false,
   });
+  // Referral Partner Terms v1.0 (rev 176): the full approved text, "In short" first.
+  const doc = useLegalDocument('referral_terms');
 
   useEffect(() => {
     document.title = `${t('screen.P-ReferralTerms')} · ${t('app.name')}`;
@@ -62,7 +65,9 @@ export default function ReferralTerms() {
     <>
       <PageTitle emoji="📄">{t('screen.P-ReferralTerms')}</PageTitle>
       <Muted>{t('rterms.intro')}</Muted>
-      {SECTIONS.map((section) => (
+      {doc.data ? (
+        <LegalSummary summaryHtml={doc.data.summaryHtml} bodyHtml={doc.data.bodyHtml} version={doc.data.version} />
+      ) : SECTIONS.map((section) => (
         <section key={section.title} className="card lb-rterms">
           <h2 className="lb-rterms__h">{t(section.title)}</h2>
           <ul className="lb-rterms__list">

@@ -6,6 +6,7 @@ import type { MessageKey } from '../../../i18n/en';
 import { formatINR } from '../../../lib/format/money';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { partnerApi } from '../shared/api';
+import { LegalSummary } from '../shared/legal';
 import { usePartnerStepGuard } from '../shared/partner';
 import { ActionError, Choice, isOtpExpired, LinkProblem, Loading, Muted, PageTitle, StepsBar } from '../shared/ui';
 
@@ -32,6 +33,7 @@ export default function PartnerTermsPage() {
   });
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [agreeRecording, setAgreeRecording] = useState(false);
+  const [agreeIdCheck, setAgreeIdCheck] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
@@ -73,7 +75,10 @@ export default function PartnerTermsPage() {
           </div>
         ))}
       </div>
-      {d.termsHtml && (
+      {d.summaryHtml ? (
+        // Referral Partner Terms v1.0 (rev 176): "In short", then the full terms.
+        <LegalSummary summaryHtml={d.summaryHtml} bodyHtml={d.bodyHtml ?? null} version={d.version} />
+      ) : d.termsHtml && (
         <details className="card lb-pub-terms">
           <summary>{t('partner.terms.readFull')}</summary>
           {/* Rendered by the server from its own template and the frozen amount; no user text in it. */}
@@ -82,9 +87,11 @@ export default function PartnerTermsPage() {
       )}
       <Choice checked={agreeTerms} onChange={setAgreeTerms} title={t('partner.terms.agreeTerms')} />
       <Choice checked={agreeRecording} onChange={setAgreeRecording} title={t('partner.terms.agreeRecording')} description={t('pub.consent.recordText')} />
-      {!(agreeTerms && agreeRecording) && <span className="sub">{t('partner.terms.needBoth')}</span>}
+      {/* S2: the separate ID-check consent for partners. */}
+      <Choice checked={agreeIdCheck} onChange={setAgreeIdCheck} title={t('legal.partner.idCheck')} />
+      {!(agreeTerms && agreeRecording && agreeIdCheck) && <span className="sub">{t('legal.updated.needAll')}</span>}
       <ActionError error={error} />
-      <button type="button" className="btn bp full" disabled={!agreeTerms || !agreeRecording || saving} aria-busy={saving || undefined} onClick={() => void submit()}>
+      <button type="button" className="btn bp full" disabled={!agreeTerms || !agreeRecording || !agreeIdCheck || saving} aria-busy={saving || undefined} onClick={() => void submit()}>
         {t('partner.terms.agree')}
       </button>
     </>

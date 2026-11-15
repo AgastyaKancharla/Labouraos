@@ -52,3 +52,36 @@ export function partnerVerifiedInThisTab(token = TOKEN, requestId = 'req-1') {
 }
 
 export const DONE = { state: 'done' } as const;
+
+/** A legal document as GET /legal/documents/:key returns it (rev 176), for the public page tests. */
+export function legalDocument(key: 'job_seeker_terms' | 'business_agreement' | 'referral_terms' = 'job_seeker_terms') {
+  const ticks =
+    key === 'job_seeker_terms'
+      ? [
+          { purpose: 'job_matching', required: true, title: '1. Match me to jobs', description: 'I consent to Laboura matching my profile.' },
+          { purpose: 'profile_sharing', required: true, title: '2. Share my profile', description: 'Card items only, never my phone number.' },
+          { purpose: 'call_recording', required: true, title: '3. Record calls', description: 'Calls are recorded.' },
+          { purpose: 'aadhaar_verification', required: true, title: '4. Check my ID', description: 'Aadhaar Secure QR or another ID.' },
+          { purpose: 'job_updates', required: true, title: '5. Job updates', description: 'SMS, WhatsApp and phone.' },
+          { purpose: 'promotions', required: false, title: '6. Offers and news (optional)', description: 'Optional.' },
+        ]
+      : key === 'referral_terms'
+        ? [
+            { purpose: 'agreement_terms', required: true, title: 'Referral Partner Terms', description: 'I agree to these terms.' },
+            { purpose: 'call_recording', required: true, title: 'Call recording', description: 'Calls are recorded.' },
+            { purpose: 'aadhaar_verification', required: true, title: 'ID check and selfie', description: 'Only what clause 9.2 lists.' },
+          ]
+        : [];
+  return {
+    key,
+    version: key === 'referral_terms' ? '1.0' : '1.1',
+    language: 'en',
+    title: 'Terms',
+    summary: ['You pay ₹499 once.'],
+    summaryHtml: '<section class="lb-legal__short"><h2>In short</h2><ul><li>You pay <strong>₹499</strong> once.</li></ul></section>',
+    bodyHtml: '<section class="lb-legal__full"><h3>1. What Laboura does</h3><p>Full text.</p></section>',
+    hash: 'abc',
+    noticeVersion: key === 'job_seeker_terms' ? '1.2' : null,
+    consents: ticks.map((t) => ({ ...t, withdrawal: null })),
+  };
+}

@@ -7,6 +7,7 @@ import type { Messages } from './en';
 import { registrationKn } from './registration';
 import { staffInviteKn } from './staffInvite';
 import { referralTermsKn } from './referralTerms';
+import { legalKn } from './legal';
 import { referralPartnerKn } from './referralPartner';
 import { staffPhotoKn } from './staffPhoto';
 import { appSignupsKn } from './appSignups';
@@ -253,9 +254,9 @@ export const kn: Messages = {
   "pub.fee.total": "ಒಟ್ಟು",
   "pub.fee.payBy": "ಪಾವತಿ ಗಡುವು",
   "pub.fee.payUpi": "UPI ಮೂಲಕ {amount} ಪಾವತಿಸಿ",
-  "pub.fee.note": "ನಿಮ್ಮ ಪಾವತಿ ನಮ್ಮ ಬ್ಯಾಂಕ್ ತಲುಪಿದ ತಕ್ಷಣ {name} ಅವರಿಗೆ ಸೇರುವ ದಿನಾಂಕ ಖಚಿತಪಡಿಸುತ್ತೇವೆ ಮತ್ತು ಅವರ ಪೂರ್ಣ ವಿವರ ನಿಮಗೆ ಕೊಡುತ್ತೇವೆ. ನಿಮ್ಮ GST ಇನ್‌ವಾಯ್ಸ್ ತಾನಾಗಿಯೇ ಸಿದ್ಧವಾಗುತ್ತದೆ.",
+  "pub.fee.note": "ನಿಮ್ಮ ಪಾವತಿ ನಮ್ಮ ಬ್ಯಾಂಕ್ ತಲುಪಿದ ತಕ್ಷಣ {name} ಅವರಿಗೆ ಸೇರುವ ದಿನಾಂಕ ಖಚಿತಪಡಿಸುತ್ತೇವೆ ಮತ್ತು ಅವರ ಪೂರ್ಣ ಹೆಸರು ಹಾಗೂ ಸೇರುವ ವಿವರಗಳನ್ನು ನಿಮಗೆ ಕೊಡುತ್ತೇವೆ. ಸೇರುವ ದಿನದವರೆಗೆ ಅವರ ಫೋನ್ ನಂಬರ್ ಮರೆಯಾಗಿರುತ್ತದೆ. ನಿಮ್ಮ GST ಇನ್‌ವಾಯ್ಸ್ ತಾನಾಗಿಯೇ ಸಿದ್ಧವಾಗುತ್ತದೆ.",
   "pub.fee.received": "ಪಾವತಿ ಸ್ವೀಕರಿಸಲಾಗಿದೆ · {amount}",
-  "pub.fee.receivedNote": "{name} ಅವರಿಗೆ ಸೇರುವ ದಿನಾಂಕ ಖಚಿತಪಡಿಸಿದ್ದೇವೆ ಮತ್ತು ಅವರ ವಿವರ ನಿಮಗೆ ಕಳುಹಿಸಿದ್ದೇವೆ.",
+  "pub.fee.receivedNote": "{name} ಅವರಿಗೆ ಸೇರುವ ದಿನಾಂಕ ಖಚಿತಪಡಿಸಿದ್ದೇವೆ ಮತ್ತು ಅವರ ಪೂರ್ಣ ಹೆಸರು ಹಾಗೂ ಸೇರುವ ವಿವರಗಳನ್ನು ನಿಮಗೆ ಕಳುಹಿಸಿದ್ದೇವೆ. ಸೇರುವ ದಿನದವರೆಗೆ ಅವರ ಫೋನ್ ನಂಬರ್ ಮರೆಯಾಗಿರುತ್ತದೆ.",
   "pub.fee.invoice": "GST ಇನ್‌ವಾಯ್ಸ್",
   "pub.fee.viewInvoice": "ಇನ್‌ವಾಯ್ಸ್ ನೋಡಿ",
   "pub.fee.closed": "ಈ ಪಾವತಿ ಲಿಂಕ್ ಮುಚ್ಚಿದೆ. ಇನ್ನೂ ಪಾವತಿಸಬೇಕಿದ್ದರೆ ಹೊಸ ಲಿಂಕ್‌ಗಾಗಿ ಲ್ಯಾಬೂರಾವನ್ನು ಕೇಳಿ.",
@@ -596,6 +597,7 @@ export const kn: Messages = {
   ...registrationKn,
   ...staffInviteKn,
   ...referralTermsKn,
+  ...legalKn,
   ...referralPartnerKn,
   ...aadhaarQrKn,
   ...staffPhotoKn,

@@ -46,7 +46,7 @@ describe('P02-Payment', () => {
     expect(screen.queryByRole('button', { name: /Someone else will pay/ })).not.toBeInTheDocument();
 
     await userEvent.click(tick);
-    expect(api.calls(`POST /registration/${TOKEN}/terms-and-payment`)[0]!.body).toEqual({ requestId: 'req-1', acceptTerms: true });
+    expect(api.calls(`POST /registration/${TOKEN}/terms-and-payment`)[0]!.body).toEqual({ requestId: 'req-1', acceptTerms: true, language: 'en' });
     expect(await screen.findByRole('img', { name: 'UPI QR code' })).toBeInTheDocument();
     expect(screen.getByText('To: LABOURA PRIVATE LIMITED · ref PAY-1042-K7Q2')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Pay with a UPI app' })).toHaveAttribute('href', summary.pay.upiUri);

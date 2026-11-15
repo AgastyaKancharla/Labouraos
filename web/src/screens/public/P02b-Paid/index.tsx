@@ -23,14 +23,16 @@ export default function Paid() {
   const open = data && !data.otpRequired ? data : null;
   const confirmed = open ? open.payment.state === 'confirmed' : Boolean(data?.otpRequired && data.registrationComplete);
   const wrongStep = open && open.currentStep !== 'complete' && open.currentStep !== 'payment';
+  const reconsent = Boolean(open?.reconsent?.needsReconsent);
 
   useEffect(() => {
-    if (wrongStep && open) navigate(to(STEP_SCREEN[open.currentStep], { token }), { replace: true });
-  }, [wrongStep, open, navigate, to, token]);
+    if (reconsent) navigate(to('P-Reconsent', { token }), { replace: true });
+    else if (wrongStep && open) navigate(to(STEP_SCREEN[open.currentStep], { token }), { replace: true });
+  }, [reconsent, wrongStep, open, navigate, to, token]);
 
   if (status.isLoading) return <Loading />;
   if (status.error || !data) return <LinkProblem error={status.error} onRetry={() => void status.refetch()} />;
-  if (wrongStep) return <Loading />;
+  if (wrongStep || reconsent) return <Loading />;
 
   if (confirmed) {
     return (

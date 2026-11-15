@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { LegalFooter } from '../screens/public/shared/legal';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { MANAGEMENT_ROLES, ROLE_LABEL } from '../auth/roles';
@@ -253,6 +254,8 @@ function PublicShell({ children }: { children: ReactNode }) {
         <main id="main" className="pb lb-public__main" tabIndex={-1}>
           {children}
         </main>
+        {/* The Grievance Officer on every public page (legal documents v1.1). */}
+        <LegalFooter />
       </div>
     </div>
   );

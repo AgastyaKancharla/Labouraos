@@ -7,6 +7,7 @@ import { workerLeftEn } from '../claims/i18n';
 import { registrationEn } from './registration';
 import { staffInviteEn } from './staffInvite';
 import { referralTermsEn } from './referralTerms';
+import { legalEn } from './legal';
 import { referralPartnerEn } from './referralPartner';
 import { staffPhotoEn } from './staffPhoto';
 import { appSignupsEn } from './appSignups';
@@ -253,9 +254,9 @@ export const en = {
   "pub.fee.total": "Total",
   "pub.fee.payBy": "Pay by",
   "pub.fee.payUpi": "Pay {amount} by UPI",
-  "pub.fee.note": "We confirm the joining date to {name}, and share their full details with you, as soon as your payment reaches our bank. Your GST invoice is created automatically.",
+  "pub.fee.note": "We confirm the joining date to {name}, and share their full name and joining details with you, as soon as your payment reaches our bank. Their phone number stays hidden until the joining day. Your GST invoice is created automatically.",
   "pub.fee.received": "Payment received · {amount}",
-  "pub.fee.receivedNote": "We've confirmed the joining date to {name} and sent you their details.",
+  "pub.fee.receivedNote": "We've confirmed the joining date to {name} and sent you their full name and joining details. Their phone number stays hidden until the joining day.",
   "pub.fee.invoice": "GST invoice",
   "pub.fee.viewInvoice": "View invoice",
   "pub.fee.closed": "This payment link has closed. If you still need to pay, ask Laboura for a new link.",
@@ -596,6 +597,7 @@ export const en = {
   ...registrationEn,
   ...staffInviteEn,
   ...referralTermsEn,
+  ...legalEn,
   ...referralPartnerEn,
   ...aadhaarQrEn,
   ...staffPhotoEn,

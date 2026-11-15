@@ -5,6 +5,7 @@ import { TextField } from '../../../components/fields/TextField';
 import { useI18n } from '../../../i18n/I18nProvider';
 import { isApiError } from '../../../lib/api/errors';
 import { agreementApi, type SignedAgreement } from '../shared/api';
+import { LegalSummary } from '../shared/legal';
 import { dateTimeLabel } from '../shared/format';
 import { ActionError, Choice, LinkProblem, Loading, Muted, Ok, OtpBlock, PageTitle, Row, usePersonLanguage } from '../shared/ui';
 
@@ -24,6 +25,7 @@ export default function Agreement() {
   const [signed, setSigned] = useState<SignedAgreement | null>(null);
   const [name, setName] = useState('');
   const [agreeTerms, setAgreeTerms] = useState(false);
+  const [agreeAuthority, setAgreeAuthority] = useState(false);
   const [agreeRecording, setAgreeRecording] = useState(false);
   const [requestId, setRequestId] = useState<string | null>(null);
   const [code, setCode] = useState('');
@@ -57,7 +59,7 @@ export default function Agreement() {
   if (details.error || !details.data) return <LinkProblem error={signedQuery.error ?? details.error} onRetry={() => void details.refetch()} />;
   const d = details.data;
 
-  const canSign = name.trim().length >= 2 && agreeTerms && agreeRecording && Boolean(requestId) && code.length === 6;
+  const canSign = name.trim().length >= 2 && agreeTerms && agreeAuthority && agreeRecording && Boolean(requestId) && code.length === 6;
   const sign = async () => {
     if (!canSign || !requestId) return;
     setBusy(true);
@@ -92,13 +94,19 @@ export default function Agreement() {
           </div>
         ))}
       </div>
-      <details className="card lb-pub-terms">
-        <summary>{t('pub.agree.readFull')}</summary>
-        {/* Rendered by the server from its own template and the frozen numbers; no user text in it. */}
-        <div dangerouslySetInnerHTML={{ __html: d.agreementTermsHtml }} />
-      </details>
+      {d.agreementSummaryHtml ? (
+        // v1.1 (rev 176): the "In short" box, then the full agreement behind "Read the full terms".
+        <LegalSummary summaryHtml={d.agreementSummaryHtml} bodyHtml={d.agreementBodyHtml ?? null} version={d.version} />
+      ) : (
+        <details className="card lb-pub-terms">
+          <summary>{t('pub.agree.readFull')}</summary>
+          {/* Rendered by the server from its own template and the frozen numbers; no user text in it. */}
+          <div dangerouslySetInnerHTML={{ __html: d.agreementTermsHtml }} />
+        </details>
+      )}
       <TextField label={t('pub.agree.name')} value={name} onChange={setName} autoComplete="name" required />
       <Choice checked={agreeTerms} onChange={setAgreeTerms} title={t('pub.agree.agreeTerms')} />
+      <Choice checked={agreeAuthority} onChange={setAgreeAuthority} title={t('legal.agree.authority')} />
       <Choice checked={agreeRecording} onChange={setAgreeRecording} title={t('pub.agree.agreeRecording')} />
       <OtpBlock
         maskedPhone={d.maskedPhone}

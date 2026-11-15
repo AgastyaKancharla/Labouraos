@@ -1,3 +1,4 @@
+import type { LegalStatusView } from './legal';
 import { api } from '../../../lib/api/client';
 import { ApiError, apiErrorFromBody } from '../../../lib/api/errors';
 
@@ -35,6 +36,8 @@ export interface RegistrationOpen {
   stopped: 'under_18' | null;
   waitingForTrade: boolean;
   termsAcceptedAt: string | null;
+  /** Accepted an older version of the terms (rev 176): the blocking re-consent page first. */
+  reconsent?: LegalStatusView | null;
   payment: {
     state: RegistrationPaymentState;
     amountPaise: number;
@@ -59,6 +62,8 @@ export interface RegistrationTerms {
   guaranteeDays: number;
   amountPaise: number;
   termsAcceptedAt: string | null;
+  /** The job seeker terms version shown with these numbers (rev 176). */
+  termsVersion?: string;
 }
 
 /** photo_expired: the photo of another ID card expired before a Team Lead checked it — take a new one (rev 169). */
@@ -116,10 +121,11 @@ export const registrationApi = {
     postLiveSelfie(`/registration/${enc(token)}/other-id`, { requestId, idType, idNumber, captureNonce }, photo, {}, 'id-card.jpg') as Promise<OtherIdResult>,
   terms: (token: string, requestId: string) =>
     api.get<RegistrationTerms>(`/registration/${enc(token)}/terms`, { ...PUBLIC, query: { requestId } }),
-  acceptTerms: (token: string, requestId: string) =>
+  /** The language goes with it: the terms version, language and exact text are recorded (rev 176). */
+  acceptTerms: (token: string, requestId: string, language: PublicLanguage) =>
     api.post<{ payment: { upiReference: string; amountPaise: number } }>(
       `/registration/${enc(token)}/terms-and-payment`,
-      { requestId, acceptTerms: true },
+      { requestId, acceptTerms: true, language },
       PUBLIC,
     ),
   sendPaymentOnlyLink: (token: string, requestId: string, phone: string) =>
@@ -174,6 +180,8 @@ export interface PartnerOpen {
   referralCode: string;
   partnerType: 'individual' | 'business';
   currentStep: PartnerStep;
+  /** Accepted an older version of the terms (rev 176): the blocking re-consent page first. */
+  reconsent?: LegalStatusView | null;
   steps: {
     terms: { state: PartnerStepState };
     selfie: { state: PartnerStepState };
@@ -193,6 +201,9 @@ export interface PartnerTerms {
   version: string | null;
   language: PublicLanguage | null;
   termsHtml: string;
+  /** v1.0 (rev 176): "In short" and the full text. */
+  summaryHtml?: string | null;
+  bodyHtml?: string | null;
   payoutDetailsCoolingHours: number;
   activationFeePaise: number;
 }
@@ -207,8 +218,9 @@ export const partnerApi = {
     api.post<PartnerOpen>(`/referral-registration/${enc(token)}/verify-otp`, { requestId, code }, PUBLIC),
   terms: (token: string, requestId: string) => api.get<PartnerTerms>(`/referral-registration/${enc(token)}/terms`, { ...PUBLIC, query: { requestId } }),
   /** Referral terms and call-recording consent, both ticked by the partner. */
+  /** Referral Partner Terms v1.0: the terms, call recording and the separate ID-check consent (S2), each ticked by the partner. */
   acceptTerms: (token: string, requestId: string, language: PublicLanguage) =>
-    api.post<{ success: boolean }>('/consent/submit', { token, otpRequestId: requestId, purposes: ['agreement_terms', 'call_recording'], language }, PUBLIC),
+    api.post<{ success: boolean }>('/consent/submit', { token, otpRequestId: requestId, purposes: ['agreement_terms', 'call_recording', 'aadhaar_verification'], language }, PUBLIC),
   selfie: (token: string, requestId: string, photo: Blob) => postLiveSelfie(`/referral-registration/${enc(token)}/selfie`, { requestId }, photo),
   aadhaarQr: (token: string, requestId: string, qrText: string) =>
     api.post<AadhaarQrResult & { nextStep: string }>(`/referral-registration/${enc(token)}/aadhaar-qr`, { requestId, qrText }, PUBLIC),
@@ -244,6 +256,9 @@ export interface PaymentSummary {
   jobSeeker: { firstName: string | null; code: string } | null;
   placement: {
     candidateFirstName: string | null;
+    /** D17: only once the fee is in the bank — the full name and joining date, never the phone. */
+    candidateFullName?: string | null;
+    joiningDate?: string | null;
     businessName: string;
     agreedSalaryPaise: number;
     feePercent: number | null;
@@ -372,6 +387,11 @@ export interface AgreementDetails {
   maskedPhone: string;
   preferredLanguage: string;
   agreementTermsHtml: string;
+  /** Business Hiring Agreement v1.1 (rev 176): "In short" and the full text. */
+  agreementSummaryHtml?: string | null;
+  agreementBodyHtml?: string | null;
+  version?: string;
+  previousVersion?: string | null;
   ownerName: string | null;
   terms: { feePercent: number; gstPercent: number; noBypassMonths: number; noBypassPenaltyPercent: number };
   guarantee: { replacementWindowDays: number; maxFreeReplacements: number; replacementSearchDays: number };
@@ -392,7 +412,8 @@ export const agreementApi = {
   sign: (token: string, otpRequestId: string, otpCode: string, signedName: string) =>
     api.post<{ signedAt: string }>(
       '/consent/submit',
-      { token, otpRequestId, otpCode, signedName, purposes: ['agreement_terms', 'call_recording'] },
+      // v1.1 "Signing by OTP": terms, authority and call recording — three ticks.
+      { token, otpRequestId, otpCode, signedName, purposes: ['agreement_terms', 'agreement_authority', 'call_recording'] },
       PUBLIC,
     ),
 };
