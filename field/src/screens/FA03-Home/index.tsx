@@ -7,7 +7,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { LOCATION_ERROR_KEYS } from '@/device/location/useLocation';
 import { isApiError } from '@/api/errors';
-import { formatDayIst, formatShiftTime, formatTimeIst } from '@/lib/format';
+import { formatDayIst, formatStampIst, formatShiftTime, formatTimeIst } from '@/lib/format';
 import { routes, sellingRoutes } from '@/navigation/routes';
 import { colors, fonts, fontSize } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
@@ -28,7 +28,7 @@ import { checkInTarget } from './todoTarget';
  */
 export default function HomeScreen() {
   const { t, tn } = useI18n();
-  const { session } = useAuth();
+  const { session, resetNotice, dismissResetNotice } = useAuth();
   const today = useAttendanceToday();
   const targets = useTargetDashboard();
   const home = useFieldHome();
@@ -63,6 +63,15 @@ export default function HomeScreen() {
       <AppHeader title={t('fa03.headerTitle')} subtitle={subtitle} />
       <Screen onRefresh={refresh} refreshing={today.isRefetching} testID="screen-FA03">
         {!queue.online ? <Banner tone="info" icon="wifi-off" message={t('common.offline')} testID="offline-banner" /> : null}
+        {/* Once, after a password reset (rev 174–175): if it was not them, they tell their Team Lead at once. */}
+        {resetNotice ? (
+          <Banner
+            tone="info"
+            message={t('access.notice', { date: formatStampIst(resetNotice.at), name: resetNotice.byName ?? '—' })}
+            action={<Button label={t('common.close')} variant="secondary" onPress={dismissResetNotice} />}
+            testID="reset-notice"
+          />
+        ) : null}
 
         {/* Attendance: Login button, or logged-in time and status */}
         {today.isPending ? (

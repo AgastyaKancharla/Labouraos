@@ -1,0 +1,43 @@
+/**
+ * First login and Forgot password in Laboura Field (Master Guide rev 174–175).
+ * Spread into en.ts; kn and hi in access.kn.ts and access.hi.ts (drafts — a
+ * native speaker checks them).
+ */
+export const accessEn = {
+  'access.forgot.link': 'Forgot password?',
+  'access.forgot.title': 'Forgot password',
+  'access.forgot.body': 'Type your staff code. Your Team Lead sees a password reset request and calls you back with a reset code.',
+  'access.forgot.send': 'Ask for a reset code',
+  'access.forgot.askedTitle': 'Ask your senior for the reset code',
+  'access.forgot.askedBody': 'Your Team Lead (or a Manager or the CEO) calls you back from their own phone and reads out a 6-digit reset code. It works once, for 15 minutes, on this phone only.',
+  'access.forgot.code': 'Reset code',
+  'access.forgot.submit': 'Set new password',
+  'access.forgot.expiresIn': 'Request ends in {time}',
+  'access.forgot.expired': 'This request has ended. Ask again.',
+  'access.forgot.doneTitle': 'Password changed',
+  'access.forgot.doneBody': 'Sign in with staff code {code} and your new password.',
+  'access.back': 'Back to sign in',
+  'access.signIn': 'Go to sign in',
+  'access.setup.title': 'Set your password',
+  'access.setup.welcome': 'Welcome, {name}',
+  'access.setup.intro': 'You signed in with a temporary password. Set your own password now. This works for 15 minutes on this phone.',
+  'access.setup.photoTitle': 'First, your photo',
+  'access.setup.photoBody': 'Take a live selfie so whoever gives you a login code can see it is you.',
+  'access.setup.photoOpen': 'Open the camera',
+  'access.setup.photoLater': 'No camera? Take it when you first sign in',
+  'access.setup.photoDone': 'Photo saved. Now choose your password.',
+  'access.setup.photoFailed': 'The photo could not be saved. Check your signal and try again.',
+  'access.setup.staffCode': 'Your staff code: {code}',
+  'access.setup.newPassword': 'New password',
+  'access.setup.confirm': 'Type the new password again',
+  'access.setup.passwordHint': 'At least {min} characters, not the temporary password.',
+  'access.setup.tooShort': 'Use at least {min} characters.',
+  'access.setup.mismatch': 'The two passwords are not the same.',
+  'access.setup.sameAsTemp': 'Choose a password that is different from the temporary password.',
+  'access.setup.finish': 'Set password',
+  'access.setup.saving': 'Saving…',
+  'access.setup.expired': 'This set-up has ended. Sign in again with your staff code and temporary password.',
+  'access.setup.doneTitle': 'Password set — sign in',
+  'access.setup.doneBody': 'Sign in with staff code {code} and your new password. A new phone must be approved by your Team Lead first.',
+  'access.notice': 'Your password was reset on {date}, approved by {name}.',
+} as const;

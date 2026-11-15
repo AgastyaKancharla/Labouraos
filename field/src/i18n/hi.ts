@@ -3,6 +3,7 @@ import { sellingHi } from './selling.hi';
 import { attendanceHi } from './attendance.hi';
 import { searchHi } from './search.hi';
 import { staffPhotoHi } from './staffPhoto.hi';
+import { accessHi } from './access.hi';
 
 /**
  * Hindi. Same keys as en.ts (TypeScript refuses a missing or extra key).
@@ -14,6 +15,7 @@ export const hi: Messages = {
   ...attendanceHi,
   ...searchHi,
   ...staffPhotoHi,
+  ...accessHi,
   'common.appName': 'Laboura Field',
   'common.brand': 'Laboura',
   'common.fieldAgent': 'फ़ील्ड एजेंट',
@@ -75,6 +77,7 @@ export const hi: Messages = {
   'fa01.approvedPhoneNote': 'सिर्फ़ आपके मंज़ूर फ़ोन पर। फ़ोन खो जाए तो आपका मैनेजर उसे तुरंत मंज़ूर सूची से हटा देगा।',
   'fa01.missingFields': 'अपना स्टाफ़ कोड और पासवर्ड डालें।',
   'fa01.invalidCredentials': 'स्टाफ़ कोड या पासवर्ड ग़लत है।',
+  'fa01.tempExpired': 'यह अस्थायी पासवर्ड खत्म हो गया है। अपने टीम लीड से नया माँगें।',
   'fa01.locked': 'कई बार ग़लत पासवर्ड डालने से खाता लॉक हो गया है। 15 मिनट रुकें या टीम लीड से अनलॉक करवाएँ।',
   'fa01.devicePending': 'यह फ़ोन आपके टीम लीड की मंज़ूरी का इंतज़ार कर रहा है। उनसे फ़ोन {device} मंज़ूर करवाएँ, फिर साइन इन करें।',
   'fa01.accountInactive': 'यह खाता सक्रिय नहीं है। अपने टीम लीड से बात करें।',

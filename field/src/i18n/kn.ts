@@ -3,6 +3,7 @@ import { sellingKn } from './selling.kn';
 import { attendanceKn } from './attendance.kn';
 import { searchKn } from './search.kn';
 import { staffPhotoKn } from './staffPhoto.kn';
+import { accessKn } from './access.kn';
 
 /**
  * Kannada. Same keys as en.ts (TypeScript refuses a missing or extra key).
@@ -14,6 +15,7 @@ export const kn: Messages = {
   ...attendanceKn,
   ...searchKn,
   ...staffPhotoKn,
+  ...accessKn,
   'common.appName': 'Laboura Field',
   'common.brand': 'Laboura',
   'common.fieldAgent': 'ಫೀಲ್ಡ್ ಏಜೆಂಟ್',
@@ -75,6 +77,7 @@ export const kn: Messages = {
   'fa01.approvedPhoneNote': 'ನಿಮ್ಮ ಅನುಮೋದಿತ ಫೋನ್‌ನಲ್ಲಿ ಮಾತ್ರ. ಫೋನ್ ಕಳೆದುಹೋದರೆ, ನಿಮ್ಮ ಮ್ಯಾನೇಜರ್ ಅದನ್ನು ತಕ್ಷಣ ಪಟ್ಟಿಯಿಂದ ತೆಗೆದುಹಾಕುತ್ತಾರೆ.',
   'fa01.missingFields': 'ನಿಮ್ಮ ಸ್ಟಾಫ್ ಕೋಡ್ ಮತ್ತು ಪಾಸ್‌ವರ್ಡ್ ನಮೂದಿಸಿ.',
   'fa01.invalidCredentials': 'ಸ್ಟಾಫ್ ಕೋಡ್ ಅಥವಾ ಪಾಸ್‌ವರ್ಡ್ ತಪ್ಪಾಗಿದೆ.',
+  'fa01.tempExpired': 'ಈ ತಾತ್ಕಾಲಿಕ ಪಾಸ್‌ವರ್ಡ್‌ನ ಅವಧಿ ಮುಗಿದಿದೆ. ಹೊಸದನ್ನು ನಿಮ್ಮ ಟೀಮ್ ಲೀಡ್‌ಗೆ ಕೇಳಿ.',
   'fa01.locked': 'ಹಲವು ಬಾರಿ ತಪ್ಪು ಪಾಸ್‌ವರ್ಡ್ ಹಾಕಿದ್ದರಿಂದ ಖಾತೆ ಲಾಕ್ ಆಗಿದೆ. 15 ನಿಮಿಷ ಕಾಯಿರಿ ಅಥವಾ ಟೀಮ್ ಲೀಡ್‌ಗೆ ಅನ್‌ಲಾಕ್ ಮಾಡಲು ಹೇಳಿ.',
   'fa01.devicePending': 'ಈ ಫೋನ್ ನಿಮ್ಮ ಟೀಮ್ ಲೀಡ್ ಅನುಮೋದನೆಗಾಗಿ ಕಾಯುತ್ತಿದೆ. ಫೋನ್ {device} ಅನುಮೋದಿಸಲು ಹೇಳಿ, ನಂತರ ಮತ್ತೆ ಸೈನ್ ಇನ್ ಮಾಡಿ.',
   'fa01.accountInactive': 'ಈ ಖಾತೆ ಸಕ್ರಿಯವಾಗಿಲ್ಲ. ನಿಮ್ಮ ಟೀಮ್ ಲೀಡ್ ಜೊತೆ ಮಾತನಾಡಿ.',

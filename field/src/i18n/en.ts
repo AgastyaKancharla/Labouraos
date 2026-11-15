@@ -2,6 +2,7 @@ import { sellingEn } from './selling.en';
 import { attendanceEn } from './attendance.en';
 import { searchEn } from './search.en';
 import { staffPhotoEn } from './staffPhoto.en';
+import { accessEn } from './access.en';
 /**
  * English — the reference language. Every key here must exist in kn.ts and
  * hi.ts (TypeScript and i18n.test.ts both check). Keys are grouped by the
@@ -16,6 +17,7 @@ export const en = {
   ...attendanceEn,
   ...searchEn,
   ...staffPhotoEn,
+  ...accessEn,
   'common.appName': 'Laboura Field',
   'common.brand': 'Laboura',
   'common.fieldAgent': 'Field agent',
@@ -77,6 +79,7 @@ export const en = {
   'fa01.approvedPhoneNote': 'Only on your approved phone. If you lose it, your Manager removes it from the approved list instantly.',
   'fa01.missingFields': 'Enter your staff code and password.',
   'fa01.invalidCredentials': 'Staff code or password is wrong.',
+  'fa01.tempExpired': 'This temporary password has expired. Ask your Team Lead for a new one.',
   'fa01.locked': 'This account is locked after too many wrong passwords. Wait 15 minutes or ask your Team Lead to unlock it.',
   'fa01.devicePending': 'This phone is waiting for your Team Lead to approve it. Ask them to approve phone {device}, then sign in again.',
   'fa01.accountInactive': 'This account is not active. Talk to your Team Lead.',
