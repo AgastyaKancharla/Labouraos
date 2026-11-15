@@ -834,6 +834,10 @@ model ReplacementClaim {
   overruledByStaffId     String?
   overruledByStaff       Staff?      @relation("ClaimOverruledBy", fields: [overruledByStaffId], references: [id], onDelete: SetNull)
   overruleReason         String?
+  /// M10 (rev 178): the 15-day replacement clock pauses while the business is suspended.
+  /// clockPausedAt: since when it is paused now (null: running); clockPausedSeconds: earlier pauses, added up.
+  clockPausedAt          DateTime?
+  clockPausedSeconds     Int         @default(0)
   createdAt              DateTime    @default(now())
   updatedAt              DateTime    @updatedAt
 
@@ -1473,6 +1477,8 @@ model PricingPolicy {
   placementPaymentDueHours     Int
   replacementWindowDays        Int
   replacementSearchDays        Int
+  /// D3 / M2 (rev 178): days a replacement's unpaid salary-difference request may wait before it is cancelled.
+  upgradePaymentCancelDays     Int      @default(7)
   maxFreeReplacements          Int
   maxReplacementRejections     Int
   claimReportDays              Int
@@ -3212,8 +3218,15 @@ model PermanentBan {
   idFingerprints  String[] @default([])
   bannedByStaffId String
   bannedAt        DateTime
+  /// M9 (rev 178): every profile of the person the ban covered, with what it was before (to restore on a lift).
+  coveredProfiles Json     @default("[]")
+  /// M7 (rev 178): only the CEO lifts a ban, with a reason; the row stays.
+  liftedAt        DateTime?
+  liftedByStaffId String?
+  liftReason      String?
   createdAt       DateTime @default(now())
 
-  @@unique([subjectType, subjectId])
+  // One live (not lifted) ban per profile: a partial unique index in the migration (SQL only).
+  @@index([subjectType, subjectId])
   @@index([phoneHash])
 }

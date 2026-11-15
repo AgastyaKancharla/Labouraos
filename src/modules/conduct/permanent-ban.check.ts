@@ -60,7 +60,8 @@ export async function findBan(prisma: Client, input: { phone?: string | null; id
   const ids = (input.idFingerprints ?? []).filter(Boolean);
   if (ids.length) or.push({ idFingerprints: { hasSome: ids } });
   if (!or.length) return null;
-  return prisma.permanentBan.findFirst({ where: { OR: or }, select: { id: true, subjectType: true, category: true } });
+  // A lifted ban (M7, rev 178) no longer blocks anyone.
+  return prisma.permanentBan.findFirst({ where: { liftedAt: null, OR: or }, select: { id: true, subjectType: true, category: true } });
 }
 
 /** Refuses a registration (or an ID check) that matches a permanent ban. */

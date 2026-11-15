@@ -21,6 +21,14 @@ ALTER TABLE "PricingPolicy" ADD COLUMN "companyCin" TEXT;
 ALTER TABLE "PricingPolicy" ADD COLUMN "grievanceOfficerName" TEXT;
 ALTER TABLE "PricingPolicy" ADD COLUMN "grievanceOfficerPhone" TEXT;
 ALTER TABLE "PricingPolicy" ADD COLUMN "grievanceOfficerEmail" TEXT;
+-- M2 (rev 178): an unpaid replacement salary-difference request is cancelled after this many days.
+ALTER TABLE "PricingPolicy" ADD COLUMN "upgradePaymentCancelDays" INTEGER NOT NULL DEFAULT 7;
+ALTER TABLE "PricingPolicy" ADD CONSTRAINT "PricingPolicy_upgradePaymentCancelDays_check" CHECK ("upgradePaymentCancelDays" BETWEEN 1 AND 30);
+
+-- M10 (rev 178): the 15-day replacement clock pauses while the business is suspended.
+ALTER TABLE "ReplacementClaim" ADD COLUMN "clockPausedAt" TIMESTAMP(3);
+ALTER TABLE "ReplacementClaim" ADD COLUMN "clockPausedSeconds" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "ReplacementClaim" ADD CONSTRAINT "ReplacementClaim_clockPausedSeconds_check" CHECK ("clockPausedSeconds" >= 0);
 
 CREATE TABLE "LegalDocumentText" (
     "hash" TEXT NOT NULL,
@@ -63,10 +71,17 @@ CREATE TABLE "PermanentBan" (
     "idFingerprints" TEXT[] DEFAULT ARRAY[]::TEXT[],
     "bannedByStaffId" TEXT NOT NULL,
     "bannedAt" TIMESTAMP(3) NOT NULL,
+    "coveredProfiles" JSONB NOT NULL DEFAULT '[]',
+    "liftedAt" TIMESTAMP(3),
+    "liftedByStaffId" TEXT,
+    "liftReason" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "PermanentBan_pkey" PRIMARY KEY ("id")
 );
-CREATE UNIQUE INDEX "PermanentBan_subjectType_subjectId_key" ON "PermanentBan"("subjectType", "subjectId");
+CREATE INDEX "PermanentBan_subjectType_subjectId_idx" ON "PermanentBan"("subjectType", "subjectId");
+-- One live ban per profile; a lifted ban stays as history (M7, rev 178).
+CREATE UNIQUE INDEX "PermanentBan_live_subject_key" ON "PermanentBan"("subjectType", "subjectId") WHERE "liftedAt" IS NULL;
+ALTER TABLE "PermanentBan" ADD CONSTRAINT "PermanentBan_lift_check" CHECK ("liftedAt" IS NULL OR ("liftedByStaffId" IS NOT NULL AND "liftReason" IS NOT NULL));
 CREATE INDEX "PermanentBan_phoneHash_idx" ON "PermanentBan"("phoneHash");
 ALTER TABLE "PermanentBan" ADD CONSTRAINT "PermanentBan_category_check" CHECK ("category" IN ('forged_id', 'fraud', 'theft', 'violence'));
 

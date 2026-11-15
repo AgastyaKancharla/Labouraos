@@ -8,7 +8,7 @@ import { ConductService } from './conduct.service';
 
 type AuthedRequest = Request & { user: JwtPayload };
 
-/** D6 business suspension (CEO) and D11 permanent bans (Manager / CEO), Master Guide rev 176. */
+/** D6 business suspension (CEO) and D11 permanent bans (Manager / CEO; lifted by the CEO only), Master Guide rev 176 / 178. */
 @Controller()
 @UseGuards(JwtAuthGuard, RbacGuard)
 export class ConductController {
@@ -30,6 +30,13 @@ export class ConductController {
   @RequireRoles('manager', 'ceo')
   ban(@Body() body: { subjectType?: string; subjectId?: string; category?: string; reason?: string }, @Req() req: AuthedRequest) {
     return this.conduct.ban(req.user.sub, body ?? {});
+  }
+
+  /** M7 (rev 178): only the CEO lifts a ban, with a reason; the profiles go back to what they were. */
+  @Post('permanent-bans/:subjectType/:subjectId/lift')
+  @RequireRoles('ceo')
+  liftBan(@Param('subjectType') subjectType: string, @Param('subjectId') subjectId: string, @Body() body: { reason?: string }, @Req() req: AuthedRequest) {
+    return this.conduct.liftBan(subjectType, subjectId, req.user.sub, body ?? {});
   }
 
   @Get('permanent-bans/:subjectType/:subjectId')
