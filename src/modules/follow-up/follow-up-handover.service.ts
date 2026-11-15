@@ -1,3 +1,4 @@
+import { OwnTeam, teamLeadOf } from '../../common/rbac/own-team';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -52,10 +53,13 @@ export class FollowUpHandoverService {
 
   /** Same-role teammates under the same Team Lead, active, not off on any of those days. */
   async teammates(staffId: string, fromDay: string, toDay: string): Promise<HandoverTeammate[]> {
-    const person = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { role: true, teamLeadId: true } });
-    if (!person?.teamLeadId) return [];
+    const person = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { role: true, teamLeadId: true, reportsToId: true } });
+    const lead = person ? teamLeadOf(person) : null;
+    if (!person || !lead) return [];
+    // The same team as OwnTeam (teamLeadId links and the reporting line).
+    const team = (await new OwnTeam(this.prisma).memberIds(lead)).filter((id) => id !== lead && id !== staffId);
     const candidates = await this.prisma.staff.findMany({
-      where: { teamLeadId: person.teamLeadId, role: person.role, status: 'active', id: { not: staffId } },
+      where: { id: { in: team }, role: person.role, status: 'active' },
       select: { id: true, code: true, name: true },
       orderBy: { name: 'asc' },
     });

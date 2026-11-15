@@ -1,3 +1,4 @@
+import { teamLeadOf } from '../../common/rbac/own-team';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
@@ -194,7 +195,7 @@ export class PatternFlagService {
 
     const agents = await this.prisma.staff.findMany({
       where: { role: 'field_agent' },
-      select: { id: true, code: true, name: true, teamLeadId: true },
+      select: { id: true, code: true, name: true, role: true, teamLeadId: true, reportsToId: true },
     });
 
     for (const agent of agents) {
@@ -236,7 +237,7 @@ export class PatternFlagService {
             kind: 'agent_rejection_pattern',
             subjectType: 'staff',
             subjectId: agent.id,
-            raisedForStaffId: agent.teamLeadId ?? agent.id,
+            raisedForStaffId: teamLeadOf(agent) ?? agent.id,
             details: {
               agentId: agent.id,
               agentCode: agent.code,

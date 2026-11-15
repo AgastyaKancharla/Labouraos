@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { OwnTeam, teamLeadOf } from '../../common/rbac/own-team';
 
 export type OtherIdSubjectType = 'job_seeker' | 'referral';
 
@@ -22,8 +23,8 @@ export interface OtherIdApprovalRoute {
   mode: OtherIdApprovalMode;
   city: string;
   registeredByStaffId: string | null;
-  /** own_team: the Team Lead who approves. */
-  teamLeadId: string | null;
+  /** own_team: the Team Lead who approves (the registering agent's Team Lead, teamLeadOf). */
+  ownTeamLead: string | null;
 }
 
 export interface OtherIdDecisionRight {
@@ -39,7 +40,6 @@ export interface ApprovalSubject {
 }
 
 export const SELF_APPROVAL_REFUSED = 'You registered this person, so another Team Lead checks the ID.';
-const AGENT_ROLES = ['call_agent', 'field_agent'];
 
 @Injectable()
 export class OtherIdApprovalService {
@@ -50,17 +50,15 @@ export class OtherIdApprovalService {
     const registrar = subject.registeredByStaffId
       ? await this.prisma.staff.findUnique({ where: { id: subject.registeredByStaffId }, select: { id: true, role: true, teamLeadId: true, reportsToId: true } })
       : null;
-    if (registrar && AGENT_ROLES.includes(registrar.role)) {
-      const leadId = registrar.teamLeadId ?? registrar.reportsToId;
-      if (leadId && leadId !== registrar.id) {
-        const lead = await this.prisma.staff.findUnique({ where: { id: leadId }, select: { id: true, role: true, status: true } });
-        if (lead && lead.role === 'team_lead' && lead.status === 'active') return { ...base, mode: 'own_team', teamLeadId: lead.id };
-      }
+    const leadId = registrar ? teamLeadOf(registrar) : null;
+    if (registrar && leadId && leadId !== registrar.id) {
+      const lead = await this.prisma.staff.findUnique({ where: { id: leadId }, select: { id: true, role: true, status: true } });
+      if (lead && lead.role === 'team_lead' && lead.status === 'active') return { ...base, mode: 'own_team', ownTeamLead: lead.id };
     }
     const otherLeads = await this.prisma.staff.count({
       where: { role: 'team_lead', status: 'active', city: subject.city, ...(registrar ? { NOT: { id: registrar.id } } : {}) },
     });
-    return { ...base, mode: otherLeads > 0 ? 'another_team_lead' : 'manager_or_ceo', teamLeadId: null };
+    return { ...base, mode: otherLeads > 0 ? 'another_team_lead' : 'manager_or_ceo', ownTeamLead: null };
   }
 
   /** May this staff member approve (or reject) this person's pending other ID? Never the person who registered them. */
@@ -71,7 +69,8 @@ export class OtherIdApprovalService {
     const me = await this.prisma.staff.findUnique({ where: { id: actor.id }, select: { role: true, status: true, city: true } });
     if (!me || me.status !== 'active' || me.role !== actor.role) return no('Not an active staff account');
     if (r.mode === 'own_team') {
-      return actor.role === 'team_lead' && actor.id === r.teamLeadId
+      // The registering agent is in this Team Lead's own team (OwnTeam: teamLeadId or the reporting line).
+      return actor.role === 'team_lead' && (await new OwnTeam(this.prisma).includes(actor.id, subject.registeredByStaffId))
         ? { allowed: true, mode: r.mode, reason: null }
         : no('The Team Lead of the agent who registered this person checks the ID.');
     }

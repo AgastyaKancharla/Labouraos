@@ -3,7 +3,7 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { refundGuaranteeDeadline } from '../../common/money/money';
 import { RBAC_MATRIX, Role } from '../../common/rbac/rbac.types';
-import { OwnTeam } from '../../common/rbac/own-team';
+import { OwnTeam, businessOwners, businessesOwnedBy } from '../../common/rbac/own-team';
 import { JobSeekerService } from '../job-seeker/job-seeker.service';
 import { PricingService } from '../pricing/pricing.service';
 import { ConsentClock } from '../consent/consent-clock';
@@ -276,7 +276,7 @@ export class ScreensCallRegistrationService {
         select: { id: true, code: true, name: true, createdAt: true, accountAgentId: true, leadCreatedByStaffId: true },
       });
       if (!business) throw new NotFoundException(`Record '${code}' not found`);
-      await this.assertCanRead('business', [business.accountAgentId, business.leadCreatedByStaffId], actor);
+      await this.assertCanRead('business', businessOwners(business), actor);
       const creator = business.leadCreatedByStaffId
         ? await this.prisma.staff.findUnique({ where: { id: business.leadCreatedByStaffId }, select: { name: true } })
         : null;
@@ -372,7 +372,7 @@ export class ScreensCallRegistrationService {
 
   private async teamScope(teamLeadId: string) {
     const ids = await this.team.memberIds(teamLeadId);
-    return { OR: [{ accountAgentId: { in: ids } }, { leadCreatedByStaffId: { in: ids } }] };
+    return businessesOwnedBy(ids);
   }
 
   /** CA13b: what is left before candidates can be shown, and the draft vacancies. */

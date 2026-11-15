@@ -10,6 +10,7 @@ import { InterviewController } from '../../modules/vacancy/interview.controller'
 import { ConsentController } from '../../modules/consent/consent.controller';
 import { ScreensCallRegistrationController } from '../../modules/screens-call-registration/screens-call-registration.controller';
 import { TelephonyController } from '../../modules/telephony/telephony.controller';
+import { findManyOver } from '../../test-support/prisma-where';
 
 /**
  * Owner rule (Master Guide, 14 Nov): a Team Lead works only on their own team.
@@ -67,13 +68,9 @@ describe('RbacGuard: own-team and own-account checks on every action', () => {
     staff: {
       // OwnTeam reads the team: direct teamLeadId links, and every link for
       // the reporting-line walk.
-      findMany: jest.fn(async (args?: { where?: { teamLeadId?: string } }) => {
-        const rows = Object.entries(teamOf).map(([id, row]) => ({
-          id, code: id, name: id, role: 'call_agent', status: 'active', ...row,
-        }));
-        const teamLeadId = args?.where?.teamLeadId;
-        return teamLeadId ? rows.filter((row) => row.teamLeadId === teamLeadId).map(({ id }) => ({ id })) : rows;
-      }),
+      findMany: jest.fn(findManyOver(() => Object.entries(teamOf).map(([id, row]) => ({
+        id, code: id, name: id, role: 'call_agent', status: 'active', ...row,
+      })))),
       findUnique: jest.fn(async () => null),
     },
   };

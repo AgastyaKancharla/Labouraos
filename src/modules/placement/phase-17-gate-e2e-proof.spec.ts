@@ -551,6 +551,12 @@ describe('Phase 17 Gate: Comprehensive End-to-End Proof & Rule Verification', ()
             return Promise.resolve(null);
           }),
           findFirst: jest.fn().mockResolvedValue(staffCeo),
+          // OwnTeam reads a Team Lead's team: direct teamLeadId links, then every link.
+          findMany: jest.fn().mockImplementation((args?: { where?: { teamLeadId?: string } }) => {
+            const rows = [staffFa, staffTl, staffCeo].map((s) => ({ reportsToId: null, teamLeadId: null as string | null, ...(s as { teamLeadId?: string | null }), ...s }));
+            const lead = args?.where?.teamLeadId;
+            return Promise.resolve(lead ? rows.filter((s) => s.teamLeadId === lead) : rows);
+          }),
         },
         placement: {
           findFirst: jest.fn().mockImplementation(({ where }) => {

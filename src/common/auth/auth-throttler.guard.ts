@@ -11,6 +11,9 @@ export const LOGIN_CONNECTION_RATE_LIMIT = 60;
 export const LOGIN_RATE_LIMIT_PER_CONNECTION = 60;
 export const LOGIN_CONNECTION_TTL = 60000;
 
+/** POST /staff/sessions/:id/revoke (letter case does not matter to the bucket). */
+const SESSION_REVOKE_PATH = /^\/staff\/sessions\/[^/]+\/revoke\/?$/i;
+
 @Injectable()
 export class AuthThrottlerGuard extends ThrottlerGuard {
   protected override async getTracker(req: Record<string, unknown>): Promise<string> {
@@ -20,6 +23,15 @@ export class AuthThrottlerGuard extends ThrottlerGuard {
     // allows (see common/http/trust-proxy.ts).
     const clientIp =
       expressReq.ip || expressReq.socket?.remoteAddress || '127.0.0.1';
+
+    // Revoking a session is limited per signed-in staff member, whatever the
+    // connection (JwtAuthGuard has already set req.user). Other signed-in
+    // routes keep their own buckets below.
+    const user = (expressReq as unknown as { user?: { sub?: unknown } }).user;
+    const url = (expressReq.originalUrl || expressReq.path || '').split('?')[0];
+    if (SESSION_REVOKE_PATH.test(url) && user && typeof user.sub === 'string' && user.sub) {
+      return `session-revoke:${user.sub}`;
+    }
 
     const body = expressReq.body as Record<string, unknown> | undefined;
     // F2: "Forgot password" is limited per email address only, whatever the

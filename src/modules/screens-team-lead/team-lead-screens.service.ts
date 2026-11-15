@@ -1,3 +1,4 @@
+import { OwnTeam } from '../../common/rbac/own-team';
 import { leaveHalvesOf } from '../attendance/leave-units';
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -50,7 +51,8 @@ export class TeamLeadScreensService {
   /** The Team Lead's agents (active, not deactivated), in code order. */
   async members(actor: Actor): Promise<Member[]> {
     this.assertTeamLead(actor);
-    const under = await this.scope.peopleUnder(actor.id);
+    // The shared own-team definition (OwnTeam), the Team Lead left out.
+    const under = (await new OwnTeam(this.prisma).memberIds(actor.id)).filter((id) => id !== actor.id);
     return this.prisma.staff.findMany({
       where: { id: { in: under }, role: { in: AGENT_ROLES }, status: { not: 'deactivated' } },
       select: { id: true, code: true, name: true, role: true, isOwnerAccount: true },

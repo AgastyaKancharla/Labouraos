@@ -2231,11 +2231,8 @@ export class JobSeekerService {
     teamLeadId: string,
     reversalReason: string,
   ) {
-    const registrarId = hit.jobSeeker.registeredByStaffId;
-    const registrar = registrarId && registrarId !== teamLeadId
-      ? await this.prisma.staff.findUnique({ where: { id: registrarId }, select: { teamLeadId: true } })
-      : null;
-    const ownTeam = registrarId === teamLeadId || registrar?.teamLeadId === teamLeadId;
+    // The shared own-team definition (OwnTeam).
+    const ownTeam = await new OwnTeam(this.prisma).includes(teamLeadId, hit.jobSeeker.registeredByStaffId);
     if (!ownTeam) {
       throw new ForbiddenException('Team Leads may reverse hits only for job seekers handled by their own team');
     }

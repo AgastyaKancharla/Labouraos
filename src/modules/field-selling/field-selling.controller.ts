@@ -61,15 +61,15 @@ export class FieldSellingController {
 
   @Get('screens/field-selling/vacancies/:id/no-more')
   @RequireRoles(...SELLERS)
-  noMore(@Param('id') id: string) {
-    return this.screens.noMore(id);
+  noMore(@Req() req: Req, @Param('id') id: string) {
+    return this.screens.noMore(actorOf(req), id);
   }
 
   @Get('screens/field-selling/vacancies/:id/booking')
   @RequireRoles(...SELLERS)
-  booking(@Param('id') id: string, @Query('jobSeekerId') jobSeekerId: string) {
+  booking(@Req() req: Req, @Param('id') id: string, @Query('jobSeekerId') jobSeekerId: string) {
     if (!jobSeekerId) throw new BadRequestException('jobSeekerId is required');
-    return this.screens.bookingContext(id, jobSeekerId);
+    return this.screens.bookingContext(actorOf(req), id, jobSeekerId);
   }
 
   @Get('screens/field-selling/candidates/:id')

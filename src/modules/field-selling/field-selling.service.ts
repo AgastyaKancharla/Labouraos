@@ -1,3 +1,4 @@
+import { OwnTeam, teamLeadOf } from '../../common/rbac/own-team';
 import {
   BadRequestException,
   ForbiddenException,
@@ -130,7 +131,7 @@ export class FieldSellingService {
 
   private async staff(actor: SellingActor) {
     if (!SELLING_ROLES.includes(actor.role)) throw new ForbiddenException('This role cannot sell in the field');
-    const row = await this.prisma.staff.findUnique({ where: { id: actor.id }, select: { id: true, role: true, teamLeadId: true } });
+    const row = await this.prisma.staff.findUnique({ where: { id: actor.id }, select: { id: true, role: true, teamLeadId: true, reportsToId: true } });
     if (!row) throw new NotFoundException('Staff not found');
     return row;
   }
@@ -145,11 +146,10 @@ export class FieldSellingService {
       throw new ForbiddenException('Field agents act only on their own account businesses');
     }
     if (actor.role === 'team_lead') {
-      const ids = [business.accountAgentId, business.leadCreatedByStaffId].filter((id): id is string => Boolean(id));
-      const inTeam = ids.length > 0 && await this.prisma.staff.findFirst({
-        where: { id: { in: ids }, OR: [{ teamLeadId: actor.id }, { id: actor.id }] }, select: { id: true },
-      });
-      if (!inTeam) throw new ForbiddenException('This business is outside your team');
+      // The business's team (businessOwners) and the shared own-team definition (OwnTeam).
+      if (!(await new OwnTeam(this.prisma).ownsBusiness(actor.id, business))) {
+        throw new ForbiddenException('This business is outside your team');
+      }
     }
   }
 
@@ -693,7 +693,7 @@ export class FieldSellingService {
     if (body.outcome === 'complaint') {
       await this.reviewFlags.raise({
         kind: 'owner_complaint', subjectType: 'business', subjectId: call.subjectId,
-        raisedForStaffId: staff.teamLeadId ?? null,
+        raisedForStaffId: teamLeadOf(staff),
         details: { callRecordId: call.id, raisedByStaffId: actor.id, note },
       });
     }
@@ -744,7 +744,7 @@ export class FieldSellingService {
       });
       await this.reviewFlags.raise({
         kind: 'joining_no_show', subjectType: 'placement', subjectId: placement.id,
-        raisedForStaffId: staff.teamLeadId ?? null, details: { callRecordId: ownerCall.id },
+        raisedForStaffId: teamLeadOf(staff), details: { callRecordId: ownerCall.id },
       });
       await this.audit.log({
         actorId: actor.id, action: 'placement.joining_no_show_reported', entityType: 'Placement', entityCode: placement.code,
