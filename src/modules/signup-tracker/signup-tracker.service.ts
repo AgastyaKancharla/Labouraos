@@ -83,11 +83,7 @@ export class SignupTrackerService {
     private readonly scope: ReportingScopeService,
     private readonly clock: SignupTrackerClock,
     @Optional() @Inject(SIGNUP_REMINDER_SENDER) private readonly reminders?: SignupReminderSender,
-  ) {
-    this.ownTeam = new OwnTeam(prisma);
-  }
-
-  private readonly ownTeam: OwnTeam;
+  ) {}
 
   now(): Date {
     return this.clock.now();
@@ -782,10 +778,12 @@ export class SignupTrackerService {
       throw new BadRequestException('Sign-up help goes to an active call agent');
     }
     const owner = tracker.assignedStaffId ?? (await this.recordOwners(tracker))[0] ?? null;
+    // A fresh OwnTeam per request: it caches the team it reads.
+    const ownTeam = new OwnTeam(this.prisma);
     if (actor.role === 'team_lead') {
-      if (!(await this.ownTeam.includes(actor.id, target.id))) throw new ForbiddenException('Team Leads move sign-ups only to their own team');
+      if (!(await ownTeam.includes(actor.id, target.id))) throw new ForbiddenException('Team Leads move sign-ups only to their own team');
       if (!owner) throw new ForbiddenException('This sign-up belongs to no team: a Manager or the CEO gives it out');
-      if (!(await this.ownTeam.includes(actor.id, owner))) throw new ForbiddenException('This sign-up belongs to another team');
+      if (!(await ownTeam.includes(actor.id, owner))) throw new ForbiddenException('This sign-up belongs to another team');
     } else if (actor.role === 'manager') {
       const under = await this.peopleUnder(actor.id);
       if (!under.has(target.id)) throw new ForbiddenException('Managers move sign-ups only inside their own teams');
