@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useI18n } from '@/i18n';
-import { Banner, Button, Card, EmptyState, ErrorState, Icon, ListRow, LoadingState, Screen, StatusChip, Text } from '@/components';
+import { Banner, Button, Card, EmptyState, ErrorState, IconTile, ListRow, LoadingState, Screen, StatusChip, Text } from '@/components';
 import { isApiError } from '@/api/errors';
 import { visitPaths } from '@/api/endpoints';
 import { useOfflineQueue } from '@/device/offline-queue';
@@ -10,7 +11,7 @@ import { distanceMeters, formatCoordinates } from '@/device/location/location';
 import type { CapturedPhoto } from '@/device/camera';
 import { formatStampIst } from '@/lib/format';
 import { routes } from '@/navigation/routes';
-import { colors, radius } from '@/theme';
+import { colors, heroGradient, radius } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { CameraSheet } from '../_visits/CameraSheet';
 import { StepHeader } from '../_visits/StepHeader';
@@ -81,9 +82,9 @@ export default function VisitProofScreen() {
       <AppHeader title={t('fa20.title')} />
       <Screen>
         <StepHeader step={3} label={t('fa22.step')} />
-        <Card title={t('fa22.selfieTitle')}>
-          <View style={[styles.photoBox, done && styles.photoDone]}>
-            <Icon name="camera" size={34} color={done ? colors.cyanRaw : colors.white} />
+        <Card title={t('fa22.selfieTitle')} icon="user" accent="green">
+          <LinearGradient colors={done ? doneGradient : heroGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.photoBox}>
+            <IconTile icon={done ? 'check' : 'camera'} accent={done ? 'green' : 'cyan'} size={60} />
             <Text variant="h2" align="center" color={colors.white}>
               {t('fa22.selfieHint')}
             </Text>
@@ -95,7 +96,7 @@ export default function VisitProofScreen() {
                 {`${formatCoordinates({ latitude: selfie.stamp.latitude, longitude: selfie.stamp.longitude })} · ${formatStampIst(selfie.stamp.takenAt)}`}
               </Text>
             ) : null}
-          </View>
+          </LinearGradient>
           <View style={styles.gap} />
           <Button
             label={done ? t('fa22.retake') : t('fa22.takeSelfie')}
@@ -109,6 +110,7 @@ export default function VisitProofScreen() {
         <Card>
           <ListRow
             title={t('fa22.gpsVs')}
+            leading={<IconTile icon="location" accent={gap === null ? 'navy' : tooFar ? 'red' : 'green'} size={34} />}
             trailing={
               gap === null ? (
                 <StatusChip label={t('common.placeholderValue')} />
@@ -118,7 +120,7 @@ export default function VisitProofScreen() {
             }
             testID="fa22-distance"
           />
-          <ListRow title={t('fa22.timeAtShop')} trailing={<Text variant="bodyStrong">{t('common.minutes', { minutes })}</Text>} last testID="fa22-time" />
+          <ListRow title={t('fa22.timeAtShop')} leading={<IconTile icon="clock" accent="gold" size={34} />} trailing={<Text variant="bodyStrong">{t('common.minutes', { minutes })}</Text>} last testID="fa22-time" />
         </Card>
         {problem ? <Banner tone="error" message={problem} testID="fa22-problem" /> : null}
         <Button
@@ -134,6 +136,9 @@ export default function VisitProofScreen() {
   );
 }
 
+/** Selfie taken: navy into a deep green, so the tick reads as done. */
+const doneGradient = [colors.navy, colors.green] as const;
+
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
   gap: { height: 10 },
@@ -141,9 +146,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     padding: 18,
-    paddingVertical: 48,
+    paddingVertical: 40,
     borderRadius: radius.card,
-    backgroundColor: colors.navy,
+    overflow: 'hidden',
   },
-  photoDone: { backgroundColor: colors.ink },
 });

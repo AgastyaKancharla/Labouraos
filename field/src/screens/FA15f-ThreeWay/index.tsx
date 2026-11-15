@@ -6,7 +6,7 @@ import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import type { InterviewView } from '@/api/endpoints';
 import { useAuth } from '@/auth/AuthProvider';
-import { Banner, Button, Card, Screen, Text } from '@/components';
+import { Banner, Button, Card, IconTile, Screen, Text } from '@/components';
 import { RadioGroup, SelectField } from '@/components/form';
 import { useI18n } from '@/i18n';
 import { formatCountdown } from '@/lib/format';
@@ -72,10 +72,13 @@ function Decide({ interview: i }: { interview: InterviewView }) {
   return (
     <>
       <View style={styles.live} testID="owner-on-call">
-        <Text style={styles.liveTitle}>{t('fa15f.talking', { name: i.candidate.firstName, time: formatCountdown(now - since) })}</Text>
-        <Text style={styles.liveSub}>{t('fa15f.sameCall')}</Text>
+        <IconTile icon="phone" accent="green" size={38} />
+        <View style={styles.liveText}>
+          <Text style={styles.liveTitle}>{t('fa15f.talking', { name: i.candidate.firstName, time: formatCountdown(now - since) })}</Text>
+          <Text style={styles.liveSub}>{t('fa15f.sameCall')}</Text>
+        </View>
       </View>
-      <Card>
+      <Card stripe accent="cyan">
         <Text>{t('fa15f.handedTo', { agent, owner })}</Text>
       </Card>
       <RadioGroup
@@ -130,7 +133,8 @@ function Decide({ interview: i }: { interview: InterviewView }) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
-  live: { borderRadius: radius.lg, borderWidth: 1, borderColor: '#A9DEC7', backgroundColor: colors.green100, padding: 14 },
-  liveTitle: { fontFamily: fonts.display700, color: colors.green, fontSize: 15 },
-  liveSub: { color: colors.green, fontFamily: fonts.body600, fontSize: 12.5 },
+  live: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: radius.lg, borderWidth: 1, borderColor: '#A9DEC7', borderLeftWidth: 4, borderLeftColor: colors.green, backgroundColor: colors.green100, padding: 14 },
+  liveText: { flex: 1, gap: 2 },
+  liveTitle: { fontFamily: fonts.display700, color: colors.greenText, fontSize: 15 },
+  liveSub: { color: colors.greenText, fontFamily: fonts.body600, fontSize: 12.5 },
 });

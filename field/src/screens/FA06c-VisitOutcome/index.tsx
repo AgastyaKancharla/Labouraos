@@ -3,18 +3,25 @@ import { StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useI18n } from '@/i18n';
-import { Banner, Button, Card, EmptyState, ErrorState, LoadingState, Screen, Text, TextField } from '@/components';
+import { Banner, Button, Card, Emoji, EmptyState, ErrorState, LoadingState, Screen, Text, TextField, type IconName } from '@/components';
 import { isApiError } from '@/api/errors';
 import { visitPaths, type VisitOutcome } from '@/api/endpoints';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { routes } from '@/navigation/routes';
-import { colors } from '@/theme';
+import { type Accent, colors } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { ChoiceList } from '../_visits/ChoiceList';
 import { DatePicker } from '../_visits/DatePicker';
 import { useVisit } from '../_visits/useVisit';
 
 const OUTCOMES: VisitOutcome[] = ['onboarded', 'interested_later', 'not_interested', 'owner_not_there'];
+/** Each outcome's colour code: onboarded green, come back cyan, not interested orange, owner away gold. */
+const OUTCOME_LOOK: Record<VisitOutcome, { icon: IconName; accent: Accent }> = {
+  onboarded: { icon: 'check-circle', accent: 'green' },
+  interested_later: { icon: 'calendar', accent: 'cyan' },
+  not_interested: { icon: 'x-circle', accent: 'orange' },
+  owner_not_there: { icon: 'clock', accent: 'gold' },
+};
 const REASONS = ['hires_family_friends', 'fee_too_high', 'no_staff_needed', 'other_agency', 'other'] as const;
 
 /**
@@ -81,15 +88,21 @@ export default function VisitOutcomeScreen() {
     <View style={styles.flex} testID="screen-FA06c">
       <AppHeader title={t('fa06c.title')} />
       <Screen>
-        <Card>
-          <Text variant="h2">{t('fa06c.question')}</Text>
-          <Text variant="muted">{name}</Text>
+        <Card stripe accent="royal">
+          <View style={styles.qRow}>
+            <View style={styles.flex1}>
+              <Text variant="h2">{t('fa06c.question')}</Text>
+              <Text variant="muted">{name}</Text>
+            </View>
+            <Emoji symbol="🤝" size={28} />
+          </View>
           <View style={styles.gap} />
           <ChoiceList
             choices={OUTCOMES.map((o) => ({
               value: o,
               label: t(`fa06c.${o}` as const),
               disabled: o === 'onboarded' && !visit.businessId,
+              ...OUTCOME_LOOK[o],
             }))}
             value={outcome}
             onChange={setOutcome}
@@ -97,19 +110,19 @@ export default function VisitOutcomeScreen() {
           />
         </Card>
         {needsDate ? (
-          <Card>
+          <Card stripe accent="cyan">
             <DatePicker label={t('fa06c.comeBackOn')} value={revisitOn} onChange={setRevisitOn} now={openedAt} testID="fa06c-date" />
           </Card>
         ) : null}
         {outcome === 'not_interested' ? (
-          <Card>
+          <Card stripe accent="orange">
             <Text variant="small" style={styles.label}>
               {t('fa06c.why')}
             </Text>
             <ChoiceList choices={REASONS.map((r) => ({ value: r, label: t(`reason.${r}` as const) }))} value={reason} onChange={setReason} testID="fa06c-reason" />
           </Card>
         ) : null}
-        <Card>
+        <Card stripe accent="navy">
           <TextField label={t('fa06c.note')} value={note} onChangeText={setNote} multiline numberOfLines={3} maxLength={1000} testID="fa06c-note" />
         </Card>
         {problem ? <Banner tone="error" message={problem} testID="fa06c-problem" /> : null}
@@ -130,5 +143,7 @@ export default function VisitOutcomeScreen() {
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
   gap: { height: 10 },
+  flex1: { flex: 1 },
+  qRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   label: { fontWeight: '700', marginBottom: 8 },
 });

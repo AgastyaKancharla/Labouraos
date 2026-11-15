@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { TabBar } from '@/components';
+import { TabBar, type TabItem } from '@/components';
 import { useI18n } from '@/i18n';
 
 /**
@@ -12,13 +12,13 @@ import { useI18n } from '@/i18n';
 export default function TabsLayout() {
   const { t } = useI18n();
   const items = [
-    { name: '(home)', label: t('tabs.home') },
-    { name: '(visits)', label: t('tabs.visits') },
-    { name: 'job-seekers', label: t('tabs.jobSeekers') },
-    { name: 'vacancies', label: t('tabs.vacancies') },
-    { name: 'map', label: t('tabs.map') },
-    { name: 'targets', label: t('tabs.targets') },
-  ];
+    { name: '(home)', label: t('tabs.home'), icon: 'home' },
+    { name: '(visits)', label: t('tabs.visits'), icon: 'store' },
+    { name: 'job-seekers', label: t('tabs.jobSeekers'), icon: 'users' },
+    { name: 'vacancies', label: t('tabs.vacancies'), icon: 'briefcase' },
+    { name: 'map', label: t('tabs.map'), icon: 'map' },
+    { name: 'targets', label: t('tabs.targets'), icon: 'target' },
+  ] satisfies TabItem[];
   return (
     <Tabs
       screenOptions={{ headerShown: false }}

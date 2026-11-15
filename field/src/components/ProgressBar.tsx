@@ -1,11 +1,11 @@
 import { StyleSheet, View } from 'react-native';
 import { colors } from '@/theme';
 
-/** `.bar`: thin progress bar, value 0–1. */
-export function ProgressBar({ value, color = colors.blue }: { value: number; color?: string }) {
+/** `.bar`: thin progress bar, value 0–1. `onBlue` gives a light track for the blue hero card. */
+export function ProgressBar({ value, color = colors.blue, onBlue = false }: { value: number; color?: string; onBlue?: boolean }) {
   const pct = Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0)) * 100;
   return (
-    <View style={styles.track} accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: 100, now: Math.round(pct) }}>
+    <View style={[styles.track, onBlue && styles.trackOnBlue]} accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: 100, now: Math.round(pct) }}>
       <View style={[styles.fill, { width: `${pct}%`, backgroundColor: color }]} />
     </View>
   );
@@ -13,5 +13,6 @@ export function ProgressBar({ value, color = colors.blue }: { value: number; col
 
 const styles = StyleSheet.create({
   track: { height: 6, borderRadius: 999, backgroundColor: 'rgba(11,30,74,0.08)', overflow: 'hidden' },
+  trackOnBlue: { height: 8, backgroundColor: 'rgba(255,255,255,0.18)' },
   fill: { height: '100%', borderRadius: 999 },
 });

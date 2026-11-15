@@ -2,7 +2,7 @@ import { StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useI18n } from '@/i18n';
-import { Banner, Button, Card, EmptyState, ErrorState, ListRow, LoadingState, Screen, StatusChip, Text } from '@/components';
+import { Banner, Button, Card, Emoji, EmptyState, ErrorState, IconTile, ListRow, LoadingState, Screen, StatusChip, Text } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { formatTimeIst } from '@/lib/format';
@@ -42,11 +42,15 @@ export default function VisitDoneScreen() {
           title={b.agreement?.signedName ? t('fa06b.signedBy', { name: b.agreement.signedName }) : t('fa06b.waitingTitle')}
           testID="fa06b-banner"
         />
-        <Text variant="h1">{b.name}</Text>
+        <View style={styles.titleRow}>
+          <Text variant="h1" style={styles.flex1}>{b.name}</Text>
+          <Emoji symbol={b.agreement ? '🎉' : '🏪'} size={30} />
+        </View>
         <Card>
-          <ListRow title={t('fa06b.proof')} trailing={<StatusChip tone="green" label={t('fa06.done')} />} />
+          <ListRow title={t('fa06b.proof')} leading={<IconTile icon="camera" accent="cyan" size={34} />} trailing={<StatusChip tone="green" label={t('fa06.done')} />} />
           <ListRow
             title={t('fa06b.agreement')}
+            leading={<IconTile icon="document" accent={b.agreement ? 'green' : 'gold'} size={34} />}
             trailing={
               b.agreement ? (
                 <StatusChip tone="green" label={t('fa06b.signedAt', { time: formatTimeIst(b.agreement.signedAt) })} />
@@ -56,9 +60,10 @@ export default function VisitDoneScreen() {
             }
             testID="fa06b-agreement"
           />
-          <ListRow title={t('fa06b.vacancies')} subtitle={vacancies || t('fa06b.noVacancies')} />
+          <ListRow title={t('fa06b.vacancies')} leading={<IconTile icon="briefcase" accent="orange" size={34} />} subtitle={vacancies || t('fa06b.noVacancies')} />
           <ListRow
             title={t('fa06b.tlReview')}
+            leading={<IconTile icon="shield" accent={b.verificationStatus === 'verified' ? 'green' : 'navy'} size={34} />}
             trailing={<StatusChip tone={b.verificationStatus === 'verified' ? 'green' : 'neutral'} label={b.verificationStatus === 'verified' ? t('vstatus.verified') : t('fa06b.laterToday')} />}
             last
           />
@@ -81,4 +86,6 @@ export default function VisitDoneScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
+  flex1: { flex: 1 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
 });

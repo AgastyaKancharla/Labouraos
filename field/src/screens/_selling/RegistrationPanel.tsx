@@ -5,7 +5,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import type { JobSeekerStatus, Step } from '@/api/endpoints';
-import { Banner, Button, Card, Text } from '@/components';
+import { Banner, Button, Card, Icon, IconTile, Text } from '@/components';
 import { MobileField, SelectField } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useI18n, type MessageKey } from '@/i18n';
@@ -26,11 +26,12 @@ const NEXT_STEP_KEYS: Record<JobSeekerStatus['nextStep'], MessageKey> = {
   complete: 'fa10b.step.payment',
 };
 
-function mark(step: Step): { icon: string; color: string } {
-  if (step.state === 'done') return { icon: '✓', color: colors.green };
-  if (step.state === 'stuck') return { icon: '✗', color: colors.tomato };
-  if (step.state === 'in_progress' || step.state === 'confirming') return { icon: '…', color: colors.amber };
-  return { icon: '–', color: colors.soft };
+/** Each step's mark in a coloured disc: done green, stuck red, in progress gold, not started grey-navy. */
+function mark(step: Step): { icon: string; color: string; fill: string } {
+  if (step.state === 'done') return { icon: '✓', color: colors.white, fill: colors.green };
+  if (step.state === 'stuck') return { icon: '✗', color: colors.white, fill: colors.redRaw };
+  if (step.state === 'in_progress' || step.state === 'confirming') return { icon: '…', color: colors.navy, fill: colors.gold };
+  return { icon: '–', color: colors.soft, fill: colors.navy100 };
 }
 
 /**
@@ -117,14 +118,19 @@ function Panel({ status: s, variant, refetch }: { status: JobSeekerStatus; varia
         title={variant === 'saved' && !linkLive ? t('fa10b.saved', { code: s.code }) : s.stage === 'active' ? t('fa10b.active', { code: s.code }) : t('fa10b.linkSent')}
         testID="seeker-banner"
       />
-      <Card>
-        <Text variant="h2">{t('fa10b.registration', { name: s.name, code: s.code })}</Text>
+      <Card stripe accent="royal">
+        <View style={styles.head}>
+          <IconTile icon="id-card" accent="royal" size={34} />
+          <Text variant="h2" style={styles.flex}>{t('fa10b.registration', { name: s.name, code: s.code })}</Text>
+        </View>
         <Text variant="tiny" style={styles.legend}>{t('fa10b.legend')}</Text>
         {rows.map((r, i) => {
           const m = mark(r.step);
           return (
             <View key={r.key} style={[styles.row, i < rows.length - 1 && styles.line]} testID={`step-${r.key}`}>
-              <Text style={[styles.icon, { color: m.color }]}>{m.icon}</Text>
+              <View style={[styles.disc, { backgroundColor: m.fill }]}>
+                <Text style={[styles.icon, { color: m.color }]}>{m.icon}</Text>
+              </View>
               <View style={styles.flex}>
                 <Text style={styles.stepLabel}>{r.key === 'phone' ? r.label : `${i} · ${r.label}`}</Text>
                 <Text variant="muted">{r.detail || stateText(r.step)}</Text>
@@ -140,8 +146,8 @@ function Panel({ status: s, variant, refetch }: { status: JobSeekerStatus; varia
           <OtherIdPhoto jobSeekerId={s.id} onFinished={refetch} onClose={() => setOtherIdOpen(false)} />
         ) : (
           <>
-            <Button label={t('fa10b.scanAadhaar')} onPress={() => setScanOpen(true)} testID="scan-aadhaar" />
-            <Button label={t('fa10b.otherId.open')} variant="secondary" onPress={() => setOtherIdOpen(true)} testID="other-id-open" />
+            <Button label={t('fa10b.scanAadhaar')} icon={<Icon name="shield" color={colors.white} />} onPress={() => setScanOpen(true)} testID="scan-aadhaar" />
+            <Button label={t('fa10b.otherId.open')} variant="secondary" icon={<Icon name="id-card" color={colors.cyan} />} onPress={() => setOtherIdOpen(true)} testID="other-id-open" />
           </>
         )
       ) : null}
@@ -174,7 +180,7 @@ function Panel({ status: s, variant, refetch }: { status: JobSeekerStatus; varia
             testID="preview"
           />
           {preview ? (
-            <Card testID="preview-card">
+            <Card testID="preview-card" stripe accent="cyan">
               <Text>{t('fa10b.previewBody')}</Text>
               <Text>{t('fa10b.preview.consent')}</Text>
               <Text>{t('fa10b.preview.selfie')}</Text>
@@ -198,6 +204,8 @@ const styles = StyleSheet.create({
   legend: { marginTop: 4, marginBottom: 6 },
   row: { flexDirection: 'row', gap: 12, paddingVertical: 10, minHeight: 48 },
   line: { borderBottomWidth: 1, borderBottomColor: colors.border },
-  icon: { fontFamily: fonts.body700, fontSize: 16, width: 18, textAlign: 'center' },
+  head: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  disc: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
+  icon: { fontFamily: fonts.body700, fontSize: 14, lineHeight: 18, textAlign: 'center' },
   stepLabel: { fontFamily: fonts.body700, color: colors.ink },
 });

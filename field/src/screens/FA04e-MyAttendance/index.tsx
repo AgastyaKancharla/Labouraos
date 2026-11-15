@@ -6,12 +6,12 @@ import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import type { AttendanceDayRow, MyRequest } from '@/api/endpoints';
 import { useAuth } from '@/auth/AuthProvider';
-import { Banner, Button, Card, EmptyState, ErrorState, ListRow, LoadingState, Screen, StatusChip, Text } from '@/components';
+import { Banner, Button, Card, EmptyState, ErrorState, HeroCard, Icon, IconTile, ListRow, LoadingState, Screen, StatusChip, Text } from '@/components';
 import { todayKeyIst } from '@/components/form';
 import { useI18n } from '@/i18n';
 import { formatTimeIst } from '@/lib/format';
 import { routes } from '@/navigation/routes';
-import { colors, fonts, radius, touch } from '@/theme';
+import { colors, fonts, radius, toneAccent, tones, touch } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { useNow } from '../_selling';
 import { formatDateKey } from '../_visits/format';
@@ -89,16 +89,17 @@ export default function MyAttendanceScreen() {
           </Pressable>
         </View>
 
-        <Button label={t('fa04e.requestLeave')} onPress={() => router.push(routes.myLeave)} testID="fa04e-leave" />
+        <Button label={t('fa04e.requestLeave')} icon={<Icon name="calendar" color={colors.white} />} onPress={() => router.push(routes.myLeave)} testID="fa04e-leave" />
         <View style={styles.buttons}>
           <Button
             label={t('fa04e.requestCorrection')}
             variant="secondary"
+            icon={<Icon name="clock" color={colors.amber} />}
             style={styles.half}
             onPress={() => router.push(routes.myCorrection)}
             testID="fa04e-correction"
           />
-          <Button label={t('fa04e.payslips')} variant="secondary" style={styles.half} onPress={() => router.push(routes.myPayslips)} testID="fa04e-payslips" />
+          <Button label={t('fa04e.payslips')} variant="secondary" icon={<Icon name="document" color={colors.greenText} />} style={styles.half} onPress={() => router.push(routes.myPayslips)} testID="fa04e-payslips" />
         </View>
 
         {summary.isPending ? (
@@ -107,18 +108,16 @@ export default function MyAttendanceScreen() {
           <ErrorState error={summary.error} onRetry={() => void summary.refetch()} />
         ) : (
           <>
-            <Card testID="fa04e-production">
-              <Text variant="label">{t('fa04e.production')}</Text>
-              <Text style={styles.big}>{hm(summary.data.productionSeconds)}</Text>
-              <Text variant="muted">
+            <HeroCard eyebrow={t('fa04e.production')} emoji="📈" testID="fa04e-production">
+              <Text style={styles.heroBig}>{hm(summary.data.productionSeconds)}</Text>
+              <Text style={styles.heroSoft}>
                 {t('fa04e.neededSoFar', {
                   needed: hm(expectedDays(summary.data.days, todayKeyIst()) * FULL_DAY_SECONDS),
                   days: expectedDays(summary.data.days, todayKeyIst()),
                 })}
               </Text>
-            </Card>
-            <Card testID="fa04e-makeup">
-              <Text variant="label">{t('fa04e.makeUpOwed')}</Text>
+            </HeroCard>
+            <Card testID="fa04e-makeup" title={t('fa04e.makeUpOwed')} icon="clock" accent={summary.data.deductibleShortfallSeconds > 0 ? 'red' : 'green'}>
               <Text style={[styles.big, summary.data.deductibleShortfallSeconds > 0 && styles.owed]}>{hm(summary.data.deductibleShortfallSeconds)}</Text>
               <Text variant="muted">
                 {t('fa04e.makeUpLine', {
@@ -131,8 +130,7 @@ export default function MyAttendanceScreen() {
           </>
         )}
 
-        <Card testID="fa04e-leave-left">
-          <Text variant="label">{t('fa04e.leaveLeft')}</Text>
+        <Card testID="fa04e-leave-left" title={t('fa04e.leaveLeft')} icon="calendar" accent="cyan">
           {balance.isPending ? (
             <LoadingState compact />
           ) : balance.isError ? (
@@ -157,7 +155,7 @@ export default function MyAttendanceScreen() {
           )}
         </Card>
 
-        <Card title={t('fa04e.myRequests')} testID="fa04e-requests">
+        <Card title={t('fa04e.myRequests')} icon="document" accent="gold" testID="fa04e-requests">
           {requests.isPending ? (
             <LoadingState compact />
           ) : requests.isError ? (
@@ -170,7 +168,7 @@ export default function MyAttendanceScreen() {
         </Card>
 
         {summary.data ? (
-          <Card title={t('fa04e.days')} testID="fa04e-days">
+          <Card title={t('fa04e.days')} icon="calendar" accent="royal" testID="fa04e-days">
             {summary.data.days.length === 0 ? (
               <EmptyState compact title={t('fa04e.noDays')} />
             ) : (
@@ -199,6 +197,7 @@ function RequestRow({ request: r, last }: { request: MyRequest; last: boolean })
     <ListRow
       title={title}
       subtitle={note}
+      leading={<IconTile icon={r.kind === 'leave' ? 'calendar' : 'clock'} accent={toneAccent[chip.tone]} size={34} />}
       trailing={<StatusChip label={t(chip.key, chip.params)} tone={chip.tone} />}
       last={last}
       testID={`fa04e-request-${r.id}`}
@@ -213,6 +212,7 @@ function DayRow({ day, last }: { day: AttendanceDayRow; last: boolean }) {
   const production = day.dayType === 'open' ? t('fa04e.inProgress') : day.loginAt ? hm(day.productionSeconds) : '';
   return (
     <View style={[styles.day, !last && styles.dayLine]} testID={`fa04e-day-${day.date}`}>
+      <View style={[styles.dayBar, { backgroundColor: tones[main.tone].dot }]} />
       <View style={styles.dayText}>
         <Text variant="bodyStrong">{formatDateKey(day.date)}</Text>
         <Text variant="muted">{[times, production].filter(Boolean).join(' · ')}</Text>
@@ -245,7 +245,10 @@ const styles = StyleSheet.create({
   off: { opacity: 0.4 },
   buttons: { flexDirection: 'row', gap: 10 },
   half: { flex: 1 },
-  big: { fontFamily: fonts.display700, fontSize: 22, color: colors.ink, marginTop: 6, marginBottom: 2 },
+  big: { fontFamily: fonts.display700, fontSize: 22, color: colors.ink, marginTop: 2, marginBottom: 2 },
+  heroBig: { fontFamily: fonts.display700, fontSize: 28, lineHeight: 34, color: colors.white, fontVariant: ['tabular-nums'] },
+  heroSoft: { fontFamily: fonts.body500, fontSize: 13, lineHeight: 18, color: colors.onBlueSoft },
+  dayBar: { width: 4, alignSelf: 'stretch', borderRadius: 2 },
   owed: { color: colors.tomato },
   day: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
   dayLine: { borderBottomWidth: 1, borderBottomColor: colors.border },

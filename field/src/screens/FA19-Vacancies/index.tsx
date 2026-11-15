@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import type { BusinessHit } from '@/api/endpoints';
-import { Card, ErrorState, LoadingState, Screen, Text } from '@/components';
+import { Card, Emoji, ErrorState, LoadingState, Screen, Text } from '@/components';
 import { useI18n } from '@/i18n';
 import { routes, sellingRoutes } from '@/navigation/routes';
 import { colors } from '@/theme';
@@ -29,9 +29,12 @@ export default function VacanciesScreen() {
     <View style={styles.flex}>
       <AppHeader title={t('fa03.headerTitle')} subtitle={t('tabs.vacancies')} />
       <Screen testID="screen-FA19" onRefresh={() => void recent.refetch()} refreshing={recent.isRefetching}>
-        <Text variant="h2" style={styles.title}>{t('fa17.title')}</Text>
+        <View style={styles.titleRow}>
+          <Text variant="h2" style={styles.title}>{t('fa17.title')}</Text>
+          <Emoji symbol="🧑‍🍳" size={24} />
+        </View>
         <BusinessTypeAhead onPick={(b) => router.push(sellingRoutes.addVacancy(b.id))} onRegister={() => router.push(routes.visitStart)} hintKey="fa19.hint" />
-        <Card title={t('fa19.recent')}>
+        <Card title={t('fa19.recent')} icon="briefcase" accent="orange">
           {recent.isPending ? (
             <LoadingState compact />
           ) : recent.isError ? (
@@ -61,5 +64,6 @@ export default function VacanciesScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
-  title: { fontSize: 17 },
+  title: { fontSize: 17, flex: 1 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
 });

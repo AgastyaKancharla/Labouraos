@@ -108,7 +108,7 @@ export default function RequestLeaveScreen() {
     <View style={styles.flex} testID="screen-FA04f">
       <AppHeader title={t('fa04f.title')} />
       <Screen>
-        <Card>
+        <Card stripe accent="cyan">
           <View style={styles.gap}>
             <SelectField
               label={t('fa04f.type')}

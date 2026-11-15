@@ -6,10 +6,10 @@ import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { isApiError } from '@/api/errors';
 import type { BusinessHit } from '@/api/endpoints';
-import { Banner, Card, EmptyState, ErrorState, ListRow, LoadingState, StatusChip, Text, TextField } from '@/components';
+import { Banner, Card, EmptyState, ErrorState, IconTile, ListRow, LoadingState, StatusChip, Text, TextField, type IconName } from '@/components';
 import { isNeedsSignalError } from '@/device/offline-queue';
 import { useI18n, type MessageKey } from '@/i18n';
-import { colors, fonts, radius } from '@/theme';
+import { type Accent, accents, colors, fonts, radius, type Tone, toneAccent } from '@/theme';
 
 /** "₹17,000" from 1700000 paise (Indian grouping: 1,00,000). */
 export function formatRupees(paise: number | null | undefined): string {
@@ -97,33 +97,49 @@ export const REASON_KEYS: Record<string, MessageKey> = {
 };
 
 /** Round letter avatar on candidate cards. */
+const AVATAR_ACCENTS: Accent[] = ['cyan', 'gold', 'royal', 'navy'];
+
 export function Avatar({ name, tone = 0, size = 48, label }: { name: string; tone?: number; size?: number; label?: string }) {
-  const bgs = [colors.cyan100, colors.amber100, colors.green100];
+  // Mixed brand colours; the letter stays readable (white on royal and navy, navy on cyan and gold).
+  const a = accents[AVATAR_ACCENTS[tone % AVATAR_ACCENTS.length]];
   return (
-    <View style={[styles.avatar, { width: size, height: size, borderRadius: size / 2, backgroundColor: bgs[tone % 3] }]} accessibilityLabel={label}>
-      <Text style={styles.avatarText}>{(name[0] ?? '?').toUpperCase()}</Text>
+    <View style={[styles.avatar, { width: size, height: size, borderRadius: size / 2, backgroundColor: a.raw }]} accessibilityLabel={label}>
+      <Text style={[styles.avatarText, { color: a.on }]}>{(name[0] ?? '?').toUpperCase()}</Text>
     </View>
   );
 }
 
 /** A small "label · value" line in a card (`.kv`). */
-export function KeyValue({ label, value, strong, last, testID, trailing }: {
+export function KeyValue({ label, value, strong, last, testID, trailing, icon, accent }: {
   label: string;
   value?: string;
   strong?: boolean;
   last?: boolean;
   testID?: string;
   trailing?: ReactNode;
+  /** A small drawn icon in a coloured round tile before the label. */
+  icon?: IconName;
+  accent?: Accent;
 }) {
   return (
     <View style={[styles.kv, !last && styles.kvLine]} testID={testID}>
-      <Text style={styles.kvLabel}>{label}</Text>
+      {icon ? <IconTile icon={icon} accent={accent} size={28} /> : null}
+      <Text style={[styles.kvLabel, icon ? styles.kvLabelIcon : null]}>{label}</Text>
       {trailing ?? <Text style={strong ? styles.kvStrong : styles.kvValue}>{value}</Text>}
     </View>
   );
 }
 
 /** A step in a "what happens next" list: text on the left, a status chip on the right. */
+/** A step's colour code: done green, waiting gold, problem red, current royal, not started grey-navy. */
+const STEP_ICON: Record<'green' | 'amber' | 'neutral' | 'blue' | 'tomato', IconName> = {
+  green: 'check',
+  amber: 'clock',
+  neutral: 'clock',
+  blue: 'chevron-right',
+  tomato: 'alert',
+};
+
 export function StepRow({ label, chip, tone = 'neutral', last, testID }: {
   label: string;
   chip: string;
@@ -131,7 +147,15 @@ export function StepRow({ label, chip, tone = 'neutral', last, testID }: {
   last?: boolean;
   testID?: string;
 }) {
-  return <ListRow title={label} trailing={<StatusChip label={chip} tone={tone} />} last={last} testID={testID} />;
+  return (
+    <ListRow
+      title={label}
+      leading={<IconTile icon={STEP_ICON[tone]} accent={tone === 'neutral' ? 'navy' : toneAccent[tone]} size={30} />}
+      trailing={<StatusChip label={chip} tone={tone} />}
+      last={last}
+      testID={testID}
+    />
+  );
 }
 
 /** Shows a query's loading / error state, or the content. */
@@ -227,6 +251,7 @@ export function BusinessRow({ business, query, onPress, last, subtitle, chip }: 
       style={({ pressed }) => [styles.bizRow, !last && styles.bizLine, pressed && styles.pressed]}
       testID={`business-${business.code}`}
     >
+      <IconTile icon="store" accent={bizAccent(c.tone)} size={36} />
       <View style={styles.flex}>
         <Text style={styles.bizName}>
           {at >= 0 && query ? (
@@ -249,10 +274,15 @@ export function BusinessRow({ business, query, onPress, last, subtitle, chip }: 
 }
 
 /** "Annapoorna Mess / BTM Layout · signed today / Change" header (FA15b, FA17). */
+function bizAccent(tone: Tone): Accent {
+  return tone === 'neutral' ? 'navy' : toneAccent[tone];
+}
+
 export function BusinessHeader({ name, sub, onChange, testID }: { name: string; sub: string; onChange?: () => void; testID?: string }) {
   const { t } = useI18n();
   return (
     <View style={styles.header} testID={testID}>
+      <IconTile icon="store" accent="royal" size={40} />
       <View style={styles.flex}>
         <Text variant="h2" style={styles.headerName}>
           {name}
@@ -269,7 +299,7 @@ export function BusinessHeader({ name, sub, onChange, testID }: { name: string; 
 }
 
 export function Empty({ message }: { message: string }) {
-  return <EmptyState compact message={message} />;
+  return <EmptyState compact emoji="🔍" message={message} />;
 }
 
 /** The blue quoted script box (`.say`) agents read aloud. */
@@ -297,6 +327,7 @@ const styles = StyleSheet.create({
   kv: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10, minHeight: 44, paddingVertical: 8 },
   kvLine: { borderBottomWidth: 1, borderBottomColor: colors.border },
   kvLabel: { color: colors.ink, flexShrink: 1 },
+  kvLabelIcon: { flex: 1 },
   kvValue: { color: colors.ink, textAlign: 'right', flexShrink: 1 },
   kvStrong: { fontFamily: fonts.body700, color: colors.ink, textAlign: 'right', flexShrink: 1 },
   results: { marginTop: 8 },
@@ -308,9 +339,9 @@ const styles = StyleSheet.create({
   bizName: { fontFamily: fonts.body600, color: colors.ink },
   bizMatch: { fontFamily: fonts.body700, color: colors.blue },
   pressed: { opacity: 0.6 },
-  header: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerName: { fontSize: 17 },
   change: { color: colors.blue, fontFamily: fonts.body700 },
-  script: { backgroundColor: colors.blue100, borderRadius: radius.lg, borderWidth: 1, borderColor: '#C7DAF5', padding: 14 },
+  script: { backgroundColor: colors.blue100, borderRadius: radius.lg, borderWidth: 1, borderColor: '#C7DAF5', borderLeftWidth: 4, borderLeftColor: colors.cyanRaw, padding: 14 },
   scriptText: { color: colors.ink, fontSize: 14, lineHeight: 21 },
 });

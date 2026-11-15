@@ -5,7 +5,7 @@ import { Button, Card, LoadingState, Screen, Text } from '@/components';
 import { MoneyField, Segmented } from '@/components/form';
 import { useI18n } from '@/i18n';
 import { routes } from '@/navigation/routes';
-import { colors, fonts } from '@/theme';
+import { type Accent, accents, colors, fonts } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { ErrorBanner, feeBreakdown, formatRupees, KeyValue, useSellingSettings } from '../_selling';
 import { pitchLines, SCRIPT_LANGUAGES, type ScriptLanguage } from '../_selling/scripts';
@@ -27,12 +27,15 @@ export default function PitchScreen() {
     <View style={styles.flex}>
       <AppHeader title={t('fa03.headerTitle')} subtitle={t('fa14.subtitle')} />
       <Screen testID="screen-FA14">
-        <Card title={t('fa14.explain')}>
+        <Card title={t('fa14.explain')} icon="chat" accent="cyan">
           <Segmented value={lang} options={SCRIPT_LANGUAGES} onChange={setLang} testID="pitch-language" />
           {s ? (
             <View style={styles.lines} testID="pitch">
               {pitchLines(lang, s.feePercent, s.gstPercent, s.maxFreeReplacements, s.replacementWindowDays).map((line, i) => (
-                <Text key={i} style={styles.line}>{`${i + 1}. ${line}`}</Text>
+                <View key={i} style={styles.lineRow}>
+                  <View style={[styles.lineBar, { backgroundColor: accents[LINE_ACCENTS[i % LINE_ACCENTS.length]].raw }]} />
+                  <Text style={styles.line}>{`${i + 1}. ${line}`}</Text>
+                </View>
               ))}
             </View>
           ) : settings.isPending ? (
@@ -41,7 +44,7 @@ export default function PitchScreen() {
             <ErrorBanner error={settings.error} />
           )}
         </Card>
-        <Card title={t('fa14.calculator')}>
+        <Card title={t('fa14.calculator')} icon="rupee" accent="gold">
           <MoneyField label={t('fa14.salary')} required valuePaise={salary} onChange={setSalary} testID="salary" />
           <View style={styles.result}>
             <KeyValue label={t('fa14.fee', { percent: s?.feePercent ?? '' })} value={fee ? formatRupees(fee.fee) : '—'} testID="fee" />
@@ -55,10 +58,15 @@ export default function PitchScreen() {
   );
 }
 
+/** The pitch points get a short bar each, in mixed brand colours. */
+const LINE_ACCENTS: Accent[] = ['royal', 'cyan', 'gold', 'orange', 'green'];
+
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
   lines: { gap: 8, marginTop: 12 },
-  line: { fontSize: 14, lineHeight: 21 },
+  lineRow: { flexDirection: 'row', gap: 10 },
+  lineBar: { width: 4, borderRadius: 2 },
+  line: { flex: 1, fontSize: 14, lineHeight: 21 },
   result: { marginTop: 8 },
   total: { fontFamily: fonts.display700, color: colors.blue, fontSize: 16 },
 });

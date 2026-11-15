@@ -36,7 +36,7 @@ export default function JobSeekersScreen() {
       <AppHeader title={t('fa03.headerTitle')} subtitle={t('tabs.jobSeekers')} />
       <Screen testID="screen-FA15" onRefresh={() => void mine.refetch()} refreshing={mine.isRefetching}>
         <BusinessTypeAhead onPick={open} onRegister={() => router.push(routes.visitStart)} hintKey="fa15.hint" />
-        <Card title={t('fa15.yourBusinesses')}>
+        <Card title={t('fa15.yourBusinesses')} icon="users" accent="cyan">
           {mine.isPending ? (
             <LoadingState compact />
           ) : mine.isError ? (

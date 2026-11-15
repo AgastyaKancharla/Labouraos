@@ -5,7 +5,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import type { BusinessDetail } from '@/api/endpoints';
-import { Banner, Button, Screen, Text, TextField } from '@/components';
+import { Banner, Button, Icon, IconTile, Screen, Text, TextField } from '@/components';
 import { addDays, DateField, RadioGroup, TimeField, todayKeyIst } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useI18n } from '@/i18n';
@@ -100,14 +100,22 @@ function CallOwner({ business }: { business: BusinessDetail }) {
     <>
       {callId ? (
         <View style={styles.live} testID="on-call">
-          <Text style={styles.liveTitle}>{t('fa18.onCall', { time: formatCountdown(now - startedAt) })}</Text>
-          <Text style={styles.liveSub}>{`${business.name}${contact ? ` · ${contact}` : ''}`}</Text>
+          <IconTile icon="phone" accent="green" size={38} />
+          <View style={styles.liveText}>
+            <Text style={styles.liveTitle}>{t('fa18.onCall', { time: formatCountdown(now - startedAt) })}</Text>
+            <Text style={styles.liveSub}>{`${business.name}${contact ? ` · ${contact}` : ''}`}</Text>
+          </View>
         </View>
       ) : (
         <>
-          <Text variant="h2" style={styles.title}>{business.name}</Text>
-          <Text variant="muted">{t('fa18.masked', { last4: business.contactPhoneLast4 })}</Text>
-          <Button label={t('fa18.call', { name: business.contactName ?? t('fa15f.owner') })} loading={place.isPending} onPress={() => place.mutate()} testID="call-owner" />
+          <View style={styles.head}>
+            <IconTile icon="store" accent="royal" size={40} />
+            <View style={styles.liveText}>
+              <Text variant="h2" style={styles.title}>{business.name}</Text>
+              <Text variant="muted">{t('fa18.masked', { last4: business.contactPhoneLast4 })}</Text>
+            </View>
+          </View>
+          <Button label={t('fa18.call', { name: business.contactName ?? t('fa15f.owner') })} icon={<Icon name="phone" color={colors.white} />} loading={place.isPending} onPress={() => place.mutate()} testID="call-owner" />
           <ErrorBanner error={place.error} />
         </>
       )}
@@ -157,7 +165,9 @@ const styles = StyleSheet.create({
   flex1: { flex: 1 },
   row: { flexDirection: 'row', gap: 10 },
   title: { fontSize: 17 },
-  live: { borderRadius: radius.lg, borderWidth: 1, borderColor: '#A9DEC7', backgroundColor: colors.green100, padding: 14 },
-  liveTitle: { fontFamily: fonts.display700, color: colors.green, fontSize: 15 },
-  liveSub: { color: colors.green, fontFamily: fonts.body600, fontSize: 12.5 },
+  live: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: radius.lg, borderWidth: 1, borderColor: '#A9DEC7', borderLeftWidth: 4, borderLeftColor: colors.green, backgroundColor: colors.green100, padding: 14 },
+  liveText: { flex: 1, gap: 2 },
+  head: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  liveTitle: { fontFamily: fonts.display700, color: colors.greenText, fontSize: 15 },
+  liveSub: { color: colors.greenText, fontFamily: fonts.body600, fontSize: 12.5 },
 });

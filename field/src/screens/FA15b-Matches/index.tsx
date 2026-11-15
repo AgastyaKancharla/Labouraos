@@ -5,12 +5,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import type { BusinessDetail, MatchCard, MatchesPage } from '@/api/endpoints';
-import { Banner, Button, Card, ErrorState, LoadingState, Screen, StatusChip, Text } from '@/components';
+import { Banner, Button, Card, Emoji, ErrorState, LoadingState, Screen, StatusChip, Text } from '@/components';
 import { Segmented } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useI18n } from '@/i18n';
 import { sellingRoutes } from '@/navigation/routes';
-import { colors, fonts, radius } from '@/theme';
+import { type Accent, accents, colors, fonts, radius, shadow } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { Avatar, BusinessHeader, formatRangeK, formatRupees, Note, QueryView, useParam } from '../_selling';
 import { MatchesMap } from '../FA15c-MapView/MatchesMap';
@@ -143,6 +143,7 @@ function Matches({ business, initialView }: { business: BusinessDetail; initialV
           <ErrorState error={matches.error} onRetry={() => void matches.refetch()} />
         ) : data && data.total === 0 ? (
           <Card testID="no-matches">
+            <Emoji symbol="🔍" size={32} />
             <Text variant="h2">{t('fa15b.noneYet')}</Text>
             <Text variant="muted">{t('fa15b.noneYetBody')}</Text>
             <Button label={t('fa15b.whyNone')} variant="secondary" onPress={() => router.push(sellingRoutes.noMore(vacancyId, business.id))} testID="why-none" />
@@ -213,6 +214,9 @@ function Matches({ business, initialView }: { business: BusinessDetail; initialV
   );
 }
 
+/** Why he fits, as small chips in mixed brand colours (text-safe words on light fills). */
+const REASON_ACCENTS: Accent[] = ['green', 'cyan', 'gold', 'royal'];
+
 function MatchRow({ match, tone, onOpen, onLike, likeLabel, line, speaks }: {
   match: MatchCard;
   tone: number;
@@ -234,7 +238,18 @@ function MatchRow({ match, tone, onOpen, onLike, likeLabel, line, speaks }: {
         <Text style={styles.name}>{`${match.card.firstName}, ${match.card.age}`}</Text>
         <Text variant="muted">{line}</Text>
         <Text variant="muted">{speaks}</Text>
-        <Text style={styles.reasons}>{match.matchReasons.join(' · ')}</Text>
+        {match.matchReasons.length > 0 ? (
+          <View style={styles.reasons}>
+            {match.matchReasons.map((reason, i) => {
+              const a = accents[REASON_ACCENTS[i % REASON_ACCENTS.length]];
+              return (
+                <View key={`${reason}-${i}`} style={[styles.reason, { backgroundColor: a.bg, borderColor: a.raw }]}>
+                  <Text style={[styles.reasonText, { color: a.fg }]}>{reason}</Text>
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
       </View>
       <Pressable
         accessibilityRole="button"
@@ -264,7 +279,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     backgroundColor: colors.neutral100,
   },
-  chipOn: { backgroundColor: colors.blue100 },
+  chipOn: { backgroundColor: colors.blue100, borderWidth: 1.5, borderColor: colors.blue },
   chipText: { fontFamily: fonts.body700, color: colors.ink, fontSize: 13 },
   chipTextOn: { fontFamily: fonts.body700, color: colors.blue, fontSize: 13 },
   chipAdd: { minHeight: 40, paddingHorizontal: 12, justifyContent: 'center', borderRadius: radius.md, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.blue },
@@ -279,11 +294,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     padding: 14,
+    ...shadow.card,
   },
-  cardLiked: { borderColor: '#F2A68F' },
+  cardLiked: { borderColor: '#F2A68F', borderLeftWidth: 4, borderLeftColor: colors.redRaw },
   pressed: { opacity: 0.7 },
   name: { fontFamily: fonts.display700, color: colors.navy, fontSize: 15 },
-  reasons: { color: colors.green, fontFamily: fonts.body700, fontSize: 12.5 },
+  reasons: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 5 },
+  reason: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.pill, borderWidth: 1 },
+  reasonText: { fontFamily: fonts.body700, fontSize: 11.5 },
   heart: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'flex-start' },
   heartText: { fontSize: 24, color: '#B7C3DD' },
   heartOn: { color: colors.tomato },

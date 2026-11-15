@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import type { CandidateCard } from '@/api/endpoints';
-import { Banner, Button, Card, Screen, Text } from '@/components';
+import { Banner, Button, Card, HeroCard, Icon, Screen, StatusChip, Text } from '@/components';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useI18n } from '@/i18n';
 import { formatDayIst } from '@/lib/format';
@@ -63,35 +63,39 @@ function Body({ card: c, vacancyId }: { card: CandidateCard; vacancyId: string }
   ].filter(Boolean);
   return (
     <>
-      <View style={styles.head}>
-        <Avatar name={c.firstName} size={56} />
-        <View style={styles.flexBody}>
-          <Text variant="h2" style={styles.name}>{c.age !== null ? `${c.firstName}, ${c.age}` : c.firstName}</Text>
-          <Text variant="muted">
-            {[c.trade, c.yearsExperience !== null ? t('fa15d.years', { years: c.yearsExperience }) : null, c.code].filter(Boolean).join(' · ')}
-          </Text>
+      <HeroCard>
+        <View style={styles.head}>
+          <Avatar name={c.firstName} size={56} />
+          <View style={styles.flexBody}>
+            <Text style={styles.name}>{c.age !== null ? `${c.firstName}, ${c.age}` : c.firstName}</Text>
+            <Text style={styles.sub}>
+              {[c.trade, c.yearsExperience !== null ? t('fa15d.years', { years: c.yearsExperience }) : null, c.code].filter(Boolean).join(' · ')}
+            </Text>
+          </View>
         </View>
-      </View>
+      </HeroCard>
       {!c.suitable ? <Banner tone="warn" message={t('fa15d.notSuitableNow')} testID="not-suitable" /> : null}
       <Card>
-        <KeyValue label={t('fa15d.distance')} value={[c.distanceKm !== null ? `${c.distanceKm} km` : null, c.locality].filter(Boolean).join(' · ')} />
+        <KeyValue icon="location" accent="cyan" label={t('fa15d.distance')} value={[c.distanceKm !== null ? `${c.distanceKm} km` : null, c.locality].filter(Boolean).join(' · ')} />
         <KeyValue
+          icon="rupee"
+          accent="gold"
           label={t('fa15d.expectedSalary')}
           value={t('fa15d.perMonth', { min: formatRupees(c.expectedSalary.minPaise), max: formatRupees(c.expectedSalary.maxPaise).replace('₹', '') })}
         />
-        <KeyValue label={t('fa15d.speaks')} value={c.languages.join(', ') || '—'} />
-        <KeyValue label={t('fa15d.shift')} value={c.shift && SHIFT_KEYS[c.shift] ? t(SHIFT_KEYS[c.shift]) : '—'} />
-        <KeyValue label={t('fa15d.availableFrom')} value={c.availableNow || !c.availableFrom ? t('fa15d.immediately') : formatDayIst(c.availableFrom)} />
-        <KeyValue label={t('fa15d.lastJob')} value={[c.lastRole, c.lastEmployer].filter(Boolean).join(' · ') || '—'} />
+        <KeyValue icon="chat" accent="royal" label={t('fa15d.speaks')} value={c.languages.join(', ') || '—'} />
+        <KeyValue icon="clock" accent="navy" label={t('fa15d.shift')} value={c.shift && SHIFT_KEYS[c.shift] ? t(SHIFT_KEYS[c.shift]) : '—'} />
+        <KeyValue icon="calendar" accent="green" label={t('fa15d.availableFrom')} value={c.availableNow || !c.availableFrom ? t('fa15d.immediately') : formatDayIst(c.availableFrom)} />
+        <KeyValue icon="briefcase" accent="orange" label={t('fa15d.lastJob')} value={[c.lastRole, c.lastEmployer].filter(Boolean).join(' · ') || '—'} />
         <KeyValue
+          icon="id-card"
+          accent={c.idVerified ? 'green' : 'navy'}
           label={t('fa15d.id')}
           last
-          trailing={<Text style={c.idVerified ? styles.ok : styles.muted}>{c.idVerified ? t('fa15d.verified') : t('fa15d.notVerified')}</Text>}
+          trailing={<StatusChip tone={c.idVerified ? 'green' : 'neutral'} label={c.idVerified ? t('fa15d.verified') : t('fa15d.notVerified')} />}
         />
       </Card>
-      <Text style={styles.why} testID="why">
-        {t('fa15d.why', { reasons: reasons.join(', ') })}
-      </Text>
+      <Banner tone="ok" icon="star" message={t('fa15d.why', { reasons: reasons.join(', ') })} testID="why" />
       <View style={styles.actions}>
         <Button
           label={c.liked ? t('fa15d.ownerLikes') : t('fa15d.markLiked')}
@@ -102,6 +106,7 @@ function Body({ card: c, vacancyId }: { card: CandidateCard; vacancyId: string }
         />
         <Button
           label={t('fa15d.callToConfirm')}
+          icon={<Icon name="phone" color={colors.white} />}
           style={styles.action}
           disabled={!c.suitable}
           onPress={() => router.push(sellingRoutes.call(vacancyId, c.jobSeekerId))}
@@ -117,10 +122,8 @@ const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
   flexBody: { flex: 1 },
   head: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  name: { fontSize: 18 },
-  ok: { color: colors.green, fontFamily: fonts.body700 },
-  muted: { color: colors.soft },
-  why: { color: colors.green, fontFamily: fonts.body600 },
+  name: { fontFamily: fonts.display700, fontSize: 19, lineHeight: 25, color: colors.white },
+  sub: { fontFamily: fonts.body500, fontSize: 13, lineHeight: 18, color: colors.onBlueSoft },
   actions: { flexDirection: 'row', gap: 10 },
   action: { flex: 1 },
 });

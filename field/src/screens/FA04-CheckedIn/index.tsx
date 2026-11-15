@@ -2,7 +2,7 @@ import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useI18n } from '@/i18n';
-import { Banner, Button, Card, ErrorState, ListRow, LoadingState, ProgressBar, Screen, Text } from '@/components';
+import { Banner, Button, Card, ErrorState, HeroCard, IconTile, ListRow, LoadingState, ProgressBar, Screen, Text } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { isApiError } from '@/api/errors';
@@ -11,7 +11,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { formatCoordinates } from '@/device/location/location';
 import { formatTimeIst } from '@/lib/format';
 import { routes } from '@/navigation/routes';
-import { colors } from '@/theme';
+import { colors, fonts } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { useAttendanceToday, useFieldHome } from '../FA03-Home/useHome';
 import { SelectField } from '../_visits/SelectField';
@@ -73,7 +73,7 @@ export default function CheckedInScreen() {
               }`}
               testID="fa04-logged-in"
             />
-            <Card>
+            <Card stripe accent="gold">
               <SelectField
                 label={t('fa03.myStatus')}
                 value={(PICKABLE as readonly string[]).includes(today.data.status ?? '') ? (today.data.status as (typeof PICKABLE)[number]) : null}
@@ -86,30 +86,36 @@ export default function CheckedInScreen() {
               />
               {change.error ? <Text variant="small" color={colors.tomato}>{isApiError(change.error) ? change.error.message : t('common.error')}</Text> : null}
             </Card>
+            <HeroCard eyebrow={t('fa04.production')} emoji="⏱️">
+              <Text style={styles.heroValue} testID="fa04-production">
+                {t('fa04.ofHours', { done: hm(today.data.productionSeconds), total: '8h' })}
+              </Text>
+              {/* Half the production on a day with a half day of leave (owner decision 12 Nov). */}
+              <ProgressBar value={today.data.productionSeconds / (today.data.leaveHalf ? FULL_DAY_SECONDS / 2 : FULL_DAY_SECONDS)} color={colors.cyanRaw} onBlue />
+            </HeroCard>
             <Card>
               <ListRow
-                title={t('fa04.production')}
-                trailing={
-                  <Text variant="bodyStrong" testID="fa04-production">
-                    {t('fa04.ofHours', { done: hm(today.data.productionSeconds), total: '8h' })}
-                  </Text>
-                }
+                title={t('fa04.breaks')}
+                leading={<IconTile icon="clock" accent="orange" size={34} />}
+                trailing={<Text variant="bodyStrong">{hm(today.data.breakSeconds)}</Text>}
               />
-              {/* Half the production on a day with a half day of leave (owner decision 12 Nov). */}
-              <ProgressBar value={today.data.productionSeconds / (today.data.leaveHalf ? FULL_DAY_SECONDS / 2 : FULL_DAY_SECONDS)} />
-              <View style={styles.gap} />
-              <ListRow title={t('fa04.breaks')} trailing={<Text variant="bodyStrong">{hm(today.data.breakSeconds)}</Text>} />
-              <ListRow title={t('fa04.myAttendance')} onPress={() => router.push(routes.myAttendance)} last />
+              <ListRow
+                title={t('fa04.myAttendance')}
+                leading={<IconTile icon="calendar" accent="royal" size={34} />}
+                onPress={() => router.push(routes.myAttendance)}
+                last
+              />
             </Card>
           </>
         )}
         <Card testID="fa04-location">
-          <ListRow title={t('fa04.location')} trailing={<Text variant="bodyStrong">{checkIn ? formatCoordinates(checkIn) : t('common.placeholderValue')}</Text>} />
+          <ListRow title={t('fa04.location')} leading={<IconTile icon="location" accent="cyan" size={34} />} trailing={<Text variant="bodyStrong">{checkIn ? formatCoordinates(checkIn) : t('common.placeholderValue')}</Text>} />
           <ListRow
             title={t('fa04.accuracy')}
+            leading={<IconTile icon="target" accent="green" size={34} />}
             trailing={<Text variant="bodyStrong">{checkIn ? t('device.location.accuracy', { meters: Math.round(checkIn.accuracyMeters) }) : t('common.placeholderValue')}</Text>}
           />
-          <ListRow title={t('fa04.recorded')} trailing={<Text variant="small">{t('fa04.recordedValue')}</Text>} last />
+          <ListRow title={t('fa04.recorded')} leading={<IconTile icon="shield" accent="navy" size={34} />} trailing={<Text variant="small">{t('fa04.recordedValue')}</Text>} last />
         </Card>
         <Text variant="muted">{t('fa04.privacy')}</Text>
         <Button label={t('fa04.seeVisits')} onPress={() => router.push(routes.visits)} testID="fa04-see-visits" />
@@ -120,5 +126,5 @@ export default function CheckedInScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
-  gap: { height: 8 },
+  heroValue: { fontFamily: fonts.display700, fontSize: 24, lineHeight: 30, color: colors.white, fontVariant: ['tabular-nums'] },
 });

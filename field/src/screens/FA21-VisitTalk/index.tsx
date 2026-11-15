@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useI18n } from '@/i18n';
-import { Banner, Button, Card, EmptyState, ErrorState, LoadingState, Screen, Text, TextField } from '@/components';
+import { Banner, Button, Card, EmptyState, ErrorState, HeroCard, Icon, LoadingState, Screen, Text, TextField } from '@/components';
 import { isApiError } from '@/api/errors';
 import { visitPaths } from '@/api/endpoints';
 import { useOfflineQueue } from '@/device/offline-queue';
@@ -106,16 +106,15 @@ function Talk({ visit }: { visit: VisitDraft }) {
       <AppHeader title={t('fa20.title')} />
       <Screen>
         <StepHeader step={2} label={t('fa21.step')} />
-        <Card>
-          <Text variant="label">{t('fa21.timer')}</Text>
+        <HeroCard eyebrow={t('fa21.timer')} emoji="⏱️">
           <View style={styles.timerRow}>
-            <Text variant="muted">{t('fa21.started', { time: formatTimeIst(startedAt) })}</Text>
+            <Text style={styles.started}>{t('fa21.started', { time: formatTimeIst(startedAt) })}</Text>
             <Text style={styles.timer} testID="fa21-timer">
               {formatTimer(now - startedAt)}
             </Text>
           </View>
-        </Card>
-        <Card>
+        </HeroCard>
+        <Card stripe accent="gold">
           <View style={styles.form}>
             <TextField
               label={t('fa21.shopName')}
@@ -141,11 +140,11 @@ function Talk({ visit }: { visit: VisitDraft }) {
         </Card>
         {problem ? <Banner tone="error" message={problem} testID="fa21-problem" /> : null}
         <Text variant="label">{t('fa21.howDidItGo')}</Text>
-        <Button label={t('fa21.onboardNow')} loading={busy} onPress={() => void onboardNow()} testID="fa21-onboard" />
-        <Button label={t('fa21.comeBack')} variant="secondary" onPress={() => other('interested_later')} testID="fa21-come-back" />
-        <Button label={t('fa21.notInterested')} variant="secondary" onPress={() => other('not_interested')} testID="fa21-not-interested" />
-        <Button label={t('fa21.ownerNotThere')} variant="secondary" onPress={() => other('owner_not_there')} testID="fa21-owner-not-there" />
-        <Button label={t('fa21.openPitch')} variant="secondary" onPress={() => router.push(routes.feeCalculator)} testID="fa21-pitch" />
+        <Button label={t('fa21.onboardNow')} icon={<Icon name="check-circle" color={colors.white} />} loading={busy} onPress={() => void onboardNow()} testID="fa21-onboard" />
+        <Button label={t('fa21.comeBack')} variant="secondary" icon={<Icon name="calendar" color={colors.cyan} />} onPress={() => other('interested_later')} testID="fa21-come-back" />
+        <Button label={t('fa21.notInterested')} variant="secondary" icon={<Icon name="x-circle" color={colors.crit} />} onPress={() => other('not_interested')} testID="fa21-not-interested" />
+        <Button label={t('fa21.ownerNotThere')} variant="secondary" icon={<Icon name="clock" color={colors.amber} />} onPress={() => other('owner_not_there')} testID="fa21-owner-not-there" />
+        <Button label={t('fa21.openPitch')} variant="secondary" icon={<Icon name="chat" color={colors.navy} />} onPress={() => router.push(routes.feeCalculator)} testID="fa21-pitch" />
       </Screen>
     </View>
   );
@@ -153,8 +152,9 @@ function Talk({ visit }: { visit: VisitDraft }) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
-  timerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 6 },
-  timer: { fontFamily: fonts.display800, fontSize: 30, color: colors.navy, fontVariant: ['tabular-nums'] },
+  timerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 },
+  started: { fontFamily: fonts.body500, fontSize: 13, color: colors.onBlueSoft, flexShrink: 1 },
+  timer: { fontFamily: fonts.display800, fontSize: 30, color: colors.white, fontVariant: ['tabular-nums'] },
   form: { gap: 12 },
   bold: { fontFamily: fonts.body700, color: colors.soft, fontSize: 12 },
 });

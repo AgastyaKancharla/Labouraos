@@ -6,7 +6,7 @@ import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import type { InterviewView } from '@/api/endpoints';
 import { useAuth } from '@/auth/AuthProvider';
-import { Banner, Button, Card, Screen, StatusChip, Text } from '@/components';
+import { Banner, Button, Card, HeroCard, Screen, StatusChip, Text } from '@/components';
 import { DateField, MoneyField, todayKeyIst } from '@/components/form';
 import { useI18n } from '@/i18n';
 import { formatDayIst, formatTimeIst } from '@/lib/format';
@@ -59,16 +59,13 @@ function Selected({ interview: i }: { interview: InterviewView }) {
 
   return (
     <>
-      <View>
-        <Text variant="h2" style={styles.title}>{t('fa15s.title', { name: i.candidate.firstName })}</Text>
-        <Text variant="muted">{`${i.business.name} · ${i.vacancy.trade}`}</Text>
-      </View>
+      <HeroCard title={t('fa15s.title', { name: i.candidate.firstName })} subtitle={`${i.business.name} · ${i.vacancy.trade}`} emoji="🎉" />
       {i.result && i.result !== 'selected' ? <Banner tone="info" message={t('fa15f.wasOther')} /> : null}
-      <Card title={t('fa15s.step1')}>
+      <Card title={t('fa15s.step1')} icon="check-circle" accent="green" stripe>
         {confirmed ? (
           <>
-            <KeyValue label={t('fa15s.salary')} value={formatRupees(i.placement!.agreedSalaryPaise)} strong />
-            <KeyValue label={t('fa15s.joining')} value={i.placement!.joiningDate ? formatDayIst(i.placement!.joiningDate) : '—'} strong />
+            <KeyValue icon="rupee" accent="cyan" label={t('fa15s.salary')} value={formatRupees(i.placement!.agreedSalaryPaise)} strong />
+            <KeyValue icon="calendar" accent="royal" label={t('fa15s.joining')} value={i.placement!.joiningDate ? formatDayIst(i.placement!.joiningDate) : '—'} strong />
             <KeyValue
               label={t('fa15s.confirmedBy', { owner })}
               last
@@ -98,7 +95,7 @@ function Selected({ interview: i }: { interview: InterviewView }) {
           </View>
         )}
       </Card>
-      <Card title={t('fa15s.step2')} testID="fee-card">
+      <Card title={t('fa15s.step2')} icon="rupee" accent="gold" stripe testID="fee-card">
         {fee && salaryShown ? (
           <>
             <KeyValue label={t('fa15s.feeLine', { percent: feePercent ?? '', salary: formatRupees(salaryShown) })} value={formatRupees(fee.fee)} />
@@ -123,7 +120,6 @@ function Selected({ interview: i }: { interview: InterviewView }) {
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
   gap: { gap: 12 },
-  title: { fontSize: 17 },
   total: { fontFamily: fonts.display700, color: colors.blue, fontSize: 15 },
   note: { marginTop: 8 },
 });

@@ -3,14 +3,14 @@ import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useI18n } from '@/i18n';
-import { Button, Card, EmptyState, ErrorState, Icon, ListRow, LoadingState, Screen, StatusChip, Text, TileMap } from '@/components';
+import { Button, Card, EmptyState, ErrorState, IconTile, ListRow, LoadingState, Screen, StatusChip, Text, TileMap } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import type { ShopPoint } from '@/api/endpoints';
 import { useLocation } from '@/device/location/useLocation';
 import { formatCoordinates } from '@/device/location/location';
 import { routes } from '@/navigation/routes';
-import { colors } from '@/theme';
+import { colors, shadow } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { formatDistance } from '../_visits/format';
 import { STATUS_COLORS, statusKey } from '../_visits/labels';
@@ -55,7 +55,7 @@ export default function MapScreen() {
       <Screen onRefresh={() => void read()} refreshing={location.loading}>
         <Card compact>
           <View style={styles.row}>
-            <Icon name="location" color={colors.blue} />
+            <IconTile icon="location" accent={fix ? 'royal' : 'navy'} size={32} />
             <Text variant="bodyStrong" style={styles.flex1} testID="fa13-me">
               {fix ? `${t('fa13.youAreHere')} · ${formatCoordinates(fix)}` : location.errorKey ? t(location.errorKey) : t('fa20.gpsFinding')}
             </Text>
@@ -80,19 +80,20 @@ export default function MapScreen() {
             <Legend key={s} color={STATUS_COLORS[s]} label={t(statusKey(s))} />
           ))}
         </Card>
-        <Card title={t('fa13.near')} testID="fa13-near">
+        <Card title={t('fa13.near')} icon="store" accent="gold" testID="fa13-near">
           {!fix ? null : q.isPending ? (
             <LoadingState compact />
           ) : q.isError ? (
             <ErrorState error={q.error} onRetry={() => void q.refetch()} compact />
           ) : near.length === 0 ? (
-            <EmptyState compact message={t('fa13.noShops')} />
+            <EmptyState compact emoji="🗺️" message={t('fa13.noShops')} />
           ) : (
             near.map((s, i) => (
               <ListRow
                 key={s.id}
                 title={s.name}
                 subtitle={[t(statusKey(s.status)), formatDistance(s.distanceMeters)].join(' · ')}
+                leading={<View style={[styles.pin, { backgroundColor: STATUS_COLORS[s.status] ?? colors.soft }]} />}
                 trailing={<StatusChip tone={s.status === 'revisit_due' ? 'amber' : 'blue'} label={s.status === 'revisit_due' ? t('fa13.visit') : t('fa13.open')} />}
                 onPress={() => open(s)}
                 last={i === near.length - 1}
@@ -122,4 +123,5 @@ const styles = StyleSheet.create({
   legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   dot: { width: 10, height: 10, borderRadius: 5 },
+  pin: { width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: colors.white, ...shadow.card },
 });

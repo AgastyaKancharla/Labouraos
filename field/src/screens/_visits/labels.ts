@@ -1,4 +1,5 @@
 import type { MessageKey } from '@/i18n';
+import { colors } from '@/theme';
 
 /** i18n keys for the shared visit words. */
 export function statusKey(status: string): MessageKey {
@@ -48,9 +49,9 @@ export function verificationKey(status: string | null, paused: boolean): Message
 }
 
 export const STATUS_COLORS: Record<string, string> = {
-  onboarded: '#1C9A6C',
-  revisit_due: '#F2C200',
-  interested: '#0B6E82',
-  not_interested: '#E5352B',
-  lead: '#92670A',
+  onboarded: colors.green,
+  revisit_due: colors.gold,
+  interested: colors.cyanRaw,
+  not_interested: colors.redRaw,
+  lead: colors.orangeRaw,
 };

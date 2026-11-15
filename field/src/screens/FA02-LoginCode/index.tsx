@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Redirect, router } from 'expo-router';
-import { Banner, Button, CodeInput, Screen, Text, TopBar } from '@/components';
+import { Banner, Button, Card, CodeInput, Emoji, Screen, Text, TopBar } from '@/components';
 import { useAuth } from '@/auth/AuthProvider';
 import { useI18n, type MessageKey } from '@/i18n';
 import { formatCountdown } from '@/lib/format';
@@ -64,20 +64,25 @@ export default function LoginCodeScreen({ now = Date.now }: { now?: () => number
       <TopBar title={t('common.brand')} subtitle={t('common.fieldAgent')} />
       <Screen testID="screen-FA02">
         <View style={styles.body}>
-          <Text variant="h1" accessibilityRole="header">
-            {t('fa02.title')}
-          </Text>
+          <View style={styles.titleRow}>
+            <Text variant="h1" accessibilityRole="header" style={styles.flex1}>
+              {t('fa02.title')}
+            </Text>
+            <Emoji symbol="🔐" size={28} />
+          </View>
           <Text variant="muted">{t('fa02.help')}</Text>
-          <CodeInput
-            value={code}
-            onChange={setCode}
-            onComplete={(value) => void submit(value)}
-            label={t('fa02.codeLabel')}
-            length={CODE_LENGTH}
-            autoFocus
-            editable={!expired && !busy}
-            testID="login-code"
-          />
+          <Card stripe accent="gold">
+            <CodeInput
+              value={code}
+              onChange={setCode}
+              onComplete={(value) => void submit(value)}
+              label={t('fa02.codeLabel')}
+              length={CODE_LENGTH}
+              autoFocus
+              editable={!expired && !busy}
+              testID="login-code"
+            />
+          </Card>
           {errorKey ? <Banner tone="error" message={t(errorKey)} testID="code-error" /> : null}
           {expired ? (
             <>
@@ -109,4 +114,6 @@ export default function LoginCodeScreen({ now = Date.now }: { now?: () => number
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
   body: { gap: 16, paddingTop: 20 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  flex1: { flex: 1 },
 });

@@ -7,6 +7,8 @@ One codebase (Expo, React Native, TypeScript) for:
 
 Designs: `FA01-Login` … `FA22-VisitProof` (phone screens, approved 9 Nov). The rules come from the Master Guide, "The field agent app (decided 9 Nov)".
 
+Colours (Master Guide rev 171–172, owner request 15 Nov — updates the 9 Nov "designs are final" note for the look only): the full Laboura palette the way the Command Center uses it — royal, navy, cyan, gold, orange, red and green, mixed across tiles and lists. Blue gradient hero cards (`HeroCard`), stat tiles with a coloured top bar (`StatTile`), drawn icons in coloured round tiles (`IconTile`), colour-coded chips, steps and rows, friendly emoji pictures beside headings and empty states (`Emoji`, never the only meaning) and the brand swoosh. Buttons stay royal blue. Raw bright colours (`accents.<name>.raw`) are only for bars, fills, icon tiles and large shapes; words on light backgrounds use the text-safe `fg`; white words only on royal, navy or the gradient. All of it is in `src/theme/tokens.ts` (`accents`, `statTones`, `tones`, `heroGradient`).
+
 ```
 field/
   app/                    routes (expo-router). Files here are thin: they export a screen.

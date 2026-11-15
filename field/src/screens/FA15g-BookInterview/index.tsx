@@ -5,7 +5,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import type { BookingContext } from '@/api/endpoints';
-import { Button, Card, Screen, Text } from '@/components';
+import { Button, Card, HeroCard, Screen } from '@/components';
 import { Checkbox, DateField, formatClock, SelectField, TimeField, todayKeyIst } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useI18n } from '@/i18n';
@@ -66,11 +66,8 @@ function Book({ ctx, jobSeekerId }: { ctx: BookingContext; jobSeekerId: string }
   const ready = !!date && (type === 'walk_in' || !!time);
   return (
     <>
-      <View>
-        <Text variant="h2" style={styles.title}>{t('fa15g.title')}</Text>
-        <Text variant="muted">{t('fa15g.who', { name: ctx.candidateFirstName, business: ctx.businessName, trade: ctx.trade })}</Text>
-      </View>
-      <Card>
+      <HeroCard title={t('fa15g.title')} subtitle={t('fa15g.who', { name: ctx.candidateFirstName, business: ctx.businessName, trade: ctx.trade })} emoji="📅" />
+      <Card stripe accent="cyan">
         <View style={styles.gap}>
           <DateField label={t('fa15g.date')} required value={date} onChange={setDate} min={todayKeyIst()} testID="date" />
           {type !== 'walk_in' ? (
@@ -116,5 +113,4 @@ function Book({ ctx, jobSeekerId }: { ctx: BookingContext; jobSeekerId: string }
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
   gap: { gap: 12 },
-  title: { fontSize: 17 },
 });

@@ -5,7 +5,7 @@ import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import type { StaffPhotoStatus } from '@/api/endpoints/staffPhoto';
 import { useAuth } from '@/auth/AuthProvider';
-import { Banner, Button, Screen, Text } from '@/components';
+import { Banner, Button, Emoji, Screen, Text } from '@/components';
 import { LiveCamera, type CapturedPhoto } from '@/device/camera';
 import { useI18n } from '@/i18n';
 import { colors } from '@/theme';
@@ -46,7 +46,10 @@ export default function StaffPhotoScreen({ reason }: { reason: StaffPhotoStatus[
   return (
     <View style={styles.flex}>
       <Screen testID="screen-staff-photo">
-        <Text variant="h1">{t('staffPhoto.title')}</Text>
+        <View style={styles.titleRow}>
+          <Text variant="h1" style={styles.flex1}>{t('staffPhoto.title')}</Text>
+          <Emoji symbol="🤳" size={30} />
+        </View>
         <Text variant="muted">{t(reason === 'retake' ? 'staffPhoto.retake' : 'staffPhoto.missing')}</Text>
         {failed ? <Banner tone="error" title={t('staffPhoto.failed')} /> : null}
         <Button label={saving ? t('staffPhoto.saving') : t('staffPhoto.open')} loading={saving} onPress={() => setCamera(true)} testID="staff-photo-open" />
@@ -58,4 +61,6 @@ export default function StaffPhotoScreen({ reason }: { reason: StaffPhotoStatus[
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
+  flex1: { flex: 1 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
 });
