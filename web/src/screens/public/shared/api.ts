@@ -108,8 +108,9 @@ export const registrationApi = {
   sendOtp: (token: string) => api.post<OtpSent>('/consent/send-otp', { token }, PUBLIC),
   verifyOtp: (token: string, requestId: string, code: string) =>
     api.post<RegistrationOpen>(`/registration/${enc(token)}/verify-otp`, { requestId, code }, PUBLIC),
-  consent: (token: string, requestId: string, purposes: string[], language: PublicLanguage) =>
-    api.post<{ success: boolean }>('/consent/submit', { token, otpRequestId: requestId, purposes, language }, PUBLIC),
+  /** textHash: the hash of the terms text the page showed (the server refuses a text that changed meanwhile). */
+  consent: (token: string, requestId: string, purposes: string[], language: PublicLanguage, textHash?: string) =>
+    api.post<{ success: boolean }>('/consent/submit', { token, otpRequestId: requestId, purposes, language, textHash }, PUBLIC),
   /** Only the QR's text: the card's picture and the e-Aadhaar PDF stay on the phone. */
   aadhaarQr: (token: string, requestId: string, qrText: string) =>
     api.post<AadhaarQrResult>(`/registration/${enc(token)}/aadhaar-qr`, { requestId, qrText }, PUBLIC),

@@ -58,8 +58,8 @@ export const legalApi = {
     api.get<LegalDocument>(`/legal/documents/${key}`, { ...PUBLIC, query: { lang: language } }),
   company: (language: string) => api.get<LegalCompany>('/legal/company', { ...PUBLIC, query: { lang: language } }),
   /** "We've updated our terms" on the job seeker's or partner's link, with the code verified on opening it. */
-  reconsent: (token: string, requestId: string, purposes: string[], language: string) =>
-    api.post<{ success: boolean; version: string }>('/consent/reconsent', { token, otpRequestId: requestId, purposes, language }, PUBLIC),
+  reconsent: (token: string, requestId: string, purposes: string[], language: string, textHash?: string) =>
+    api.post<{ success: boolean; version: string }>('/consent/reconsent', { token, otpRequestId: requestId, purposes, language, textHash }, PUBLIC),
 };
 
 export function useLegalDocument(key: LegalDocumentKey, enabled = true) {
@@ -126,7 +126,8 @@ export function ReconsentForm({
 }: {
   documentKey: LegalDocumentKey;
   acceptedVersion: string | null;
-  onAccept: (purposes: string[]) => Promise<unknown>;
+  /** The ticked purposes and the hash of the exact text shown (the server refuses a text that changed). */
+  onAccept: (purposes: string[], textHash: string) => Promise<unknown>;
 }) {
   const { t } = useI18n();
   const doc = useLegalDocument(documentKey);
@@ -141,7 +142,7 @@ export function ReconsentForm({
     setBusy(true);
     setError(null);
     try {
-      await onAccept(d.consents.filter((c) => ticked[c.purpose]).map((c) => c.purpose));
+      await onAccept(d.consents.filter((c) => ticked[c.purpose]).map((c) => c.purpose), d.hash);
     } catch (e) {
       setError(e);
     } finally {

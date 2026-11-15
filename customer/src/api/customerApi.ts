@@ -70,7 +70,7 @@ export interface CustomerApi {
 
   // Legal documents (rev 176): the current terms and re-consent by a fresh OTP
   legalDocument(profileId: string, language: string): Promise<LegalDocumentView>;
-  acceptTerms(profileId: string, input: { purposes: string[]; language: string; otp: OtpProof }): Promise<{ version: string }>;
+  acceptTerms(profileId: string, input: { purposes: string[]; language: string; otp: OtpProof; textHash?: string }): Promise<{ version: string }>;
 
   // Business vacancies: a draft, then the contact person's fresh OTP
   createVacancy(profileId: string, draft: VacancyDraft): Promise<VacancySummary>;

@@ -374,6 +374,8 @@ export interface LegalDocumentView {
   /** "In short", as inline HTML lines (<strong> only). */
   summary: string[];
   bodyHtml: string;
+  /** sha256 of the exact text shown, sent back on Accept (the server refuses a text that changed meanwhile). */
+  hash?: string;
   consents: { purpose: string; required: boolean; title: string; description: string }[];
 }
 

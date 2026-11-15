@@ -102,6 +102,7 @@ also carry `code: "VALIDATION_FAILED"` and, when known, `field`.
 | `PUSH_TOKEN_IN_USE` | 409 | `PUT /me/device`: that push token belongs to a phone signed in to another account (a different app installation) |
 | `DELETION_PENDING` | 409 | A deletion request is open: no new requests, links, drafts or vacancies, and no sign-in on a new phone until it is cancelled |
 | `NOT_IMPLEMENTED` | 501 | Route exists but not built yet on this server |
+| `RECONSENT_REQUIRED` | 409 | Accept the updated terms first (§7.4): paying, ID checks, interview bookings and accepting an offer wait until then. `documentKey`, `currentVersion`, `acceptedVersion` included |
 | `INSTALLATION_REQUIRED` | 400 | The `X-Laboura-Installation` header is missing |
 | `HUMAN_CHECK_REQUIRED` | 403 | Show the human check (`provider` says which; `mock` on the test setup), then resend with `humanCheckToken` |
 | `OTP_PAUSED` | 503 | System-wide code limit reached (abuse protection): show "Try again later or call Laboura" |
@@ -721,11 +722,16 @@ business.
 Show the "In short" (`summary`) first and the full text behind "Read the full
 terms"; the ticks are itemised and never pre-ticked.
 
-`POST …/legal/accept` `{ "purposes": ["job_matching", …], "language": "kn" }`
+`POST …/legal/accept` `{ "purposes": ["job_matching", …], "language": "kn", "textHash": "(document.hash)" }`
 after a step-up for `accept_terms` → `{ "success": true, "version": "1.1" }`.
 Every required purpose must be ticked (`400` otherwise). The server records the
 acceptance (version, language, the exact text's hash) and grants the consents
-under notice 1.2.
+under notice 1.2. A `textHash` that is not the text the server would record
+(Settings or the version changed while the person read it) answers `400`: load
+the document again. Promotions left unticked withdraws an earlier "yes" to
+promotions. Only someone who already did the first consent step can re-consent
+(`400` otherwise); a second Accept on the current version answers
+`{ "success": true, "alreadyAccepted": true }`.
 
 A suspended business (D6) also gets
 `"suspension": { "until": "…" | null, "permanent": false, "reason": "…" }` on

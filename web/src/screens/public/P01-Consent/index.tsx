@@ -38,7 +38,7 @@ export default function Consent() {
     setSaving(true);
     setError(null);
     try {
-      await registrationApi.consent(token, requestId, PURPOSES.filter((p) => ticked[p.id]).map((p) => p.id), language);
+      await registrationApi.consent(token, requestId, PURPOSES.filter((p) => ticked[p.id]).map((p) => p.id), language, doc.data?.hash);
       await queryClient.invalidateQueries({ queryKey: ['registration', token] });
       navigate(to('P01c-Selfie', { token }));
     } catch (e) {

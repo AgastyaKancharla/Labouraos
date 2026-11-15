@@ -511,9 +511,9 @@ export function liveCustomerApi(api: ApiClient, options: Options = {}): Customer
       const r = await api.get<{ document: LegalDocumentView }>(`${profilePath(profileId)}/legal`, { query: { lang: language } });
       return r.document;
     },
-    acceptTerms: async (profileId, { purposes, language, otp }) => {
+    acceptTerms: async (profileId, { purposes, language, otp, textHash }) => {
       await verifyStepUp('accept_terms', otp.requestId, otp.code);
-      return api.post<{ version: string }>(`${profilePath(profileId)}/legal/accept`, { purposes, language });
+      return api.post<{ version: string }>(`${profilePath(profileId)}/legal/accept`, { purposes, language, textHash });
     },
 
     createVacancy: async (profileId, d) => {

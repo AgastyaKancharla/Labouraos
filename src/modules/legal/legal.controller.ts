@@ -46,8 +46,8 @@ export class LegalController {
     return { status, acceptances };
   }
 
-  /** The exact text someone accepted (the signed copy). */
-  @Get('acceptances/:id/text')
+  /** The exact text someone accepted (the signed copy): "View signed copy" on the staff screens. */
+  @Get('acceptance-text/:id')
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequireRoles('manager', 'ceo')
   @Header('Content-Type', 'text/html; charset=utf-8')

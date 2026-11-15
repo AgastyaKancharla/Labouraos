@@ -106,8 +106,13 @@ const EFFECTIVE: Record<LegalLanguage, string> = {
 const IN_SHORT: Record<LegalLanguage, string> = { en: 'In short', kn: 'ಸಂಕ್ಷಿಪ್ತವಾಗಿ', hi: 'संक्षेप में' };
 const VERSION_WORD: Record<LegalLanguage, string> = { en: 'Version', kn: 'ಆವೃತ್ತಿ', hi: 'संस्करण' };
 
+/**
+ * A Settings value as one line of text: company details sit in the terms
+ * header table, where a line break or a "|" would break the table (and the
+ * markdown renderer escapes any HTML in it).
+ */
 function filled(value: string | null | undefined): string | null {
-  const v = typeof value === 'string' ? value.trim() : '';
+  const v = typeof value === 'string' ? value.replace(/\s*[\r\n]+\s*/g, ', ').replace(/\|/g, '/').replace(/\s+/g, ' ').trim() : '';
   return v ? v : null;
 }
 

@@ -129,6 +129,12 @@ describe('Legal documents v1.1 (Master Guide rev 176)', () => {
     expect(doc).not.toContain('पंजीकरण के बाद जोड़ा जाएगा');
   });
 
+  it('a registered office typed on several lines (or with a "|") stays one safe cell of the header table', () => {
+    const doc = renderLegalDocument('job_seeker_terms', 'en', NUMBERS, { ...EMPTY_COMPANY, registeredOffice: '12, 3rd Cross\nJP Nagar | Bengaluru\r\n560078 <b>' });
+    expect(doc.html).toContain('12, 3rd Cross, JP Nagar / Bengaluru, 560078 &lt;b&gt;');
+    expect(doc.html).not.toContain('<b>');
+  });
+
   it('the hash is of the exact text shown: same input same hash, any change a new hash', () => {
     const a = renderLegalDocument('business_agreement', 'kn', NUMBERS, EMPTY_COMPANY);
     expect(renderLegalDocument('business_agreement', 'kn', NUMBERS, EMPTY_COMPANY).hash).toBe(a.hash);

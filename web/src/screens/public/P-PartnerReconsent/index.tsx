@@ -40,8 +40,8 @@ export default function PartnerReconsent() {
     <ReconsentForm
       documentKey="referral_terms"
       acceptedVersion={open.reconsent?.acceptedVersion ?? null}
-      onAccept={async (purposes) => {
-        await legalApi.reconsent(token, status.requestId ?? '', purposes, language);
+      onAccept={async (purposes, textHash) => {
+        await legalApi.reconsent(token, status.requestId ?? '', purposes, language, textHash);
         await queryClient.invalidateQueries({ queryKey: ['partner-link', token] });
       }}
     />

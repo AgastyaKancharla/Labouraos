@@ -54,7 +54,7 @@ export function UpdatedTerms({ profileId, legal }: { profileId: string; legal: L
     if (!d) return;
     setProblem(null);
     try {
-      await api.acceptTerms(profileId, { purposes: d.consents.filter((c) => ticked[c.purpose]).map((c) => c.purpose), language, otp });
+      await api.acceptTerms(profileId, { purposes: d.consents.filter((c) => ticked[c.purpose]).map((c) => c.purpose), language, otp, textHash: d.hash });
       await queryClient.invalidateQueries({ queryKey: queryKeys.home(profileId) });
     } catch (e) {
       setProblem(isApiError(e) ? e.message : t('terms.failed'));

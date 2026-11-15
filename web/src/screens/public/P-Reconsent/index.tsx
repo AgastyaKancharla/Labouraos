@@ -42,8 +42,8 @@ export default function Reconsent() {
     <ReconsentForm
       documentKey="job_seeker_terms"
       acceptedVersion={open.reconsent?.acceptedVersion ?? null}
-      onAccept={async (purposes) => {
-        await legalApi.reconsent(token, status.requestId ?? '', purposes, language);
+      onAccept={async (purposes, textHash) => {
+        await legalApi.reconsent(token, status.requestId ?? '', purposes, language, textHash);
         await queryClient.invalidateQueries({ queryKey: ['registration', token] });
       }}
     />

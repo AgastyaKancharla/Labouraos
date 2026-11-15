@@ -3,6 +3,9 @@ import { Card } from '../../../components/Card';
 import { StatusPill } from '../../../components/Badge';
 import { api } from '../../../lib/api/client';
 import { formatDateTimeIST } from '../../../lib/format/date';
+import { ApiError } from '../../../lib/api/errors';
+import { useToast } from '../../../components/Toast';
+import { openWithToken } from '../../finance/_kit/upload';
 import { ActionButton } from './actions';
 
 /**
@@ -45,6 +48,7 @@ const LANG: Record<string, string> = { kn: 'Kannada', hi: 'Hindi', en: 'English'
 
 /** "Accepted version 1.1 (English) · needs re-consent", with each acceptance listed. */
 export function LegalAcceptanceCard({ subjectType, subjectId }: { subjectType: LegalSubject; subjectId: string }) {
+  const toast = useToast();
   const q = useQuery({
     queryKey: ['legal-acceptances', subjectType, subjectId],
     queryFn: () => api.get<AcceptanceList>(`/legal/acceptances/${subjectType}/${subjectId}`),
@@ -66,7 +70,17 @@ export function LegalAcceptanceCard({ subjectType, subjectId }: { subjectType: L
           {acceptances.map((a) => (
             <li key={a.id}>
               {formatDateTimeIST(a.acceptedAt)} · {CONTEXT[a.context] ?? a.context} · v{a.version}
-              {a.noticeVersion ? ` (notice ${a.noticeVersion})` : ''} · {LANG[a.language] ?? a.language} · {a.method === 'in_app' ? 'in the app' : 'on the link'} by OTP
+              {a.noticeVersion ? ` (notice ${a.noticeVersion})` : ''} · {LANG[a.language] ?? a.language} · {a.method === 'in_app' ? 'in the app' : 'on the link'} by OTP ·{' '}
+              <button
+                type="button"
+                className="lb-link"
+                data-testid={`signed-copy-${a.id}`}
+                onClick={() =>
+                  openWithToken(`/legal/acceptance-text/${a.id}`).catch((e) => toast.error(e instanceof ApiError ? e.message : 'Could not open the signed copy'))
+                }
+              >
+                View signed copy
+              </button>
             </li>
           ))}
         </ul>

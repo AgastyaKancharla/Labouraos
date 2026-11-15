@@ -10,6 +10,7 @@ const doc = {
   title: 'Job Seeker Terms',
   summary: ['You pay <strong>₹499</strong> once.'],
   bodyHtml: '<section><h3>1. What Laboura does</h3><p>Full terms text.</p></section>',
+  hash: 'a'.repeat(64),
   consents: [
     { purpose: 'job_matching', required: true, title: '1. Job matching', description: 'Match my profile.' },
     { purpose: 'promotions', required: false, title: '6. Promotions (optional)', description: 'Offers and news.' },
@@ -38,7 +39,7 @@ describe('We have updated our terms (legal documents v1.1)', () => {
     expect(api.sendStepUp).toHaveBeenCalledWith('accept_terms', undefined);
     await fireEvent.changeText(await screen.findByTestId('terms-otp-code'), '123456');
     await waitFor(() =>
-      expect(api.acceptTerms).toHaveBeenCalledWith('p-js', { purposes: ['job_matching'], language: 'en', otp: { requestId: 'acc-1', code: '123456' } }),
+      expect(api.acceptTerms).toHaveBeenCalledWith('p-js', { purposes: ['job_matching'], language: 'en', otp: { requestId: 'acc-1', code: '123456' }, textHash: 'a'.repeat(64) }),
     );
   });
 
