@@ -614,19 +614,64 @@ describe('Customer app API', () => {
       expect(refresh.body.code).toBe('INSTALLATION_REQUIRED');
     });
 
-    it('when the daily breaker is open, existing customers still get codes (N3)', async () => {
+    it('above the daily limit the service degrades: everyone gets the human check, known customers and new numbers still get codes (N3, INF-4)', async () => {
       const existing = newPhone();
       await signIn(existing);
       const saved = process.env.CUSTOMER_OTP_DAILY_LIMIT;
       process.env.CUSTOMER_OTP_DAILY_LIMIT = '1';
       try {
-        const fresh = await json(http().post(`${API}/auth/otp/send`)).send({ phone: newPhone(), humanCheckToken: HUMAN }).expect(503);
-        expect(fresh.body.code).toBe('OTP_PAUSED');
+        const fresh = newPhone();
+        installation = `breaker-a-${stamp}-${seq}`;
+        const asked = await json(http().post(`${API}/auth/otp/send`)).send({ phone: fresh }).expect(403);
+        expect(asked.body.code).toBe('HUMAN_CHECK_REQUIRED');
+        await json(http().post(`${API}/auth/otp/send`)).send({ phone: fresh, humanCheckToken: HUMAN }).expect(200);
+        installation = `breaker-b-${stamp}-${seq}`;
+        await json(http().post(`${API}/auth/otp/send`)).send({ phone: existing }).expect(403);
         await json(http().post(`${API}/auth/otp/send`)).send({ phone: existing, humanCheckToken: HUMAN }).expect(200);
       } finally {
         if (saved === undefined) delete process.env.CUSTOMER_OTP_DAILY_LIMIT;
         else process.env.CUSTOMER_OTP_DAILY_LIMIT = saved;
       }
+    });
+
+    it('asks for the human check by address after 3 different numbers in an hour (INF-4)', async () => {
+      // Each number from its own installation: only the address links them.
+      for (let i = 0; i < 3; i += 1) {
+        installation = `addr-${stamp}-${seq}-${i}`;
+        await json(http().post(`${API}/auth/otp/send`)).send({ phone: newPhone() }).expect(200);
+      }
+      installation = `addr-${stamp}-${seq}-last`;
+      const fourth = newPhone();
+      const asked = await json(http().post(`${API}/auth/otp/send`)).send({ phone: fourth }).expect(403);
+      expect(asked.body).toEqual(expect.objectContaining({ code: 'HUMAN_CHECK_REQUIRED' }));
+      await json(http().post(`${API}/auth/otp/send`)).send({ phone: fourth, humanCheckToken: HUMAN }).expect(200);
+    });
+
+    it('the number of different numbers before the address check is a setting', async () => {
+      const saved = process.env.CUSTOMER_OTP_ADDRESS_PHONES_BEFORE_CHECK;
+      process.env.CUSTOMER_OTP_ADDRESS_PHONES_BEFORE_CHECK = '1';
+      try {
+        installation = `addr1-${stamp}-${seq}-a`;
+        await json(http().post(`${API}/auth/otp/send`)).send({ phone: newPhone() }).expect(200);
+        installation = `addr1-${stamp}-${seq}-b`;
+        await json(http().post(`${API}/auth/otp/send`)).send({ phone: newPhone() }).expect(403);
+      } finally {
+        if (saved === undefined) delete process.env.CUSTOMER_OTP_ADDRESS_PHONES_BEFORE_CHECK;
+        else process.env.CUSTOMER_OTP_ADDRESS_PHONES_BEFORE_CHECK = saved;
+      }
+    });
+
+    it('caps one address at 20 codes an hour, even with the human check passed (INF-4)', async () => {
+      const { CUSTOMER_OTP_LIMITS, hashOf, customerPhoneHash } = await import('../customer-account/customer-otp-limiter.service');
+      expect(CUSTOMER_OTP_LIMITS.perAddressPerHour).toBe(20);
+      // 20 earlier sends from this test's address (the test client's own address), each for another number.
+      const addresses = ['127.0.0.1', '::ffff:127.0.0.1', '::1'];
+      await prisma.customerOtpAttempt.createMany({
+        data: addresses.flatMap((ip) => Array.from({ length: 20 }, (_, i) => ({ kind: 'send', ipHash: hashOf('ip', ip), phoneHash: customerPhoneHash(`+9198${String(i).padStart(8, '0')}`) }))),
+      });
+      installation = `cap-${stamp}-${seq}`;
+      const res = await json(http().post(`${API}/auth/otp/send`)).send({ phone: newPhone(), humanCheckToken: HUMAN }).expect(429);
+      expect(res.body.code).toBe('OTP_LIMIT');
     });
 
     it('wrong codes from another installation never lock the owner\'s phone (N4)', async () => {

@@ -131,11 +131,10 @@ export class CustomerSignInService {
         throw bad(CUSTOMER_ERROR_CODES.HUMAN_CHECK_REQUIRED, 'Please confirm you are a person, then ask for the code again', HttpStatus.FORBIDDEN, { provider: this.humanCheck.name });
       }
     }
-    // A number that already has an account keeps getting sign-in codes even when
-    // the system-wide breaker is open (its own limits still apply), so an attack
-    // cannot lock every existing customer out (security re-check N3).
-    const existingAccount = accountId !== null || Boolean(await this.prisma.customerAccount.findUnique({ where: { phone }, select: { id: true } }));
-    const rowId = await this.limiter.claimSend(caller, now, { existingAccount });
+    // Above the system-wide daily limit everyone is asked for the human check
+    // (needsHumanCheck) instead of sending stopping, so an attack can neither
+    // lock existing customers out nor shut sign-ups (security re-check N3, INF-4).
+    const rowId = await this.limiter.claimSend(caller, now);
     let result;
     try {
       // Codes the person asked for are sent at any hour (the real sender exempts customer_* purposes).

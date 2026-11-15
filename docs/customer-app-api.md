@@ -107,7 +107,7 @@ also carry `code: "VALIDATION_FAILED"` and, when known, `field`.
 | `TEXT_STARTS_WITH_SYMBOL` | 400 | A name, business name or locality starts with `=`, `+`, `-` or `@` (it would run as a spreadsheet formula in a CSV download). `field` names the field; the app shows its own words (`error.textStartsWithSymbol`). Every route, staff and customer |
 | `INSTALLATION_REQUIRED` | 400 | The `X-Laboura-Installation` header is missing |
 | `HUMAN_CHECK_REQUIRED` | 403 | Show the human check (`provider` says which; `mock` on the test setup), then resend with `humanCheckToken` |
-| `OTP_PAUSED` | 503 | System-wide code limit reached (abuse protection): show "Try again later or call Laboura" |
+| `OTP_PAUSED` | 503 | Not sent any more (INF-4: above the daily limit everyone gets the human check instead); the app still shows "Try again later or call Laboura" if it ever comes |
 | `APPLE_TOKEN_INVALID` | 401 | Apple sign-in token not valid for Laboura |
 | `APPLE_NOT_CONFIGURED` | 503 | Sign in with Apple is not switched on: hide the button (see `GET /config`) |
 | `LIMIT_REACHED` | 409 / 429 | Too many open vacancy drafts (20), or too many links in an hour (10 per profile) |
@@ -177,19 +177,22 @@ linked.** Sessions last 90 days per phone, renewed on every refresh (C16).
 Rules: +91 fixed, 10 digits. Resend after 30 seconds, at most 3 resends (Forms
 rules). Abuse limits (proposal 7.6), each answering `429 OTP_LIMIT` with
 `retryAfterSeconds`: per phone at most 5 codes an hour and 10 a day; per
-internet address at most 60 codes an hour (many phones share a carrier address);
+internet address at most 20 codes an hour (INF-4; many phones share a carrier address, so the human check below comes first);
 per installation at most 10 codes an hour; 5 wrong codes on one request end that
 request (`OTP_EXPIRED`); 10 wrong codes for one phone from one installation, 50
 for one address or 20 for one installation in an hour block further tries for an
 hour (someone else's wrong codes never lock a person's own phone). A code tried
 with a different phone, flow or installation is refused without counting
 against that phone. From the 4th code in an hour for a phone or installation,
-`403 HUMAN_CHECK_REQUIRED` until the app sends a `humanCheckToken` (only a mock
-provider exists yet: it accepts `mock-human-ok`; a real CAPTCHA or Play
-Integrity / App Attest check must replace it before launch). Above a
-system-wide daily total (`CUSTOMER_OTP_DAILY_LIMIT`, default 3000) sending
-pauses for new numbers (`503 OTP_PAUSED`) and an alert goes out; numbers that
-already have an account keep getting codes, within their own limits. A send the
+`403 HUMAN_CHECK_REQUIRED` until the app sends a `humanCheckToken`; the same
+from one internet address once it asked codes for 3 other numbers in the hour
+(`CUSTOMER_OTP_ADDRESS_PHONES_BEFORE_CHECK`, INF-4). Only a mock provider exists
+yet: it accepts `mock-human-ok`; a real CAPTCHA or Play Integrity / App Attest
+check must replace it before launch. Above a system-wide daily total
+(`CUSTOMER_OTP_DAILY_LIMIT`, default 3000) the service degrades instead of
+stopping (INF-4): every code needs the human check, for new numbers and existing
+customers alike, and an alert goes out. (`503 OTP_PAUSED` is no longer sent by
+the sign-in; the app keeps handling it.) A send the
 SMS provider could not make does not count against the limits. Codes the person
 asks for themselves are sent at any hour, including 9 PM to 9 AM (owner rule:
 OTPs are allowed in quiet hours). `testModeCode` appears only in customer OTP
