@@ -167,7 +167,7 @@ describe('Phase 13 gate — complete verification and consent journeys', () => {
       otpRequestId: signingOtp.body.requestId,
       otpCode: signingCode,
       signedName: 'Household Owner',
-      purposes: ['agreement_terms', 'call_recording'],
+      purposes: ['agreement_terms', 'agreement_authority', 'call_recording'],
       language: 'en',
     }).expect(201);
     const signedAgreement = await prisma.businessAgreement.findFirstOrThrow({ where: { businessId } });

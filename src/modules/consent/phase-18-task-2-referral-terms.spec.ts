@@ -1,4 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { LegalDocumentService } from '../legal/legal-document.service';
+import { LEGAL_TEST_POLICY } from '../../test-support/legal-policy';
 import { BadRequestException, ExecutionContext, INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -159,6 +161,7 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
         ConsentClock,
         ConsentService,
         ConsentLinkService,
+        LegalDocumentService,
         {
           provide: ConsentWithdrawalService,
           useValue: { withdraw: jest.fn(), eligibility: jest.fn() },
@@ -181,6 +184,7 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
           provide: PricingService,
           useValue: {
             current: jest.fn().mockResolvedValue({
+              ...LEGAL_TEST_POLICY,
               referralPayoutPaise: 20000,
               placementFeePercent: 50,
               gstPercent: 18,
@@ -336,7 +340,10 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
       expect(res.body.partnerName).toBe(partnerName);
       expect(res.body.maskedPhone).toBe('******3210');
       expect(res.body.referralPayoutPaise).toBe(20000);
-      expect(res.body.termsHtml).toContain('Laboura Referral Partner Terms');
+      expect(res.body.termsHtml).toContain('Referral Partner Terms');
+      // v1.0 full text (rev 176): "In short" first, then the full terms.
+      expect(res.body.summaryHtml).toContain('In short');
+      expect(res.body.version).toBe('1.0');
       expect(res.body.termsHtml).toContain('₹200');
     });
 
@@ -382,7 +389,7 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
           token: link.token,
           otpRequestId: 'otp-req-999',
           otpCode: '000000', // wrong OTP
-          purposes: ['agreement_terms', 'call_recording'],
+          purposes: ['agreement_terms', 'call_recording', 'aadhaar_verification'],
         });
 
       expect(res.status).toBe(400);
@@ -393,7 +400,7 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
       const link = await consentLinkService.createReferralTermsLink(referralId, 'staff-1', 'en');
       const res = await request(app.getHttpServer())
         .post('/consent/submit')
-        .send({ token: link.token, otpRequestId: 'otp-req-999', purposes: ['agreement_terms', 'call_recording'] });
+        .send({ token: link.token, otpRequestId: 'otp-req-999', purposes: ['agreement_terms', 'call_recording', 'aadhaar_verification'] });
       expect(res.status).toBe(201);
       expect(otpService.isVerified).toHaveBeenCalledWith('otp-req-999', partnerPhone);
       expect(otpService.verifyOtp).not.toHaveBeenCalledWith('otp-req-999', undefined);
@@ -404,7 +411,7 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
       (otpService.isVerified as jest.Mock).mockResolvedValueOnce(false);
       const res = await request(app.getHttpServer())
         .post('/consent/submit')
-        .send({ token: link.token, otpRequestId: 'otp-req-other', purposes: ['agreement_terms', 'call_recording'] });
+        .send({ token: link.token, otpRequestId: 'otp-req-other', purposes: ['agreement_terms', 'call_recording', 'aadhaar_verification'] });
       expect(res.status).toBe(400);
       expect(res.body.message).toContain('Valid owner OTP is required to sign referral terms');
     });
@@ -435,12 +442,12 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
           token: link.token,
           otpRequestId: 'otp-req-999',
           otpCode: '123456',
-          purposes: ['agreement_terms', 'call_recording'],
+          purposes: ['agreement_terms', 'call_recording', 'aadhaar_verification'],
         });
 
       expect(res.status).toBe(201);
       expect(res.body.success).toBe(true);
-      expect(res.body.grantedPurposes).toEqual(['agreement_terms', 'call_recording']);
+      expect(res.body.grantedPurposes).toEqual(['agreement_terms', 'call_recording', 'aadhaar_verification']);
 
       // Assert two Consent rows created sharing the same otpRequestId
       expect(mockPrisma.consent.upsert).toHaveBeenCalledTimes(2);
@@ -468,10 +475,10 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
           token: link.token,
           otpRequestId: 'otp-req-999',
           otpCode: '123456',
-          purposes: ['agreement_terms', 'call_recording'],
+          purposes: ['agreement_terms', 'call_recording', 'aadhaar_verification'],
         });
       expect(repeatRes.status).toBe(201);
-      expect(repeatRes.body.grantedPurposes).toEqual(['agreement_terms', 'call_recording']);
+      expect(repeatRes.body.grantedPurposes).toEqual(['agreement_terms', 'call_recording', 'aadhaar_verification']);
       expect(mockPrisma.consent.upsert).toHaveBeenCalledTimes(4);
     });
   });

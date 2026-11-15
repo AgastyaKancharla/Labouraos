@@ -390,7 +390,7 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
     const termsCode = (otpService.getProvider() as MockOtpProvider).getCode(termsOtp.requestId)!;
     await request(app.getHttpServer())
       .post('/consent/submit')
-      .send({ token, requestId: termsOtp.requestId, otpRequestId: termsOtp.requestId, otpCode: termsCode, purposes: ['agreement_terms', 'call_recording'], language: 'en' })
+      .send({ token, requestId: termsOtp.requestId, otpRequestId: termsOtp.requestId, otpCode: termsCode, purposes: ['agreement_terms', 'call_recording', 'aadhaar_verification'], language: 'en' })
       .expect(201);
 
     const selfieOtp = await otpService.sendOtp(phone);
@@ -459,7 +459,7 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
     const terms = await code();
     await request(app.getHttpServer())
       .post('/consent/submit')
-      .send({ token, requestId: terms.requestId, otpRequestId: terms.requestId, otpCode: terms.code, purposes: ['agreement_terms', 'call_recording'], language: 'en' })
+      .send({ token, requestId: terms.requestId, otpRequestId: terms.requestId, otpCode: terms.code, purposes: ['agreement_terms', 'call_recording', 'aadhaar_verification'], language: 'en' })
       .expect(201);
     const selfie = await code();
     await otpService.verifyOtp(selfie.requestId, selfie.code);
@@ -545,7 +545,7 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
     expect(terms.body.language).toBe('kn');
 
     // Every step uses the code verified on opening, as on the job seeker link.
-    await request(server).post('/consent/submit').send({ token, otpRequestId: requestId, purposes: ['agreement_terms', 'call_recording'], language: 'kn' }).expect(201);
+    await request(server).post('/consent/submit').send({ token, otpRequestId: requestId, purposes: ['agreement_terms', 'call_recording', 'aadhaar_verification'], language: 'kn' }).expect(201);
     // Only a JPEG, PNG or WebP by its first bytes, whatever the browser claims.
     await request(server)
       .post(`/referral-registration/${token}/selfie`)

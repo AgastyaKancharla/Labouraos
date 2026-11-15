@@ -174,7 +174,7 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
         otpRequestId: otp.body.requestId,
         otpCode: code,
         signedName: 'Owner Test',
-        purposes: ['agreement_terms', 'call_recording'],
+        purposes: ['agreement_terms', 'agreement_authority', 'call_recording'],
       })
       .expect(201);
 
@@ -205,9 +205,24 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
       { purpose: 'call_recording', method: 'sms_link', otpRequestId: otp.body.requestId },
     ]);
 
+    // S1 (rev 176): the stored signed copy holds the FULL v1.1 agreement exactly as shown (its hash
+    // frozen on the link), followed by the acceptance record (OTP reference, masked phone, ticks).
+    expect(agreement.version).toBe('1.1');
+    expect(page.body.version).toBe('1.1');
+    expect(page.body.agreementSummaryHtml).toContain('In short');
+    expect(createHash('sha256').update(page.body.agreementTermsHtml, 'utf8').digest('hex')).toBe(agreement.termsHash);
     const storedDocument = await storage.get(agreement.documentStoragePath);
     expect(storedDocument).toBeDefined();
-    expect(createHash('sha256').update(storedDocument!).digest('hex')).toBe(agreement.termsHash);
+    const stored = storedDocument!.toString('utf8');
+    expect(stored).toContain(page.body.agreementTermsHtml);
+    for (const clause of ['9. No bypass', '11. Claim reasons', '17. Changes, notices and law', 'Acceptance record (filled in by the system)']) {
+      expect(stored).toContain(clause);
+    }
+    expect(stored).toContain(otp.body.requestId);
+    expect(stored).not.toContain(ownerPhone.replace(/\D/g, '').slice(-10));
+    const acceptance = await prisma.legalAcceptance.findFirstOrThrow({ where: { subjectType: 'business', subjectId: businessId } });
+    expect(acceptance).toMatchObject({ documentKey: 'business_agreement', version: '1.1', language: 'en', textHash: agreement.termsHash, otpRequestId: otp.body.requestId, context: 'agreement' });
+    expect(acceptance.purposes).toEqual(['agreement_terms', 'agreement_authority', 'call_recording']);
     await request(app.getHttpServer()).get(`/consent/${link.body.token}`).expect(400);
     currentSpy.mockRestore();
   });
@@ -234,7 +249,7 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
         otpRequestId: otherPhoneOtp.requestId,
         otpCode: code,
         signedName: 'Impostor',
-        purposes: ['agreement_terms', 'call_recording'],
+        purposes: ['agreement_terms', 'agreement_authority', 'call_recording'],
       })
       .expect(400);
     expect(await prisma.businessAgreement.count({ where: { businessId } })).toBe(1);

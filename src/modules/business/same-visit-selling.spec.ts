@@ -54,7 +54,7 @@ describe('Same-visit selling, Team Lead pause and business edit rights', () => {
       otpRequestId: signingOtp.requestId,
       otpCode: code,
       signedName: 'Shop Owner',
-      purposes: ['agreement_terms', 'call_recording'],
+      purposes: ['agreement_terms', 'agreement_authority', 'call_recording'],
     });
   }
 

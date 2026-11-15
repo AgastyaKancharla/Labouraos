@@ -491,7 +491,7 @@ describe('Phase 18 Gate End-to-End Proof', () => {
           token: termsToken,
           otpRequestId: termsOtpRes.body.requestId,
           otpCode: termsOtpCode,
-          purposes: ['agreement_terms', 'call_recording'],
+          purposes: ['agreement_terms', 'call_recording', 'aadhaar_verification'],
         })
         .expect(201);
 

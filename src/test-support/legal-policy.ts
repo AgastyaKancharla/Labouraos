@@ -1,0 +1,35 @@
+/**
+ * The Settings fields the legal documents quote (rev 176), for unit tests that
+ * mock PricingService.current(): the test setup's seed values.
+ */
+export const LEGAL_TEST_POLICY = {
+  activationFeePaise: 49900,
+  jobSeekerGuaranteeDays: 30,
+  offerReplyHours: 48,
+  maxHits: 3,
+  joiningRewardPaise: 20000,
+  joiningRewardAfterDays: 30,
+  registrationLinkValidHours: 48,
+  paymentOnlyLinkMinutes: 15,
+  placementFeePercent: 50,
+  gstPercent: 18,
+  placementPaymentDueHours: 24,
+  interviewResultEscalateHours: 24,
+  replacementWindowDays: 60,
+  maxFreeReplacements: 2,
+  maxReplacementRejections: 2,
+  replacementSearchDays: 15,
+  claimReportDays: 7,
+  claimDecisionHours: 48,
+  noBypassMonths: 12,
+  noBypassPenaltyPercent: 50,
+  referralPayoutPaise: 20000,
+  payoutDetailsCoolingHours: 48,
+  companyLegalName: 'Laboura Private Limited',
+  companyGstin: null,
+  companyAddress: null,
+  companyCin: null,
+  grievanceOfficerName: null,
+  grievanceOfficerPhone: null,
+  grievanceOfficerEmail: null,
+};

@@ -293,7 +293,7 @@ describe('Phase 13 Task 5 — verification visits and verified gate', () => {
       otpRequestId: signingOtp.requestId,
       otpCode: signingCode,
       signedName: 'Verification Owner',
-      purposes: ['agreement_terms', 'call_recording'],
+      purposes: ['agreement_terms', 'agreement_authority', 'call_recording'],
     });
     const signedDocument = await request(app.getHttpServer())
       .get(`/businesses/${businessId}/agreement`)
