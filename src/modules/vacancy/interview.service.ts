@@ -824,7 +824,8 @@ export class InterviewService {
     const placement = input.result === 'selected'
       ? await this.placements.createAwaitingPaymentFromInterview(interview.id, now)
       : null;
-    if (interview.vacancy.replacementForPlacementId && placement && joiningDate) {
+    // A replacement awaiting its salary-upgrade payment (D3) gets "joining confirmed" from the payment, not here.
+    if (interview.vacancy.replacementForPlacementId && placement && joiningDate && placement.status !== 'awaiting_payment') {
       const joiningText = new Intl.DateTimeFormat('en-IN', {
         timeZone: 'Asia/Kolkata',
         dateStyle: 'medium',

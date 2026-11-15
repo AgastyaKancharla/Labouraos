@@ -467,6 +467,8 @@ describe('Phase 17 Task 3: Replacements through interviews and guarantee rules',
       expect(upi.createRequest).toHaveBeenCalledWith(expect.objectContaining({ type: 'replacement_upgrade', subjectType: 'placement', amountPaise: 118000, businessId: 'biz-1' }));
       expect(result.payment).toMatchObject({ id: 'pay-up-1', amount: 118000, paymentLink: 'upi://pay?am=1180' });
       expect(auditService.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'placement.replacement_upgrade_payment_requested' }));
+      // Not placed yet: the payment confirms the placement and places him (PaymentService.onPaymentSucceeded).
+      expect(prisma.jobSeeker.update).not.toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'js-up' } }));
     });
 
     it('a lower or equal salary pays nothing', async () => {

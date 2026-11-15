@@ -264,20 +264,23 @@ export class PlacementService {
           reason: upgradeDue ? 'replacement_salary_upgrade_payment_due' : neverJoinedSwap ? 'never_joined_replacement_selected' : 'free_replacement_selected',
         });
 
-        // Job seeker becomes placed at selection
-        await tx.jobSeeker.update({
-          where: { id: interview.jobSeekerId },
-          data: { status: 'placed' },
-        });
-        await recordStatusChange(tx, {
-          subjectType: 'job_seeker',
-          subjectId: interview.jobSeekerId,
-          fromStatus: 'active',
-          toStatus: 'placed',
-          changedByStaffId: interview.proposedByStaffId,
-          changedAt: now,
-          reason: 'placed_via_replacement',
-        });
+        // Job seeker becomes placed at selection — unless a salary-upgrade payment (D3) is due:
+        // then the payment confirms the placement and places him (PaymentService.onPaymentSucceeded).
+        if (!upgradeDue) {
+          await tx.jobSeeker.update({
+            where: { id: interview.jobSeekerId },
+            data: { status: 'placed' },
+          });
+          await recordStatusChange(tx, {
+            subjectType: 'job_seeker',
+            subjectId: interview.jobSeekerId,
+            fromStatus: 'active',
+            toStatus: 'placed',
+            changedByStaffId: interview.proposedByStaffId,
+            changedAt: now,
+            reason: 'placed_via_replacement',
+          });
+        }
 
         // Update replacement candidate row
         await tx.replacementCandidate.updateMany({

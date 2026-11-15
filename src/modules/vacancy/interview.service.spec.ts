@@ -345,6 +345,20 @@ describe('InterviewService booking', () => {
     expect(linkService.consumeInterviewActionToken).toHaveBeenCalledWith('single-use-token', 'owner_result');
   });
 
+  it('a replacement awaiting its salary-upgrade payment (D3) gets no "joining confirmed" yet; a free replacement does', async () => {
+    const replacement = () => ({ ...confirmedInterview(), vacancy: { ...vacancy, replacementForPlacementId: 'root-placement' } });
+    const answer = { otpRequestId: 'otp-request-id', otpCode: '123456', result: 'selected' as const, selectedSalaryPaise: 1800000, selectedJoiningDate: '2026-11-20' };
+    prisma.interview.findUnique.mockResolvedValue(replacement());
+    placements.createAwaitingPaymentFromInterview.mockResolvedValueOnce({ id: 'placement-up', status: 'awaiting_payment' });
+    await service.submitOwnerResult('single-use-token', answer);
+    expect(messaging.send).not.toHaveBeenCalledWith(expect.objectContaining({ template: 'joining_confirmed' }));
+
+    prisma.interview.findUnique.mockResolvedValue(replacement());
+    placements.createAwaitingPaymentFromInterview.mockResolvedValueOnce({ id: 'placement-free', status: 'confirmed' });
+    await service.submitOwnerResult('single-use-token', answer);
+    expect(messaging.send).toHaveBeenCalledWith(expect.objectContaining({ template: 'joining_confirmed', relatedId: 'placement-free' }));
+  });
+
   it('does not record an owner result when OTP verification fails', async () => {
     linkService.verifyInterviewOwnerOtp.mockRejectedValue(new BadRequestException('Valid owner OTP is required'));
     await expect(service.submitOwnerResult('single-use-token', {

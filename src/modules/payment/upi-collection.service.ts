@@ -344,7 +344,7 @@ export class UpiCollectionService {
         },
       },
     });
-    if (!payment || payment.method !== 'upi_direct' || payment.expectedAmountPaise === null || !['activation', 'placement_fee'].includes(payment.type)) {
+    if (!payment || payment.method !== 'upi_direct' || payment.expectedAmountPaise === null || !['activation', 'placement_fee', 'replacement_upgrade'].includes(payment.type)) {
       throw new NotFoundException('Payment request not found');
     }
     // Owner rule (under 18 stops before payment): a pending ₹499 the ID gate no longer allows is closed here.
