@@ -1,6 +1,4 @@
 import { BadRequestException } from '@nestjs/common';
-import { readdirSync, readFileSync, statSync } from 'fs';
-import { join, relative } from 'path';
 import { EditPolicyService, pickEditableFields } from './edit-policy.service';
 import { ALLOWED_REFERRAL_UPDATE_FIELDS } from '../../modules/referral/referral.service';
 import { ALLOWED_BUSINESS_UPDATE_FIELDS } from '../../modules/business/business.service';
@@ -97,60 +95,5 @@ describe('AC-1 diffAndValidateReason column checks', () => {
   });
 });
 
-describe('AC-1 no request body spread into a Prisma write', () => {
-  const root = join(__dirname, '..', '..');
-  const files: string[] = [];
-  const walk = (dir: string) => {
-    for (const entry of readdirSync(dir)) {
-      const path = join(dir, entry);
-      if (statSync(path).isDirectory()) {
-        if (entry !== 'node_modules' && entry !== 'test-support') walk(path);
-      } else if (entry.endsWith('.ts') && !entry.endsWith('.spec.ts') && !entry.endsWith('.d.ts')) {
-        files.push(path);
-      }
-    }
-  };
-  walk(root);
-
-  /** The text of each `.create(` / `.update(` / `.upsert(` / `...Many(` call, up to its closing parenthesis. */
-  function prismaWriteCalls(source: string): string[] {
-    const calls: string[] = [];
-    const start = /\.(create|createMany|update|updateMany|upsert)\(\s*\{/g;
-    let match: RegExpExecArray | null;
-    while ((match = start.exec(source))) {
-      let depth = 0;
-      let end = match.index;
-      for (let i = source.indexOf('(', match.index); i < source.length; i += 1) {
-        if (source[i] === '(') depth += 1;
-        else if (source[i] === ')') {
-          depth -= 1;
-          if (depth === 0) {
-            end = i;
-            break;
-          }
-        }
-      }
-      calls.push(source.slice(match.index, end + 1));
-    }
-    return calls;
-  }
-
-  const RAW_BODY = /\bdata\s*:\s*(dto|body|req\.body|payload)\b(?!\.)|\.\.\.\s*(dto|body|req\.body|payload)\b(?!\.)/;
-
-  it('finds no `data: dto`, `data: body` or `...dto` / `...body` in any Prisma write', () => {
-    const offenders: string[] = [];
-    for (const file of files) {
-      const source = readFileSync(file, 'utf8');
-      for (const call of prismaWriteCalls(source)) {
-        if (RAW_BODY.test(call)) offenders.push(`${relative(root, file)}: ${call.split('\n')[0].trim()}`);
-      }
-    }
-    expect(offenders).toEqual([]);
-  });
-
-  it('the scanner catches the pattern it looks for', () => {
-    const sample = "await this.prisma.referral.update({ where: { id }, data: { ...dto, x: 1 } });\nprisma.business.update({ where: { id }, data: body })";
-    expect(prismaWriteCalls(sample).filter((call) => RAW_BODY.test(call))).toHaveLength(2);
-    expect(RAW_BODY.test('prisma.x.update({ data: { name: dto.name } })')).toBe(false);
-  });
-});
+// The scan of src/ for request bodies spread into Prisma writes is now a syntax-tree check with a
+// reviewed allow-list (security M4): src/common/prisma/prisma-write-check.spec.ts.
