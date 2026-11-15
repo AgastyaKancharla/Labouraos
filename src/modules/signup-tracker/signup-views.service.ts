@@ -12,7 +12,6 @@ import { STAGE_ORDER, scriptHintKey } from './signup-stage';
 import { missingSettingColumns, signupSettingsFrom } from './signup-settings';
 import { DAY_MS } from './signup-timing';
 import { OwnTeam } from '../../common/rbac/own-team';
-import { ReportingScopeService } from '../staff/reporting-scope.service';
 
 /** Languages a staff member can be marked as speaking (the same list as the job seeker form). */
 export const STAFF_LANGUAGES = [
@@ -87,7 +86,6 @@ export class SignupViewsService {
     private readonly audit: AuditService,
     private readonly facts: SignupFactsService,
     private readonly clock: SignupTrackerClock,
-    private readonly scope: ReportingScopeService,
   ) {}
 
   // ------------------------------------------------------------ rows
@@ -154,7 +152,7 @@ export class SignupViewsService {
 
   /** The Team Lead's own team (OwnTeam, the shared definition), the Team Lead included. */
   private teamOf(teamLeadId: string): Promise<string[]> {
-    return new OwnTeam(this.prisma, this.scope).memberIds(teamLeadId);
+    return new OwnTeam(this.prisma).memberIds(teamLeadId);
   }
 
   /**

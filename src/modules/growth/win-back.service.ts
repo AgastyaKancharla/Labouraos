@@ -123,7 +123,7 @@ export class WinBackService {
 
   /** The call list. Call agents and the CEO see everyone, a Manager his tree's job seekers, a Team Lead his team's. */
   async list(actor: { id: string; role: string }, options: { callableNow?: boolean } = {}, now: Date = new Date()) {
-    const scope = actor.role === 'call_agent' ? null : await staffScopeFor(actor, this.reportingScope);
+    const scope = actor.role === 'call_agent' ? null : await staffScopeFor(actor, this.reportingScope, this.prisma);
     const policy = await this.pricingService.current();
     const entries = await this.prisma.winBackEntry.findMany({
       where: { status: 'open' },
@@ -208,7 +208,7 @@ export class WinBackService {
     if (!entry) throw new NotFoundException(`Win-back entry '${entryId}' not found`);
     if (entry.status !== 'open') throw new BadRequestException(`This entry is already ${entry.status}`);
     if (actor.role !== 'call_agent') {
-      const scope = await staffScopeFor(actor, this.reportingScope);
+      const scope = await staffScopeFor(actor, this.reportingScope, this.prisma);
       if (scope) {
         const seeker = await this.prisma.jobSeeker.findUnique({
           where: { id: entry.jobSeekerId },

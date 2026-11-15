@@ -6,6 +6,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { PricingPolicy } from '../pricing/pricing.service';
 import { SEEDED_PRICING_POLICY, seededPricingService } from '../../test-support/seeded-pricing';
+import { findManyOver } from '../../test-support/prisma-where';
 
 describe('Phase 6.7 Task 5: Money at Risk', () => {
   type MockPrismaService = {
@@ -80,20 +81,12 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
   beforeEach(() => {
     prismaMock = {
       staff: {
-        findMany: jest.fn().mockImplementation(({ where }) => {
-          if (where?.teamLeadId === mockTeamLeadId) {
-            return Promise.resolve([
-              { id: mockCallAgentId, code: 'CA-00001', name: 'Call Agent 1' },
-              { id: mockFieldAgentId, code: 'FA-00001', name: 'Field Agent 1' },
-            ]);
-          }
-          if (where?.teamLeadId === otherTeamLeadId) {
-            return Promise.resolve([
-              { id: otherAgentId, code: 'FA-00002', name: 'Other Agent 2' },
-            ]);
-          }
-          return Promise.resolve([]);
-        }),
+        // The teams (OwnTeam reads teamLeadId links and the reporting line).
+        findMany: jest.fn().mockImplementation(findManyOver([
+          { id: mockCallAgentId, code: 'CA-00001', name: 'Call Agent 1', role: 'call_agent', teamLeadId: mockTeamLeadId, reportsToId: null },
+          { id: mockFieldAgentId, code: 'FA-00001', name: 'Field Agent 1', role: 'field_agent', teamLeadId: mockTeamLeadId, reportsToId: null },
+          { id: otherAgentId, code: 'FA-00002', name: 'Other Agent 2', role: 'field_agent', teamLeadId: otherTeamLeadId, reportsToId: null },
+        ] as Array<Record<string, unknown>>)),
         findUnique: jest.fn().mockImplementation(({ where }) => {
           if (where.id === mockCallAgentId) {
             return Promise.resolve({ id: mockCallAgentId, code: 'CA-00001', name: 'Call Agent 1' });

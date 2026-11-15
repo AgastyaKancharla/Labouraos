@@ -1,3 +1,4 @@
+import { OwnTeam, businessOwners, businessesOwnedBy } from '../../common/rbac/own-team';
 import {
   BadRequestException,
   ForbiddenException,
@@ -18,7 +19,6 @@ import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { BusinessClock } from './business-clock';
 import { testModeFields } from '../../common/otp/otp-test-mode';
 import { VERIFICATION_VISIT_PURPOSES } from './business.constants';
-import { OwnTeam } from '../../common/rbac/own-team';
 
 // business_signup: a business that signed up in the customer app (proposal 4.2).
 const VISIT_PURPOSES = ['verification', 'revisit', 'interview_attendance', 'follow_up', 'business_signup'] as const;
@@ -52,21 +52,13 @@ export class BusinessVerificationService {
     if (role === 'field_agent') {
       where = { assignedStaffId: staffId, status: 'assigned' };
     } else if (role === 'team_lead') {
-      const team = await this.prisma.staff.findMany({ where: { teamLeadId: staffId }, select: { id: true } });
-      const teamIds = team.map(({ id }) => id);
-      // Owner rule: an app sign-up with no agent belongs to the Team Lead of the suggested
-      // field agent; with no owner and no suggestion it belongs to no team (Managers and the CEO).
-      const ownTeamIds = await new OwnTeam(this.prisma).memberIds(staffId);
+      const teamIds = await new OwnTeam(this.prisma).memberIds(staffId);
+      // Owner rule: a business is its account agent's team's, else its lead creator's team's.
+      // An app sign-up with neither belongs to the Team Lead of the suggested field agent;
+      // with no suggestion either it belongs to no team (Managers and the CEO).
       where = { status: 'pending', OR: [
-        { business: { OR: [
-          { leadCreatedByStaffId: { in: teamIds } },
-          { accountAgentId: { in: teamIds } },
-        ] } },
-        {
-          purpose: 'business_signup',
-          suggestedStaffId: { in: ownTeamIds },
-          business: { leadCreatedByStaffId: null, accountAgentId: null },
-        },
+        { business: businessesOwnedBy(teamIds) },
+        { purpose: 'business_signup', suggestedStaffId: { in: teamIds }, business: { leadCreatedByStaffId: null, accountAgentId: null } },
       ] };
     } else {
       where = { status: 'pending' };
@@ -219,11 +211,11 @@ export class BusinessVerificationService {
     });
     if (!assignment) throw new NotFoundException('Visit assignment not found');
     if (assignment.purpose === 'business_signup' && actor.role === 'team_lead') {
-      // App sign-up. A business with an owner (lead created by / account agent) is that team's;
-      // with no owner it is the suggested field agent's team's; with neither it is no team's
-      // (Managers and the CEO). The field agent sent is always the Team Lead's own.
+      // App sign-up. The business's team (businessOwners): the account agent's, else the lead
+      // creator's; with neither, the suggested field agent's team; with no suggestion either it
+      // is no team's (Managers and the CEO). The field agent sent is always the Team Lead's own.
       const team = new OwnTeam(this.prisma);
-      const owners = [assignment.business.leadCreatedByStaffId, assignment.business.accountAgentId].filter((id): id is string => Boolean(id));
+      const owners = businessOwners(assignment.business);
       const mine = owners.length
         ? await team.includesAny(actor.id, owners)
         : Boolean(assignment.suggestedStaffId) && (await team.includes(actor.id, assignment.suggestedStaffId));
@@ -241,6 +233,7 @@ export class BusinessVerificationService {
     }
     const fieldAgent = await this.prisma.staff.findUnique({ where: { id: assignedStaffId } });
     if (!fieldAgent) throw new NotFoundException('Field agent not found');
+    await this.assertTeamLeadPicksOwnAgent(actor, fieldAgent.id);
     if (fieldAgent.city !== assignment.business.city) {
       throw new BadRequestException('The assigned field agent must work in the business city');
     }
@@ -624,6 +617,8 @@ export class BusinessVerificationService {
     const finalAccountAgentId = accountAgentId ?? visitStaffId;
     const accountAgent = await this.prisma.staff.findUnique({ where: { id: finalAccountAgentId } });
     if (!accountAgent) throw new NotFoundException('Account agent not found');
+    // A Team Lead who names a different account agent picks one from their own team (L1).
+    if (accountAgentId) await this.assertTeamLeadPicksOwnAgent(actor, accountAgent.id);
     if (accountAgent.city !== business.city) {
       throw new BadRequestException('The account agent must work in the business city');
     }
@@ -750,6 +745,7 @@ export class BusinessVerificationService {
     }
     const fieldAgent = await this.prisma.staff.findUnique({ where: { id: accountAgentId } });
     if (!fieldAgent) throw new NotFoundException('Account agent not found');
+    await this.assertTeamLeadPicksOwnAgent(actor, fieldAgent.id);
     if (fieldAgent.city !== business.city) {
       throw new BadRequestException('The account agent must work in the business city');
     }
@@ -864,12 +860,23 @@ export class BusinessVerificationService {
     accountAgentId: string | null,
   ) {
     if (actor.role !== 'team_lead') return;
-    const owners = [leadCreatedByStaffId, accountAgentId].filter((id): id is string => id !== null);
-    if (owners.length === 0) throw new ForbiddenException('Team Leads may only review businesses from their own team');
-    const member = await this.prisma.staff.findFirst({
-      where: { id: { in: owners }, teamLeadId: actor.id },
-    });
-    if (!member) throw new ForbiddenException('Team Leads may only review businesses from their own team');
+    // The business's team (businessOwners): the account agent's, else the lead
+    // creator's while there is no account agent (owner decision, rev 170).
+    if (!(await new OwnTeam(this.prisma).ownsBusiness(actor.id, { accountAgentId, leadCreatedByStaffId }))) {
+      throw new ForbiddenException('Team Leads may only review businesses from their own team');
+    }
+  }
+
+  /**
+   * A Team Lead gives a visit or an account only to a field agent of their own
+   * team (OwnTeam), as on /team-lead/businesses/:id/move. Managers and the CEO
+   * pick anyone available.
+   */
+  private async assertTeamLeadPicksOwnAgent(actor: Staff, staffId: string) {
+    if (actor.role !== 'team_lead') return;
+    if (staffId === actor.id || !(await new OwnTeam(this.prisma).includes(actor.id, staffId))) {
+      throw new ForbiddenException('A Team Lead can choose only a field agent from their own team');
+    }
   }
 
   private assertAvailableFieldAgent(staff: Staff, now: Date) {

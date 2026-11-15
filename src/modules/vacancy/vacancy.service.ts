@@ -1,3 +1,4 @@
+import { OwnTeam, businessesOwnedBy } from '../../common/rbac/own-team';
 import {
   BadRequestException,
   ForbiddenException,
@@ -383,14 +384,7 @@ export class VacancyService {
       where.status = filterStatus;
     }
     if (staff.role === 'team_lead') {
-      const team = await this.prisma.staff.findMany({ where: { teamLeadId: staff.id }, select: { id: true } });
-      const teamIds = team.map(({ id }) => id);
-      where.business = {
-        OR: [
-          { accountAgentId: { in: teamIds } },
-          { leadCreatedByStaffId: { in: teamIds } },
-        ],
-      };
+      where.business = businessesOwnedBy(await new OwnTeam(this.prisma).memberIds(staff.id));
     }
 
     return this.prisma.vacancy.findMany({
@@ -470,9 +464,12 @@ export class VacancyService {
       return [];
     }
 
+    // A Team Lead sees only their own team's job seekers (owner decision, 14 Nov; OwnTeam).
+    const team = staff.role === 'team_lead' ? await new OwnTeam(this.prisma).memberIds(staff.id) : null;
     return this.prisma.jobSeeker.findMany({
       where: {
         id: { in: consentedJobSeekerIds },
+        ...(team ? { registeredByStaffId: { in: team } } : {}),
         city: vacancy.city,
         status: 'active',
         trades: { some: { trade: { equals: vacancy.tradeSkill, mode: 'insensitive' } } },

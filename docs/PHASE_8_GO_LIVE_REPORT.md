@@ -81,14 +81,7 @@ then fixed in two rounds.
    status stay `processing`. A 4xx or a rejected/cancelled/failed/reversed status is a definitive
    `failed`. A 5xx, a timeout or a dropped connection is *ambiguous*: the payment stays
    `processing` (reference untouched) because the gateway may have paid.
-2. **Payout-status webhook** `POST /payments/payout-webhook` (public, authenticated by
-   `X-Razorpay-Signature`, HMAC-SHA256 over the **raw bytes**; `rawBody: true` is now set in
-   `main.ts` and the endpoint fails closed with 400 if it is missing). It updates the payment
-   to `succeeded` / `failed` / `reversed` from the gateway's outcome. Payment is located by
-   payout id, then `reference_id`, then `notes.paymentId` (echoed from our request), because
-   RazorpayX's own samples show `reference_id` as null and the ambiguous case is exactly when
-   we never learned the payout id. The webhook secret is `RAZORPAYX_WEBHOOK_SECRET`
-   (falls back to `RAZORPAY_WEBHOOK_SECRET`).
+2. **Payout-status webhook (removed later):** a RazorpayX payout-status webhook was built in this phase and later removed, when payouts became manual (Finance pays by UPI from the company account and records the UPI reference; Master Guide, Bank and UPI details). There is no payout webhook route; a request to the old address answers 404 (tested in `payout-disbursement.spec.ts`).
 3. **Idempotent per rule 7, three layers:** an event-id table (`PayoutWebhookEvent`, unique
    `x-razorpay-event-id`, inserted with `ON CONFLICT DO NOTHING` in the same transaction as the
    update; a content hash stands in if the header is absent); a pure state table
@@ -128,10 +121,8 @@ scheduled, processing, processed, reversed, cancelled, rejected, failed`), read 
 during this pass rather than recalled. **Not verifiable without the live account:** that the
 production payload matches the samples (the docs' own samples have JSON errors and null
 `reference_id`); how long RazorpayX honours an idempotency key; and the behaviour of the
-registered webhook in practice. To go live: register
-`https://<host>/payments/payout-webhook` in RazorpayX, subscribe at least to `payout.initiated,
-processed, updated, reversed, rejected, failed`, put the secret in `RAZORPAYX_WEBHOOK_SECRET`,
-and run one real small payout in test mode before enabling `PAYMENT_PROVIDER_MODE=real`.
+registered webhook in practice. (Superseded: payouts are now manual and the payout webhook was
+removed, so nothing is registered with RazorpayX for payouts.)
 
 Audit attribution: webhook-driven changes are logged against the CEO account (the `AuditLog`
 `actorId` must be a real staff row; same convention as the existing activation webhook), with

@@ -84,7 +84,7 @@ export class SignupTrackerService {
     private readonly clock: SignupTrackerClock,
     @Optional() @Inject(SIGNUP_REMINDER_SENDER) private readonly reminders?: SignupReminderSender,
   ) {
-    this.ownTeam = new OwnTeam(prisma, scope);
+    this.ownTeam = new OwnTeam(prisma);
   }
 
   private readonly ownTeam: OwnTeam;

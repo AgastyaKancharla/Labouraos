@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { TelephonyService } from './telephony.service';
+import { findManyOver } from '../../test-support/prisma-where';
 
 /**
  * Missed calls (POST /telephony/callbacks/:id/assign and /complete), owner
@@ -42,7 +43,12 @@ describe('TelephonyService: who may assign and complete a missed call', () => {
       },
       staff: {
         findUnique: jest.fn(async ({ where }) => staff[where.id] ?? null),
-        findMany: jest.fn(async ({ where }) => (team[where.teamLeadId] ?? []).map((id) => ({ id }))),
+        findMany: jest.fn(findManyOver(() => Object.entries(staff).map(([id, row]) => ({
+          id,
+          ...row,
+          teamLeadId: Object.keys(team).find((lead) => team[lead].includes(id)) ?? null,
+          reportsToId: null,
+        })))),
       },
     };
     const attendance = {

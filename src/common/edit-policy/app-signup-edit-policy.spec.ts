@@ -1,4 +1,5 @@
 import { EditPolicyService } from './edit-policy.service';
+import { findManyOver } from '../../test-support/prisma-where';
 
 /**
  * Security review M2: a job seeker who registered in the customer app has no
@@ -11,7 +12,7 @@ describe('Edit policy for app sign-ups', () => {
   const prisma = {
     payment: { findFirst: jest.fn().mockResolvedValue(null) },
     signupTracker: tracker,
-    staff: { findUnique: jest.fn() },
+    staff: { findUnique: jest.fn(), findMany: jest.fn() },
     auditLog: { findFirst: jest.fn() },
   };
   const policy = new EditPolicyService(prisma as never, {} as never);
@@ -35,9 +36,11 @@ describe('Edit policy for app sign-ups', () => {
 
   it('a Team Lead of another team cannot edit a sign-up helped by someone else\'s agent', async () => {
     tracker.findFirst.mockResolvedValue({ assignedStaffId: 'agent-helper' });
-    prisma.staff.findUnique.mockResolvedValue({ teamLeadId: 'tl-other' });
+    // OwnTeam reads tl-1's team: first without the helper, then with them.
+    prisma.staff.findMany.mockImplementation(findManyOver([{ id: 'agent-helper', role: 'call_agent', teamLeadId: 'tl-other', reportsToId: null }]));
     expect((await policy.checkEditPermission({ id: 'tl-1', role: 'team_lead' } as never, 'job_seeker', seeker)).allowed).toBe(false);
-    prisma.staff.findUnique.mockResolvedValue({ teamLeadId: 'tl-1' });
+    // Linked only by the reporting line still counts as the team (OwnTeam).
+    prisma.staff.findMany.mockImplementation(findManyOver([{ id: 'agent-helper', role: 'call_agent', teamLeadId: null, reportsToId: 'tl-1' }]));
     expect((await policy.checkEditPermission({ id: 'tl-1', role: 'team_lead' } as never, 'job_seeker', seeker)).allowed).toBe(true);
   });
 

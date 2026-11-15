@@ -1,3 +1,4 @@
+import { OwnTeam, teamLeadOf } from '../../common/rbac/own-team';
 import { agentViewerFor, businessForViewer } from '../business/business-agent-view';
 import { LIVE_REFUND_STATUSES, isCurrentGuaranteeRefund, latestPaidActivations } from '../../common/money/current-guarantee-refund';
 import { SEEKER_ENDED_STATUSES } from '../refund-priority/refund-priority.rules';
@@ -712,9 +713,12 @@ export class CallWorkService {
 
   /** Average over the call agents in the same team (or every call agent when there is no team). */
   private async teamAverages(staffId: string, ctx: QueueContext) {
-    const me = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { teamLeadId: true } });
+    const me = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { role: true, teamLeadId: true, reportsToId: true } });
+    const lead = me ? teamLeadOf(me) : null;
+    // The same team as OwnTeam (teamLeadId links and the reporting line).
+    const members = lead ? await new OwnTeam(this.prisma).memberIds(lead) : null;
     const team = await this.prisma.staff.findMany({
-      where: { role: 'call_agent', status: 'active', ...(me?.teamLeadId ? { teamLeadId: me.teamLeadId } : {}) },
+      where: { role: 'call_agent', status: 'active', ...(members ? { id: { in: members } } : {}) },
       select: { id: true },
     });
     const ids = team.map((t) => t.id);

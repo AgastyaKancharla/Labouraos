@@ -1,3 +1,4 @@
+import { OwnTeam, businessesOwnedBy } from '../../common/rbac/own-team';
 import { AgentViewer, agentViewerFor, heldByAgent } from '../business/business-agent-view';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -86,11 +87,8 @@ export class SearchService {
 
   private async teamIds(user: JwtPayload): Promise<string[] | null> {
     if (user.role !== 'team_lead') return null;
-    const team = await this.prisma.staff.findMany({
-      where: { OR: [{ id: user.sub }, { teamLeadId: user.sub }, { reportsToId: user.sub }] },
-      select: { id: true },
-    });
-    return team.map((t) => t.id);
+    // The same own team every Team Lead check uses (OwnTeam).
+    return new OwnTeam(this.prisma).memberIds(user.sub);
   }
 
   async search(user: JwtPayload, raw: string, onlyType?: string) {
@@ -209,7 +207,7 @@ export class SearchService {
       AND: [
         match,
         { anonymisedAt: null },
-        ...(team ? [{ OR: [{ accountAgentId: { in: team } }, { leadCreatedByStaffId: { in: team } }] }] : []),
+        ...(team ? [businessesOwnedBy(team)] : []),
       ],
     };
     const [rows, total] = await Promise.all([

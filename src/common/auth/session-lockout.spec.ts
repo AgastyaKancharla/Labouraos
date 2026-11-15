@@ -305,6 +305,17 @@ describe('Phase 10 Task 5: sessions, lockout, lock and unlock', () => {
       .post(`/staff/${outsider.id}/unlock`)
       .set('Authorization', `Bearer ${tokenFor(lead)}`);
     expect(stillOtherTeam.status).toBe(403);
+
+    // A Team Lead cannot unlock their own account (Fable L-1).
+    await prisma.staff.update({
+      where: { id: lead.id },
+      data: { lockedUntil: new Date(now.getTime() + rules.lockoutMinutes * 60 * 1000), failedLoginCount: rules.failedLoginLimit },
+    });
+    const self = await request(app.getHttpServer())
+      .post(`/staff/${lead.id}/unlock`)
+      .set('Authorization', `Bearer ${tokenFor(lead)}`);
+    expect(self.status).toBe(403);
+    expect((await prisma.staff.findUniqueOrThrow({ where: { id: lead.id } })).lockedUntil).not.toBeNull();
   });
 
   it('a one-tap lock ends live sessions immediately and only unlock reverses it', async () => {

@@ -169,6 +169,22 @@ describe('Laboura Field shop visits: proof, outcomes, Team Lead checks, Home/Map
     await startVisit(otherAgent, { id }).expect(409);
   });
 
+  it("another field agent cannot open or work on someone else's visit (404)", async () => {
+    const id = randomUUID();
+    await startVisit(agent, { id }).expect(201);
+    const as = (path: string) => request(app.getHttpServer()).post(path).set('Authorization', `Bearer ${tokenFor(otherAgent)}`);
+    // GET /field-visits/:id: another field agent is refused (404)
+    await request(app.getHttpServer()).get(`/field-visits/${id}`).set('Authorization', `Bearer ${tokenFor(otherAgent)}`).expect(404);
+    // POST /field-visits/:id/outcome: another field agent is refused (404)
+    await as(`/field-visits/${id}/outcome`).send({ outcome: 'owner_not_there' }).expect(404);
+    // POST /field-visits/:id/proof: another field agent is refused (404)
+    await as(`/field-visits/${id}/proof`).field('latitude', String(SHOP.latitude)).field('longitude', String(SHOP.longitude)).expect(404);
+    // POST /field-visits/:id/verify: another field agent is refused (404)
+    await as(`/field-visits/${id}/verify`).send({ ownerOtpRequestId: 'x', ownerOtpCode: '000000' }).expect(404);
+    // The agent who started it still opens it.
+    await request(app.getHttpServer()).get(`/field-visits/${id}`).set('Authorization', `Bearer ${tokenFor(agent)}`).expect(200);
+  });
+
   it('accepts only the app camera and needs GPS', async () => {
     await startVisit(agent, { id: randomUUID(), source: 'gallery' }).expect(400);
     await startVisit(agent, { id: randomUUID(), latitude: '' }).expect(400);

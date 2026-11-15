@@ -1,5 +1,6 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { FollowUpService } from './follow-up.service';
+import { findManyOver } from '../../test-support/prisma-where';
 
 /**
  * GET /follow-up-tasks/:id/introduced-businesses only answers for the asking
@@ -22,11 +23,19 @@ const UNDER: Record<string, string[]> = {
   'tl-2': ['agent-c'],
 };
 
+const STAFF = [
+  { id: 'tl-1', role: 'team_lead', teamLeadId: null, reportsToId: 'manager-1' },
+  { id: 'agent-a', role: 'call_agent', teamLeadId: null, reportsToId: 'tl-1' },
+  { id: 'agent-b', role: 'field_agent', teamLeadId: null, reportsToId: 'tl-1' },
+  { id: 'tl-2', role: 'team_lead', teamLeadId: null, reportsToId: 'manager-2' },
+  { id: 'agent-c', role: 'call_agent', teamLeadId: null, reportsToId: 'tl-2' },
+];
+
 function makeService(task: Record<string, unknown> | null) {
   const prisma = {
     followUpTask: { findUnique: jest.fn().mockResolvedValue(task) },
-    // No one has a teamLeadId link here; the reporting tree (UNDER) is the team.
-    staff: { findMany: jest.fn(async () => []) },
+    // No one has a teamLeadId link here; the reporting line (UNDER) is the team.
+    staff: { findMany: jest.fn(findManyOver(STAFF)) },
     candidateIntroduction: {
       findMany: jest.fn(async ({ where }: { where: { jobSeekerId: string; shownByStaffId?: { in: string[] } } }) =>
         INTROS.filter((i) => !where.shownByStaffId || where.shownByStaffId.in.includes(i.shownByStaffId)).map((i) => ({ business: i.business })),

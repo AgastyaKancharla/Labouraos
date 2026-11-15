@@ -1,3 +1,4 @@
+import { OwnTeam } from '../../common/rbac/own-team';
 import {
   BadRequestException,
   ForbiddenException,
@@ -143,7 +144,7 @@ export class FieldAgentMetricsService {
           throw new ForbiddenException('Access denied: can only access your own targets and metrics');
         }
       } else if (actor.role === 'team_lead') {
-        if (staff.teamLeadId !== actor.sub) {
+        if (staff.id !== actor.sub && !(await new OwnTeam(this.prisma).includes(actor.sub, staff.id))) {
           throw new ForbiddenException(
             `Access denied: staff '${staff.code}' is not part of your team`,
           );

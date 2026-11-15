@@ -29,14 +29,10 @@ import { ROLES_METADATA_KEY } from './roles.decorator';
 
 @Injectable()
 export class RbacGuard implements CanActivate {
-  private readonly team: OwnTeam;
-
   constructor(
     private readonly reflector: Reflector,
     private readonly prisma: PrismaService,
-  ) {
-    this.team = new OwnTeam(prisma);
-  }
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const requiredPermission =
@@ -73,6 +69,9 @@ export class RbacGuard implements CanActivate {
     if (!requiredPermission) {
       return true;
     }
+
+    // One per request: it remembers the team it loaded for this request only.
+    const team = new OwnTeam(this.prisma);
 
     const method = request.method.toUpperCase();
     const action: Action =
@@ -119,7 +118,22 @@ export class RbacGuard implements CanActivate {
       ENTITY_RESOURCES.includes(requiredPermission.resource) &&
       (roleRule.scope === 'own_team' || roleRule.scope === 'own_account' || roleRule.scope === 'own_lead')
     ) {
-      return this.checkRecordScope(user, requiredPermission, roleRule.scope, action, request);
+      return this.checkRecordScope(team, user, requiredPermission, roleRule.scope, action, request);
+    }
+
+    // Staff and targets: by the staff id (or target id) in the declared route.
+    // A route with any other parameter cannot be placed and is refused for
+    // these scoped roles (fail closed), unless it declares that its service
+    // applies the scope ('service', listed in SERVICE_SCOPED_ROUTES).
+    if (roleRule.scope === 'own_team' || roleRule.scope === 'own_only') {
+      const pattern = declaredPath(request);
+      if (requiredPermission.target === 'service') return true;
+      if (!pattern || requiredPermission.target) {
+        throw new ForbiddenException('Access denied: this route has no staff check for your role');
+      }
+      if (pattern.includes(':') && !/\/:(staffId|id)(\/|$)/.test(pattern)) {
+        throw new ForbiddenException('Access denied: this route has no staff check for your role');
+      }
     }
 
     if (roleRule.scope === 'own_team') {
@@ -129,12 +143,8 @@ export class RbacGuard implements CanActivate {
 
       if (targetStaffId && targetStaffId !== user.sub) {
         if (requiredPermission.resource === 'staff') {
-          const targetStaff = await this.prisma.staff.findUnique({
-            where: { id: targetStaffId },
-            select: { teamLeadId: true },
-          });
-
-          if (!targetStaff || targetStaff.teamLeadId !== user.sub) {
+          const exists = await this.prisma.staff.findUnique({ where: { id: targetStaffId }, select: { id: true } });
+          if (!exists || !(await team.includes(user.sub, targetStaffId))) {
             throw new ForbiddenException(
               `Access denied: staff '${targetStaffId}' is not part of your team`,
             );
@@ -142,20 +152,15 @@ export class RbacGuard implements CanActivate {
         } else if (requiredPermission.resource === 'target') {
           const staffIdParam = request.params?.staffId as string | undefined;
           if (staffIdParam) {
-            const targetStaff = await this.prisma.staff.findUnique({
-              where: { id: staffIdParam },
-              select: { teamLeadId: true },
-            });
-            if (!targetStaff || targetStaff.teamLeadId !== user.sub) {
+            if (!(await team.includes(user.sub, staffIdParam))) {
               throw new ForbiddenException(`Access denied: staff is not part of your team`);
             }
           } else {
             const target = await this.prisma.target.findUnique({
               where: { id: targetStaffId },
-              include: { staff: { select: { teamLeadId: true } } },
+              select: { staffId: true },
             });
-
-            if (!target || target.staff.teamLeadId !== user.sub) {
+            if (!target || !(await team.includes(user.sub, target.staffId))) {
               throw new ForbiddenException(
                 `Access denied: staff is not part of your team`,
               );
@@ -198,6 +203,7 @@ export class RbacGuard implements CanActivate {
 
   /** Applies an own-team, own-account or own-lead rule to the record(s) the route acts on. */
   private async checkRecordScope(
+    team: OwnTeam,
     user: JwtPayload,
     permission: RequiredPermission,
     scope: 'own_team' | 'own_account' | 'own_lead',
@@ -238,13 +244,14 @@ export class RbacGuard implements CanActivate {
         throw new ForbiddenException('Access denied: the record this request acts on was not named');
       }
       for (const value of values) {
-        await this.checkOneRecord(user, target.kind, value, targetScope, permission.resource);
+        await this.checkOneRecord(team, user, target.kind, value, targetScope, permission.resource);
       }
     }
     return true;
   }
 
   private async checkOneRecord(
+    team: OwnTeam,
     user: JwtPayload,
     kind: TargetKind,
     ref: string,
@@ -256,7 +263,7 @@ export class RbacGuard implements CanActivate {
       if (!seeker) {
         throw new NotFoundException(kind === 'job_seeker' ? `Job seeker '${ref}' not found` : `Job seeker hit '${ref}' not found`);
       }
-      if (scope !== 'own_team' || !(await this.team.includes(user.sub, seeker.registeredByStaffId))) {
+      if (scope !== 'own_team' || !(await team.includes(user.sub, seeker.registeredByStaffId))) {
         throw new ForbiddenException('Access denied: job seeker is outside your own team');
       }
       return;
@@ -268,7 +275,7 @@ export class RbacGuard implements CanActivate {
       });
       // The partner read answers 404 for a partner outside the team, so
       // every other action on it does too.
-      if (!partner || scope !== 'own_team' || !(await this.team.includes(user.sub, partner.registeredByStaffId))) {
+      if (!partner || scope !== 'own_team' || !(await team.includes(user.sub, partner.registeredByStaffId))) {
         throw new NotFoundException(`Referral partner '${ref}' not found`);
       }
       return;
@@ -282,7 +289,7 @@ export class RbacGuard implements CanActivate {
       throw new ForbiddenException('Access denied: business could not be resolved for this write');
     }
     if (scope === 'own_team') {
-      if (!(await this.team.includesAny(user.sub, [business.accountAgentId, business.leadCreatedByStaffId]))) {
+      if (!(await team.ownsBusiness(user.sub, business))) {
         throw new ForbiddenException('Access denied: business is outside your team');
       }
       return;

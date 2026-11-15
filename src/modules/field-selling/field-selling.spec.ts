@@ -390,4 +390,81 @@ describe('Laboura Field selling (in-shop confirmation)', () => {
     expect((flag?.details as { callRecordId: string }).callRecordId).toBe(call.id);
     expect(await prisma.callRecord.findUniqueOrThrow({ where: { id: call.id } })).toMatchObject({ agentOutcome: 'other' });
   }, 60000);
+
+  it("another field agent is refused on every selling route for someone else's business", async () => {
+    const teamLead = await makeStaff('team_lead', 'TL3');
+    const holder = await makeStaff('field_agent', 'FH', teamLead.id);
+    const outsider = await makeStaff('field_agent', 'FO', teamLead.id);
+    const manager = await makeStaff('manager', 'MG3');
+    const out = tokenFor(outsider);
+    const business = await prisma.business.create({
+      data: {
+        code: `BZ-FS3-${suffix}`, name: `Hold ${suffix}`, phone: `+915${String(100000000 + Number.parseInt(suffix.slice(-6), 16)).slice(-9)}`,
+        city: 'Bengaluru', verificationStatus: 'verified', accountAgentId: holder.id, leadCreatedByStaffId: holder.id,
+      },
+    });
+    businessIds.push(business.id);
+    const vacancy = await prisma.vacancy.create({
+      data: { code: `VC-FS3-${suffix}`, city: 'Bengaluru', businessId: business.id, capturedByStaffId: holder.id, tradeSkill: 'Electrician', status: 'open', salaryMinPaise: 1600000, salaryMaxPaise: 2000000 },
+    });
+    const seeker = await makeSeeker('Hold', 41);
+    const slot = await prisma.vacancyInterviewSlot.create({ data: { vacancyId: vacancy.id, startsAt: clock.now(), endsAt: new Date(clock.now().getTime() + 3600_000) } });
+    const interview = await prisma.interview.create({
+      data: {
+        code: `IV-FS3-${suffix}`, vacancyId: vacancy.id, businessId: business.id, jobSeekerId: seeker.id, vacancyInterviewSlotId: slot.id,
+        slotStartsAt: slot.startsAt, slotEndsAt: slot.endsAt, proposedByStaffId: holder.id, suitabilitySnapshot: {}, status: 'confirmed',
+        offerSentAt: clock.now(), replyDueAt: clock.now(), resultDueAt: slot.endsAt,
+      },
+    });
+    const placement = await prisma.placement.create({
+      data: { code: `PL-FS3-${suffix}`, vacancyId: vacancy.id, jobSeekerId: seeker.id, businessId: business.id, placementFee: 850000, gstAmount: 153000 },
+    });
+    const sellerCall = await prisma.callRecord.create({
+      data: { code: `CR-FS3-${suffix}`, provider: 'mock', providerCallId: `fs3-${suffix}`, direction: 'outbound', staffId: holder.id,
+        subjectType: 'job_seeker', subjectId: seeker.id, purpose: 'offer', providerStatus: 'completed', answered: true },
+    });
+    const ownerCall = await prisma.callRecord.create({
+      data: { code: `CR-FS3O-${suffix}`, provider: 'mock', providerCallId: `fs3o-${suffix}`, direction: 'outbound', staffId: holder.id,
+        subjectType: 'business', subjectId: business.id, purpose: 'check_in', providerStatus: 'completed', answered: true },
+    });
+    const get = (url: string, token = out) => request(server()).get(url).set('Authorization', `Bearer ${token}`);
+    const post = (url: string, body: object = {}) => request(server()).post(url).set('Authorization', `Bearer ${out}`).send(body);
+
+    // GET /screens/field-selling/vacancies/:id/matches: another field agent is refused (404)
+    await get(`/screens/field-selling/vacancies/${vacancy.id}/matches`).expect(404);
+    // GET /screens/field-selling/vacancies/:id/no-more: another field agent is refused (404)
+    await get(`/screens/field-selling/vacancies/${vacancy.id}/no-more`).expect(404);
+    // ?jobSeekerId on the booking route may name any job seeker (city-wide); the vacancy's business decides (404 below)
+    // GET /screens/field-selling/vacancies/:id/booking: another field agent is refused (404)
+    await get(`/screens/field-selling/vacancies/${vacancy.id}/booking?jobSeekerId=${seeker.id}`).expect(404);
+    // GET /screens/field-selling/interviews/:id: another field agent is refused (403)
+    await get(`/screens/field-selling/interviews/${interview.id}`).expect(403);
+    // GET /screens/field-selling/placements/:id: another field agent is refused (403)
+    await get(`/screens/field-selling/placements/${placement.id}`).expect(403);
+    // POST /field-selling/calls/:id/answer: another field agent is refused (403)
+    await post(`/field-selling/calls/${sellerCall.id}/answer`, { answer: 'yes' }).expect(403);
+    // POST /field-selling/interviews/:id/hand-over: another field agent is refused (403)
+    await post(`/field-selling/interviews/${interview.id}/hand-over`).expect(403);
+    // POST /field-selling/interviews/:id/owner-otp: another field agent is refused (403)
+    await post(`/field-selling/interviews/${interview.id}/owner-otp`, { decision: 'not_selected', reason: 'x' }).expect(403);
+    // POST /field-selling/interviews/:id/decision: another field agent is refused (403)
+    await post(`/field-selling/interviews/${interview.id}/decision`, { decision: 'not_selected', otpRequestId: 'x', code: '000000' }).expect(403);
+    // POST /field-selling/interviews/:id/meet: another field agent is refused (403)
+    await post(`/field-selling/interviews/${interview.id}/meet`, {}).expect(403);
+    // POST /field-selling/interviews/:id/arrival: another field agent is refused (403)
+    await post(`/field-selling/interviews/${interview.id}/arrival`, { latitude: 12.97, longitude: 77.59, accuracy: 5 }).expect(403);
+    // DELETE /field-selling/vacancies/:id/favourites/:jobSeekerId: another field agent is refused (403)
+    await request(server()).delete(`/field-selling/vacancies/${vacancy.id}/favourites/${seeker.id}`).set('Authorization', `Bearer ${out}`).expect(403);
+    // POST /field-selling/owner-calls/:id/outcome: another field agent is refused (403)
+    await post(`/field-selling/owner-calls/${ownerCall.id}/outcome`, { outcome: 'complaint', note: 'x' }).expect(403);
+    // POST /field-selling/placements/:id/owner-says: another field agent is refused (403)
+    await post(`/field-selling/placements/${placement.id}/owner-says`, { answer: 'didnt_come' }).expect(403);
+
+    // City-wide reads (role table): any field agent may open a business or a candidate card,
+    // but GET /screens/field-selling/businesses/:id and /candidates/:id are for field agents only (403 to a Manager)
+    await get(`/screens/field-selling/businesses/${business.id}`, tokenFor(manager)).expect(403);
+    // ?vacancyId on the candidate card only adds the fit to that vacancy; the card is a field-agent-only read (403 to a Manager)
+    await get(`/screens/field-selling/candidates/${seeker.id}?vacancyId=${vacancy.id}`, tokenFor(manager)).expect(403);
+    await get(`/screens/field-selling/businesses/${business.id}`).expect(200);
+  }, 60000);
 });

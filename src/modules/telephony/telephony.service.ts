@@ -129,7 +129,9 @@ export class TelephonyService {
     }
     if (actor && actor.role !== 'ceo') {
       const mine = [actor.sub];
-      if ((actor.role === 'manager' || actor.role === 'team_lead') && this.scope) {
+      if (actor.role === 'team_lead') {
+        mine.push(...(await this.teamOf(actor.sub)));
+      } else if (actor.role === 'manager' && this.scope) {
         mine.push(...(await this.scope.peopleUnder(actor.sub)));
       }
       where.OR = [{ assignedToStaffId: null }, { assignedToStaffId: { in: mine } }];
@@ -147,7 +149,7 @@ export class TelephonyService {
 
   /** A Team Lead's own team (the one shared definition, OwnTeam). */
   private teamOf(teamLeadId: string): Promise<string[]> {
-    return new OwnTeam(this.prisma, this.scope).memberIds(teamLeadId);
+    return new OwnTeam(this.prisma).memberIds(teamLeadId);
   }
 
   /**

@@ -2,7 +2,7 @@ import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@
 import { Request } from 'express';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { OwnTeam } from '../../common/rbac/own-team';
+import { OwnTeam, businessOwners } from '../../common/rbac/own-team';
 
 /**
  * Who may act on one call (/calls/:id, its outcome, notes and recording),
@@ -76,7 +76,7 @@ export class CallPlaceGuard implements CanActivate {
         where,
         select: { accountAgentId: true, leadCreatedByStaffId: true },
       });
-      owners = business ? [business.accountAgentId, business.leadCreatedByStaffId] : null;
+      owners = business ? businessOwners(business) : null;
     } else {
       return true; // the route refuses an unknown subject type
     }

@@ -1,3 +1,4 @@
+import { OwnTeam } from '../../common/rbac/own-team';
 import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ReportingScopeService } from '../staff/reporting-scope.service';
@@ -45,8 +46,13 @@ export class StatusHistoryService {
     // Security check L7, the audit log's scope: a Team Lead or Manager reads a trail
     // only when it is about someone in their tree, or someone in their tree changed it
     // (themselves included). Anything else answers as if there were no history.
-    if (viewer && (viewer.role === 'team_lead' || viewer.role === 'manager') && this.reportingScope) {
-      const ids = new Set([viewer.id, ...(await this.reportingScope.peopleUnder(viewer.id))]);
+    if (viewer && (viewer.role === 'team_lead' || (viewer.role === 'manager' && this.reportingScope))) {
+      // A Team Lead: the shared own-team definition (OwnTeam); a Manager: their tree.
+      const ids = new Set(
+        viewer.role === 'team_lead'
+          ? await new OwnTeam(this.prisma).memberIds(viewer.id)
+          : [viewer.id, ...(await this.reportingScope!.peopleUnder(viewer.id))],
+      );
       const aboutTheirPerson = subjectType === 'staff' && ids.has(subjectId);
       const changedByTheirPerson = rows.some((row) => row.changedByStaffId && ids.has(row.changedByStaffId));
       if (!aboutTheirPerson && !changedByTheirPerson) return [];

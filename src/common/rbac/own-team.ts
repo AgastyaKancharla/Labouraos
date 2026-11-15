@@ -1,41 +1,45 @@
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { ReportingScopeService } from '../../modules/staff/reporting-scope.service';
+
+/** The roles that make up a Team Lead's team (besides the Team Lead). */
+export const TEAM_AGENT_ROLES: readonly string[] = ['call_agent', 'field_agent'];
 
 /**
  * A Team Lead's own team — the one definition every Team Lead check uses
  * (owner rule, Master Guide 14 Nov: "Team Leads work only on their own team").
  *
- * The team of Team Lead T is:
- * - T themselves (records T registered, calls T made, work assigned to T);
- * - everyone whose Team Lead is T (`Staff.teamLeadId = T`);
- * - everyone under T in the reporting line (`reportsToId`, walked by
- *   ReportingScopeService.peopleUnder; an agent with no reportsToId counts
- *   under their teamLeadId).
+ * The team of Team Lead T is T and the call and field agents linked to T,
+ * either by `Staff.teamLeadId = T` (accounts made before the reporting line,
+ * Phase 21) or by `Staff.reportsToId = T` (the reporting line; agents report
+ * to their Team Lead). Agents have nobody under them, so this is the whole
+ * reporting tree below a Team Lead. A record belongs to the team when the
+ * staff member who owns it is in this set; a record with no owner belongs to
+ * no team (the CEO and Managers handle it).
  *
- * Both links are read because accounts made before the reporting line
- * (Phase 21) have only `teamLeadId`, and new ones set both to the same Team
- * Lead. A record "belongs to the team" when the staff member who owns it
- * (registered it, made the call, holds the task) is in this set; a record
- * with no owner belongs to no team (the CEO and Managers handle it).
+ * Create one per request (or per check): it remembers the team it loaded, so
+ * several checks in one request read the database once.
  */
 export class OwnTeam {
-  private readonly scope: Pick<ReportingScopeService, 'peopleUnder'>;
+  private readonly loaded = new Map<string, Promise<string[]>>();
 
-  /** `scope` reuses a service's injected ReportingScopeService when it has one. */
-  constructor(
-    private readonly prisma: PrismaService,
-    scope?: Pick<ReportingScopeService, 'peopleUnder'>,
-  ) {
-    this.scope = scope ?? new ReportingScopeService(prisma);
-  }
+  constructor(private readonly prisma: PrismaService) {}
 
   /** Every staff id in the Team Lead's own team, the Team Lead included. */
-  async memberIds(teamLeadId: string): Promise<string[]> {
-    const [direct, under] = await Promise.all([
-      this.prisma.staff.findMany({ where: { teamLeadId }, select: { id: true } }),
-      this.scope.peopleUnder(teamLeadId),
-    ]);
-    return [...new Set([teamLeadId, ...direct.map((row) => row.id), ...under])];
+  memberIds(teamLeadId: string): Promise<string[]> {
+    let team = this.loaded.get(teamLeadId);
+    if (!team) {
+      team = this.prisma.staff
+        .findMany({
+          where: {
+            role: { in: [...TEAM_AGENT_ROLES] },
+            OR: [{ teamLeadId }, { reportsToId: teamLeadId }],
+          },
+          select: { id: true },
+        })
+        .then((rows) => [teamLeadId, ...rows.map((row) => row.id).filter((id) => id !== teamLeadId)]);
+      this.loaded.set(teamLeadId, team);
+    }
+    return team;
   }
 
   /** True when any of the given owners is in the Team Lead's own team. */
@@ -51,4 +55,45 @@ export class OwnTeam {
   includes(teamLeadId: string, owner: string | null | undefined): Promise<boolean> {
     return this.includesAny(teamLeadId, [owner]);
   }
+
+  /** True when the business belongs to the Team Lead's own team (businessOwners). */
+  ownsBusiness(teamLeadId: string, business: BusinessOwnerFields): Promise<boolean> {
+    return this.includesAny(teamLeadId, businessOwners(business));
+  }
+}
+
+/**
+ * The Team Lead a call or field agent belongs to (teamLeadId, else the
+ * reporting line). Anyone else has no Team Lead here.
+ */
+export function teamLeadOf(staff: { role: string; teamLeadId?: string | null; reportsToId?: string | null }): string | null {
+  if (!TEAM_AGENT_ROLES.includes(staff.role)) return null;
+  return staff.teamLeadId ?? staff.reportsToId ?? null;
+}
+
+export interface BusinessOwnerFields {
+  accountAgentId?: string | null;
+  leadCreatedByStaffId?: string | null;
+}
+
+/**
+ * Which team a business belongs to (owner decision, Master Guide rev 170):
+ * once it has an account agent, only the account agent's team is in charge of
+ * it; until then the team of the agent who created the lead; with neither it
+ * belongs to no team (Managers and the CEO).
+ */
+export function businessOwners(business: BusinessOwnerFields): string[] {
+  if (business.accountAgentId) return [business.accountAgentId];
+  if (business.leadCreatedByStaffId) return [business.leadCreatedByStaffId];
+  return [];
+}
+
+/** The same rule as a database filter: businesses that belong to these staff ids. */
+export function businessesOwnedBy(staffIds: string[]): Prisma.BusinessWhereInput {
+  return {
+    OR: [
+      { accountAgentId: { in: staffIds } },
+      { accountAgentId: null, leadCreatedByStaffId: { in: staffIds } },
+    ],
+  };
 }
