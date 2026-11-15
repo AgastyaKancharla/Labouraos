@@ -69,6 +69,9 @@ export interface BusinessDetail {
   signedToday: boolean;
   canShowCandidates: boolean;
   paused: boolean;
+  /** D6 (rev 176): suspended by the CEO. */
+  suspended?: boolean;
+  suspendedUntil?: string | null;
   isMine: boolean;
   latitude: number | null;
   longitude: number | null;

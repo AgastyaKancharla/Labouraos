@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useI18n } from '../../../i18n/I18nProvider';
 import { api } from '../../../lib/api/client';
@@ -170,4 +170,34 @@ export function ReconsentForm({
       </button>
     </>
   );
+}
+
+function plainText(html: string): string {
+  return html
+    .replace(/<[^>]+>/g, '')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+}
+
+/**
+ * "Read this to them" for an agent (CA08, CA15, Laboura Field): the document's
+ * "In short" in each of the three languages, as plain lines. Null until all
+ * three have loaded (the caller keeps its older script meanwhile).
+ */
+export function useInShortScripts(key: LegalDocumentKey): Record<PublicLanguage, string> | null {
+  const results = useQueries({
+    queries: (['kn', 'hi', 'en'] as const).map((language) => ({
+      queryKey: ['legal-document', key, language],
+      queryFn: () => legalApi.document(key, language),
+      staleTime: 10 * 60_000,
+      retry: false,
+    })),
+  });
+  if (!results.every((r) => r.data)) return null;
+  const [kn, hi, en] = results.map((r) => r.data!);
+  const script = (d: LegalDocument) => `${d.summary.map((line) => `• ${plainText(line)}`).join('\n')}\n\n(${d.title} · v${d.version})`;
+  return { kn: script(kn), hi: script(hi), en: script(en) };
 }

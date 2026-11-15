@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
@@ -20,7 +20,7 @@ export class ConductController {
     return this.conduct.suspendBusiness(id, req.user.sub, body ?? {});
   }
 
-  @Delete('businesses/:id/suspension')
+  @Post('businesses/:id/suspension/lift')
   @RequireRoles('ceo')
   lift(@Param('id') id: string, @Body() body: { reason?: string }, @Req() req: AuthedRequest) {
     return this.conduct.liftSuspension(id, req.user.sub, body ?? {});

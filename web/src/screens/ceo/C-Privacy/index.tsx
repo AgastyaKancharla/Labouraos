@@ -12,6 +12,7 @@ import { useScreenPath } from '../../../portals/PortalContext';
 import { DateFilter, FilterPanel, PagedTable, SearchField, SelectFilter, humanize, rangeQuery, useCeoList, useDebounced, type ListPeriod } from '../_kit/kit';
 import { DataRequestsCard, dataRequestsKey, type DataRequestList } from './DataRequests';
 import { BreachesCard, useBreaches } from './Breaches';
+import { CompanyDetailsCard } from './CompanyDetails';
 
 /** Consent & privacy — design C-Privacy.dc.html. Proof of every consent and withdrawal (India's data law). */
 interface Privacy {
@@ -127,6 +128,7 @@ export default function PrivacyScreen() {
               )}
             </Card>
           </div>
+          <CompanyDetailsCard />
           <DataRequestsCard />
           <BreachesCard />
           <div className="two-col">

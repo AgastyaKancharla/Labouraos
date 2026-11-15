@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useInShortScripts } from '../../public/shared/legal';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Button } from '../../../components/Button';
@@ -37,6 +38,8 @@ import { EMPTY_REFERRAL, referralBody, referralErrors, type ReferralForm } from 
 export default function RegisterReferral() {
   const t = useT();
   const scriptTerms = useScriptTerms();
+  // Referral Partner Terms v1.0 "In short" (rev 176), read aloud before the partner's OTP.
+  const partnerInShort = useInShortScripts('referral_terms');
   const to = useScreenPath();
   const navigate = useNavigate();
   const toast = useToast();
@@ -176,7 +179,7 @@ export default function RegisterReferral() {
           </div>
         </fieldset>
 
-        <ExplainScript n={3} title={t('reg.ref.explain')} scripts={scriptTerms ? referralScript(scriptTerms) : null} language={form.language} note={
+        <ExplainScript n={3} title={t('reg.ref.explain')} scripts={partnerInShort ?? (scriptTerms ? referralScript(scriptTerms) : null)} language={form.language} note={
             <>
               {t('reg.ref.explainNote')}{' '}
               <a href={`${import.meta.env.BASE_URL}p/referral-terms?lang=${form.language || 'kn'}`} target="_blank" rel="noopener noreferrer">

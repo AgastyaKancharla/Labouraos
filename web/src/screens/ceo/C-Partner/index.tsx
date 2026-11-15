@@ -12,6 +12,8 @@ import { formatINR } from '../../../lib/format/money';
 import { formatMobile } from '../../../lib/format/phone';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { ActionButton } from '../_kit/actions';
+import { useAuth } from '../../../auth/AuthProvider';
+import { BanButton, LegalAcceptanceCard } from '../_kit/legal';
 import { Kv, humanize } from '../_kit/kit';
 import { PAYMENT_STATUS, SEEKER_STATUS } from '../_kit/labels';
 
@@ -41,6 +43,7 @@ export default function PartnerDetail() {
   const to = useScreenPath();
   const query = useQuery({ queryKey: ['ceo', 'partner', id], queryFn: () => api.get<Detail>(`/ceo/referrals/${id}`) });
   const d = query.data;
+  const role = useAuth().session?.staff.role;
   const back = { to: to('C-Referrals'), label: 'Referrals' };
   if (query.isPending)
     return (
@@ -72,6 +75,7 @@ export default function PartnerDetail() {
         }
         actions={
           <>
+          {(role === 'ceo' || role === 'manager') && <BanButton subjectType="referral" subjectId={d.id} name={d.name} />}
           {d.paused ? (
             <ActionButton
               label="Unpause partner"
@@ -111,6 +115,7 @@ export default function PartnerDetail() {
           <strong>Paused {formatDateIST(d.paused.at)}</strong> — {d.paused.reason ?? 'no reason recorded'}. New referrals from this partner are refused; money already earned is still paid.
         </div>
       )}
+      <LegalAcceptanceCard subjectType="referral" subjectId={d.id} />
       <div className="two-col">
         <Card icon="referrals" tone="gold" title="Partner">
           <Kv

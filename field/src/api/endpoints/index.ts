@@ -9,6 +9,7 @@ import { sellingApi } from './selling';
 import { myAttendanceApi } from './myAttendance';
 import { searchApi } from './search';
 import { staffPhotoApi } from './staffPhoto';
+import { legalApi } from './legal';
 
 /**
  * Typed endpoint groups bound to the app's API client. Add one file per
@@ -25,9 +26,11 @@ export const endpoints = {
   myAttendance: myAttendanceApi(api),
   search: searchApi(api),
   staffPhoto: staffPhotoApi(api),
+  legal: legalApi(api),
 };
 
 export * from './attendance';
+export * from './legal';
 export * from './auth';
 export * from './targets';
 export * from './fieldWork';
