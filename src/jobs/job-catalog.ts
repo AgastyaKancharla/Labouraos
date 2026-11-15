@@ -48,6 +48,25 @@ export const JOB_CATALOG: readonly JobCatalogEntry[] = [
   { key: 'notificationSweep', queue: SHARED_JOB_QUEUE, jobName: 'sweep-notifications', schedulerId: 'notification-sweep-scheduler', runName: 'sweep-notifications', label: 'Notification bells that change with the clock', legacyQueue: 'notification-sweep' },
 ];
 
+/** A job that no longer exists: its schedule may still sit in a Key Value that kept its data. */
+export interface RetiredJob {
+  key: string;
+  /** The BullMQ job name it ran under: the shared worker finishes such a job and removes its schedule. */
+  jobName: string;
+  schedulerId: string;
+  /** Where its schedule may still be: its own old queue and the shared queue. */
+  queues: readonly string[];
+}
+
+/**
+ * Jobs that no longer exist (plain data, read by legacy-queues.ts and the shared worker).
+ * - kycRecovery: the outside ID company's outage probe (retired with the company, PR #135:
+ *   Aadhaar is checked in-house, other IDs by a Team Lead).
+ */
+export const RETIRED_JOBS: readonly RetiredJob[] = [
+  { key: 'kycRecovery', jobName: 'probe-id-check-recovery', schedulerId: 'kyc-recovery-scheduler', queues: ['kyc-recovery', SHARED_JOB_QUEUE] },
+];
+
 /** BullMQ keeps each queue's schedulers in this sorted set (default `bull` prefix). */
 export function schedulerSetKey(queue: string): string {
   return `bull:${queue}:repeat`;

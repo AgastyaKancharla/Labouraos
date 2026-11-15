@@ -5,7 +5,9 @@ import { RETIRED_SCHEDULES, retiredSchedulesPresent } from './legacy-queues';
 describe('retired job schedules', () => {
   it('the KYC recovery probe is retired: not in the catalog, its schedule removed from its old queue and the shared one', () => {
     expect(JOB_CATALOG.some((e) => e.key === 'kycRecovery' || e.schedulerId === 'kyc-recovery-scheduler')).toBe(false);
-    expect(RETIRED_SCHEDULES).toEqual([{ key: 'kycRecovery', queues: ['kyc-recovery', SHARED_JOB_QUEUE], schedulerId: 'kyc-recovery-scheduler' }]);
+    expect(RETIRED_SCHEDULES).toEqual([{ key: 'kycRecovery', jobName: 'probe-id-check-recovery', queues: ['kyc-recovery', SHARED_JOB_QUEUE], schedulerId: 'kyc-recovery-scheduler' }]);
+    // The shared worker finishes a copy of it still waiting and drops its schedule (job-queue.spec.ts).
+    expect(JOB_CATALOG.some((e) => e.jobName === 'probe-id-check-recovery')).toBe(false);
   });
 
   it('finds only the retired schedules that are still there', async () => {

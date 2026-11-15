@@ -1,6 +1,6 @@
 import { Queue } from 'bullmq';
 import type Redis from 'ioredis';
-import { JOB_CATALOG, JobCatalogEntry, schedulerSetKey, SHARED_JOB_QUEUE } from './job-catalog';
+import { JOB_CATALOG, JobCatalogEntry, RETIRED_JOBS, schedulerSetKey, SHARED_JOB_QUEUE } from './job-catalog';
 import { jobQueue } from './job-queue';
 
 /**
@@ -23,15 +23,11 @@ export interface LegacyCleanupResult {
 type LegacyReader = Pick<Redis, 'zscore' | 'exists'>;
 
 /**
- * Jobs that no longer exist. Their schedule may still sit in a Key Value that
- * kept its data — in the job's own old queue, or in the shared queue — and a
- * shared-queue schedule with no handler would fire for nothing; both go.
- * - kycRecovery: the outside ID company's outage probe (retired with the
- *   company, PR #135: Aadhaar is checked in-house, other IDs by a Team Lead).
+ * Jobs that no longer exist (RETIRED_JOBS in job-catalog.ts). Their schedule may still sit in a
+ * Key Value that kept its data — in the job's own old queue, or in the shared queue — and both go.
+ * A copy already waiting in the shared queue is finished and dropped by the shared worker.
  */
-export const RETIRED_SCHEDULES: readonly { key: string; queues: readonly string[]; schedulerId: string }[] = [
-  { key: 'kycRecovery', queues: ['kyc-recovery', SHARED_JOB_QUEUE], schedulerId: 'kyc-recovery-scheduler' },
-];
+export const RETIRED_SCHEDULES: readonly { key: string; queues: readonly string[]; schedulerId: string }[] = RETIRED_JOBS;
 
 /** The retired schedules still present, queue by queue (read only). */
 export async function retiredSchedulesPresent(

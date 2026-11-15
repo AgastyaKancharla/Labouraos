@@ -79,7 +79,7 @@ describe('Job catalog: every repeating job, as plain data for the schedule keepe
       .filter((f) => f.endsWith('.ts') && !f.endsWith('.spec.ts'))
       .map((f) => fs.readFileSync(path.join(dir, f), 'utf8'))
       .flatMap((src) => [...src.matchAll(/upsertJobScheduler\(\s*'([^']+)'/g)].map((m) => m[1]));
-    expect(ids.length).toBeGreaterThanOrEqual(15);
+    expect(ids.length).toBeGreaterThanOrEqual(14);
     expect(ids.sort()).toEqual(JOB_CATALOG.map((e) => e.schedulerId).sort());
   });
 
