@@ -225,7 +225,7 @@ describe('Same-visit selling, Team Lead pause and business edit rights', () => {
       .post(`/businesses/${businessId}/storefront-photo`)
       .set(auth(tokens.fieldAgent))
       .field('source', 'live_camera')
-      .attach('photo', Buffer.from(`storefront-${suffix}`), { filename: 'shop.jpg', contentType: 'image/jpeg' })
+      .attach('photo', Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from(`storefront-${suffix}`)]), { filename: 'shop.jpg', contentType: 'image/jpeg' })
       .expect(201);
     expect((await prisma.business.findUniqueOrThrow({ where: { id: businessId } })).verificationStatus).toBe('lead');
     await request(app.getHttpServer()).get(`/vacancies/${vacancyId}/shortlist`).set(auth(tokens.fieldAgent)).expect(403);

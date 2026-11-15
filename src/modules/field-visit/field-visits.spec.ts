@@ -58,7 +58,8 @@ describe('Laboura Field shop visits: proof, outcomes, Team Lead checks, Home/Map
   /** A fresh "photo" each call (different bytes, so a different hash). */
   function photo(): Buffer {
     photoCounter += 1;
-    return Buffer.from(`jpeg-bytes-${stamp}-${photoCounter}-${randomUUID()}`);
+    // A JPEG's first bytes (IN-5: the server reads the type from them).
+    return Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from(`jpeg-bytes-${stamp}-${photoCounter}-${randomUUID()}`)]);
   }
 
   function startVisit(
@@ -188,6 +189,8 @@ describe('Laboura Field shop visits: proof, outcomes, Team Lead checks, Home/Map
   it('accepts only the app camera and needs GPS', async () => {
     await startVisit(agent, { id: randomUUID(), source: 'gallery' }).expect(400);
     await startVisit(agent, { id: randomUUID(), latitude: '' }).expect(400);
+    // IN-5: an SVG sent as "image/jpeg" is refused: the type comes from the bytes.
+    await startVisit(agent, { id: randomUUID() }, Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>')).expect(400);
   });
 
   it('rejects a photo already used before and tells the Team Lead', async () => {
