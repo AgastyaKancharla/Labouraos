@@ -563,6 +563,8 @@ If something does not open: wait an hour (the Hostinger change may still be spre
 | `ALERT_WEBHOOK_URL` | Slack-style webhook | Where error alerts are posted |
 | `UIDAI_CERT_FINGERPRINTS` | The go-live check (Step "Before real data") | SHA-256 fingerprints of the UIDAI certificates in the code, confirmed against UIDAI's page; the live service won't start until they match |
 | `OTP_PROVIDER_MODE`, `SMS_PROVIDER_MODE`, `PAYMENT_PROVIDER_MODE`, `WHATSAPP_PROVIDER_MODE`, `TELEPHONY_PROVIDER_MODE` | `mock` (fixed) until each vendor is signed up | Picks the mock or the real vendor; the only switch for each vendor |
+| `CUSTOMER_PUSH_PROVIDER_MODE` | `mock` (fixed) until push is tested on a real phone | Laboura app notifications: `mock` writes them to the log; `real` sends them through Expo's free push service (Google FCM for Android, Apple APNs for iPhone). The inbox inside the app works either way. Before `real`: upload the Firebase server key (FCM V1 service account) to the Expo project, and later the Apple push key |
+| `EXPO_ACCESS_TOKEN` | empty | Only if "enhanced push security" is switched on in the Expo account; the worker copies it from the web service |
 | `SMS_API_KEY`, `SMS_API_URL`, `DLT_SENDER_ID`, `DLT_TEMPLATE_ID`, `DLT_ENTITY_ID`, `SMS_DLT_TEMPLATE_IDS` | From the SMS gateway | OTP and SMS messages |
 | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` | From Meta | WhatsApp messages |
 | `TELEPHONY_VENDOR`, `TOLL_FREE_NUMBER` | From the calling vendor | Calls |

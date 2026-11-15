@@ -50,6 +50,7 @@ import { assertUtrUnused, isUniqueViolation, normaliseUtr, utrUsed } from '../..
 import { alreadyExists, isDuplicatePayout, lockSubject } from '../../common/money/one-per-subject';
 import { isRuleBasedRefund, recordRefundRejection, refundLockKey } from '../refund/refund-rejection';
 import { markJobSeekerRefunded } from '../job-seeker/job-seeker-refunded';
+import { CustomerNotificationHooks } from '../customer-notification/customer-notification-hooks.service';
 
 /** What the bank feed webhook reports back for one credit. */
 export interface BankFeedWebhookResult {
@@ -102,6 +103,7 @@ export class PaymentService {
     private readonly reviewFlagService: ReviewFlagService,
     @Optional() publicLinkStore?: PublicLinkStoreService,
     @Optional() private readonly monthLocks?: MonthLockService,
+    @Optional() private readonly customerNotifications?: CustomerNotificationHooks,
   ) {
     this.publicLinks = publicLinkStore ?? new PublicLinkStoreService(prisma);
   }
@@ -404,6 +406,8 @@ export class PaymentService {
         subjectId: transition.updatedSeeker!.id, relatedType: 'payment', relatedId: paymentId,
         variables: { link: paymentReceiptLink },
       })));
+      // Customer app notification (Agent C): extra to the SMS/WhatsApp above; never a contact attempt.
+      await this.customerNotifications?.jobSeekerPaymentConfirmed(paymentId);
     }
     if (transition.placementTransition) {
       const { placement, invoiceCode } = transition.placementTransition;
@@ -430,6 +434,8 @@ export class PaymentService {
         subjectId: placement.businessId, relatedType: 'placement', relatedId: placement.id,
         variables: { link: placementInvoiceLink, invoiceCode },
       })));
+      // Customer app notification (Agent C): extra to the SMS/WhatsApp above; never a contact attempt.
+      await this.customerNotifications?.placementFeePaid(paymentId);
     }
     return { received: true, status: 'succeeded', paymentId };
   }
@@ -1782,6 +1788,9 @@ export class PaymentService {
       );
     }
 
+    // Customer app notification (Agent C): status only; the money is still released by a person.
+    await this.customerNotifications?.paymentApproved(payment.id);
+
     return updated;
   }
 
@@ -2148,6 +2157,9 @@ export class PaymentService {
       changedFields: ['status', 'bankUtr', 'payoutAccountId', 'paidAt', 'paidByStaffId'],
       reason: 'Payout recorded by CEO or Finance with verified name',
     });
+
+    // Customer app notification (Agent C): status only.
+    await this.customerNotifications?.paymentPaid(payment.id);
 
     return updated;
   }

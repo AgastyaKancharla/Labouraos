@@ -8,6 +8,8 @@ import { INTERVIEW_REPLY_QUEUE, INTERVIEW_REPLY_SWEEP } from './interview-reply.
 import { JOINING_REWARD_QUEUE, JOINING_REWARD_SWEEP } from './joining-reward.job';
 import { NO_PICKUP_EVALUATION_QUEUE, NO_PICKUP_EVALUATION_JOB } from './no-pickup-evaluation.job';
 import { NOTIFICATION_SWEEP_QUEUE, NOTIFICATION_SWEEP } from './notification-sweep.job';
+import { CUSTOMER_PUSH_QUEUE, CUSTOMER_PUSH_ROUND } from './customer-push.job';
+import { CUSTOMER_PUSH_CHECK_RECEIPTS, CUSTOMER_PUSH_SEND_NOW } from '../modules/customer-notification/customer-notification.constants';
 import { PATTERN_FLAGS_QUEUE, PATTERN_FLAGS_SWEEP } from './pattern-flags.job';
 import { PLACEMENT_COMPLETION_QUEUE, PLACEMENT_COMPLETION_SWEEP } from './placement-completion.job';
 import { RETENTION_CLEANUP_QUEUE, RETENTION_CLEANUP_SWEEP } from './retention-cleanup.job';
@@ -30,6 +32,7 @@ describe('Job catalog: every repeating job, as plain data for the schedule keepe
       joiningReward: [JOINING_REWARD_QUEUE, JOINING_REWARD_SWEEP],
       noPickupEvaluation: [NO_PICKUP_EVALUATION_QUEUE, NO_PICKUP_EVALUATION_JOB],
       notificationSweep: [NOTIFICATION_SWEEP_QUEUE, NOTIFICATION_SWEEP],
+      customerPush: [CUSTOMER_PUSH_QUEUE, CUSTOMER_PUSH_ROUND],
       patternFlags: [PATTERN_FLAGS_QUEUE, PATTERN_FLAGS_SWEEP],
       placementCompletion: [PLACEMENT_COMPLETION_QUEUE, PLACEMENT_COMPLETION_SWEEP],
       // Retention records its own JobRun rows, under the retention service's name.
@@ -54,6 +57,7 @@ describe('Job catalog: every repeating job, as plain data for the schedule keepe
       joiningReward: JOINING_REWARD_SWEEP,
       noPickupEvaluation: NO_PICKUP_EVALUATION_JOB,
       notificationSweep: NOTIFICATION_SWEEP,
+      customerPush: CUSTOMER_PUSH_ROUND,
       patternFlags: PATTERN_FLAGS_SWEEP,
       placementCompletion: PLACEMENT_COMPLETION_SWEEP,
       retentionCleanup: RETENTION_CLEANUP_SWEEP,
@@ -70,6 +74,9 @@ describe('Job catalog: every repeating job, as plain data for the schedule keepe
     expect(new Set(names).size).toBe(names.length);
     // ...and no job name clashes with the one-off recording copy job.
     expect(names).not.toContain('copy-recording');
+    // ...nor with the customer push one-off jobs (a "send now" kick and a receipt check).
+    expect(names).not.toContain(CUSTOMER_PUSH_SEND_NOW);
+    expect(names).not.toContain(CUSTOMER_PUSH_CHECK_RECEIPTS);
   });
 
   it('lists the scheduler id of every file that registers a BullMQ job scheduler', () => {

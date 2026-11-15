@@ -46,6 +46,7 @@ export const JOB_CATALOG: readonly JobCatalogEntry[] = [
   { key: 'interviewReply', queue: SHARED_JOB_QUEUE, jobName: 'process-due-interview-replies', schedulerId: 'interview-reply-deadline-scheduler', runName: 'process-due-interview-replies', label: 'Offer reply and payment deadlines', legacyQueue: 'interview-reply-deadlines' },
   { key: 'signupTracker', queue: SHARED_JOB_QUEUE, jobName: 'sweep-signup-tracker', schedulerId: 'signup-tracker-scheduler', runName: 'sweep-signup-tracker', label: 'App sign-ups: reminders, call tasks, closing' },
   { key: 'notificationSweep', queue: SHARED_JOB_QUEUE, jobName: 'sweep-notifications', schedulerId: 'notification-sweep-scheduler', runName: 'sweep-notifications', label: 'Notification bells that change with the clock', legacyQueue: 'notification-sweep' },
+  { key: 'customerPush', queue: SHARED_JOB_QUEUE, jobName: 'send-due-customer-pushes', schedulerId: 'customer-push-scheduler', runName: 'send-due-customer-pushes', label: 'Customer app notifications (push)' },
 ];
 
 /** A job that no longer exists: its schedule may still sit in a Key Value that kept its data. */
