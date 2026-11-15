@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto';
+import type { ServerResponse } from 'node:http';
+
 /**
  * IN-6 / INF-12: a Content-Security-Policy on the pages of the office web app
  * (the site root of app.laboura.com, including the public /p/ pages) and of
@@ -62,8 +65,9 @@ export function contentSecurityPolicy(app: CspApp, env: NodeJS.ProcessEnv = proc
     ['connect-src', extra(["'self'", storage])],
     ['worker-src', ["'self'", 'blob:']],
     ['manifest-src', ["'self'"]],
-    // A bill opened as a PDF in a new tab is a blob: document that keeps this policy.
-    ['object-src', ["'self'", 'blob:']],
+    // No plugins. A bill opened as a PDF in a new tab (a blob: document that keeps
+    // this policy) still shows in the browser's PDF viewer: checked in Chromium (L3).
+    ['object-src', ["'none'"]],
     ['frame-src', ["'self'", 'blob:']],
     ['frame-ancestors', ["'none'"]],
     ['base-uri', ["'self'"]],
@@ -85,4 +89,55 @@ export function contentSecurityPolicyHeader(app: CspApp, env: NodeJS.ProcessEnv 
   if (mode === 'off') return null;
   const name = mode === 'report-only' ? 'Content-Security-Policy-Report-Only' : 'Content-Security-Policy';
   return [name, contentSecurityPolicy(app, env)];
+}
+
+/**
+ * L3: every other HTML answer of the API (receipts, invoices, the candidate
+ * introduction card, legal acceptance texts, customer documents, the referral
+ * terms fallback page, the CEO status page…) gets a locked-down policy unless
+ * its route set its own: nothing runs, nothing is fetched, only inline styles
+ * and images from the app, data: and Supabase Storage (signed photo links).
+ */
+export function defaultHtmlPolicy(env: NodeJS.ProcessEnv = process.env): string {
+  const storage = storageOrigin(env);
+  return [
+    "default-src 'none'",
+    "style-src 'unsafe-inline'",
+    `img-src 'self' data:${storage ? ` ${storage}` : ''}`,
+    "frame-ancestors 'none'",
+    "base-uri 'none'",
+    "form-action 'none'",
+  ].join('; ');
+}
+
+/** The invoice page's print button handler, allowed by its hash ('unsafe-hashes' allows only exactly this text). */
+export const PRINT_BUTTON_HANDLER = 'window.print()';
+export const PRINT_BUTTON_HASH = `'sha256-${createHash('sha256').update(PRINT_BUTTON_HANDLER).digest('base64')}'`;
+
+/** The invoice page: the default HTML policy plus its one print button handler. */
+export function invoicePagePolicy(env: NodeJS.ProcessEnv = process.env): string {
+  return `${defaultHtmlPolicy(env)}; script-src 'unsafe-hashes' ${PRINT_BUTTON_HASH}`;
+}
+
+/**
+ * Sets defaultHtmlPolicy on an HTML answer that carries no policy of its own,
+ * just before the headers go out (the content type is only known then).
+ */
+const ownPolicy = new WeakSet<object>();
+
+/** This answer decides its own policy (the app shells, also with CONTENT_SECURITY_POLICY=off). */
+export function markOwnHtmlPolicy(res: object): void {
+  ownPolicy.add(res);
+}
+
+export function installDefaultHtmlPolicy(res: ServerResponse, env: NodeJS.ProcessEnv = process.env): void {
+  const original = res.writeHead as unknown as (...args: unknown[]) => unknown;
+  (res as unknown as { writeHead: (...args: unknown[]) => unknown }).writeHead = function writeHead(this: unknown, ...args: unknown[]) {
+    const type = String(res.getHeader('Content-Type') ?? '');
+    const headerArg = args.find((a) => a && typeof a === 'object' && !Array.isArray(a)) as Record<string, unknown> | undefined;
+    const argType = headerArg ? String(Object.entries(headerArg).find(([k]) => k.toLowerCase() === 'content-type')?.[1] ?? '') : '';
+    const hasPolicy = res.getHeader('Content-Security-Policy') || res.getHeader('Content-Security-Policy-Report-Only');
+    if (!hasPolicy && !ownPolicy.has(res) && /text\/html/i.test(`${type} ${argType}`)) res.setHeader('Content-Security-Policy', defaultHtmlPolicy(env));
+    return original.apply(this, args);
+  };
 }

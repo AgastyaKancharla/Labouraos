@@ -23,6 +23,8 @@ import { renderReferralTermsPageHtml } from './consent-page.template';
 import { publicPageLink, wantsHtml } from '../../common/public-pages';
 import { Public } from '../../common/rbac/public.decorator';
 import { withoutLinkToken } from '../../common/public-link-response';
+import { randomBytes } from 'node:crypto';
+import { defaultHtmlPolicy } from '../../common/http/content-security-policy';
 
 type AuthenticatedRequest = Request & { user: JwtPayload };
 
@@ -90,6 +92,9 @@ export class ConsentController {
 
     if (wantsHtml(accept) && details.subjectType === 'referral') {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      // L3: its one script runs by a per-answer nonce; nothing else runs or loads.
+      const nonce = randomBytes(16).toString('base64');
+      res.setHeader('Content-Security-Policy', `${defaultHtmlPolicy()}; script-src 'nonce-${nonce}'; connect-src 'self'`);
       // Only reached when the new page could not be chosen; before the code it names nobody.
       return renderReferralTermsPageHtml(
         token,
@@ -97,6 +102,7 @@ export class ConsentController {
         details.maskedPhone,
         details.otpRequired ? '' : details.termsHtml,
         details.preferredLanguage as 'kn' | 'hi' | 'en',
+        nonce,
       );
     }
 

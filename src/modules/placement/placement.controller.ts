@@ -32,6 +32,7 @@ import { wantsHtml } from '../../common/public-pages';
 import { isValidInvoiceToken } from './invoice-link';
 import { renderInvoicePage } from './invoice-page';
 import { WorkerLeftService } from './worker-left.service';
+import { invoicePagePolicy } from '../../common/http/content-security-policy';
 
 /**
  * The business's copy of its GST invoice, opened from the signed link sent
@@ -56,6 +57,8 @@ export class PlacementInvoiceCopyController {
     res.setHeader('X-Robots-Tag', 'noindex');
     if (wantsHtml(accept)) {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      // L3: nothing runs but the print button's own handler (by its hash).
+      res.setHeader('Content-Security-Policy', invoicePagePolicy());
       return renderInvoicePage(invoice);
     }
     return invoice;

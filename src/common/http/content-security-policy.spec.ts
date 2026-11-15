@@ -1,4 +1,8 @@
-import { contentSecurityPolicy, contentSecurityPolicyHeader } from './content-security-policy';
+import * as fs from 'fs';
+import * as path from 'path';
+import { createHash } from 'node:crypto';
+import { contentSecurityPolicy, contentSecurityPolicyHeader, defaultHtmlPolicy, invoicePagePolicy, PRINT_BUTTON_HANDLER, PRINT_BUTTON_HASH } from './content-security-policy';
+import { renderReferralTermsPageHtml } from '../../modules/consent/consent-page.template';
 import { securityHeaders } from './security-headers';
 
 const directive = (csp: string, name: string) => csp.split('; ').find((d) => d.startsWith(`${name} `)) ?? '';
@@ -52,5 +56,26 @@ describe('Content-Security-Policy (IN-6 / INF-12)', () => {
     const res = { setHeader: jest.fn(), getHeader: jest.fn(), removeHeader: (name: string) => removed.push(name) };
     securityHeaders({ NODE_ENV: 'production' } as NodeJS.ProcessEnv)({} as never, res as never, jest.fn());
     expect(removed).toContain('X-Powered-By');
+  });
+});
+
+describe('L3: API HTML pages', () => {
+  it('the invoice page\'s only script is the print handler its policy allows by hash', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../../modules/placement/invoice-page.ts'), 'utf8');
+    expect(source).toContain(`onclick="${PRINT_BUTTON_HANDLER}"`);
+    expect(source.match(/onclick=/g)).toHaveLength(1);
+    expect(source).not.toMatch(/<script/i);
+    expect(invoicePagePolicy({} as NodeJS.ProcessEnv)).toBe(`${defaultHtmlPolicy({} as NodeJS.ProcessEnv)}; script-src 'unsafe-hashes' ${PRINT_BUTTON_HASH}`);
+    expect(PRINT_BUTTON_HASH).toBe(`'sha256-${createHash('sha256').update('window.print()').digest('base64')}'`);
+  });
+
+  it('the referral terms fallback page runs its script only by a nonce', () => {
+    const html = renderReferralTermsPageHtml('tok', '', '••3210', '', 'en', 'n0nce');
+    expect(html).toContain('<script nonce="n0nce">');
+    expect(html.match(/<script/g)).toHaveLength(1);
+  });
+
+  it('the default policy lets in Supabase signed photo links (candidate introduction card)', () => {
+    expect(defaultHtmlPolicy({ SUPABASE_URL: 'https://abcdefghijkl.supabase.co' } as NodeJS.ProcessEnv)).toContain("img-src 'self' data: https://abcdefghijkl.supabase.co");
   });
 });

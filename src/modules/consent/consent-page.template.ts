@@ -16,8 +16,8 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-function renderConsentOtpScript(token: string, language: string, successMessage: string): string {
-  return `<script>
+function renderConsentOtpScript(token: string, language: string, successMessage: string, nonce?: string): string {
+  return `<script${nonce ? ` nonce="${escapeHtml(nonce)}"` : ''}>
     const token = ${JSON.stringify(token)};
     let activeOtpRequestId = null;
     const alertBox = document.getElementById('alert-box');
@@ -178,6 +178,7 @@ export function renderReferralTermsPageHtml(
   maskedPhone: string,
   termsHtml: string,
   language: 'kn' | 'hi' | 'en' = 'en',
+  scriptNonce?: string,
 ): string {
   const labels = {
     en: {
@@ -230,5 +231,5 @@ export function renderReferralTermsPageHtml(
 <section class="otp-section"><button type="button" id="btn-send-otp" class="btn btn-secondary">${labels.sendOtp}</button>
 <div id="otp-input-container" style="display:none;margin-top:12px"><label>Enter the 6-digit OTP</label><input type="text" id="otp-code" class="otp-input" inputmode="numeric" maxlength="6" required></div></section>
 <button type="submit" id="btn-submit" class="btn">${labels.submit}</button></form></main>
-${renderConsentOtpScript(token, language, 'Referral terms signed successfully. Thank you.')}</body></html>`;
+${renderConsentOtpScript(token, language, 'Referral terms signed successfully. Thank you.', scriptNonce)}</body></html>`;
 }
