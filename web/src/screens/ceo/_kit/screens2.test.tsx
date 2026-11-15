@@ -29,7 +29,7 @@ import KeepingData from '../C-Pricing-Data';
 import Partner from '../C-Partner';
 
 const NOW = new Date('2026-11-11T06:30:00Z'); // 12:00 IST
-const common = { 'GET /login-codes/pending': [], 'GET /review-flags': [], 'GET /refunds/due': [], 'GET /payroll/corrections': { status: 'waiting', rows: [] }, 'GET /notifications/bell': { openCount: 0, unseenCount: 0, latest: [], doneToday: [], asOf: NOW.toISOString() } };
+const common = { 'GET /login-codes/pending': [], 'GET /password-resets/pending': [], 'GET /review-flags': [], 'GET /refunds/due': [], 'GET /payroll/corrections': { status: 'waiting', rows: [] }, 'GET /notifications/bell': { openCount: 0, unseenCount: 0, latest: [], doneToday: [], asOf: NOW.toISOString() } };
 const render = (ui: React.ReactElement, path: string, route?: string) => {
   signInAs('ceo');
   return renderScreen(ui, { portal: 'ceo', path, route, now: NOW });
@@ -48,8 +48,16 @@ const teamResponse = {
     { id: 'tl1', name: 'Ravi Shankar', role: 'team_lead', team: 'Team South' },
     { id: 'tl2', name: 'Fatima Z', role: 'team_lead', team: 'Team North' },
     { id: 'm1', name: 'Priya Sharma', role: 'manager', team: null },
+    { id: 'c', name: 'Agastya Kancharla', role: 'ceo', team: null },
+    { id: 'tl3', name: 'Kiran New', role: 'team_lead', team: 'Team East', notSignedInYet: true },
   ],
 };
+
+const tempResult = (code: string, name: string) => ({
+  staff: { id: `id-${code}`, code, name, role: 'call_agent' },
+  tempPassword: 'K7M4-Q2PX',
+  tempPasswordExpiresAt: '2026-11-12T06:30:00Z',
+});
 
 describe('Team & access', () => {
   it('shows the organisation and accounts, locks with a reason and adds a staff member under a Team Lead', async () => {
@@ -57,7 +65,7 @@ describe('Team & access', () => {
       ...common,
       'GET /ceo/team': teamResponse,
       'POST /staff/ca1/lock': { ok: true },
-      'POST /staff': { staff: { code: 'CA-0020', name: 'Rahul M' }, inviteToken: 'tok-123' },
+      'POST /staff': tempResult('CA-0020', 'Rahul M'),
     });
     render(<Team />, '/ceo/team');
     expect(await screen.findByText(/3 call \+ 2 field agents/)).toBeInTheDocument();
@@ -69,10 +77,21 @@ describe('Team & access', () => {
     await userEvent.click(within(d).getByRole('button', { name: 'Lock Deepa Nair' }));
     await waitFor(() => expect(api.calls('POST /staff/ca1/lock')[0].body).toEqual({ reason: 'Left the company' }));
 
+    // A Team Lead who has not signed in yet can already be chosen (labelled); email is optional.
+    expect(screen.getByRole('option', { name: /Kiran New · Team Lead · Team East \(not signed in yet\)/ })).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/Full name/), 'Rahul M');
-    await userEvent.click(screen.getByRole('button', { name: 'Add · send staff code' }));
-    await waitFor(() => expect(api.calls('POST /staff')[0].body).toEqual({ name: 'Rahul M', email: '', role: 'call_agent', reportsToId: 'tl1' }));
-    expect(await screen.findByText('tok-123')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Add · get temporary password' }));
+    await waitFor(() => expect(api.calls('POST /staff')[0].body).toEqual({ name: 'Rahul M', role: 'call_agent', reportsToId: 'tl1' }));
+    // S1: staff code + temporary password, shown once, with the expiry, Copy and WhatsApp.
+    const box = await screen.findByTestId('temp-password-box');
+    expect(within(box).getByTestId('temp-password')).toHaveTextContent('K7M4-Q2PX');
+    expect(within(box).getByText('CA-0020')).toBeInTheDocument();
+    expect(within(box).getByText(/Shown only once/)).toBeInTheDocument();
+    expect(within(box).getByText(/Valid until .* \(24 hours\)/)).toBeInTheDocument();
+    const share = screen.getByTestId('temp-password-whatsapp');
+    expect(decodeURIComponent(share.getAttribute('href') ?? '')).toContain(
+      'Your Laboura staff code is CA-0020 and temporary password is K7M4-Q2PX. Open app.laboura.com/login (field agents: field.laboura.com) within 24 hours to set your password.',
+    );
   });
 
   it('shows a co-founder title on a CEO-level account and lets the CEO change it', async () => {
@@ -101,7 +120,7 @@ describe('Team & access', () => {
     const api = mockApi({
       ...common,
       'GET /ceo/team': teamResponse,
-      'POST /staff': { staff: { code: 'CA-0021', name: 'Kavya R' }, inviteToken: 'tok-9' },
+      'POST /staff': tempResult('CA-0021', 'Kavya R'),
       'PUT /staff/ca1/joined-on': { id: 'ca1' },
     });
     render(<Team />, '/ceo/team');
@@ -114,7 +133,7 @@ describe('Team & access', () => {
     await waitFor(() => expect(api.calls('PUT /staff/ca1/joined-on')[0]?.body).toEqual({ joinedOn: '2026-10-28' }));
     await userEvent.type(screen.getByLabelText(/Full name/), 'Kavya R');
     fireEvent.change(screen.getByLabelText(/Joining date/), { target: { value: '2026-11-16' } });
-    await userEvent.click(screen.getByRole('button', { name: 'Add · send staff code' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Add · get temporary password' }));
     await waitFor(() => expect(api.calls('POST /staff')[0].body).toEqual(expect.objectContaining({ name: 'Kavya R', joinedOn: '2026-11-16' })));
   });
 
@@ -122,7 +141,7 @@ describe('Team & access', () => {
     const api = mockApi({
       ...common,
       'GET /ceo/team': { ...teamResponse, rows: [...teamResponse.rows, { id: 'fa2', code: 'FA-0001', name: 'Owner Field', email: null, role: 'field_agent', team: null, reportsTo: null, state: 'active', authenticator: false, signedIn: false, lockedUntil: null, lockedReason: null, ownerAccount: true }] },
-      'POST /staff': { staff: { code: 'CA-0022', name: 'Owner Calls' }, inviteToken: 'tok-o' },
+      'POST /staff': tempResult('CA-0022', 'Owner Calls'),
       'PUT /staff/ca1/owner-account': { id: 'ca1', isOwnerAccount: true },
       'PUT /staff/fa2/owner-account': { id: 'fa2', isOwnerAccount: false },
     });
@@ -146,9 +165,12 @@ describe('Team & access', () => {
     await waitFor(() => expect(api.calls('PUT /staff/ca1/owner-account')[0]?.body).toEqual({ ownerAccount: true }));
 
     await userEvent.type(screen.getByLabelText(/Full name/), 'Owner Calls');
+    // CEOs are offered as the boss only for an owner account (rev 174–175).
+    expect(screen.queryByRole('option', { name: /Agastya Kancharla · CEO/ })).toBeNull();
     await userEvent.click(screen.getByRole('checkbox', { name: /Owner account/ }));
-    await userEvent.click(screen.getByRole('button', { name: 'Add · send staff code' }));
-    await waitFor(() => expect(api.calls('POST /staff')[0].body).toEqual(expect.objectContaining({ name: 'Owner Calls', role: 'call_agent', ownerAccount: true })));
+    await userEvent.selectOptions(screen.getByLabelText(/^Reports to/), 'c');
+    await userEvent.click(screen.getByRole('button', { name: 'Add · get temporary password' }));
+    await waitFor(() => expect(api.calls('POST /staff')[0].body).toEqual(expect.objectContaining({ name: 'Owner Calls', role: 'call_agent', ownerAccount: true, reportsToId: 'c' })));
     // Not offered for roles that cannot be owner accounts.
     const form = screen.getByLabelText(/Full name/).closest('form') as HTMLElement;
     await userEvent.selectOptions(within(form).getByLabelText(/^Role/), 'team_lead');
@@ -310,46 +332,93 @@ describe('Staff photo (guide, 14 Nov)', () => {
   });
 });
 
-describe('Password resets (POST /staff/:id/reset-password, never the old re-issued invite)', () => {
-  const reset = { staff: { code: 'CA-9' }, resetUrl: 'https://app.laboura.com/p/invite/abc123', resetToken: 'abc123', expiresAt: '2026-11-14T06:30:00Z' };
+describe('Temporary passwords and password resets (rev 174–175)', () => {
+  const access = {
+    summary: { waiting: 0, codesToday: 0, locked: 1, invitesPending: 1 },
+    locked: [{ id: 'ca9', code: 'CA-9', name: 'Arun P', role: 'call_agent', lockedUntil: '2026-11-11T07:00:00Z', reason: '5 wrong passwords', byManager: false }],
+    invites: [{ id: 'fa1', code: 'FA-0019', name: 'Meena R', role: 'field_agent', invitedAt: '2026-11-10T05:00:00Z', expired: true }],
+    codes: [],
+  };
 
-  it('Login codes: Reset on a locked account sends a one-time link and keeps the old password until it is used', async () => {
+  it('Login codes: a red PASSWORD RESET card (usual vs NEW phone) reveals a reset code or is refused with a reason', async () => {
     const api = mockApi({
       ...common,
-      'GET /ceo/access': { summary: { waiting: 0, codesToday: 0, locked: 1, invitesPending: 1 }, locked: [{ id: 'ca9', code: 'CA-9', name: 'Arun P', role: 'call_agent', lockedUntil: '2026-11-11T07:00:00Z', reason: '5 wrong passwords', byManager: false }], invites: [{ id: 'fa1', code: 'FA-0019', name: 'Meena R', role: 'field_agent', invitedAt: '2026-11-10T05:00:00Z', expired: false }], codes: [] },
-      'POST /staff/ca9/reset-password': reset,
-      'POST /staff/fa1/reissue-invite': { staff: { code: 'FA-0019' }, inviteToken: 'inv-1' },
+      'GET /ceo/access': access,
+      'GET /password-resets/pending': [
+        { id: 'rr1', kind: 'password_reset', status: 'pending', createdAt: '2026-11-11T06:20:00Z', expiresAt: '2026-11-11T06:35:00Z', knownDevice: false, app: 'office', revealedAt: null, staff: { id: 'fin1', code: 'FIN-0001', name: 'Nisha Rao', role: 'finance', photoUrl: null } },
+        { id: 'rr2', kind: 'password_reset', status: 'pending', createdAt: '2026-11-11T06:25:00Z', expiresAt: '2026-11-11T06:40:00Z', knownDevice: true, app: 'office', revealedAt: null, staff: { id: 'tl1', code: 'TL-0003', name: 'Ravi Shankar', role: 'team_lead', photoUrl: null } },
+      ],
+      'POST /password-resets/rr1/reveal': { id: 'rr1', status: 'revealed', expiresAt: '2026-11-11T06:45:00Z', code: '493017' },
+      'POST /password-resets/rr2/refuse': { id: 'rr2', status: 'refused' },
+      'GET /staff/password-resets': [],
     });
     render(<LoginCodes />, '/ceo/login-codes');
-    const row = (await screen.findByText('Arun P')).closest('tr') as HTMLElement;
-    await userEvent.click(within(row).getByRole('button', { name: 'Reset' }));
+    const cards = await screen.findAllByTestId('reset-request-card');
+    expect(cards).toHaveLength(2);
+    expect(within(cards[0]).getByText('PASSWORD RESET')).toBeInTheDocument();
+    expect(within(cards[0]).getByText('NEW phone')).toBeInTheDocument();
+    expect(within(cards[1]).getByText('usual phone')).toBeInTheDocument();
+    expect(within(cards[0]).getByText(/Call them back from your own contacts/)).toBeInTheDocument();
+    await userEvent.click(within(cards[0]).getByRole('button', { name: 'Reveal reset code' }));
+    expect(await within(cards[0]).findByTestId('reset-code')).toHaveTextContent('493 017');
+    await userEvent.click(within(cards[1]).getByRole('button', { name: 'Refuse' }));
     const d = await dialog();
-    expect(within(d).getByText(/old password and authenticator keep working until they use the link/)).toBeInTheDocument();
-    await userEvent.click(within(d).getByRole('button', { name: 'Make the link' }));
-    await waitFor(() => expect(api.calls('POST /staff/ca9/reset-password')).toHaveLength(1));
-    expect(await screen.findByText('https://app.laboura.com/p/invite/abc123')).toBeInTheDocument();
-    expect(api.calls('POST /staff/ca9/reissue-invite')).toHaveLength(0);
-
-    // Someone who never set a password gets a new invite instead (a reset needs a password to replace).
-    await userEvent.click(screen.getByRole('button', { name: 'Done' }));
-    const invite = screen.getByText('Meena R').closest('tr') as HTMLElement;
-    expect(within(invite).queryByRole('button', { name: 'Reset' })).not.toBeInTheDocument();
-    await userEvent.click(within(invite).getByRole('button', { name: 'New invite' }));
-    await userEvent.click(within(await dialog()).getByRole('button', { name: 'New invite for Meena R' }));
-    await waitFor(() => expect(api.calls('POST /staff/fa1/reissue-invite')).toHaveLength(1));
+    await userEvent.type(within(d).getByLabelText(/Reason/), 'Could not reach him');
+    await userEvent.click(within(d).getByRole('button', { name: /Refuse Ravi Shankar/ }));
+    await waitFor(() => expect(api.calls('POST /password-resets/rr2/refuse')[0].body).toEqual({ reason: 'Could not reach him' }));
   });
 
-  it('Team & access: Reset password on an active account uses the reset link; pending invites keep Resend', async () => {
-    const api = mockApi({ ...common, 'GET /ceo/team': teamResponse, 'POST /staff/ca1/reset-password': { ...reset, staff: { code: 'CA-0011' } } });
+  it('Login codes: a locked or not-signed-in account gets a new temporary password, shown once', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /ceo/access': access,
+      'POST /staff/fa1/temp-password': { ...tempResult('FA-0019', 'Meena R'), tempPassword: 'Q2PX-K7M4' },
+      'GET /staff/password-resets': [],
+    });
+    render(<LoginCodes />, '/ceo/login-codes');
+    const invite = (await screen.findByText('Meena R')).closest('tr') as HTMLElement;
+    expect(within(invite).getByText(/Temporary password ran out/)).toBeInTheDocument();
+    await userEvent.click(within(invite).getByRole('button', { name: 'New temporary password' }));
+    await userEvent.click(within(await dialog()).getByRole('button', { name: 'New temporary password' }));
+    await waitFor(() => expect(api.calls('POST /staff/fa1/temp-password')).toHaveLength(1));
+    expect(await screen.findByTestId('temp-password')).toHaveTextContent('Q2PX-K7M4');
+  });
+
+  it('Login codes: the reset history shows requests, refusals and temporary passwords given', async () => {
+    mockApi({
+      ...common,
+      'GET /ceo/access': access,
+      'GET /staff/password-resets': [
+        { id: 'h1', kind: 'senior_code', staff: { id: 'ca1', code: 'CA-0011', name: 'Deepa Nair', role: 'call_agent' }, issuedBy: null, refusedBy: { id: 'tl1', code: 'TL-0003', name: 'Ravi Shankar', role: 'team_lead' }, refusedReason: 'Not her voice', knownDevice: false, createdAt: '2026-11-11T05:00:00Z', expiresAt: '2026-11-11T05:15:00Z', usedAt: null, cancelledAt: null, state: 'refused' },
+        { id: 'h2', kind: 'temp_password', staff: { id: 'fa1', code: 'FA-0019', name: 'Meena R', role: 'field_agent' }, issuedBy: { id: 'c', code: 'CEO-0001', name: 'Agastya Kancharla', role: 'ceo' }, refusedBy: null, refusedReason: null, knownDevice: null, createdAt: '2026-11-10T05:00:00Z', expiresAt: '2026-11-11T05:00:00Z', usedAt: '2026-11-10T06:00:00Z', cancelledAt: null, state: 'used' },
+      ],
+    });
+    render(<LoginCodes />, '/ceo/login-codes');
+    expect((await screen.findAllByText('Password reset history')).length).toBeGreaterThan(0);
+    const refused = (await screen.findByText('Deepa Nair (CA-0011)')).closest('tr') as HTMLElement;
+    expect(within(refused).getByText(/Forgot password \(reset code\) · NEW phone/)).toBeInTheDocument();
+    expect(within(refused).getByText(/Ravi Shankar · Not her voice/)).toBeInTheDocument();
+    expect(within(refused).getByText('Refused')).toBeInTheDocument();
+    const done = screen.getByText('Meena R (FA-0019)').closest('tr') as HTMLElement;
+    expect(within(done).getByText('New temporary password')).toBeInTheDocument();
+    expect(within(done).getByText('Done')).toBeInTheDocument();
+  });
+
+  it('Team & access: "Not signed in yet" offers New temporary password; active accounts also Reset sign-in completely', async () => {
+    const api = mockApi({ ...common, 'GET /ceo/team': teamResponse, 'POST /staff/ca1/reset-sign-in': tempResult('CA-0011', 'Deepa Nair') });
     render(<Team />, '/ceo/team');
-    const row = (await screen.findByText('Deepa Nair')).closest('tr') as HTMLElement;
-    await userEvent.click(within(row).getByRole('button', { name: 'Reset password' }));
-    await userEvent.click(within(await dialog()).getByRole('button', { name: 'Make the link' }));
-    await waitFor(() => expect(api.calls('POST /staff/ca1/reset-password')).toHaveLength(1));
-    expect(await screen.findByText('https://app.laboura.com/p/invite/abc123')).toBeInTheDocument();
-    const pending = screen.getByText('Meena R').closest('tr') as HTMLElement;
-    expect(within(pending).queryByRole('button', { name: 'Reset password' })).not.toBeInTheDocument();
-    expect(within(pending).getByRole('button', { name: 'Resend' })).toBeInTheDocument();
+    const pending = (await screen.findByText('Meena R')).closest('tr') as HTMLElement;
+    expect(within(pending).getByText('Not signed in yet')).toBeInTheDocument();
+    expect(within(pending).getByRole('button', { name: 'New temporary password' })).toBeInTheDocument();
+    expect(within(pending).queryByRole('button', { name: 'Reset sign-in completely' })).not.toBeInTheDocument();
+    const row = screen.getByText('Deepa Nair').closest('tr') as HTMLElement;
+    expect(within(row).getByRole('button', { name: 'New temporary password' })).toBeInTheDocument();
+    await userEvent.click(within(row).getByRole('button', { name: 'Reset sign-in completely' }));
+    const d = await dialog();
+    expect(within(d).getByText(/For a lost phone or authenticator/)).toBeInTheDocument();
+    await userEvent.click(within(d).getByRole('button', { name: 'Reset sign-in completely' }));
+    await waitFor(() => expect(api.calls('POST /staff/ca1/reset-sign-in')).toHaveLength(1));
+    expect(await screen.findByTestId('temp-password')).toHaveTextContent('K7M4-Q2PX');
   });
 });
 

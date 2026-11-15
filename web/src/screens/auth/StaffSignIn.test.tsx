@@ -8,7 +8,7 @@ import StaffSignIn from './StaffSignIn';
 
 function tokenResponse(role: string, code: string, extra: Record<string, unknown> = {}) {
   return {
-    accessToken: fakeJwt({ role, ...(extra.totpEnrollmentRequired ? { scope: 'totp_setup' } : {}) }),
+    accessToken: fakeJwt({ role }),
     sessionId: 's1',
     staff: { id: `id-${code}`, code, name: 'Agastya Kancharla', email: null, role },
     ...extra,
@@ -33,19 +33,59 @@ describe('Staff sign in', () => {
     expect(screen.getByRole('heading', { name: 'Staff sign in' })).toBeInTheDocument();
   });
 
-  it('Forgot password: management asks for a link by company email and always gets the same answer', async () => {
-    const answer = { message: 'If that is the company email of a CEO, Manager or Finance account, a link to set a new password is on its way.' };
-    const api = mockApi({ 'POST /staff/forgot-password': answer });
+  it('Forgot password (S5): staff code → ask your senior → reset code + new password twice (+ authenticator code)', async () => {
+    const answer = { status: 'requested', message: 'If that staff code belongs to an active account, your request is now with your seniors.', resetRequestId: 'rr-1', resetRequestProof: 'rp-1', expiresAt: new Date(Date.now() + 900_000).toISOString() };
+    const api = mockApi({
+      'POST /auth/password-reset/request': answer,
+      'POST /auth/password-reset/complete': { success: true, code: 'TL-0003', signInAt: 'web' },
+    });
     renderSignIn();
     await userEvent.click(screen.getByRole('button', { name: 'Forgot password?' }));
     expect(screen.getByRole('heading', { name: 'Forgot password' })).toBeInTheDocument();
-    expect(screen.getByText(/ask your Team Lead, a Manager or the CEO to tap Reset/)).toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText(/Company email/), 'priya@laboura.in');
-    await userEvent.click(screen.getByRole('button', { name: 'Send the link' }));
-    expect(await screen.findByText(answer.message)).toBeInTheDocument();
-    expect(api.calls('POST /staff/forgot-password')[0].body).toEqual({ email: 'priya@laboura.in' });
-    await userEvent.click(screen.getByRole('button', { name: 'Back to sign in' }));
+    await userEvent.type(screen.getByLabelText(/Staff code/), 'TL-0003');
+    await userEvent.click(screen.getByRole('button', { name: 'Ask for a reset code' }));
+    expect(await screen.findByRole('heading', { name: 'Ask your senior for the reset code' })).toBeInTheDocument();
+    expect(api.calls('POST /auth/password-reset/request')[0].body).toEqual({ staffCode: 'TL-0003', deviceId: localStorage.getItem(DEVICE_ID_KEY), app: 'office' });
+    expect(screen.getByText(/Request ends in 1[45]:\d\d/)).toBeInTheDocument();
+    await userEvent.click(screen.getAllByRole('textbox')[0]);
+    await userEvent.paste('123456');
+    await userEvent.type(screen.getByLabelText(/^New password/), 'new-pass-1');
+    await userEvent.type(screen.getByLabelText(/Type the new password again/), 'new-pass-1');
+    await userEvent.type(screen.getByLabelText(/Code from your authenticator app/), '654321');
+    await userEvent.click(screen.getByRole('button', { name: 'Set new password' }));
+    expect(await screen.findByTestId('reset-done')).toHaveTextContent('Sign in with staff code TL-0003 and your new password');
+    expect(api.calls('POST /auth/password-reset/complete')[0].body).toEqual({
+      resetRequestId: 'rr-1',
+      resetRequestProof: 'rp-1',
+      code: '123456',
+      newPassword: 'new-pass-1',
+      confirmPassword: 'new-pass-1',
+      totpCode: '654321',
+      deviceId: localStorage.getItem(DEVICE_ID_KEY),
+      app: 'office',
+    });
+    // No session from a reset: they sign in with the new password.
+    expect(sessionStore.get()).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Go to sign in' }));
     expect(screen.getByRole('heading', { name: 'Staff sign in' })).toBeInTheDocument();
+  });
+
+  it('Forgot password: two different passwords are caught before anything is sent', async () => {
+    const api = mockApi({
+      'POST /auth/password-reset/request': { status: 'requested', message: 'x', resetRequestId: 'rr-2', resetRequestProof: 'rp-2', expiresAt: new Date(Date.now() + 900_000).toISOString() },
+    });
+    renderSignIn();
+    await userEvent.click(screen.getByRole('button', { name: 'Forgot password?' }));
+    await userEvent.type(screen.getByLabelText(/Staff code/), 'CA-0042');
+    await userEvent.click(screen.getByRole('button', { name: 'Ask for a reset code' }));
+    await screen.findByRole('heading', { name: 'Ask your senior for the reset code' });
+    await userEvent.click(screen.getAllByRole('textbox')[0]);
+    await userEvent.paste('123456');
+    await userEvent.type(screen.getByLabelText(/^New password/), 'new-pass-1');
+    await userEvent.type(screen.getByLabelText(/Type the new password again/), 'new-pass-2');
+    await userEvent.click(screen.getByRole('button', { name: 'Set new password' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('The two passwords are not the same.');
+    expect(api.calls('POST /auth/password-reset/complete')).toHaveLength(0);
   });
 
   it('CEO: password, then the authenticator code as a second step (M01 → M02)', async () => {
@@ -104,11 +144,18 @@ describe('Staff sign in', () => {
     });
   });
 
-  it('Team Lead is told to ask a Manager (TL02)', async () => {
-    mockApi({ 'POST /auth/login': { status: 'awaiting_code', loginRequestId: 'lr-2', expiresAt: new Date(Date.now() + 300_000).toISOString() } });
+  it('Team Lead: password, then their own authenticator code — no login code (rev 174–175)', async () => {
+    const api = mockApi({
+      'POST /auth/login': ({ body }: { body: { totpCode?: string } }) =>
+        body.totpCode ? tokenResponse('team_lead', 'TL-0003') : apiError(401, 'TOTP 2FA code is required'),
+    });
     renderSignIn();
     await enterPassword('TL-0003');
-    expect(await screen.findByRole('heading', { name: 'Ask a Manager for your code' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Authenticator code' })).toBeInTheDocument();
+    await userEvent.click(screen.getAllByRole('textbox')[0]);
+    await userEvent.paste('112233');
+    await waitFor(() => expect(sessionStore.get()?.staff.role).toBe('team_lead'));
+    expect(api.calls('POST /auth/login/verify-code')).toHaveLength(0);
   });
 
   it('an expired code request asks to start again', async () => {
@@ -128,24 +175,82 @@ describe('Staff sign in', () => {
     expect(sessionStore.get()).toBeNull();
   });
 
-  it('first management sign-in sets up the authenticator, then asks to sign in again', async () => {
+  it('first login (S4): the temporary password opens set-up — selfie skipped when on file, new password twice, authenticator QR + first code, then sign in', async () => {
+    const setup = {
+      status: 'setup_required',
+      setupTicket: 'ticket-1',
+      expiresAt: new Date(Date.now() + 900_000).toISOString(),
+      staff: { code: 'FIN-0001', name: 'Priya S', role: 'finance' },
+      photoRequired: false,
+      authenticatorSetupRequired: true,
+      authenticatorCodeRequired: false,
+      passwordRules: { minLength: 8, maxBytes: 72 },
+      signInAt: 'web',
+    };
     const api = mockApi({
-      'POST /auth/login': tokenResponse('finance', 'FIN-0001', { totpEnrollmentRequired: true }),
-      'POST /staff/2fa/setup': { secret: 'JBSWY3DPEHPK3PXP', otpauthUrl: 'otpauth://totp/Laboura:FIN-0001?secret=JBSWY3DPEHPK3PXP' },
-      'POST /staff/2fa/enable': { success: true, message: 'ok' },
-      'POST /auth/logout': { success: true },
+      'POST /auth/login': setup,
+      'POST /auth/setup/authenticator': { secret: 'JBSWY3DPEHPK3PXP', otpauthUrl: 'otpauth://totp/Laboura:FIN-0001?secret=JBSWY3DPEHPK3PXP' },
+      'POST /auth/setup/complete': { success: true, code: 'FIN-0001', signInAt: 'web' },
     });
     renderSignIn();
-    await enterPassword('FIN-0001');
+    await userEvent.type(screen.getByLabelText(/Staff code/), 'FIN-0001');
+    await userEvent.type(screen.getByLabelText(/Password/), 'k7m4-q2px');
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByRole('heading', { name: 'Welcome, Priya S' })).toBeInTheDocument();
+    expect(sessionStore.get()).toBeNull();
+    // The temporary password again (any case, any dash) is refused before anything is sent.
+    await userEvent.type(screen.getByLabelText(/^New password/), 'K7M4Q2PX');
+    await userEvent.type(screen.getByLabelText(/Type the new password again/), 'K7M4Q2PX');
+    await userEvent.click(screen.getByRole('button', { name: 'Next: authenticator' }));
+    expect(await screen.findByText('Choose a password that is different from the temporary password.')).toBeInTheDocument();
+    await userEvent.clear(screen.getByLabelText(/^New password/));
+    await userEvent.clear(screen.getByLabelText(/Type the new password again/));
+    await userEvent.type(screen.getByLabelText(/^New password/), 'my-own-pass');
+    await userEvent.type(screen.getByLabelText(/Type the new password again/), 'my-own-pass');
+    await userEvent.click(screen.getByRole('button', { name: 'Next: authenticator' }));
     expect(await screen.findByRole('heading', { name: 'Set up your authenticator' })).toBeInTheDocument();
     expect(screen.getByText(/JBSWY3DPEHPK3PXP/)).toBeInTheDocument();
-    expect(sessionStore.get()).toBeNull();
+    expect(api.calls('POST /auth/setup/authenticator')[0].body).toEqual({ setupTicket: 'ticket-1', deviceId: localStorage.getItem(DEVICE_ID_KEY) });
     await userEvent.click(screen.getAllByRole('textbox')[0]);
     await userEvent.paste('123456');
-    await userEvent.click(screen.getByRole('button', { name: 'Turn on' }));
-    expect(await screen.findByText('Authenticator is on. Sign in again with a code from the app.')).toBeInTheDocument();
-    expect(api.calls('POST /staff/2fa/enable')[0].body).toEqual({ totpCode: '123456' });
+    await userEvent.click(screen.getByRole('button', { name: 'Set password' }));
+    expect(await screen.findByTestId('setup-done')).toHaveTextContent('Sign in with staff code FIN-0001 and your new password.');
+    expect(api.calls('POST /auth/setup/complete')[0].body).toEqual({
+      setupTicket: 'ticket-1',
+      newPassword: 'my-own-pass',
+      confirmPassword: 'my-own-pass',
+      totpCode: '123456',
+      deviceId: localStorage.getItem(DEVICE_ID_KEY),
+    });
     expect(sessionStore.get()).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Go to sign in' }));
+    expect(screen.getByRole('heading', { name: 'Staff sign in' })).toBeInTheDocument();
+  });
+
+  it('first login: an ended set-up ticket sends them back to sign in again', async () => {
+    mockApi({
+      'POST /auth/login': {
+        status: 'setup_required',
+        setupTicket: 'ticket-2',
+        expiresAt: new Date(Date.now() + 900_000).toISOString(),
+        staff: { code: 'CA-0042', name: 'Ravi K', role: 'call_agent' },
+        photoRequired: false,
+        authenticatorSetupRequired: false,
+        authenticatorCodeRequired: false,
+        passwordRules: { minLength: 8, maxBytes: 72 },
+        signInAt: 'web',
+      },
+      'POST /auth/setup/complete': apiError(401, 'This set-up has ended. Sign in again with your staff code and temporary password.'),
+    });
+    renderSignIn();
+    await userEvent.type(screen.getByLabelText(/Staff code/), 'CA-0042');
+    await userEvent.type(screen.getByLabelText(/Password/), 'K7M4-Q2PX');
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    await screen.findByRole('heading', { name: 'Welcome, Ravi K' });
+    await userEvent.type(screen.getByLabelText(/^New password/), 'my-own-pass');
+    await userEvent.type(screen.getByLabelText(/Type the new password again/), 'my-own-pass');
+    await userEvent.click(screen.getByRole('button', { name: 'Set password' }));
+    expect(await screen.findByText(/This set-up has ended/)).toBeInTheDocument();
   });
 
   it('explains why the last session ended', async () => {

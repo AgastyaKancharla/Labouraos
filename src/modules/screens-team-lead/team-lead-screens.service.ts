@@ -521,7 +521,7 @@ export class TeamLeadScreensService {
 
   // --------------------------------------------------------- login codes
 
-  /** T-LoginCodes: counts, locked accounts and invites waiting, in the team. */
+  /** T-LoginCodes: counts, locked accounts and people not signed in yet, in the team. */
   async access(actor: Actor) {
     const team = await this.members(actor);
     const ids = team.map((row) => row.id);
@@ -529,13 +529,14 @@ export class TeamLeadScreensService {
     const since = istStartOfDay(istDayKey(now));
     const [locked, invites, codesToday] = await Promise.all([
       this.prisma.staff.findMany({ where: { id: { in: ids }, lockedUntil: { gt: now } }, select: { id: true, code: true, name: true, role: true, lockedUntil: true, lockedReason: true, failedLoginCount: true } }),
-      this.prisma.staff.findMany({ where: { id: { in: ids }, status: 'pending_invite' }, select: { id: true, code: true, name: true, role: true } }),
+      this.prisma.staff.findMany({ where: { id: { in: ids }, status: 'pending_invite' }, select: { id: true, code: true, name: true, role: true, tempPasswordExpiresAt: true } }),
       this.prisma.loginCodeRequest.count({ where: { staffId: { in: ids }, revealedAt: { gte: since } } }),
     ]);
     return {
       codesToday,
       locked: locked.map((row) => ({ ...row, lockedUntil: row.lockedUntil?.toISOString() ?? null })),
-      invites,
+      // Not signed in yet; expired = their temporary password ran out (give a new one).
+      invites: invites.map(({ tempPasswordExpiresAt, ...row }) => ({ ...row, expired: !tempPasswordExpiresAt || tempPasswordExpiresAt.getTime() <= now.getTime() })),
     };
   }
 

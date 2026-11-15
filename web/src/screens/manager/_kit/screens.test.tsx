@@ -217,28 +217,38 @@ const staffResponse = {
   reportsToOptions: [
     { id: 'tl1', name: 'Ravi Shankar', role: 'team_lead', team: 'Team South' },
     { id: 'tl2', name: 'Fatima Z', role: 'team_lead', team: 'Team North' },
+    { id: 'tl4', name: 'Kiran New', role: 'team_lead', team: 'Team East', notSignedInYet: true },
     { id: 'm1', name: 'Priya Sharma', role: 'manager', team: null },
   ],
   creatableRoles: ['team_lead', 'call_agent', 'field_agent'],
 };
 
 describe('Staff & access', () => {
-  it('resets a password and shows the one-time link; unlocks with a reason', async () => {
+  it('gives a new temporary password (shown once) and resets sign-in completely; unlocks with a reason', async () => {
+    const temp = { staff: { id: 'tl1', code: 'TL-3', name: 'Ravi Shankar', role: 'team_lead' }, tempPassword: 'K7M4-Q2PX', tempPasswordExpiresAt: '2026-11-10T12:30:00Z' };
     const api = mockApi({
       ...common,
       'GET /manager/staff': staffResponse,
-      'POST /staff/tl1/reset-password': { resetUrl: 'https://app.laboura.com/p/invite/abc123', resetToken: 'abc123', expiresAt: '2026-11-12T12:30:00Z' },
+      'POST /staff/tl1/temp-password': temp,
+      'POST /staff/tl1/reset-sign-in': { ...temp, tempPassword: 'Q2PX-K7M4' },
       'POST /staff/ca9/unlock': { success: true },
     });
     render(<Staff />, '/manager/staff');
     expect((await screen.findAllByText('Locked · 5 wrong passwords')).length).toBeGreaterThan(0);
     const row = screen.getByText('Ravi Shankar').closest('tr') as HTMLElement;
-    await userEvent.click(within(row).getByRole('button', { name: 'Reset password' }));
+    await userEvent.click(within(row).getByRole('button', { name: 'New temporary password' }));
     let d = await dialog();
-    expect(within(d).getByText(/old password keeps working until they use the link/)).toBeInTheDocument();
-    await userEvent.click(within(d).getByRole('button', { name: 'Make the link' }));
-    await waitFor(() => expect(api.calls('POST /staff/tl1/reset-password')).toHaveLength(1));
-    expect(await screen.findByText('https://app.laboura.com/p/invite/abc123')).toBeInTheDocument();
+    expect(within(d).getByText(/replaces any earlier one/)).toBeInTheDocument();
+    await userEvent.click(within(d).getByRole('button', { name: 'New temporary password' }));
+    await waitFor(() => expect(api.calls('POST /staff/tl1/temp-password')).toHaveLength(1));
+    expect(await screen.findByTestId('temp-password')).toHaveTextContent('K7M4-Q2PX');
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }));
+
+    await userEvent.click(within(row).getByRole('button', { name: 'Reset sign-in completely' }));
+    d = await dialog();
+    await userEvent.click(within(d).getByRole('button', { name: 'Reset sign-in completely' }));
+    await waitFor(() => expect(api.calls('POST /staff/tl1/reset-sign-in')).toHaveLength(1));
+    expect(await screen.findByTestId('temp-password')).toHaveTextContent('Q2PX-K7M4');
     await userEvent.click(screen.getByRole('button', { name: 'Done' }));
 
     const locked = screen.getByText('Arun P').closest('tr') as HTMLElement;
@@ -249,21 +259,23 @@ describe('Staff & access', () => {
     await waitFor(() => expect(api.calls('POST /staff/ca9/unlock')[0].body).toEqual({ reason: 'Checked with him' }));
   });
 
-  it('adds an intern field agent under a Team Lead, with a start date', async () => {
+  it('adds an intern field agent under a Team Lead (one not signed in yet is offered), with a start date, and shows the temporary password', async () => {
     const api = mockApi({
       ...common,
       'GET /manager/staff': staffResponse,
-      'POST /staff': { staff: { code: 'FA-0031', name: 'Meena R' }, inviteUrl: 'https://app.laboura.com/p/invite/tok', inviteExpiresAt: '2026-11-12T12:30:00Z' },
+      'POST /staff': { staff: { id: 'fa31', code: 'FA-0031', name: 'Meena R', role: 'field_agent' }, tempPassword: 'K7M4-Q2PX', tempPasswordExpiresAt: '2026-11-10T12:30:00Z' },
     });
     render(<Staff />, '/manager/staff');
     await screen.findAllByText('Ravi Shankar');
+    expect(screen.getByRole('option', { name: /Kiran New · Team Lead · .* \(not signed in yet\)/ })).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/Full name/), 'Meena R');
     const roles = screen.getAllByLabelText(/^Role/);
     await userEvent.selectOptions(roles[roles.length - 1], 'field_agent:intern');
     await userEvent.selectOptions(screen.getByLabelText(/Reports to/), 'tl2');
-    await userEvent.click(screen.getByRole('button', { name: 'Add · send staff code' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Add · get temporary password' }));
     await waitFor(() => expect(api.calls('POST /staff')[0].body).toEqual({ name: 'Meena R', role: 'field_agent', teamLeadId: 'tl2', intern: true, joinedOn: '2026-11-09' }));
-    expect(await screen.findByText('https://app.laboura.com/p/invite/tok')).toBeInTheDocument();
+    expect(await screen.findByTestId('temp-password')).toHaveTextContent('K7M4-Q2PX');
+    expect(screen.getByTestId('temp-password-whatsapp').getAttribute('href')).toContain('wa.me');
   });
 });
 

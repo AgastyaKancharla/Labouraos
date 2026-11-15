@@ -17,6 +17,8 @@ import { ActionButton } from '../../ceo/_kit/actions';
 import { roleLabel } from '../../ceo/_kit/format';
 import { firstName, useTeam, waitedFor } from '../_kit/api';
 import '../../ceo/_kit/ceo.css';
+import { NewTempPasswordButton, PendingResetCards, ResetSignInButton, usePendingResets } from '../../shared/staffAccess';
+import { useT } from '../../../i18n/I18nProvider';
 
 /** Login codes — design T-LoginCodes.dc.html: codes for the team's sign-ins, new devices, passwords and locks. */
 interface Pending {
@@ -36,30 +38,33 @@ interface Device {
 interface Access {
   codesToday: number;
   locked: Array<{ id: string; code: string; name: string; role: string; lockedUntil: string | null; lockedReason: string | null }>;
-  invites: Array<{ id: string; code: string; name: string; role: string }>;
+  /** Not signed in yet; expired = their temporary password ran out. */
+  invites: Array<{ id: string; code: string; name: string; role: string; expired?: boolean }>;
 }
 
 export default function TeamLeadLoginCodes() {
+  const t = useT();
   const to = useScreenPath();
+  const resets = usePendingResets();
   const now = useNow();
   const team = useTeam();
   const pending = useQuery({ queryKey: ['login-codes', 'pending'], queryFn: () => api.get<Pending[]>('/login-codes/pending'), refetchInterval: 10_000 });
   const devices = useQuery({ queryKey: ['staff', 'devices', 'pending'], queryFn: () => api.get<Device[]>('/staff/devices/pending'), refetchInterval: 30_000 });
   const access = useQuery({ queryKey: ['team-lead', 'access'], queryFn: () => api.get<Access>('/team-lead/access'), refetchInterval: 30_000 });
-  const mgr = team.data?.manager ? `${firstName(team.data.manager.name)} (Manager)` : 'your Manager';
   const problems = [...(access.data?.locked ?? []).map((l) => ({ ...l, kind: 'locked' as const })), ...(access.data?.invites ?? []).map((i) => ({ ...i, kind: 'invite' as const, lockedUntil: null, lockedReason: null }))];
   return (
     <div className="lb-page">
-      <TopBar showSearch={false} back={{ to: to('T-Home'), label: 'My team' }} title="Login codes" subtitle="Codes for your agents' sign-in, new devices, passwords and locks." />
+      <TopBar showSearch={false} back={{ to: to('T-Home'), label: 'My team' }} title="Login codes" subtitle="Codes for your agents' sign-in, password resets (red), new devices, passwords and locks." />
       <StatGrid>
         <StatTile label="Waiting for a code" value={pending.data?.length ?? '—'} tone="gold" loading={pending.isPending} />
         <StatTile label="Codes given today" value={access.data?.codesToday ?? '—'} tone="royal" loading={access.isPending} />
         <StatTile label="Device to approve" value={devices.data?.length ?? '—'} tone="orange" loading={devices.isPending} />
         <StatTile label="Account locked" value={access.data?.locked.length ?? '—'} tone="red" loading={access.isPending} />
       </StatGrid>
+      <PendingResetCards />
       {pending.error ? (
         <ErrorState error={pending.error} onRetry={() => void pending.refetch()} />
-      ) : pending.data && pending.data.length === 0 ? (
+      ) : pending.data && pending.data.length === 0 && !resets.data?.length ? (
         <Card>
           <EmptyState title="Nobody in your team is waiting for a login code." />
         </Card>
@@ -111,7 +116,7 @@ export default function TeamLeadLoginCodes() {
           {access.error ? (
             <ErrorState error={access.error} compact onRetry={() => void access.refetch()} />
           ) : problems.length === 0 ? (
-            <p className="tl-sub">No locked accounts and no passwords waiting to be set. To reset a forgotten password, open the agent below.</p>
+            <p className="tl-sub">No locked accounts and nobody waiting to sign in for the first time.</p>
           ) : (
             <div className="scrollx">
               <table>
@@ -127,8 +132,8 @@ export default function TeamLeadLoginCodes() {
                   {problems.map((p) => (
                     <tr key={`${p.kind}-${p.id}`}>
                       <td>{p.name}</td>
-                      <td>{p.kind === 'locked' ? `Locked · ${p.lockedReason ?? '5 wrong passwords'}${p.lockedUntil ? ` · until ${formatTimeIST(p.lockedUntil)}` : ''}` : 'Has not set a password yet'}</td>
-                      <td>{p.kind === 'locked' ? <ActionButton label="Unlock" title={`Unlock ${p.name}`} run={() => api.post(`/staff/${p.id}/unlock`)} success={`${p.name} is unlocked`} /> : <ResetButton id={p.id} name={p.name} />}</td>
+                      <td>{p.kind === 'locked' ? `Locked · ${p.lockedReason ?? '5 wrong passwords'}${p.lockedUntil ? ` · until ${formatTimeIST(p.lockedUntil)}` : ''}` : t('access.state.notSignedIn')}</td>
+                      <td>{p.kind === 'locked' ? <ActionButton label="Unlock" title={`Unlock ${p.name}`} run={() => api.post(`/staff/${p.id}/unlock`)} success={`${p.name} is unlocked`} /> : <NewTempPasswordButton id={p.id} name={p.name} />}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -136,24 +141,28 @@ export default function TeamLeadLoginCodes() {
             </div>
           )}
           <div className="tl-chain" style={{ marginTop: 12 }}>
-            <div className="tl-sub">Forgot password? Reset it for anyone in your team:</div>
+            <div className="tl-sub">Forgot password? They ask on the sign-in page and their request shows here in red. Lost phone? Reset their sign-in completely:</div>
             {(team.data?.members ?? []).map((m) => (
               <div key={m.id} className="tl-inline" style={{ justifyContent: 'space-between' }}>
                 <span>
                   {m.name} <span className="tl-sub">· {roleLabel(m.role)}</span>
                 </span>
-                <ResetButton id={m.id} name={m.name} />
+                <span className="tl-actions">
+                  <NewTempPasswordButton id={m.id} name={m.name} />
+                  <ResetSignInButton id={m.id} name={m.name} />
+                </span>
               </div>
             ))}
           </div>
         </Card>
       </div>
-      <div className="tl-note">Your own code is read out by {mgr} · nobody can see their own code</div>
+      <div className="tl-note">You sign in with your own authenticator app · nobody can see their own code</div>
     </div>
   );
 }
 
 function CodeCard({ request, waited }: { request: Pending; waited: string }) {
+  const t = useT();
   const [code, setCode] = useState<string | null>(null);
   const toast = useToast();
   const qc = useQueryClient();
@@ -170,7 +179,8 @@ function CodeCard({ request, waited }: { request: Pending; waited: string }) {
       <div className="ceo-req">
         <StaffAvatar name={request.staff.name} photoUrl={request.staff.photoUrl} size="lg" noPhotoLabel="No photo" />
         <div>
-          <div className="tl-strong">{request.staff.name}</div>
+          <StatusPill tone="blue">{t('access.card.loginKind')}</StatusPill>
+          <div className="tl-strong" style={{ marginTop: 6 }}>{request.staff.name}</div>
           <div className="tl-sub">
             {request.staff.code} · {roleLabel(request.staff.role)}
           </div>
@@ -203,29 +213,5 @@ function CodeCard({ request, waited }: { request: Pending; waited: string }) {
         </div>
       </div>
     </Card>
-  );
-}
-
-function ResetButton({ id, name }: { id: string; name: string }) {
-  const [link, setLink] = useState<{ url: string; expiresAt: string } | null>(null);
-  return (
-    <>
-      <ActionButton
-        label="Reset password"
-        title={`Reset ${name}'s password`}
-        description="A one-time link to set a new password. Their old password keeps working until they use it."
-        run={async () => {
-          const res = await api.post<{ resetUrl: string; expiresAt: string }>(`/staff/${id}/reset-password`);
-          setLink({ url: res.resetUrl, expiresAt: res.expiresAt });
-          return res;
-        }}
-        success="Reset link ready"
-      />
-      {link && (
-        <p className="tl-sub" role="status">
-          Give {name} this link (shown once, works until {formatTimeIST(link.expiresAt)}): <span className="code" style={{ wordBreak: 'break-all' }}>{link.url}</span>
-        </p>
-      )}
-    </>
   );
 }

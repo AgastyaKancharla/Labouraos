@@ -361,7 +361,7 @@ export class CeoTeamService {
     }));
   }
 
-  /** C-LoginCodes: tiles, locked accounts, invites not accepted and every code given in the period. */
+  /** C-LoginCodes: tiles, locked accounts, people not signed in yet and every code given in the period. */
   async access(now: Date, from?: Date, to?: Date) {
     const dayStart = istStartOfDay(istDayKey(now));
     const [waiting, locked, invites, codes, codesTodayCount] = await Promise.all([
@@ -373,7 +373,7 @@ export class CeoTeamService {
       }),
       this.prisma.staff.findMany({
         where: { status: 'pending_invite' },
-        select: { id: true, code: true, name: true, role: true, inviteExpiresAt: true, createdAt: true },
+        select: { id: true, code: true, name: true, role: true, tempPasswordExpiresAt: true, createdAt: true },
         orderBy: { createdAt: 'desc' },
       }),
       this.codesGiven(from ?? dayStart, to ?? now),
@@ -401,7 +401,8 @@ export class CeoTeamService {
         name: s.name,
         role: s.role,
         invitedAt: s.createdAt.toISOString(),
-        expired: s.inviteExpiresAt ? s.inviteExpiresAt.getTime() <= now.getTime() : true,
+        // Not signed in yet: their temporary password ran out (they need a new one).
+        expired: s.tempPasswordExpiresAt ? s.tempPasswordExpiresAt.getTime() <= now.getTime() : true,
       })),
       codes,
     };

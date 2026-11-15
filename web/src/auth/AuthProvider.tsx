@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { authApi, type TokenResponse } from './authApi';
+import { authApi, type PasswordResetNotice, type TokenResponse } from './authApi';
 import { isStaffRole } from './roles';
 import { sessionFromToken, sessionStore, type Session, type SignOutReason } from './session';
 
@@ -27,6 +27,9 @@ interface AuthValue {
   /** Store a token response from /auth/login or /auth/login/verify-code. */
   acceptLogin: (response: TokenResponse) => Session | null;
   signOut: () => Promise<void>;
+  /** Shown once after the first sign-in following a password reset ("Your password was reset on … approved by …"). */
+  resetNotice: PasswordResetNotice | null;
+  dismissResetNotice: () => void;
 }
 
 const AuthContext = createContext<AuthValue | null>(null);
@@ -37,6 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [session, setSession] = useState<Session | null>(() => sessionStore.get());
   const [signOutReason, setSignOutReason] = useState<SignOutReason | null>(null);
+  const [resetNotice, setResetNotice] = useState<PasswordResetNotice | null>(null);
   const lastActivity = useRef(Date.now());
 
   useEffect(
@@ -95,6 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!next) return null;
     lastActivity.current = Date.now();
     setSignOutReason(null);
+    setResetNotice(response.passwordResetNotice ?? null);
     sessionStore.set(next);
     return next;
   }, []);
@@ -110,8 +115,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<AuthValue>(
-    () => ({ session, signOutReason, clearSignOutReason: () => setSignOutReason(null), acceptLogin, signOut }),
-    [session, signOutReason, acceptLogin, signOut],
+    () => ({
+      session,
+      signOutReason,
+      clearSignOutReason: () => setSignOutReason(null),
+      acceptLogin,
+      signOut,
+      resetNotice: session ? resetNotice : null,
+      dismissResetNotice: () => setResetNotice(null),
+    }),
+    [session, signOutReason, acceptLogin, signOut, resetNotice],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

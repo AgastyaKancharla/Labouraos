@@ -16,7 +16,8 @@ import { periodFor, periodToUtcRange, type Period } from '../../../lib/period';
 import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { ActionButton } from '../_kit/actions';
-import { PasswordResetButton } from '../_kit/passwordReset';
+import { NewTempPasswordButton, PasswordResetHistory, PendingResetCards, usePendingResets } from '../../shared/staffAccess';
+import { useT } from '../../../i18n/I18nProvider';
 import { roleLabel } from '../_kit/format';
 
 /** Login codes — design C-LoginCodes.dc.html. The same requests Managers and Team Leads see for their people. */
@@ -36,7 +37,9 @@ interface Access {
 }
 
 export default function LoginCodes() {
+  const t = useT();
   const to = useScreenPath();
+  const resets = usePendingResets();
   const now = useNow();
   const [period, setPeriod] = useState<Period>(() => periodFor('today', now));
   const range = periodToUtcRange(period);
@@ -57,7 +60,7 @@ export default function LoginCodes() {
       <TopBar
         back={{ to: to('Main'), label: 'Command Center' }}
         title="Login codes"
-        subtitle="Every staff login needs a one-time code from someone above them. Requests appear here live — the same screen Managers and Team Leads use for their own people."
+        subtitle="Call and field agents sign in with a one-time code from someone above them; password reset requests (red) wait here too. Requests appear live — the same screen Managers and Team Leads use for their own people."
         period={period}
         onPeriodChange={setPeriod}
       />
@@ -65,11 +68,12 @@ export default function LoginCodes() {
         <StatTile label="Waiting for a code" value={pending.data?.length ?? a?.summary.waiting ?? '—'} tone="gold" loading={pending.isPending} />
         <StatTile label="Codes given today" value={a?.summary.codesToday ?? '—'} tone="royal" loading={access.isPending} />
         <StatTile label="Accounts locked" value={a?.summary.locked ?? '—'} tone="red" loading={access.isPending} />
-        <StatTile label="Invites not accepted" value={a?.summary.invitesPending ?? '—'} tone="orange" loading={access.isPending} />
+        <StatTile label={t('access.state.notSignedIn')} value={a?.summary.invitesPending ?? '—'} tone="orange" loading={access.isPending} />
       </StatGrid>
+      <PendingResetCards />
       {pending.error ? (
         <ErrorState error={pending.error} onRetry={() => void pending.refetch()} />
-      ) : pending.data && pending.data.length === 0 ? (
+      ) : pending.data && pending.data.length === 0 && !resets.data?.length ? (
         <Card>
           <EmptyState title="Nobody is waiting for a login code right now." />
         </Card>
@@ -88,9 +92,11 @@ export default function LoginCodes() {
             <span>Manager</span>
             <span>Anyone below Manager in their teams</span>
             <span>Team Lead</span>
-            <span>Their own team</span>
-            <span>CEO, Managers, Finance themselves</span>
-            <span>Use an authenticator app — nobody above them</span>
+            <span>The agents of their own team</span>
+            <span>CEO, Managers, Finance, Team Leads themselves</span>
+            <span>Use their own authenticator app — no login code</span>
+            <span>Password resets</span>
+            <span>Same people; a CEO's reset only by the other CEO, Finance by a CEO</span>
             <span>Rule</span>
             <span>Nobody can see their own code; every code is recorded</span>
           </div>
@@ -99,7 +105,7 @@ export default function LoginCodes() {
           {access.error ? (
             <ErrorState error={access.error} onRetry={() => void access.refetch()} compact />
           ) : a && !a.locked.length && !a.invites.length ? (
-            <p className="ceo-sub">No locked accounts and no invites waiting.</p>
+            <p className="ceo-sub">No locked accounts and nobody waiting to sign in for the first time.</p>
           ) : (
             <div className="scrollx">
               <table>
@@ -120,7 +126,7 @@ export default function LoginCodes() {
                       <td>
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                           <ActionButton label="Unlock" title={`Unlock ${l.name}`} run={() => api.post(`/staff/${l.id}/unlock`)} success={`${l.name} is unlocked`} />
-                          <PasswordResetButton id={l.id} name={l.name} label="Reset" />
+                          <NewTempPasswordButton id={l.id} name={l.name} />
                         </div>
                       </td>
                     </tr>
@@ -128,9 +134,9 @@ export default function LoginCodes() {
                   {a?.invites.map((i) => (
                     <tr key={`i-${i.id}`}>
                       <td>{i.name}</td>
-                      <td>{i.expired ? 'Invite ran out' : 'Has not set a password yet'} · {roleLabel(i.role)}</td>
+                      <td>{i.expired ? 'Temporary password ran out' : t('access.state.notSignedIn')} · {roleLabel(i.role)}</td>
                       <td>
-                        <NewInviteButton id={i.id} name={i.name} />
+                        <NewTempPasswordButton id={i.id} name={i.name} />
                       </td>
                     </tr>
                   ))}
@@ -143,11 +149,13 @@ export default function LoginCodes() {
       <Card title={period.preset === 'today' ? 'Codes given today' : 'Codes given'}>
         <DataTable columns={codeColumns} rows={a?.codes} rowKey={(r) => r.id} caption="Codes given" loading={access.isPending} error={access.error} onRetry={() => void access.refetch()} download="login-codes-given" emptyTitle="No codes given in this period." />
       </Card>
+      <PasswordResetHistory />
     </div>
   );
 }
 
 function RequestCard({ request }: { request: Pending }) {
+  const t = useT();
   const [code, setCode] = useState<string | null>(null);
   const toast = useToast();
   const qc = useQueryClient();
@@ -165,7 +173,8 @@ function RequestCard({ request }: { request: Pending }) {
       <div className="ceo-req">
         <StaffAvatar name={request.staff.name} photoUrl={request.staff.photoUrl} size="lg" noPhotoLabel="No photo" />
         <div>
-          <div style={{ fontWeight: 700 }}>{request.staff.name}</div>
+          <StatusPill tone="blue">{t('access.card.loginKind')}</StatusPill>
+          <div style={{ fontWeight: 700, marginTop: 6 }}>{request.staff.name}</div>
           <div className="ceo-cell-sub">
             {request.staff.code} · {roleLabel(request.staff.role)}
           </div>
@@ -203,30 +212,5 @@ function RequestCard({ request }: { request: Pending }) {
         </div>
       </div>
     </Card>
-  );
-}
-
-/** Someone who never set a password gets a fresh invite (a password reset needs a password to replace). */
-function NewInviteButton({ id, name }: { id: string; name: string }) {
-  const [token, setToken] = useState<{ code: string; token: string } | null>(null);
-  return (
-    <>
-      <ActionButton
-        label="New invite"
-        title={`New invite for ${name}`}
-        description="They have not set a password yet. A fresh one-time invite replaces the old one; they set their password with it."
-        run={async () => {
-          const res = await api.post<{ staff: { code: string }; inviteToken: string }>(`/staff/${id}/reissue-invite`);
-          setToken({ code: res.staff.code, token: res.inviteToken });
-          return res;
-        }}
-        success="New invite ready"
-      />
-      {token && (
-        <p className="ceo-sub" role="status">
-          Give {name}: staff code <span className="code">{token.code}</span> · invite <span className="code" style={{ wordBreak: 'break-all' }}>{token.token}</span> (shown once)
-        </p>
-      )}
-    </>
   );
 }
