@@ -24,6 +24,10 @@ const ALLOWED: Record<string, string> = {
     'reporting-line fallback without ReportingScopeService (both links)',
   'modules/follow-up/follow-up.service.ts: const team = await this.prisma.staff.findMany({ where: { OR: [{ teamLeadId: staffId }, { reportsToId: staffId }] }, select: { id: true } });':
     'reporting-line fallback without ReportingScopeService (both links)',
+  // Not a scope: counts everyone still reporting to an account before it is
+  // deactivated (rev 174–175), by either link, so nobody is left under a gone boss.
+  'modules/staff/staff.service.ts: OR: [{ reportsToId: staffId }, { teamLeadId: staffId }],':
+    'deactivation guard: anyone still linked to the account by either field',
   // A refusal, not a scope: a Team Lead may not ask for another Team Lead's list.
   'modules/staff/staff.service.ts: if (query.teamLeadId && query.teamLeadId !== actor.sub) {':
     'refuses ?teamLeadId= naming another Team Lead; the list itself uses OwnTeam',
