@@ -496,8 +496,13 @@ export class CeoMoneyService {
 
   // ---------------------------------------------------------------- referral partners
 
-  async referrals(range: Partial<DateRange>, page: PageRequest, filters: { search?: string; type?: string; payout?: string; checks?: string }) {
+  async referrals(
+    range: Partial<DateRange>,
+    page: PageRequest,
+    filters: { search?: string; type?: string; payout?: string; checks?: string; scope?: Prisma.ReferralWhereInput },
+  ) {
     const and: Prisma.ReferralWhereInput[] = [{ anonymisedAt: null }];
+    if (filters.scope) and.push(filters.scope);
     if (filters.search) {
       const digits = phoneSearchDigits(filters.search);
       and.push({ OR: [{ name: contains(filters.search) }, { code: contains(filters.search) }, ...(digits.length >= 3 ? [{ phone: { contains: digits } }] : [])] });
@@ -550,7 +555,7 @@ export class CeoMoneyService {
     const due = allPayouts.filter((x) => PAYOUT_DUE_STATUSES.includes(x.status));
     const [fraud, totalPartners] = await Promise.all([
       this.prisma.reviewFlag.groupBy({ by: ['kind'], where: { kind: { in: ['payout_matches_staff', 'payout_shared_account', 'payout_name_mismatch'] }, status: 'open' }, _count: { _all: true } }),
-      this.prisma.referral.groupBy({ by: ['type'], where: { anonymisedAt: null }, _count: { _all: true } }),
+      this.prisma.referral.groupBy({ by: ['type'], where: filters.scope ? { anonymisedAt: null, AND: [filters.scope] } : { anonymisedAt: null }, _count: { _all: true } }),
     ]);
     const fraudCount = (kind: string) => fraud.find((f) => f.kind === kind)?._count._all ?? 0;
     const sortedBest = [...rows].sort((a, b) => b.joined - a.joined || b.registered - a.registered).filter((r) => r.joined > 0).slice(0, 5);

@@ -23,6 +23,7 @@ import { CeoBreachService } from './ceo-breach.service';
   imports: [PrismaModule, AuditModule, IdModule, PricingModule, RefundModule, TargetModule, AttendanceModule, JobSeekerModule, StaffPhotoModule],
   controllers: [CeoPortalController],
   providers: [CeoCommandCenterService, CeoJobSeekersService, CeoBusinessesService, CeoPlacementsService, CeoMoneyService, CeoTeamService, CeoOpsService, CeoAdminService, CeoBreachService],
-  exports: [CeoCommandCenterService],
+  // The Manager portal reuses the list and profile services, scoped to the Manager's tree (record-scope.ts).
+  exports: [CeoCommandCenterService, CeoJobSeekersService, CeoBusinessesService, CeoPlacementsService, CeoMoneyService],
 })
 export class CeoPortalModule {}

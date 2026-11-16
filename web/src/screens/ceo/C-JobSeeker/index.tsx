@@ -13,7 +13,7 @@ import { downloadTextFile } from '../../../lib/csv';
 import { formatDateIST, formatDateTimeIST } from '../../../lib/format/date';
 import { formatINR } from '../../../lib/format/money';
 import { formatMobile } from '../../../lib/format/phone';
-import { useScreenPath } from '../../../portals/PortalContext';
+import { useRecordsPortal } from '../_kit/records';
 import { ActionButton } from '../_kit/actions';
 import { useAuth } from '../../../auth/AuthProvider';
 import { BanButton, LegalAcceptanceCard } from '../_kit/legal';
@@ -33,9 +33,15 @@ interface Detail {
   hits: { count: number; max: number };
   offersMade: number;
   interviews: number;
-  activation: { amountPaise: number; at: string; utr: string | null; confirmedBy: string | null } | null;
-  refunds: { id: string; code: string; amountPaise: number; status: string; at: string }[];
+  whatsappPhone?: string | null;
+  /** The CEO only: a Manager's answer has no payment or refunds. */
+  activation?: { amountPaise: number; at: string; utr: string | null; confirmedBy: string | null } | null;
+  refunds?: { id: string; code: string; amountPaise: number; status: string; at: string }[];
+  consents?: { purpose: string; granted: boolean; withdrawn: boolean; at: string | null }[];
   profile: {
+    pincode?: string | null;
+    dateOfBirth?: string | null;
+    bestTime?: { start: string; end: string } | null;
     trades: { trade: string; years: number; primary: boolean }[];
     locality: string | null;
     travelDistanceKm: number | null;
@@ -118,8 +124,8 @@ function historyText(e: Detail['history'][number]): string {
 
 export default function JobSeekerDetail() {
   const { id = '' } = useParams();
-  const to = useScreenPath();
-  const query = useQuery({ queryKey: ['ceo', 'job-seeker', id], queryFn: () => api.get<Detail>(`/ceo/job-seekers/${id}`) });
+  const { api: base, ceo, to } = useRecordsPortal();
+  const query = useQuery({ queryKey: [base, 'job-seeker', id], queryFn: () => api.get<Detail>(`${base}/job-seekers/${id}`) });
   const d = query.data;
   const role = useAuth().session?.staff.role;
   const back = { to: to('JobSeekers'), label: 'Job Seekers' };
@@ -148,10 +154,14 @@ export default function JobSeekerDetail() {
   const statusLabel = SEEKER_STATUS[d.status]?.label ?? d.status;
   const subtitle =
     g.daysLeft !== null
-      ? `${primary} · ${statusLabel.toLowerCase()} · ${g.daysLeft} days left on his ${g.days}-day guarantee${g.daysLeft <= 15 ? ` — needs a suitable offer now or he can claim ${formatINR(d.activation?.amountPaise ?? 0)}.` : '.'}`
+      ? `${primary} · ${statusLabel.toLowerCase()} · ${g.daysLeft} days left on his ${g.days}-day guarantee${
+          g.daysLeft <= 15 ? (ceo ? ` — needs a suitable offer now or he can claim ${formatINR(d.activation?.amountPaise ?? 0)}.` : ' — needs a suitable offer now.') : '.'
+        }`
       : `${primary} · ${statusLabel.toLowerCase()}`;
   const liveHits = d.hitList.filter((h) => !h.reversed && !h.superseded);
-  const refundsActive = d.refunds.filter((r) => !['failed', 'rejected', 'reversed'].includes(r.status));
+  // A Manager's answer carries no payments or refunds (no money for Managers).
+  const refundsActive = (d.refunds ?? []).filter((r) => !['failed', 'rejected', 'reversed'].includes(r.status));
+  const activation = d.activation ?? null;
 
   const exportRecord = () => {
     downloadTextFile(`${d.code}.json`, JSON.stringify(d, null, 2), 'application/json');
@@ -177,16 +187,18 @@ export default function JobSeekerDetail() {
               run={({ reason, choice }) => api.post(`/job-seeker-hits/${choice}/reverse`, { reversalReason: reason })}
               success="Hit reversed"
             />
-            <ActionButton
-              label="Approve refund early"
-              title="Approve the ₹499 refund"
-              variant="primary"
-              description="The software checks the refund rules first (30 days over, no suitable offer turned down, refund-check call recorded). If they are not met, it tells you why."
-              disabled={!d.activation || refundsActive.length > 0}
-              reason={{ label: 'Note (optional)' }}
-              run={({ reason }) => api.post(`/job-seekers/${d.id}/refund`, reason ? { reason } : {})}
-              success="Refund approved — Finance pays it and records the UTR"
-            />
+            {ceo && (
+              <ActionButton
+                label="Approve refund early"
+                title="Approve the ₹499 refund"
+                variant="primary"
+                description="The software checks the refund rules first (30 days over, no suitable offer turned down, refund-check call recorded). If they are not met, it tells you why."
+                disabled={!activation || refundsActive.length > 0}
+                reason={{ label: 'Note (optional)' }}
+                run={({ reason }) => api.post(`/job-seekers/${d.id}/refund`, reason ? { reason } : {})}
+                success="Refund approved — Finance pays it and records the UTR"
+              />
+            )}
             {(role === 'ceo' || role === 'manager') && <BanButton subjectType="job_seeker" subjectId={d.id} name={d.name} />}
           </div>
         }
@@ -202,12 +214,18 @@ export default function JobSeekerDetail() {
         <StatTile label="Hits" value={`${d.hits.count} of ${d.hits.max}`} tone={d.hits.count >= d.hits.max - 1 ? 'gold' : 'royal'} />
         <StatTile label="Offers made" value={d.offersMade} tone="royal" />
         <StatTile label="Interviews" value={d.interviews} tone="navy" />
-        <StatTile
-          label={d.activation ? `Paid ${formatDateIST(d.activation.at)}${d.activation.utr ? ` · UTR ${d.activation.utr.slice(0, 4)}…` : ''}` : 'Not paid yet'}
-          value={d.activation ? formatINR(d.activation.amountPaise) : '—'}
-          tone="good"
-        />
-        <StatTile label="Refunds" value={refundsActive.length} tone={refundsActive.length ? 'red' : 'royal'} />
+        {ceo ? (
+          <>
+            <StatTile
+              label={activation ? `Paid ${formatDateIST(activation.at)}${activation.utr ? ` · UTR ${activation.utr.slice(0, 4)}…` : ''}` : 'Not paid yet'}
+              value={activation ? formatINR(activation.amountPaise) : '—'}
+              tone="good"
+            />
+            <StatTile label="Refunds" value={refundsActive.length} tone={refundsActive.length ? 'red' : 'royal'} />
+          </>
+        ) : (
+          <StatTile label="Registration" value={d.registration.paymentAt ? 'Complete' : 'In progress'} tone="good" />
+        )}
       </StatGrid>
 
       <div className="two-col">
@@ -217,11 +235,18 @@ export default function JobSeekerDetail() {
               [
                 'Phone',
                 <>
-                  {d.phone.includes('*') ? d.phone : formatMobile(d.phone.replace(/^\+91/, ''))} · <span className="ceo-sub">full number shown to the CEO; every view is logged</span>
+                  {d.phone.includes('*') ? d.phone : formatMobile(d.phone.replace(/^\+91/, ''))} ·{' '}
+                  <span className="ceo-sub">{ceo ? 'full number shown to the CEO; every view is logged' : 'last 4 digits; calls go through the calling system'}</span>
                 </>,
               ],
+              ...(d.whatsappPhone && d.whatsappPhone !== d.phone ? ([['WhatsApp', d.whatsappPhone]] as [string, string][]) : []),
+              ['Best time to call', d.profile.bestTime ? `${d.profile.bestTime.start} – ${d.profile.bestTime.end}` : '—'],
+              ['Date of birth', d.profile.dateOfBirth ? formatDateIST(d.profile.dateOfBirth) : '—'],
               ['Trade', d.profile.trades.map((t) => `${t.trade} · ${t.years} yr${t.years === 1 ? '' : 's'}`).join(' · ') || '—'],
-              ['Area', `${d.profile.locality ?? '—'}${d.profile.travelDistanceKm ? ` · travels up to ${d.profile.travelDistanceKm} km` : ''}`],
+              [
+                'Area',
+                `${d.profile.locality ?? '—'}${d.profile.pincode ? ` · ${d.profile.pincode}` : ''}${d.profile.travelDistanceKm ? ` · travels up to ${d.profile.travelDistanceKm} km` : ''}`,
+              ],
               [
                 'Expected salary',
                 `${formatINR(d.profile.salaryMinPaise)} – ${formatINR(d.profile.salaryMaxPaise).replace('₹', '')} ${d.profile.salaryPeriod === 'daily' ? 'a day' : 'a month'}${g.floorPaise ? ` · guarantee floor ${formatINR(g.floorPaise)}` : ''}`,
@@ -269,20 +294,32 @@ export default function JobSeekerDetail() {
                   <StatusPill tone="muted">Not started</StatusPill>
                 ),
               ],
-              [
-                `${formatINR(d.activation?.amountPaise ?? 49900)} payment`,
-                d.activation ? (
-                  <StatusPill tone="good">
-                    {formatDateIST(d.activation.at)} · {d.activation.confirmedBy === 'bank_feed' ? 'bank matched' : humanize(d.activation.confirmedBy)}
-                  </StatusPill>
-                ) : (
-                  <StatusPill tone="muted">Not paid</StatusPill>
-                ),
-              ],
+              ceo
+                ? [
+                    `${formatINR(activation?.amountPaise ?? 49900)} payment`,
+                    activation ? (
+                      <StatusPill tone="good">
+                        {formatDateIST(activation.at)} · {activation.confirmedBy === 'bank_feed' ? 'bank matched' : humanize(activation.confirmedBy)}
+                      </StatusPill>
+                    ) : (
+                      <StatusPill tone="muted">Not paid</StatusPill>
+                    ),
+                  ]
+                : ['Registration fee', d.registration.paymentAt ? <StatusPill tone="good">Confirmed {formatDateIST(d.registration.paymentAt)}</StatusPill> : <StatusPill tone="muted">Not yet</StatusPill>],
               ['Status', <StatusPill tone={SEEKER_STATUS[d.status]?.tone ?? 'muted'}>{statusLabel}</StatusPill>],
               ['Guarantee', guaranteePill(g.daysLeft)],
             ]}
           />
+          {(d.consents ?? []).length > 0 && (
+            <div className="ceo-note" style={{ marginTop: 8 }}>
+              Consent items:{' '}
+              {(d.consents ?? []).map((c) => (
+                <StatusPill key={c.purpose} tone={c.granted ? 'good' : c.withdrawn ? 'danger' : 'muted'}>
+                  {humanize(c.purpose)} · {c.granted ? 'given' : c.withdrawn ? 'withdrawn' : 'not given'}
+                </StatusPill>
+              ))}
+            </div>
+          )}
         </Card>
         <AadhaarCheckCard jobSeekerId={d.id} />
       </div>

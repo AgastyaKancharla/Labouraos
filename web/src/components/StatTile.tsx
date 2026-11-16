@@ -26,10 +26,14 @@ export interface StatTileProps {
   detail?: ReactNode;
   /** Makes the whole tile a link to the list behind the number. */
   to?: string;
+  /** Makes the whole tile a button, e.g. one that sets the list's filter to the rows behind the number. */
+  onClick?: () => void;
+  /** The tile's filter is the one applied now (shown pressed). */
+  active?: boolean;
   loading?: boolean;
 }
 
-export function StatTile({ label, value, tone = 'royal', detail, to, loading }: StatTileProps) {
+export function StatTile({ label, value, tone = 'royal', detail, to, onClick, active, loading }: StatTileProps) {
   const t = TONE[tone];
   const body = (
     <>
@@ -49,6 +53,20 @@ export function StatTile({ label, value, tone = 'royal', detail, to, loading }: 
       <Link to={to} className="stat lb-stat lb-stat--link" style={style} aria-busy={loading || undefined}>
         {body}
       </Link>
+    );
+  }
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        aria-pressed={Boolean(active)}
+        className={`stat lb-stat lb-stat--link${active ? ' lb-stat--active' : ''}`}
+        style={style}
+        aria-busy={loading || undefined}
+      >
+        {body}
+      </button>
     );
   }
   return (

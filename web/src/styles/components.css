@@ -821,6 +821,22 @@
   border-color: var(--royal);
   color: var(--text);
 }
+/* A tile that sets the list's filter (button). */
+button.lb-stat {
+  font: inherit;
+  text-align: left;
+  width: 100%;
+  cursor: pointer;
+  background: var(--surface, #fff);
+}
+button.lb-stat:focus-visible {
+  outline: 2px solid var(--royal);
+  outline-offset: 2px;
+}
+.lb-stat--active {
+  border-color: var(--royal);
+  box-shadow: inset 0 0 0 1px var(--royal);
+}
 
 /* ---------- Command Center money row ---------- */
 .lb-hero__label {

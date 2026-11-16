@@ -8,8 +8,8 @@ import { StatusPill, type StatusTone } from '../../../components/Badge';
 import { TopBar } from '../../../components/TopBar';
 import { formatINR } from '../../../lib/format/money';
 import { formatMobile } from '../../../lib/format/phone';
-import { useScreenPath } from '../../../portals/PortalContext';
 import { SEEKER_STATUS, guaranteePill } from '../_kit/labels';
+import { homeBack, useRecordsPortal } from '../_kit/records';
 import {
   DateFilter,
   FilterPanel,
@@ -25,7 +25,10 @@ import {
   type ListPeriod,
 } from '../_kit/kit';
 
-/** CEO Job Seekers list — design JobSeekers.dc.html. Sorted by guarantee deadline. */
+/**
+ * CEO Job Seekers list — design JobSeekers.dc.html. Sorted by guarantee deadline.
+ * Also the Manager's list (useRecordsPortal): their tree only, no money.
+ */
 export interface JobSeekerRow {
   id: string;
   code: string;
@@ -65,18 +68,23 @@ function salary(r: { salaryMinPaise: number; salaryMaxPaise: number }) {
 }
 
 export default function JobSeekersList() {
-  const to = useScreenPath();
+  const { api: base, ceo, link, to } = useRecordsPortal();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('active');
+  // "All" first (owner, testing 16 Nov): a just-registered, unpaid job seeker must not be hidden.
+  const [status, setStatus] = useState('');
   const [trade, setTrade] = useState('');
   const [kyc, setKyc] = useState('');
   const [sort, setSort] = useState('soonest');
   const [period, setPeriod] = useState<ListPeriod>(null);
   const q = useDebounced(search);
-  const list = useCeoList<JobSeekerRow, { trades: string[] }, Summary>('/ceo/job-seekers', { search: q, status, trade, kyc, sort, ...rangeQuery(period) });
+  const list = useCeoList<JobSeekerRow, { trades: string[] }, Summary>(`${base}/job-seekers`, { search: q, status, trade, kyc, sort, ...rangeQuery(period) });
   const s = list.query.data?.summary;
   const loading = list.query.isPending;
+  /** A tile sets the Status filter to its own rows (click it again to show all). */
+  const tile = (value: string) => () => setStatus((current) => (current === value ? '' : value));
+  const nearRefund = link('C-NearRefund');
+  const register = ceo ? link('CA08-Register') : null;
 
   const appLabels = useAppLabels('job_seeker', (list.query.data?.rows ?? []).map((r) => r.id));
   const columns: Column<JobSeekerRow>[] = [
@@ -112,25 +120,38 @@ export default function JobSeekersList() {
   return (
     <div className="lb-page">
       <TopBar
-        back={{ to: to('Main'), label: 'Command Center' }}
+        back={homeBack(link)}
         title="Job Seekers"
-        subtitle="Sorted by guarantee deadline — the candidates closest to a ₹499 refund come first."
+        subtitle={
+          ceo
+            ? 'Sorted by guarantee deadline — the candidates closest to a ₹499 refund come first.'
+            : 'Sorted by guarantee deadline — the candidates closest to the end of their guarantee come first.'
+        }
         actions={
           <>
-            <ButtonLink to={to('C-NearRefund')}>Close to a refund →</ButtonLink>
-            <ButtonLink to={to('CA08-Register')} variant="primary">
-              + Register job seeker
-            </ButtonLink>
+            {nearRefund && <ButtonLink to={nearRefund}>Close to a refund →</ButtonLink>}
+            {register && (
+              <ButtonLink to={register} variant="primary">
+                + Register job seeker
+              </ButtonLink>
+            )}
           </>
         }
       />
       <StatGrid>
-        <StatTile label="Active in pool" value={s?.activeInPool ?? '—'} tone="cyan" loading={loading} />
-        <StatTile label="Registered, not paid" value={s?.registeredNotPaid ?? '—'} tone="royal" loading={loading} />
-        <StatTile label="Waiting on KYC" value={s?.waitingOnKyc ?? '—'} tone="gold" loading={loading} />
-        <StatTile label="Within 5 days of refund" value={s?.withinFiveDaysOfRefund ?? '—'} tone="orange" loading={loading} to={to('C-NearRefund')} />
-        <StatTile label="At 2 of 3 hits" value={s?.atTwoOfThreeHits ?? '—'} tone="gold" loading={loading} />
-        <StatTile label="Deactivated this month" value={s?.deactivatedThisMonth ?? '—'} tone="red" loading={loading} />
+        <StatTile label="Active in pool" value={s?.activeInPool ?? '—'} tone="cyan" loading={loading} onClick={tile('active')} active={status === 'active'} />
+        <StatTile label="Registered, not paid" value={s?.registeredNotPaid ?? '—'} tone="royal" loading={loading} onClick={tile('not_paid')} active={status === 'not_paid'} />
+        <StatTile label="Waiting on KYC" value={s?.waitingOnKyc ?? '—'} tone="gold" loading={loading} onClick={tile('waiting_kyc')} active={status === 'waiting_kyc'} />
+        <StatTile label="Within 5 days of refund" value={s?.withinFiveDaysOfRefund ?? '—'} tone="orange" loading={loading} to={nearRefund ?? undefined} />
+        <StatTile label="At 2 of 3 hits" value={s?.atTwoOfThreeHits ?? '—'} tone="gold" loading={loading} onClick={tile('two_hits')} active={status === 'two_hits'} />
+        <StatTile
+          label="Deactivated this month"
+          value={s?.deactivatedThisMonth ?? '—'}
+          tone="red"
+          loading={loading}
+          onClick={tile('deactivated_this_month')}
+          active={status === 'deactivated_this_month'}
+        />
       </StatGrid>
       <FilterPanel>
         <SearchField value={search} onChange={setSearch} placeholder="Name, phone or JS- code" />
@@ -139,12 +160,15 @@ export default function JobSeekersList() {
           value={status}
           onChange={setStatus}
           options={[
-            { value: 'active', label: 'Active' },
             { value: '', label: 'All' },
+            { value: 'active', label: 'Active' },
             { value: 'not_paid', label: 'Registered, not paid' },
+            { value: 'waiting_kyc', label: 'Waiting on KYC' },
+            { value: 'two_hits', label: 'At 2 of 3 hits' },
             { value: 'placed', label: 'Placed' },
             { value: 'paused', label: 'Paused' },
             { value: 'deactivated', label: 'Deactivated' },
+            { value: 'deactivated_this_month', label: 'Deactivated this month' },
             { value: 'closed', label: 'Closed' },
             { value: 'refunded', label: 'Refunded' },
           ]}
@@ -179,7 +203,11 @@ export default function JobSeekersList() {
         caption="Job seekers"
         download="job-seekers"
         onOpen={(r) => navigate(to('C-JobSeeker', { id: r.id }))}
-        note="Full phone numbers are shown only to the CEO; every view is logged."
+        note={
+          ceo
+            ? 'Full phone numbers are shown only to the CEO; every view is logged.'
+            : 'Phone numbers show the last 4 digits. Your teams’ job seekers, and those registered without an agent.'
+        }
       />
     </div>
   );

@@ -86,6 +86,18 @@ export const managerSidebar: SidebarConfig = {
       ],
     },
     {
+      // The CEO's pipeline lists and profiles, for the Manager's own tree with no money (testing fixes, 16 Nov).
+      label: 'navSection.pipeline',
+      items: [
+        { screen: 'JobSeekers', label: 'nav.jobSeekers', icon: 'jobSeekers' },
+        { screen: 'C-Referrals', label: 'nav.referrals', icon: 'referrals' },
+        { screen: 'C-Businesses', label: 'nav.businesses', icon: 'businesses' },
+        { screen: 'C-Vacancies', label: 'nav.vacancies', icon: 'vacancies' },
+        { screen: 'C-Interviews', label: 'nav.interviews', icon: 'interviews' },
+        { screen: 'C-Placements', label: 'nav.placements', icon: 'placements' },
+      ],
+    },
+    {
       label: 'navSection.work',
       items: [
         { screen: 'MG-Pipeline', label: 'nav.pipeline', icon: 'pipeline' },
