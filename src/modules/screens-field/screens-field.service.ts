@@ -8,6 +8,7 @@ import { getCalendarPartsInTimezone, getPeriodBoundaries } from '../../common/ti
 import { PricingService } from '../pricing/pricing.service';
 import { REVISIT_OUTCOMES } from '../field-visit/field-visit.constants';
 import { visitNextStep } from '../field-visit/field-visit.service';
+import { firstOnboardingsBy } from './field-redesign.service';
 import { DAY_MS, FieldVisitClock, istDateKey, istDayStart, keyFromDate } from '../field-visit/field-visit-clock';
 
 /** Map statuses (FA13 legend): onboarded, revisit due, interested, not interested; plus lead. */
@@ -65,21 +66,13 @@ export class ScreensFieldService {
     const todayKey = istDateKey(now);
     const tomorrowKey = istDateKey(new Date(now.getTime() + DAY_MS));
 
-    const [shopsVisited, onboardedRows, registeredRows, vacanciesAdded, candidatesShown, interviewsBooked] = await Promise.all([
+    const [shopsVisited, firsts, vacanciesAdded, candidatesShown, interviewsBooked] = await Promise.all([
       // "A visit counts towards shops visited only with the photo and GPS."
       this.prisma.businessVisit.count({
         where: { staffId, visitedAt: today, OR: [{ boardPhotoHash: { not: null } }, { selfieHash: { not: null } }] },
       }),
-      this.prisma.businessVisit.findMany({
-        where: { staffId, outcome: 'onboarded', outcomeRecordedAt: today, businessId: { not: null } },
-        select: { businessId: true },
-        distinct: ['businessId'],
-      }),
-      // B3/B24 (rev 188): a business registered from my shop visit today counts too.
-      this.prisma.business.findMany({
-        where: { leadCreatedByStaffId: staffId, leadChannel: 'field_visit', createdAt: today },
-        select: { id: true },
-      }),
+      // B3/B24 (rev 188) and rev 189: each business once, on the day it was first onboarded.
+      firstOnboardingsBy(this.prisma, staffId, today),
       this.prisma.vacancy.count({ where: { capturedByStaffId: staffId, createdAt: today, status: { not: 'draft' } } }),
       this.prisma.candidateIntroduction.count({ where: { shownByStaffId: staffId, shownAt: today } }),
       this.prisma.interview.count({ where: { proposedByStaffId: staffId, createdAt: today } }),
@@ -208,7 +201,7 @@ export class ScreensFieldService {
       now: now.toISOString(),
       today: {
         shopsVisited,
-        onboarded: new Set([...onboardedRows.map((r) => r.businessId!), ...registeredRows.map((r) => r.id)]).size,
+        onboarded: firsts.size,
         vacanciesAdded,
         candidatesShown,
         interviewsBooked,
@@ -544,7 +537,7 @@ function dueBy(visit: BusinessVisit, todayKey: string): boolean {
 
 function statusFromVisit(visit: BusinessVisit | undefined, todayKey: string): ShopStatus {
   if (!visit || !visit.outcome) return 'lead';
-  if (visit.outcome === 'onboarded') return 'onboarded';
+  if (visit.outcome === 'onboarded' || visit.outcome === 'already_onboarded') return 'onboarded';
   if (visit.outcome === 'not_interested') return 'not_interested';
   if (REVISIT_OUTCOMES.includes(visit.outcome)) return dueBy(visit, todayKey) ? 'revisit_due' : 'interested';
   return 'lead';

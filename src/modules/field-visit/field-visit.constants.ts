@@ -3,6 +3,12 @@ export const VISIT_OUTCOMES = ['onboarded', 'interested_later', 'not_interested'
 export type VisitOutcome = (typeof VISIT_OUTCOMES)[number];
 
 /**
+ * Rev 189: a business counts as onboarded only once. A later "onboard now" at a business that
+ * was already onboarded is recorded with this result: never counted, never a failed visit.
+ */
+export const ALREADY_ONBOARDED = 'already_onboarded';
+
+/**
  * FA21 "Interested — onboard now": the talk is over and the agent steps out
  * for the proof selfie. The outcome becomes `onboarded` when the business is
  * registered from this visit.

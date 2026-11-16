@@ -102,6 +102,51 @@ export type BusinessNextStep =
   | { kind: 'ready_show_candidates'; vacancyId: string }
   | { kind: 'none' };
 
+type OnboardingReader = Pick<PrismaService, 'businessVisit' | 'business'>;
+
+/**
+ * Rev 189: a business counts as Onboarded only once, on the IST day it was first onboarded
+ * (registered from a shop visit, or its first visit marked onboarded), and for the agent who
+ * did it. Returns the businesses this agent first onboarded inside `window`, with the visit
+ * that did it when there is one.
+ */
+export async function firstOnboardingsBy(
+  prisma: OnboardingReader,
+  staffId: string,
+  window: { gte: Date; lt: Date },
+): Promise<Map<string, { at: Date; visitId: string | null }>> {
+  const [visits, registered] = await Promise.all([
+    prisma.businessVisit.findMany({
+      where: { staffId, outcome: 'onboarded', outcomeRecordedAt: window, businessId: { not: null } },
+      select: { businessId: true },
+    }),
+    prisma.business.findMany({ where: { leadCreatedByStaffId: staffId, leadChannel: 'field_visit', createdAt: window }, select: { id: true } }),
+  ]);
+  const ids = [...new Set([...visits.map((v) => v.businessId!), ...registered.map((b) => b.id)])];
+  const result = new Map<string, { at: Date; visitId: string | null }>();
+  if (!ids.length) return result;
+  const [allOnboarded, businesses] = await Promise.all([
+    prisma.businessVisit.findMany({
+      where: { businessId: { in: ids }, outcome: 'onboarded', outcomeRecordedAt: { not: null } },
+      orderBy: { outcomeRecordedAt: 'asc' },
+      select: { id: true, businessId: true, staffId: true, outcomeRecordedAt: true },
+    }),
+    prisma.business.findMany({ where: { id: { in: ids } }, select: { id: true, createdAt: true, leadChannel: true, leadCreatedByStaffId: true } }),
+  ]);
+  for (const b of businesses) {
+    const events: Array<{ at: Date; staffId: string | null; visitId: string | null }> = [];
+    if (b.leadChannel === 'field_visit') events.push({ at: b.createdAt, staffId: b.leadCreatedByStaffId, visitId: null });
+    const firstVisit = allOnboarded.find((v) => v.businessId === b.id);
+    if (firstVisit) events.push({ at: firstVisit.outcomeRecordedAt!, staffId: firstVisit.staffId, visitId: firstVisit.id });
+    events.sort((x, y) => x.at.getTime() - y.at.getTime());
+    const first = events[0];
+    if (!first || first.staffId !== staffId) continue;
+    if (first.at.getTime() < window.gte.getTime() || first.at.getTime() >= window.lt.getTime()) continue;
+    result.set(b.id, { at: first.at, visitId: firstVisit && firstVisit.staffId === staffId ? firstVisit.id : first.visitId });
+  }
+  return result;
+}
+
 function firstName(name: string): string {
   return name.trim().split(/\s+/)[0] ?? '';
 }
@@ -160,31 +205,21 @@ export class FieldRedesignService {
   }
 
   /**
-   * Today's numbers, counted from records (never typed). Onboarded counts a visit of
-   * mine marked onboarded that day or a business I registered from a shop visit that
-   * day (B3/B24), each business once.
+   * Today's numbers, counted from records (never typed). Onboarded counts each business
+   * once, on the day it was first onboarded (B3/B24, rev 189).
    */
   async numbersFor(staffId: string, window: { gte: Date; lt: Date }) {
-    const [shopsVisited, onboardedVisits, registered, vacanciesConfirmed, candidatesShown, interviewsBooked, attended] =
+    const [shopsVisited, onboarded, vacanciesConfirmed, candidatesShown, interviewsBooked, attended] =
       await Promise.all([
         this.prisma.businessVisit.count({
           where: { staffId, visitedAt: window, OR: [{ boardPhotoHash: { not: null } }, { selfieHash: { not: null } }] },
         }),
-        this.prisma.businessVisit.findMany({
-          where: { staffId, outcome: 'onboarded', outcomeRecordedAt: window, businessId: { not: null } },
-          select: { businessId: true },
-          distinct: ['businessId'],
-        }),
-        this.prisma.business.findMany({
-          where: { leadCreatedByStaffId: staffId, leadChannel: 'field_visit', createdAt: window },
-          select: { id: true },
-        }),
+        firstOnboardingsBy(this.prisma, staffId, window),
         this.prisma.vacancy.count({ where: { capturedByStaffId: staffId, confirmedAt: window } }),
         this.prisma.candidateIntroduction.count({ where: { shownByStaffId: staffId, shownAt: window } }),
         this.prisma.interview.count({ where: { proposedByStaffId: staffId, createdAt: window } }),
         this.attendedInterviews(staffId, window),
       ]);
-    const onboarded = new Set<string>([...onboardedVisits.map((v) => v.businessId!), ...registered.map((b) => b.id)]);
     return {
       shopsVisited,
       onboarded: onboarded.size,
@@ -459,7 +494,8 @@ export class FieldRedesignService {
     const window = { gte: start, lt: new Date(start.getTime() + DAY_MS) };
     const staffId = actor.sub;
 
-    const [visits, businesses, seekers, partners, added, confirmed, intros, booked, attended] = await Promise.all([
+    const [firsts, visits, businesses, seekers, partners, added, confirmed, intros, booked, attended] = await Promise.all([
+      firstOnboardingsBy(this.prisma, staffId, window),
       this.prisma.businessVisit.findMany({
         where: { staffId, visitedAt: window },
         include: { business: { select: { id: true, name: true, locality: true } } },
@@ -497,20 +533,24 @@ export class FieldRedesignService {
 
     type DayItem = {
       type: string; id: string; at: string; title: string; subtitle: string | null; status: string | null;
-      target: Record<string, unknown>; count?: number;
+      target: Record<string, unknown>; count?: number; countsAsOnboarded?: boolean;
     };
+    // The Onboarded tile: one row per business first onboarded that day (its visit, else its registration).
+    const countedVisits = new Set([...firsts.values()].map((f) => f.visitId).filter((v): v is string => Boolean(v)));
+    const countedByRegistration = new Set([...firsts.entries()].filter(([, f]) => !f.visitId).map(([id]) => id));
     const items: DayItem[] = [];
     for (const v of visits) {
       items.push({
         type: 'visit', id: `visit:${v.id}`, at: (v.startedAt ?? v.visitedAt).toISOString(),
         title: v.business?.name ?? v.shopName ?? '', subtitle: v.business?.locality ?? null,
-        status: v.outcome ?? 'unfinished', target: { type: 'visit', id: v.id },
+        status: v.outcome ?? 'unfinished', target: { type: 'visit', id: v.id }, countsAsOnboarded: countedVisits.has(v.id),
       });
     }
     for (const b of businesses) {
       items.push({
         type: 'business_registered', id: `business:${b.id}`, at: b.createdAt.toISOString(), title: b.name,
         subtitle: b.locality, status: b.verificationStatus, target: { type: 'business', id: b.id },
+        countsAsOnboarded: countedByRegistration.has(b.id),
       });
     }
     for (const s of seekers) {

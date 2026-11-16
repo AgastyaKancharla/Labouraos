@@ -100,7 +100,9 @@ describe('Laboura Field redesign: visit results, change result, details, own-onl
   const details = (who: { id: string; role: string; code: string }, id: string) =>
     request(app.getHttpServer()).get(`/field-visits/${id}`).set(authOf(who));
 
-  async function makeBusiness(fields: { accountAgentId?: string | null; leadCreatedByStaffId?: string | null; verificationStatus?: string; suffix: string }) {
+  async function makeBusiness(fields: {
+    accountAgentId?: string | null; leadCreatedByStaffId?: string | null; verificationStatus?: string; suffix: string; leadChannel?: string;
+  }) {
     const business = await prisma.business.create({
       data: {
         code: `BZ-FR${String(stamp).slice(-6)}${fields.suffix}`,
@@ -111,7 +113,7 @@ describe('Laboura Field redesign: visit results, change result, details, own-onl
         accountAgentId: fields.accountAgentId ?? null,
         leadCreatedByStaffId: fields.leadCreatedByStaffId ?? null,
         verificationStatus: fields.verificationStatus ?? 'lead',
-        leadChannel: 'field_visit',
+        leadChannel: fields.leadChannel ?? 'field_visit',
       },
     });
     businessIds.push(business.id);
@@ -284,7 +286,7 @@ describe('Laboura Field redesign: visit results, change result, details, own-onl
     await startVisit(otherAgent, { id: randomUUID(), businessId: business.id }).expect(201);
   });
 
-  it('revisit of my registered business + onboard now: marked onboarded after the selfie, no second registration (B9)', async () => {
+  it('revisit of my registered business + onboard now: no second registration; it was onboarded already, so the result is already_onboarded (B9, rev 189)', async () => {
     clock.at = new Date(START.getTime() + 500 * MIN);
     const business = await makeBusiness({ accountAgentId: agent.id, leadCreatedByStaffId: agent.id, suffix: '2' });
     const id = randomUUID();
@@ -293,9 +295,14 @@ describe('Laboura Field redesign: visit results, change result, details, own-onl
     await outcome(agent, id, { outcome: 'onboard_now', spokeTo: 'owner' }).expect(201);
     expect((await outcome(agent, id, { outcome: 'onboarded' }).expect(400)).body.code).toBe('SELFIE_REQUIRED');
     await selfie(agent, id).expect(201);
-    expect((await details(agent, id).expect(200)).body.nextStep).toBe('mark_onboarded');
+    expect((await details(agent, id).expect(200)).body).toMatchObject({ nextStep: 'mark_onboarded', businessAlreadyOnboarded: true });
     const done = await outcome(agent, id, { outcome: 'onboarded' }).expect(201);
-    expect(done.body).toMatchObject({ outcome: 'onboarded', nextStep: 'done', business: { id: business.id } });
+    expect(done.body).toMatchObject({ outcome: 'already_onboarded', nextStep: 'done', business: { id: business.id } });
+    // A repeat of the same tap is harmless; Change result treats it as finished.
+    expect((await outcome(agent, id, { outcome: 'onboarded' }).expect(201)).body.outcome).toBe('already_onboarded');
+    expect((await changeResult(agent, id, { outcome: 'interested_later', revisitOn: '2026-11-14', reason: 'Owner asked us to come back' }).expect(409)).body.code)
+      .toBe('VISIT_ONBOARDED_LOCKED');
+    expect((await details(agent, id).expect(200)).body.canChangeResult).toBe(false);
     expect(await prisma.business.count({ where: { name: business.name } })).toBe(1);
 
     // A plain visit (no business) cannot be marked onboarded without the business form.
@@ -304,9 +311,59 @@ describe('Laboura Field redesign: visit results, change result, details, own-onl
     expect((await outcome(agent, plain, { outcome: 'onboarded', shopName: 'Nobody' }).expect(400)).body.code).toBe('BUSINESS_NOT_REGISTERED');
   });
 
+  it('rev 189: a business counts as Onboarded once; already_onboarded only for a business onboarded before; never the no-onboarding flag', async () => {
+    clock.at = new Date(START.getTime() + 540 * MIN);
+    // A lead that came in by phone (never onboarded), held by this agent.
+    const business = await makeBusiness({ accountAgentId: agent.id, leadCreatedByStaffId: agent.id, suffix: '4', leadChannel: 'phone' });
+    const first = randomUUID();
+    await startVisit(agent, { id: first, businessId: business.id }).expect(201);
+    clock.at = new Date(START.getTime() + 550 * MIN);
+    await outcome(agent, first, { outcome: 'onboard_now' }).expect(201);
+    await selfie(agent, first).expect(201);
+    expect((await details(agent, first).expect(200)).body.businessAlreadyOnboarded).toBe(false);
+    expect((await outcome(agent, first, { outcome: 'already_onboarded' }).expect(400)).body.code).toBe('BUSINESS_NOT_ONBOARDED');
+    expect((await outcome(agent, first, { outcome: 'onboarded' }).expect(201)).body.outcome).toBe('onboarded');
+    const before = (await request(app.getHttpServer()).get('/field-work/today').set(authOf(agent)).expect(200)).body.numbers.onboarded;
+
+    // Back the same day: recorded as already_onboarded, and Onboarded does not go up.
+    clock.at = new Date(START.getTime() + 570 * MIN);
+    const second = randomUUID();
+    await startVisit(agent, { id: second, businessId: business.id }).expect(201);
+    clock.at = new Date(START.getTime() + 580 * MIN);
+    await outcome(agent, second, { outcome: 'onboard_now' }).expect(201);
+    await selfie(agent, second).expect(201);
+    expect((await outcome(agent, second, { outcome: 'already_onboarded' }).expect(201)).body.outcome).toBe('already_onboarded');
+    const today = (await request(app.getHttpServer()).get('/field-work/today').set(authOf(agent)).expect(200)).body;
+    expect(today.numbers.onboarded).toBe(before);
+    const home = (await request(app.getHttpServer()).get('/field-work/home').set(authOf(agent)).expect(200)).body;
+    expect(home.today.onboarded).toBe(before);
+    const day = (await request(app.getHttpServer()).get('/field-work/day').set(authOf(agent)).expect(200)).body;
+    const row = (visitId: string) => day.items.find((i: { id: string }) => i.id === `visit:${visitId}`);
+    expect(row(first)).toMatchObject({ status: 'onboarded', countsAsOnboarded: true });
+    expect(row(second)).toMatchObject({ status: 'already_onboarded', countsAsOnboarded: false });
+
+    // already_onboarded visits never count towards "visits with no onboarding".
+    const fresh = await makeStaff('field_agent', lead.id);
+    const policy = await prisma.pricingPolicy.findFirstOrThrow({ orderBy: { createdAt: 'desc' } });
+    const own = await makeBusiness({ accountAgentId: fresh.id, leadCreatedByStaffId: fresh.id, suffix: '5' });
+    for (let i = 0; i < policy.visitNoOnboardingCount; i += 1) {
+      await prisma.businessVisit.create({
+        data: {
+          staffId: fresh.id, businessId: own.id, latitude: SHOP.latitude, longitude: SHOP.longitude, purpose: 'shop_visit',
+          outcome: 'already_onboarded', outcomeRecordedAt: clock.at, visitedAt: new Date(clock.at.getTime() - (i + 1) * MIN),
+        },
+      });
+    }
+    const last = randomUUID();
+    await startVisit(fresh, { id: last }).expect(201);
+    clock.at = new Date(clock.at.getTime() + 20 * MIN);
+    await outcome(fresh, last, { outcome: 'not_interested', reason: 'fee_too_high', shopName: 'One More Shop' }).expect(201);
+    expect(await prisma.reviewFlag.count({ where: { kind: 'visits_no_onboarding', subjectId: fresh.id } })).toBe(0);
+  });
+
   it('a completed verification visit gets its result (B19)', async () => {
     clock.at = new Date(START.getTime() + 600 * MIN);
-    const business = await makeBusiness({ verificationStatus: 'pending_visit', suffix: '3' });
+    const business = await makeBusiness({ verificationStatus: 'pending_visit', suffix: '3', leadChannel: 'phone' });
     const assignment = await prisma.visitAssignment.create({
       data: { businessId: business.id, purpose: 'verification', assignedStaffId: agent.id, status: 'assigned' },
     });

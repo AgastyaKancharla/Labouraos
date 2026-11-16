@@ -66,7 +66,7 @@ Everything the Today tab shows in one call.
   | number | counts (today, IST, this agent) | day item `type` |
   | --- | --- | --- |
   | `shopsVisited` | visits with the board photo or the selfie | `visit` |
-  | `onboarded` | distinct businesses onboarded: a visit of mine marked onboarded today **or** a business I registered from a shop visit today (B3/B24 fixed: an onboarded visit can no longer be overwritten) | `business_registered` + `visit` rows with `status: 'onboarded'` |
+  | `onboarded` | businesses I **first** onboarded today, each counted **once** (rev 189): its registration from a shop visit, or its first visit marked onboarded, falls on today and was mine. A later visit to an already-onboarded business is `already_onboarded` and never adds (B3/B24 fixed too) | day rows with `countsAsOnboarded: true` |
   | `vacanciesConfirmed` | vacancies I captured that the owner confirmed today | `vacancy_confirmed` |
   | `candidatesShown` | candidates I showed (in-person introductions) | `candidates_shown` |
   | `interviewsBooked` | interviews I booked | `interview_booked` |
@@ -148,8 +148,11 @@ Items newest first. `type` and what they hold:
 
 | `type` | record (by me, that IST day) | `status` | `target` |
 | --- | --- | --- | --- |
-| `visit` | every shop / verification visit I started (all results, unfinished too) | the result (`onboarded`, `interested_later`, `not_interested`, `owner_not_there`) or `unfinished` | `{type:'visit', id}` → visit details |
+| `visit` | every shop / verification visit I started (all results, unfinished too) | the result (`onboarded`, `already_onboarded`, `interested_later`, `not_interested`, `owner_not_there`) or `unfinished` | `{type:'visit', id}` → visit details |
 | `business_registered` | business I registered (lead I created) | `verificationStatus` | `{type:'business', id}` |
+
+`visit` and `business_registered` items also carry `countsAsOnboarded`: `true` on the one row per business
+that the Onboarded number counts for that day (its first onboarding; the visit when there is one, else the registration).
 | `job_seeker_registered` | job seeker I registered | job seeker `status` | `{type:'job_seeker', id}` |
 | `referral_registered` | referral partner I registered | `paused` / `active` | `{type:'referral', id}` |
 | `vacancy_added` | vacancy I captured (drafts too) | vacancy `status` | `{type:'vacancy', id, businessId}` |
@@ -177,6 +180,16 @@ Items newest first. `type` and what they hold:
 | business form | `POST /businesses` with `fieldVisitId` (unchanged). **Saving it marks the visit `onboarded` on the server** (existing). `staffNeededRows` may be empty or left out (verified). |
 | verification visit | `POST /businesses/:businessId/visit-assignments/:assignmentId/owner-otp`, `POST /field-visits/:id/verify` — **CHANGED:** completing it now also sets the visit result to `onboarded` (B19). |
 
+**Visit results** (`outcome`) and their meaning (the app writes the label in Kannada / English):
+
+| value | label (English) | counts in Onboarded | Change result |
+| --- | --- | --- | --- |
+| `onboarded` | Onboarded | yes, once per business, on its first onboarding day | locked |
+| `already_onboarded` | Already onboarded (rev 189) | **never** | locked |
+| `interested_later` | Come back later | no | allowed |
+| `not_interested` | Not interested | no | allowed |
+| `owner_not_there` | Owner not there | no | allowed |
+
 **`POST /field-visits/:id/outcome` — CHANGED**
 - A visit that already has a result is never overwritten (B3): `409 VISIT_RESULT_ALREADY_SET`
   (`{currentOutcome}` in the body). The same result sent again (same outcome, date and reason) answers `200`
@@ -185,6 +198,14 @@ Items newest first. `type` and what they hold:
   B9): needs the selfie first (`400 SELFIE_REQUIRED`), the business must be mine (`403 NOT_YOUR_BUSINESS`), no
   second registration happens; the server then checks whether in-person onboarding is complete. On a visit with
   no business → `400 BUSINESS_NOT_REGISTERED` (use the business form).
+- **Rev 189 — counted once:** on a business that was **already onboarded before** (registered from a shop visit,
+  onboarded in person / through its verification, or another visit marked onboarded) the visit is recorded as
+  `already_onboarded`, never `onboarded`: send `outcome: 'onboarded'` (the server records `already_onboarded`
+  and the answer's `outcome` says so) or `outcome: 'already_onboarded'` directly. `already_onboarded` on a
+  business that was never onboarded → `400 BUSINESS_NOT_ONBOARDED`. Same checks as `onboarded` (selfie first,
+  own business). It never counts in Onboarded and never counts towards the "visits with no onboarding" flag.
+  Visit details' `businessAlreadyOnboarded` tells the app which label to show before the tap.
+- A completed verification visit is `onboarded`, or `already_onboarded` if the business was onboarded before.
 - `onboard_now` on a visit to an already registered business: allowed; the next step is then `mark_onboarded`
   instead of the business form.
 
@@ -216,6 +237,7 @@ Own visit only (`404` otherwise). Everything it returned before, plus:
   ],
   "nextStep": "done",
   "canChangeResult": true,
+  "businessAlreadyOnboarded": false,
   "...": "plus the old fields: assignmentId, revisitOfVisitId, latitude, longitude, accuracyMeters, hasBoardPhoto, hasSelfie, proofDistanceMeters, geofenceFlag, spokeTo, contactPhone (masked), ownerOtpDone"
 }
 ```
@@ -226,19 +248,21 @@ Own visit only (`404` otherwise). Everything it returned before, plus:
   `continue_business_form` (selfie done, no business: B8 resume — open the business form with this `visitId`) ·
   `mark_onboarded` (selfie done at an already registered business: call `outcome` with `onboarded`) ·
   `verify` (verification visit not completed) · `done` (has a result).
-- `canChangeResult`: the visit has a result and it is not `onboarded`.
+- `canChangeResult`: the visit has a result and it is not `onboarded` / `already_onboarded`.
+- `businessAlreadyOnboarded`: the visit's business was onboarded before this visit (so marking it records
+  `already_onboarded`); `false` without a business.
 
 ### ✅ `POST /field-visits/:id/change-result` — NEW
 
 Body `{ "outcome": "interested_later", "reason": "Owner called back…", "revisitOn": "2026-11-18", "outcomeReason": null, "note": "optional" }`
 
-- `outcome`: `interested_later` · `not_interested` · `owner_not_there` (never `onboarded`).
+- `outcome`: `interested_later` · `not_interested` · `owner_not_there` (never `onboarded` / `already_onboarded`).
 - `reason`: why it changes, **at least 10 characters**, kept in the history with who and when.
 - `revisitOn` required for `interested_later` / `owner_not_there`, today or later (IST).
 - `outcomeReason` required for `not_interested` (`hires_family_friends`, `fee_too_high`, `no_staff_needed`, `other_agency`, `other`).
 - Answers the visit details (as `GET /field-visits/:id`).
 
-Errors: `404` not my visit · `409 VISIT_HAS_NO_RESULT` (use `outcome` first) · `409 VISIT_ONBOARDED_LOCKED` ·
+Errors: `404` not my visit · `409 VISIT_HAS_NO_RESULT` (use `outcome` first) · `409 VISIT_ONBOARDED_LOCKED` (also for `already_onboarded`) ·
 `400 CHANGE_REASON_REQUIRED` · `400 OUTCOME_INVALID` · `400 REVISIT_DATE_REQUIRED` · `400 REVISIT_DATE_PAST` ·
 `400 NOT_INTERESTED_REASON_REQUIRED` · `400 RESULT_UNCHANGED` (same outcome, date and reason as now).
 
@@ -471,7 +495,8 @@ leave / correction / payslip endpoints as today (FA04e–h), `POST /auth/logout`
 | `VISIT_HAS_NO_RESULT` | 409 | `change-result` before any result |
 | `VISIT_ONBOARDED_LOCKED` | 409 | `change-result` on an onboarded visit |
 | `SELFIE_REQUIRED` | 400 | `outcome: onboarded` without the selfie |
-| `BUSINESS_NOT_REGISTERED` | 400 | `outcome: onboarded` on a visit with no business |
+| `BUSINESS_NOT_REGISTERED` | 400 | `outcome: onboarded` / `already_onboarded` on a visit with no business |
+| `BUSINESS_NOT_ONBOARDED` | 400 | `outcome: already_onboarded` on a business that was never onboarded (rev 189) |
 | `CHANGE_REASON_REQUIRED`, `OUTCOME_INVALID`, `REVISIT_DATE_REQUIRED`, `REVISIT_DATE_PAST`, `NOT_INTERESTED_REASON_REQUIRED`, `RESULT_UNCHANGED` | 400 | `change-result` |
 | `DATE_INVALID`, `DATE_IN_FUTURE`, `DATE_TOO_OLD` | 400 | `GET /field-work/day` |
 | `AGREEMENT_ALREADY_SIGNED` | 409 | agreement resend |
