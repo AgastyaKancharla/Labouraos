@@ -87,7 +87,7 @@ function Details({ visit: v }: { visit: VisitDetails }) {
         <ListRow
           title={t('fa05d.result')}
           leading={<IconTile icon={v.outcome === 'onboarded' ? 'check-circle' : v.outcome ? 'store' : 'clipboard'} accent={v.outcome === 'onboarded' ? 'green' : v.outcome ? 'cyan' : 'gold'} size={34} />}
-          trailing={<StatusChip tone={v.outcome === 'onboarded' ? 'green' : v.outcome ? 'cyan' : 'amber'} label={result} />}
+          trailing={<StatusChip tone={v.outcome === 'onboarded' ? 'green' : v.outcome === 'already_onboarded' ? 'blue' : v.outcome ? 'cyan' : 'amber'} label={result} />}
           testID="fa05d-result"
         />
         <ListRow
@@ -133,13 +133,13 @@ function Details({ visit: v }: { visit: VisitDetails }) {
         </Card>
       ) : null}
 
-      {v.canChangeResult && v.outcome !== 'onboarded' ? (
+      {v.canChangeResult && v.outcome !== 'onboarded' && v.outcome !== 'already_onboarded' ? (
         changing ? (
           <ChangeResult visit={v} onDone={() => setChanging(false)} />
         ) : (
           <Button label={t('fa05d.change')} variant="secondary" onPress={() => setChanging(true)} testID="fa05d-change" />
         )
-      ) : v.outcome === 'onboarded' ? (
+      ) : v.outcome === 'onboarded' || v.outcome === 'already_onboarded' ? (
         <Text variant="muted" testID="fa05d-locked">{t('fa05d.lockedNote')}</Text>
       ) : null}
     </>
@@ -172,12 +172,21 @@ function NextStep({ visit: v, step }: { visit: VisitDetails; step: string }) {
   const { t } = useI18n();
   const queue = useOfflineQueue();
   const client = useQueryClient();
+  // Rev 189: a business counts as Onboarded only once. A revisit of one onboarded before is saved as "Already onboarded".
+  const already = Boolean(v.businessAlreadyOnboarded);
   const markOnboarded = useMutation({
-    mutationFn: () => queue.submit(`${t('fa06c.queueLabel')} · ${v.business?.name ?? ''}`, { method: 'POST', path: visitPaths.outcome(v.id), json: { outcome: 'onboarded' } }),
-    onSuccess: () => {
+    mutationFn: () =>
+      queue.submit<{ outcome?: string }>(`${t('fa06c.queueLabel')} · ${v.business?.name ?? ''}`, {
+        method: 'POST',
+        path: visitPaths.outcome(v.id),
+        json: { outcome: already ? 'already_onboarded' : 'onboarded' },
+      }),
+    onSuccess: (result) => {
       void client.invalidateQueries({ queryKey: ['field-work'] });
       void client.invalidateQueries({ queryKey: queryKeys.visit(v.id) });
-      if (v.business) router.push({ pathname: routes.visitAgreement, params: { businessId: v.business.id, visitId: v.id } });
+      const recorded = result.status === 'sent' ? result.response?.outcome : undefined;
+      // A first onboarding goes on to the agreement; an already onboarded business just keeps the saved visit.
+      if (!already && recorded !== 'already_onboarded' && v.business) router.push({ pathname: routes.visitAgreement, params: { businessId: v.business.id, visitId: v.id } });
     },
   });
   function go() {
@@ -200,7 +209,13 @@ function NextStep({ visit: v, step }: { visit: VisitDetails; step: string }) {
     <Card stripe accent="gold" testID="fa05d-next">
       <Text variant="bodyStrong">{t('fa05d.unfinished')}</Text>
       <View style={styles.gap} />
-      <Button label={t(NEXT_KEYS[step] ?? 'fa05d.next.record_result')} loading={markOnboarded.isPending} onPress={go} testID={`fa05d-next-${step}`} />
+      <Button
+        label={step === 'mark_onboarded' && already ? t('fa05d.next.already_onboarded') : t(NEXT_KEYS[step] ?? 'fa05d.next.record_result')}
+        loading={markOnboarded.isPending}
+        onPress={go}
+        testID={`fa05d-next-${step}`}
+      />
+      {step === 'mark_onboarded' && already ? <Text variant="muted" testID="fa05d-already-note">{t('fa05d.alreadyNote')}</Text> : null}
       {markOnboarded.error ? <Banner tone="error" message={isApiError(markOnboarded.error) ? markOnboarded.error.message : t('common.error')} /> : null}
     </Card>
   );

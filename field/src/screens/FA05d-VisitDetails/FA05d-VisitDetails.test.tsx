@@ -3,6 +3,9 @@ import { router, searchParams } from '@/test/expo-router-mock';
 import { clearAllFormDrafts } from '@/lib/formDraft';
 import { kiran, renderWithApp } from '@/test/render';
 import { routeTable } from '@/test/selling-fixtures';
+import { OfflineQueue } from '@/device/offline-queue/queue';
+import { createMemoryQueueStore } from '@/device/offline-queue/types';
+import type { QueuedRequest } from '@/device/offline-queue/types';
 import { visitDetails } from '@/test/redesign-fixtures';
 import VisitDetailsScreen from '.';
 
@@ -69,5 +72,50 @@ describe('FA05d Visit details', () => {
     expect(screen.queryByTestId('fa05d-change')).toBeNull();
     await fireEvent.press(screen.getByTestId('fa05d-next-continue_business_form'));
     expect(router.push).toHaveBeenCalledWith({ pathname: '/visit/business', params: { visitId: 'v-1' } });
+  });
+
+  it('rev 189: a revisit of a business onboarded before is saved as "Already onboarded" and never counted again', async () => {
+    let saved = false;
+    const sent: QueuedRequest[] = [];
+    const queue = new OfflineQueue({
+      store: createMemoryQueueStore(),
+      send: async (item) => {
+        sent.push(item.request);
+        saved = true;
+        return { id: 'v-1', outcome: 'already_onboarded' };
+      },
+    });
+    const { route } = routeTable({
+      '/field-visits/v-1': () => ({
+        status: 200,
+        body: saved
+          ? visitDetails({ business: { id: 'b-1', code: 'BZ-1', name: 'Sri Sai Bakery' }, outcome: 'already_onboarded', canChangeResult: false, nextStep: 'done', revisitOn: null, businessAlreadyOnboarded: true })
+          : visitDetails({ business: { id: 'b-1', code: 'BZ-1', name: 'Sri Sai Bakery' }, outcome: null, canChangeResult: false, nextStep: 'mark_onboarded', hasSelfie: true, revisitOn: null, businessAlreadyOnboarded: true }),
+      }),
+    });
+    await renderWithApp(<VisitDetailsScreen />, { signedInAs: kiran, route, queue });
+    await waitFor(() => screen.getByTestId('fa05d-next-mark_onboarded'));
+    expect(screen.getByTestId('fa05d-next-mark_onboarded')).toHaveTextContent('Already onboarded — save visit');
+    expect(screen.getByTestId('fa05d-already-note')).toHaveTextContent(/does not count as onboarded again/);
+    await fireEvent.press(screen.getByTestId('fa05d-next-mark_onboarded'));
+    await waitFor(() => expect(screen.getByTestId('fa05d-result')).toHaveTextContent(/Already onboarded/));
+    expect(sent).toMatchObject([{ method: 'POST', path: '/field-visits/v-1/outcome', json: { outcome: 'already_onboarded' } }]);
+    expect(router.push).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('fa05d-change')).toBeNull();
+    expect(screen.getByTestId('fa05d-locked')).toBeTruthy();
+  });
+
+  it('a registered business never onboarded before: Mark onboarded, then on to its agreement', async () => {
+    const sent: QueuedRequest[] = [];
+    const queue = new OfflineQueue({ store: createMemoryQueueStore(), send: async (item) => (sent.push(item.request), { id: 'v-1', outcome: 'onboarded' }) });
+    const { route } = routeTable({
+      '/field-visits/v-1': visitDetails({ business: { id: 'b-1', code: 'BZ-1', name: 'Sri Sai Bakery' }, outcome: null, canChangeResult: false, nextStep: 'mark_onboarded', hasSelfie: true, revisitOn: null, businessAlreadyOnboarded: false }),
+    });
+    await renderWithApp(<VisitDetailsScreen />, { signedInAs: kiran, route, queue });
+    await waitFor(() => screen.getByTestId('fa05d-next-mark_onboarded'));
+    expect(screen.getByTestId('fa05d-next-mark_onboarded')).toHaveTextContent('Mark onboarded and go to the agreement');
+    await fireEvent.press(screen.getByTestId('fa05d-next-mark_onboarded'));
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith({ pathname: '/visit/agreement', params: { businessId: 'b-1', visitId: 'v-1' } }));
+    expect(sent).toMatchObject([{ method: 'POST', path: '/field-visits/v-1/outcome', json: { outcome: 'onboarded' } }]);
   });
 });

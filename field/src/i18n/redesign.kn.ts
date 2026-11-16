@@ -39,7 +39,7 @@ export const redesignKn: Record<keyof typeof redesignEn, string> = {
   'today.endDayBody': 'ನಿಮ್ಮ ಲಾಗ್ ಔಟ್ ಸಮಯ ಈಗ ಉಳಿಸಲಾಗುತ್ತದೆ. ಇಂದು ಮತ್ತೆ ಲಾಗಿನ್ ಆಗಲು ಆಗುವುದಿಲ್ಲ.',
   'needs.interview_today': '{time}ಕ್ಕೆ ಸಂದರ್ಶನ · {name}',
   'needs.visit.continue_business_form': 'ಸೆಲ್ಫಿ ಆಗಿದೆ · ವ್ಯಾಪಾರ ಫಾರ್ಮ್ ತುಂಬಿಸಿ',
-  'needs.visit.mark_onboarded': 'ಸೆಲ್ಫಿ ಆಗಿದೆ · ಸೇರಿಸಲಾಗಿದೆ ಎಂದು ಗುರುತಿಸಿ',
+  'needs.visit.mark_onboarded': 'ಸೆಲ್ಫಿ ಆಗಿದೆ · ಭೇಟಿಯ ಫಲಿತಾಂಶ ಉಳಿಸಿ',
   'needs.visit.take_selfie': 'ಬೋರ್ಡ್ ಜೊತೆ ಸೆಲ್ಫಿ ತೆಗೆಯಿರಿ',
   'needs.visit.record_result': 'ಭೇಟಿ ಮುಗಿದಿಲ್ಲ · ಹೇಗಾಯಿತು?',
   'needs.visit.verify': 'ಪರಿಶೀಲನಾ ಭೇಟಿ ಮುಗಿದಿಲ್ಲ',
@@ -83,6 +83,7 @@ export const redesignKn: Record<keyof typeof redesignEn, string> = {
   'work.type.interview_attended': 'ಸಂದರ್ಶನಕ್ಕೆ ಹಾಜರು',
 
   // Visit details
+  'outcome.already_onboarded': 'ಈಗಾಗಲೇ ಸೇರಿಸಲಾಗಿದೆ',
   'fa05d.title': 'ಭೇಟಿಯ ವಿವರ',
   'fa05d.result': 'ಫಲಿತಾಂಶ',
   'fa05d.noResult': 'ಇನ್ನೂ ಫಲಿತಾಂಶ ಇಲ್ಲ',
@@ -107,6 +108,8 @@ export const redesignKn: Record<keyof typeof redesignEn, string> = {
   'fa05d.next.continue_business_form': 'ವ್ಯಾಪಾರ ಫಾರ್ಮ್‌ಗೆ ಮುಂದುವರಿಸಿ',
   'fa05d.next.mark_onboarded': 'ಸೇರಿಸಲಾಗಿದೆ ಎಂದು ಗುರುತಿಸಿ, ಒಪ್ಪಂದಕ್ಕೆ ಹೋಗಿ',
   'fa05d.next.verify': 'ಪರಿಶೀಲನಾ ಭೇಟಿ ಮುಂದುವರಿಸಿ',
+  'fa05d.next.already_onboarded': 'ಈಗಾಗಲೇ ಸೇರಿಸಲಾಗಿದೆ — ಭೇಟಿ ಉಳಿಸಿ',
+  'fa05d.alreadyNote': 'ಈ ವ್ಯಾಪಾರವನ್ನು ಮೊದಲೇ ಸೇರಿಸಲಾಗಿದೆ. ಭೇಟಿ ಉಳಿಯುತ್ತದೆ, ಆದರೆ ಮತ್ತೆ ಸೇರ್ಪಡೆ ಎಂದು ಎಣಿಕೆಯಾಗುವುದಿಲ್ಲ.',
   'fa05d.err.reason': 'ಫಲಿತಾಂಶ ಏಕೆ ಬದಲಾಗುತ್ತಿದೆ ಎಂದು ಬರೆಯಿರಿ (ಕನಿಷ್ಠ 10 ಅಕ್ಷರಗಳು).',
   'fa05d.err.datePast': 'ಇಂದು ಅಥವಾ ಮುಂದಿನ ದಿನ ಆಯ್ಕೆಮಾಡಿ.',
   'fa05d.err.unchanged': 'ಈಗಾಗಲೇ ಅದೇ ಫಲಿತಾಂಶ ಇದೆ.',

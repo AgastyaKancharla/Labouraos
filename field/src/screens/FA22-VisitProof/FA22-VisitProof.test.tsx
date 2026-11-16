@@ -50,7 +50,7 @@ describe('FA22 Visit a shop · proof', () => {
     expect(screen.getByTestId('fa22-continue').props.accessibilityState.disabled).toBe(true);
   });
 
-  it('a revisit of a shop already in Laboura skips the business form and goes to its agreement', async () => {
+  it('a revisit of a shop already in Laboura skips the business form and opens its visit details for the next step', async () => {
     saveDraft({
       id: 'p-2', startedAt: '2026-11-09T05:58:00.000Z', latitude: 12.9116, longitude: 77.6101, accuracy: 8, shopName: 'Annapoorna Mess',
       businessId: 'b-1', businessName: 'Annapoorna Mess', spokeTo: 'owner', contactPhone: '', endedAt: '2026-11-09T06:12:00.000Z', proofDistance: null, proofAt: null,
@@ -63,6 +63,6 @@ describe('FA22 Visit a shop · proof', () => {
     await fireEvent.press(screen.getByTestId('fake-camera-front'));
     await waitFor(() => expect(screen.getByTestId('fa22-continue').props.accessibilityState.disabled).toBe(false));
     await fireEvent.press(screen.getByTestId('fa22-continue'));
-    expect(router.push).toHaveBeenCalledWith({ pathname: '/visit/agreement', params: { businessId: 'b-1', visitId: 'p-2' } });
+    expect(router.push).toHaveBeenCalledWith('/visit/details/p-2');
   });
 });

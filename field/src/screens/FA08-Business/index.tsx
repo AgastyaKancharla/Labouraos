@@ -180,7 +180,7 @@ function Page({ b }: { b: BusinessPage }) {
               title={[when, m !== null ? t('common.minutes', { minutes: m }) : null, proof || null].filter(Boolean).join(' · ')}
               subtitle={v.staffName ?? undefined}
               leading={<IconTile icon={v.outcome === 'onboarded' ? 'check-circle' : v.outcome ? 'store' : 'clipboard'} accent={v.outcome === 'onboarded' ? 'green' : v.outcome ? 'cyan' : 'gold'} size={34} />}
-              trailing={<StatusChip tone={v.outcome === 'onboarded' ? 'green' : v.outcome ? 'cyan' : 'amber'} label={t(outcomeKey(v.outcome))} />}
+              trailing={<StatusChip tone={v.outcome === 'onboarded' ? 'green' : v.outcome === 'already_onboarded' ? 'blue' : v.outcome ? 'cyan' : 'amber'} label={t(outcomeKey(v.outcome))} />}
               // Visit details are for the agent's own visits.
               onPress={v.mine ? () => router.push(pageRoutes.visitDetails(v.id, '/businesses')) : undefined}
               last={i === b.visits.length - 1}

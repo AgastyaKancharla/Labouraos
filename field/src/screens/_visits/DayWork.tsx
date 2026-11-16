@@ -22,7 +22,11 @@ export type DayKind = DayItemType | 'onboarded';
 
 export function matchesKind(item: DayItem, kind: DayKind | null | undefined): boolean {
   if (!kind) return true;
-  if (kind === 'onboarded') return item.type === 'business_registered' || (item.type === 'visit' && item.status === 'onboarded');
+  if (kind === 'onboarded') {
+    // The server marks the row each business is counted on (rev 189: once per business).
+    if (item.countsAsOnboarded !== undefined) return item.countsAsOnboarded;
+    return item.type === 'business_registered' || (item.type === 'visit' && item.status === 'onboarded');
+  }
   return item.type === kind;
 }
 
@@ -142,7 +146,7 @@ export function DayWork({ date, kind, limit, onMore, testID = 'day-work' }: {
             title={item.title}
             subtitle={[t(`work.type.${item.type}` as MessageKey), formatTimeIst(item.at), item.subtitle].filter(Boolean).join(' · ')}
             leading={<IconTile icon={look.icon} accent={look.accent} size={34} />}
-            trailing={status ? <StatusChip tone={item.status === 'unfinished' ? 'amber' : item.status === 'onboarded' ? 'green' : 'neutral'} label={status} /> : undefined}
+            trailing={status ? <StatusChip tone={item.status === 'unfinished' ? 'amber' : item.status === 'onboarded' ? 'green' : item.status === 'already_onboarded' ? 'blue' : 'neutral'} label={status} /> : undefined}
             onPress={href ? () => router.push(href) : undefined}
             last={i === shown.length - 1}
             testID={`work-${item.id}`}

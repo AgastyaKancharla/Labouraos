@@ -41,7 +41,7 @@ export const redesignEn = {
   'today.endDayBody': 'Your logout time is saved now. You cannot log in again today.',
   'needs.interview_today': 'Interview at {time} · {name}',
   'needs.visit.continue_business_form': 'Selfie done · fill the business form',
-  'needs.visit.mark_onboarded': 'Selfie done · mark it onboarded',
+  'needs.visit.mark_onboarded': 'Selfie done · save the visit result',
   'needs.visit.take_selfie': 'Take the selfie with the board',
   'needs.visit.record_result': 'Visit not finished · how did it go?',
   'needs.visit.verify': 'Verification visit not finished',
@@ -85,6 +85,8 @@ export const redesignEn = {
   'work.type.interview_attended': 'Interview attended',
 
   // Visit details
+  /** A revisit of a business that was onboarded before: it counts as Onboarded only once (rev 189). */
+  'outcome.already_onboarded': 'Already onboarded',
   'fa05d.title': 'Visit details',
   'fa05d.result': 'Result',
   'fa05d.noResult': 'No result yet',
@@ -109,6 +111,8 @@ export const redesignEn = {
   'fa05d.next.continue_business_form': 'Continue to the business form',
   'fa05d.next.mark_onboarded': 'Mark onboarded and go to the agreement',
   'fa05d.next.verify': 'Continue the verification visit',
+  'fa05d.next.already_onboarded': 'Already onboarded — save visit',
+  'fa05d.alreadyNote': 'This business was onboarded before. The visit is saved, but it does not count as onboarded again.',
   'fa05d.err.reason': 'Write why the result changes (at least 10 letters).',
   'fa05d.err.datePast': 'Pick today or a later day.',
   'fa05d.err.unchanged': 'That is already the result.',

@@ -11,7 +11,7 @@ import { useOfflineQueue } from '@/device/offline-queue';
 import { distanceMeters, formatCoordinates } from '@/device/location/location';
 import type { CapturedPhoto } from '@/device/camera';
 import { formatStampIst } from '@/lib/format';
-import { routes } from '@/navigation/routes';
+import { pageRoutes, routes } from '@/navigation/routes';
 import { colors, heroGradient, radius } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { CameraSheet } from '../_visits/CameraSheet';
@@ -130,9 +130,10 @@ export default function VisitProofScreen() {
           label={t('fa22.continue')}
           disabled={!done}
           onPress={() =>
-            // A shop already in Laboura (a revisit) is not registered again: straight to its agreement (redesign).
+            // A shop already in Laboura (a revisit) is not registered again: its visit details offer the
+            // next step: "Mark onboarded" the first time, else "Already onboarded — save visit" (rev 189).
             visit.businessId
-              ? router.push({ pathname: routes.visitAgreement, params: { businessId: visit.businessId, visitId: visit.id } })
+              ? router.push(pageRoutes.visitDetails(visit.id))
               : router.push({ pathname: routes.visitBusiness, params: { visitId: visit.id } })
           }
           testID="fa22-continue"

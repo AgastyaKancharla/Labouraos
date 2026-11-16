@@ -92,6 +92,8 @@ export interface DayItem {
   subtitle: string | null;
   status: string | null;
   count?: number;
+  /** The one row per business that the Onboarded number counts that day (rev 189). */
+  countsAsOnboarded?: boolean;
   target: { type: 'visit' | 'business' | 'job_seeker' | 'referral' | 'vacancy' | 'interview'; id: string; businessId?: string | null; vacancyId?: string | null };
 }
 
@@ -120,6 +122,8 @@ export interface VisitDetails extends Omit<Visit, 'business'> {
   resultHistory?: { at: string; byName: string | null; byMe: boolean; from: ResultSnapshot; to: ResultSnapshot; reason: string }[];
   nextStep?: VisitNextStep;
   canChangeResult?: boolean;
+  /** The business was onboarded before this visit: marking it records `already_onboarded`, never counted again (rev 189). */
+  businessAlreadyOnboarded?: boolean;
 }
 
 export interface ChangeResultBody {

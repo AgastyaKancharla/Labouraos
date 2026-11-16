@@ -92,4 +92,14 @@ describe('FA08 the one business page', () => {
     await waitFor(() => screen.getByTestId('fa08-hidden'));
     expect(screen.getByTestId('fa08-hidden')).toHaveTextContent(/no visit with a selfie was inside the shop’s area/);
   });
+
+  it('rev 189: a later visit to the onboarded business shows "Already onboarded" in the visit history', async () => {
+    const page = businessPage();
+    page.visits = [{ ...page.visits[0], id: 'v-5', outcome: 'already_onboarded' }, ...page.visits];
+    const { route } = routeTable({ '/field-work/businesses/b-1/page': page });
+    await renderWithApp(<BusinessScreen />, { signedInAs: kiran, route });
+    await waitFor(() => screen.getByTestId('fa08-visit-v-5'));
+    expect(screen.getByTestId('fa08-visit-v-5')).toHaveTextContent(/Already onboarded/);
+    expect(screen.getByTestId('fa08-visit-v-1')).toHaveTextContent(/Onboarded/);
+  });
 });

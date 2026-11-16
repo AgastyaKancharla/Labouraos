@@ -39,4 +39,20 @@ describe('FA05b Today’s work', () => {
     expect(screen.queryByTestId('work-visit:v-3')).toBeNull();
     expect(screen.queryByTestId('work-js:js-1')).toBeNull();
   });
+
+  it('rev 189: a revisit of an already onboarded business shows "Already onboarded" and is not in the Onboarded list', async () => {
+    searchParams.current = { date: '2026-11-16', kind: 'onboarded' };
+    const view = dayView('2026-11-16');
+    view.items = [
+      { type: 'visit', id: 'visit:v-8', at: '2026-11-16T06:00:00.000Z', title: 'Green Leaf Café', subtitle: null, status: 'already_onboarded', countsAsOnboarded: false, target: { type: 'visit', id: 'v-8' } },
+      { type: 'visit', id: 'visit:v-1', at: '2026-11-16T05:02:00.000Z', title: 'Sri Sai Bakery', subtitle: null, status: 'onboarded', countsAsOnboarded: true, target: { type: 'visit', id: 'v-1' } },
+      { type: 'business_registered', id: 'business:b-1', at: '2026-11-16T05:20:00.000Z', title: 'Sri Sai Bakery', subtitle: null, status: 'lead', countsAsOnboarded: false, target: { type: 'business', id: 'b-1' } },
+    ];
+    await renderWithApp(<TodaysWorkScreen />, { signedInAs: kiran, route: (url) => (url.includes('/field-work/day') ? { status: 200, body: view } : undefined) });
+    await waitFor(() => screen.getByTestId('work-visit:v-1'));
+    expect(screen.queryByTestId('work-visit:v-8')).toBeNull();
+    expect(screen.queryByTestId('work-business:b-1')).toBeNull();
+    await fireEvent.press(screen.getByTestId('work-kind-all'));
+    expect(screen.getByTestId('work-visit:v-8')).toHaveTextContent(/Green Leaf Café.*Already onboarded/);
+  });
 });
