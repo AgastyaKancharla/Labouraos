@@ -312,7 +312,7 @@ export class ConsentLinkService {
     const termsHash = rendered.hash;
     const now = this.clock.now();
     const expiresAt = new Date(now.getTime() + this.ttlMs);
-    const { token } = await this.publicLinks.create({
+    const { token, id: linkId } = await this.publicLinks.create({
       purpose: 'business_agreement', subjectType: 'business', subjectId: business.id,
       phone: business.phone, language, createdByStaffId: staffId ?? undefined, expiresAt,
       metadata: { ...(options.issuedTo ? { issuedTo: options.issuedTo } : {}), agreement: {
@@ -326,14 +326,15 @@ export class ConsentLinkService {
       } },
     });
 
-    if (options.sms !== false) await this.messagingService.send({
+    // Rev 188: the answer says whether the SMS went, so no screen has to swallow a failure.
+    const sms = options.sms === false ? null : await this.messagingService.send({
       channel: 'sms',
       template: 'agreement_link',
       subjectType: 'business',
       subjectId: business.id,
       variables: { token, link: publicPageLink('businessAgreement', token) },
     });
-    return { success: true, token, expiresAt };
+    return { success: true, token, expiresAt, linkId, smsSent: sms ? sms.status === 'sent' : null };
   }
 
   async createReferralTermsLink(referralId: string, staffId: string | null, language: string = 'en', options: { sms?: boolean; issuedTo?: string; revokeOthers?: boolean } = {}) {

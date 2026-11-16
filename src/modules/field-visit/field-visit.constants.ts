@@ -21,6 +21,11 @@ export const NOT_INTERESTED_REASONS = [
 /** FA21 "Who did you speak to?" */
 export const SPOKE_TO = ['owner', 'manager', 'staff', 'no_one'] as const;
 
+/** "Change result" (rev 188) moves between these only; an onboarded visit never changes. */
+export const CHANGE_RESULT_OUTCOMES = ['interested_later', 'not_interested', 'owner_not_there'] as const;
+/** The reason for a change, kept in the visit history. */
+export const CHANGE_RESULT_REASON_MIN_LENGTH = 10;
+
 /** Outcomes that bring the agent back on a date (Home and Map show them then). */
 export const REVISIT_OUTCOMES: readonly string[] = ['interested_later', 'owner_not_there'];
 

@@ -1284,6 +1284,8 @@ model BusinessVisit {
   gpsSuspect        Boolean   @default(false)
   visitedAt    DateTime  @default(now())
   createdAt    DateTime  @default(now())
+  /// "Change result" history (Laboura Field redesign, rev 188).
+  resultChanges BusinessVisitResultChange[]
 
   @@index([businessId])
   @@index([selfieHash])
@@ -1291,6 +1293,26 @@ model BusinessVisit {
   @@index([staffId, visitedAt])
   @@index([revisitOfVisitId])
   @@index([revisitOn])
+}
+
+/// A change of a visit's result in Laboura Field ("Change result", Master Guide rev 188):
+/// who changed it, when, from what to what, and why. An onboarded visit is never changed.
+model BusinessVisitResultChange {
+  id                String        @id @default(uuid())
+  visitId           String
+  visit             BusinessVisit @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  changedByStaffId  String
+  fromOutcome       String?
+  fromOutcomeReason String?
+  fromRevisitOn     DateTime?     @db.Date
+  toOutcome         String
+  toOutcomeReason   String?
+  toRevisitOn       DateTime?     @db.Date
+  /// Why the agent changed it (at least 10 characters).
+  reason            String
+  changedAt         DateTime      @default(now())
+
+  @@index([visitId, changedAt])
 }
 
 model VisitAssignment {

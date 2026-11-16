@@ -313,6 +313,11 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
     test: 'modules/field-visit/field-visits.spec.ts',
     proof: '// POST /field-visits/:id/verify: another field agent is refused (404)',
   },
+  'FieldVisitController.changeResult': {
+    reason: 'Only the field agent who started the visit (ownVisit); others 404. Never once onboarded (rev 188).',
+    test: 'modules/field-visit/field-visit-redesign.spec.ts',
+    proof: '// POST /field-visits/:id/change-result: another field agent is refused (404)',
+  },
   'FieldVisitController.arrived': {
     reason: 'Only the field agent attending that interview marks the candidate arrived.',
     test: 'modules/field-visit/field-visits.spec.ts',
@@ -322,6 +327,21 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
     reason: 'Only the field agent the visit assignment is given to (BusinessVerificationService.sendOwnerOtp).',
     test: 'common/rbac/service-scoped-routes.e2e.spec.ts',
     proof: 'another field agent cannot ask for the owner OTP on a visit given to someone else (403)',
+  },
+  'ScreensFieldController.businessPage': {
+    reason: "City-wide read (role table, rev 188): any business can be opened; another agent's is view-only (canAct false, no contact, no actions); other roles 403.",
+    test: 'modules/screens-field/field-redesign.spec.ts',
+    proof: '// GET /field-work/businesses/:ref/page: another agent gets the view-only page',
+  },
+  'ScreensFieldController.agreement': {
+    reason: "Only the field agent's own business (fieldAgentCanAct); another agent's is 403 NOT_YOUR_BUSINESS.",
+    test: 'modules/screens-field/field-redesign.spec.ts',
+    proof: '// GET /field-work/businesses/:ref/agreement: another field agent is refused (403)',
+  },
+  'ScreensFieldController.resendAgreement': {
+    reason: "Only the field agent's own business (fieldAgentCanAct); another agent's is 403 NOT_YOUR_BUSINESS.",
+    test: 'modules/screens-field/field-redesign.spec.ts',
+    proof: '// POST /field-work/businesses/:ref/agreement-link: another field agent is refused (403)',
   },
   'ScreensFieldController.business': {
     reason: 'City-wide read (role table): field agents see every business on the map (guide); full details only for their own; other roles 403.',

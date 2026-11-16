@@ -79,6 +79,10 @@ export class FieldSellingScreensService {
       placementPaymentDueHours: policy.placementPaymentDueHours,
       maxFreeReplacements: policy.maxFreeReplacements,
       replacementWindowDays: policy.replacementWindowDays,
+      // Rev 188: the business form's script quotes these too (B22: never fixed numbers in the app).
+      noBypassMonths: policy.noBypassMonths,
+      noBypassPenaltyPercent: policy.noBypassPenaltyPercent,
+      jobSeekerGuaranteeDays: policy.jobSeekerGuaranteeDays,
       threeWayCalls: Boolean(this.telephony.supportsThreeWayCalls?.()),
       notSelectedReasons: NOT_SELECTED_REASONS,
     };
@@ -172,7 +176,11 @@ export class FieldSellingScreensService {
     return { query, results: rows.slice(0, SEARCH_LIMIT) };
   }
 
-  /** FA15b header / FA17 header: the business and its vacancies (with OTP state). */
+  /**
+   * FA15b header / FA17 header: the business and its vacancies (with OTP state).
+   * @deprecated Laboura Field redesign (rev 188): use GET /field-work/businesses/:ref/page.
+   * Kept until the app has switched.
+   */
   async business(actor: SellingActor, ref: string) {
     const found = await this.prisma.business.findFirst({
       where: ref.startsWith('BZ-') ? { code: ref } : { id: ref },

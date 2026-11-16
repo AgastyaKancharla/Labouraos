@@ -120,7 +120,10 @@ export class BusinessController {
     @Req() req: Request & { user: JwtPayload },
   ) {
     // AC-3: the link goes to the owner by SMS; staff never get its token.
-    return withoutLinkToken(await this.consentLinkService.createAgreementLink(businessId, req.user.sub, body?.language));
+    // Rev 188: smsSent tells the screen whether the SMS went (false: offer "Resend agreement link").
+    const { linkId: _linkId, ...issued } = await this.consentLinkService.createAgreementLink(businessId, req.user.sub, body?.language);
+    void _linkId;
+    return withoutLinkToken(issued);
   }
 
   @Post(':id/visit-assignments')

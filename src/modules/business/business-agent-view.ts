@@ -96,3 +96,25 @@ export function heldByAgent(viewer: AgentViewer): Record<string, unknown> | null
     ],
   };
 }
+
+/**
+ * Laboura Field redesign (Master Guide rev 188): "A field agent acts only on his own
+ * businesses; others' are view-only." Own = he is the account agent; or he created the
+ * lead, it is still a lead (or waiting for its visit) and nobody else is its account
+ * agent; or he holds the open verification visit for it. The same owners RbacGuard's
+ * own-account rule lets write to a business.
+ */
+export function fieldAgentCanAct(
+  business: { id: string; accountAgentId?: string | null; leadCreatedByStaffId?: string | null; verificationStatus?: string | null },
+  viewer: AgentViewer,
+): boolean {
+  if (business.accountAgentId === viewer.id) return true;
+  if (
+    !business.accountAgentId &&
+    business.leadCreatedByStaffId === viewer.id &&
+    ['lead', 'pending_visit'].includes(business.verificationStatus ?? '')
+  ) {
+    return true;
+  }
+  return Boolean(viewer.assignedBusinessIds?.has(business.id));
+}

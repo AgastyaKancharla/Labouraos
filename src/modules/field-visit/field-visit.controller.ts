@@ -7,7 +7,7 @@ import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { PiiMaskingInterceptor } from '../../common/rbac/pii-masking.interceptor';
 import { MAX_PHOTO_BYTES } from './field-visit.constants';
-import { FieldVisitService, OutcomeBody, PhotoFields, UploadedPhoto } from './field-visit.service';
+import { ChangeResultBody, FieldVisitService, OutcomeBody, PhotoFields, UploadedPhoto } from './field-visit.service';
 
 type Authed = Request & { user: JwtPayload };
 const photoUpload = FileInterceptor('photo', { limits: { fileSize: MAX_PHOTO_BYTES, files: 1 } });
@@ -31,6 +31,7 @@ export class FieldVisitController {
     return this.visits.start(req.user.sub, body ?? {}, photo);
   }
 
+  /** Visit details (rev 188): photos as short-lived links, result and its history, next step. */
   @Get(':id')
   @RequireRoles('field_agent')
   get(@Req() req: Authed, @Param('id') id: string) {
@@ -42,6 +43,13 @@ export class FieldVisitController {
   @RequireRoles('field_agent')
   outcome(@Req() req: Authed, @Param('id') id: string, @Body() body: OutcomeBody) {
     return this.visits.recordOutcome(req.user.sub, id, body ?? {});
+  }
+
+  /** Visit details "Change result" (rev 188): a reason, kept in history; never once onboarded. */
+  @Post(':id/change-result')
+  @RequireRoles('field_agent')
+  changeResult(@Req() req: Authed, @Param('id') id: string, @Body() body: ChangeResultBody) {
+    return this.visits.changeResult(req.user.sub, id, body ?? {});
   }
 
   /** FA22 / FA06: selfie with the shop board and the second GPS check. */

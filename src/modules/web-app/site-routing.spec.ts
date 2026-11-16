@@ -358,6 +358,16 @@ describe('Web addresses (decided 14 Nov): app.laboura.com, field.laboura.com and
       }
     });
 
+    it('sends only the origin as Referer to other sites, so OpenStreetMap tiles load (rev 188)', async () => {
+      for (const host of [FIELD, RENDER]) {
+        const res = await get(host, host === FIELD ? '/visits' : '/field/visits');
+        expect(res.status).toBe(200);
+        expect(res.headers['referrer-policy']).toBe('strict-origin-when-cross-origin');
+      }
+      // The office web app keeps same-origin.
+      expect((await get(APP, '/login')).headers['referrer-policy']).toBe('same-origin');
+    });
+
     it('answers the app shell at "/" to the service worker too (it precaches without asking for HTML)', async () => {
       const res = await get(FIELD, '/', '*/*');
       expect(res.status).toBe(200);

@@ -91,6 +91,9 @@ export class VacancyConfirmationService {
     const check = await this.checkLegalMinimum(tradeSkill, salaryMinPaise, salaryPeriod);
     if (check.below && ownerTold !== true) {
       throw new BadRequestException({
+        statusCode: 400,
+        error: 'Bad Request',
+        code: 'MINIMUM_WAGE_TICK_REQUIRED',
         message: 'The salary is below the legal minimum wage. Tell the owner and tick ownerToldMinimumWage to save.',
         legalMinimumPaise: check.legalMinimumPaise,
         monthlySalaryFromPaise: check.monthlySalaryFromPaise,

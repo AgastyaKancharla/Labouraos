@@ -22,13 +22,13 @@ server change on the branch.
   `code` yet keep only `message`.
 - Writes may carry `Idempotency-Key` (offline queue): a repeat with the same key replays the first answer.
 
-Status: ✅ built and tested on the branch · 🟡 being built (shape fixed, may gain fields).
+Status: ✅ built and tested on the branch · 🟡 being built (shape fixed, may gain fields). All endpoints below are ✅.
 
 ---
 
 ## 1. Today tab
 
-### 🟡 `GET /field-work/today` — NEW
+### ✅ `GET /field-work/today` — NEW
 
 Everything the Today tab shows in one call.
 
@@ -103,7 +103,7 @@ links first), `vacancy_awaiting_owner`, `vacancy_draft`, `ready_show_candidates`
 `revisit_due` (overdue first), `followup_task`; inside a kind, overdue before today before tomorrow, then by `at`.
 At most 100 items.
 
-### 🟡 `GET /field-work/home` — CHANGED (deprecated, kept until the app switches to `/today`)
+### ✅ `GET /field-work/home` — CHANGED (deprecated, kept until the app switches to `/today`)
 
 Same shape as before. `today.onboarded` now uses the corrected count above.
 
@@ -119,7 +119,7 @@ Same shape as before. `today.onboarded` now uses the corrected count above.
 
 ## 2. Visits tab
 
-### 🟡 `GET /field-work/day?date=YYYY-MM-DD` — NEW (Today's work)
+### ✅ `GET /field-work/day?date=YYYY-MM-DD` — NEW (Today's work)
 
 `date` optional, default today (IST). Refused: not `YYYY-MM-DD` / not a real date → `400 DATE_INVALID`;
 after today → `400 DATE_IN_FUTURE`; more than 90 days before today → `400 DATE_TOO_OLD`.
@@ -188,7 +188,7 @@ Items newest first. `type` and what they hold:
 - `onboard_now` on a visit to an already registered business: allowed; the next step is then `mark_onboarded`
   instead of the business form.
 
-### 🟡 `GET /field-visits/:id` — CHANGED (visit details page)
+### ✅ `GET /field-visits/:id` — CHANGED (visit details page)
 
 Own visit only (`404` otherwise). Everything it returned before, plus:
 
@@ -228,7 +228,7 @@ Own visit only (`404` otherwise). Everything it returned before, plus:
   `verify` (verification visit not completed) · `done` (has a result).
 - `canChangeResult`: the visit has a result and it is not `onboarded`.
 
-### 🟡 `POST /field-visits/:id/change-result` — NEW
+### ✅ `POST /field-visits/:id/change-result` — NEW
 
 Body `{ "outcome": "interested_later", "reason": "Owner called back…", "revisitOn": "2026-11-18", "outcomeReason": null, "note": "optional" }`
 
@@ -252,7 +252,7 @@ business rule above; unregistered shop: my own visit). `isMine` stays. Tiles: th
 
 ## 3. Businesses tab
 
-### 🟡 `GET /field-work/businesses?q=` — NEW (my businesses)
+### ✅ `GET /field-work/businesses?q=` — NEW (my businesses)
 
 My businesses (account agent, or my lead with no account agent), newest first, at most 100. `q` (optional)
 matches name, BZ- code or area, case-insensitive.
@@ -276,7 +276,7 @@ matches name, BZ- code or area, case-insensitive.
 (signed but candidates not allowed yet; `reason`: `visit_outside_area` / `not_verified`) ·
 `ready_show_candidates` (`vacancyId`) · `waiting_tl_check` · `add_vacancy` (no open vacancy) · `none`.
 
-### 🟡 `GET /field-work/businesses/:ref/page` — NEW (the one business page)
+### ✅ `GET /field-work/businesses/:ref/page` — NEW (the one business page)
 
 `:ref` = id or BZ- code. Any business can be read (view-only when not mine); unknown → `404`.
 Replaces `GET /field-work/businesses/:ref` and `GET /screens/field-selling/businesses/:id`
@@ -344,7 +344,7 @@ Replaces `GET /field-work/businesses/:ref` and `GET /screens/field-selling/busin
 - `checklist.agreement.state`: `signed` · `link_sent` · `link_expired` · `not_sent`. `canResend` = mine and not
   signed and the rate limit allows it now; `resendAvailableAt` = when it will (else `null`).
 
-### 🟡 `GET /field-work/businesses/:ref/agreement` — NEW (agreement screen, poll every ~10 s)
+### ✅ `GET /field-work/businesses/:ref/agreement` — NEW (agreement screen, poll every ~10 s)
 
 Light read for the screen after the business form (turns green when signed).
 
@@ -357,7 +357,7 @@ Light read for the screen after the business form (turns green when signed).
 Mine only (`403 NOT_YOUR_BUSINESS` otherwise). The summary to read aloud is the legal "In short":
 `GET /legal/documents/business_agreement?lang=kn|en` (public, reused).
 
-### 🟡 `POST /field-work/businesses/:ref/agreement-link` — NEW (Resend agreement link)
+### ✅ `POST /field-work/businesses/:ref/agreement-link` — NEW (Resend agreement link)
 
 Body `{ "language": "kn" | "en" }` (default: the contact's language, else `en`). Sends the owner a new SMS link
 (valid 24 hours) to sign on his own phone. Never returns the link token.
@@ -408,7 +408,7 @@ Errors: `400 NOT_A_DRAFT` (`status`) · `400 DRAFT_INCOMPLETE` (`missing: [...]`
 
 ## 4. Job seekers tab
 
-### 🟡 `GET /field-work/job-seekers?q=` — NEW (my job seekers)
+### ✅ `GET /field-work/job-seekers?q=` — NEW (my job seekers)
 
 Job seekers this agent registered, newest first, at most 100. `q` matches name, JS- code, or the last 4 digits
 of the phone (exactly 4 digits).

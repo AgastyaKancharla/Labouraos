@@ -1,5 +1,5 @@
 import { OwnTeam } from '../../common/rbac/own-team';
-import { agentSeesFullBusiness, agentViewerFor } from '../business/business-agent-view';
+import { agentSeesFullBusiness, agentViewerFor, fieldAgentCanAct } from '../business/business-agent-view';
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { BusinessVisit, Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -7,6 +7,7 @@ import { calculateHaversineDistanceMeters } from '../../common/geo/geo.util';
 import { getCalendarPartsInTimezone, getPeriodBoundaries } from '../../common/time/period-boundary';
 import { PricingService } from '../pricing/pricing.service';
 import { REVISIT_OUTCOMES } from '../field-visit/field-visit.constants';
+import { visitNextStep } from '../field-visit/field-visit.service';
 import { DAY_MS, FieldVisitClock, istDateKey, istDayStart, keyFromDate } from '../field-visit/field-visit-clock';
 
 /** Map statuses (FA13 legend): onboarded, revisit due, interested, not interested; plus lead. */
@@ -34,6 +35,8 @@ export interface ShopPoint {
   revisitOn: string | null;
   lastVisitAt: string | null;
   isMine: boolean;
+  /** Rev 188: the agent may act here (own business, or his own visit to an unregistered shop). */
+  canAct: boolean;
   distanceMeters?: number;
 }
 
@@ -53,6 +56,7 @@ export class ScreensFieldService {
 
   // ------------------------------------------------------------- FA03 Home
 
+  /** @deprecated Laboura Field redesign (rev 188): use GET /field-work/today. Kept until the app switches. */
   async home(actor: Actor) {
     const now = this.clock.now();
     const staffId = actor.sub;
@@ -61,7 +65,7 @@ export class ScreensFieldService {
     const todayKey = istDateKey(now);
     const tomorrowKey = istDateKey(new Date(now.getTime() + DAY_MS));
 
-    const [shopsVisited, onboardedRows, vacanciesAdded, candidatesShown, interviewsBooked] = await Promise.all([
+    const [shopsVisited, onboardedRows, registeredRows, vacanciesAdded, candidatesShown, interviewsBooked] = await Promise.all([
       // "A visit counts towards shops visited only with the photo and GPS."
       this.prisma.businessVisit.count({
         where: { staffId, visitedAt: today, OR: [{ boardPhotoHash: { not: null } }, { selfieHash: { not: null } }] },
@@ -70,6 +74,11 @@ export class ScreensFieldService {
         where: { staffId, outcome: 'onboarded', outcomeRecordedAt: today, businessId: { not: null } },
         select: { businessId: true },
         distinct: ['businessId'],
+      }),
+      // B3/B24 (rev 188): a business registered from my shop visit today counts too.
+      this.prisma.business.findMany({
+        where: { leadCreatedByStaffId: staffId, leadChannel: 'field_visit', createdAt: today },
+        select: { id: true },
       }),
       this.prisma.vacancy.count({ where: { capturedByStaffId: staffId, createdAt: today, status: { not: 'draft' } } }),
       this.prisma.candidateIntroduction.count({ where: { shownByStaffId: staffId, shownAt: today } }),
@@ -199,7 +208,7 @@ export class ScreensFieldService {
       now: now.toISOString(),
       today: {
         shopsVisited,
-        onboarded: onboardedRows.length,
+        onboarded: new Set([...onboardedRows.map((r) => r.businessId!), ...registeredRows.map((r) => r.id)]).size,
         vacanciesAdded,
         candidatesShown,
         interviewsBooked,
@@ -278,6 +287,7 @@ export class ScreensFieldService {
         outcome: v.outcome,
         needsOutcome: !v.outcome,
         needsProof: !v.outcome && Boolean(v.endedAt) && !v.selfieHash && v.purpose === 'shop_visit',
+        nextStep: visitNextStep(v),
       })),
     };
   }
@@ -297,6 +307,7 @@ export class ScreensFieldService {
     const box = { gte: latitude - dLat, lte: latitude + dLat };
     const boxLng = { gte: longitude - dLng, lte: longitude + dLng };
     const todayKey = istDateKey(now);
+    const viewer = await agentViewerFor(this.prisma, actor.sub, actor.role);
 
     const businesses = await this.prisma.business.findMany({
       where: { anonymisedAt: null, latitude: box, longitude: boxLng },
@@ -330,6 +341,7 @@ export class ScreensFieldService {
         revisitOn: last ? keyFromDate(last.revisitOn) : null,
         lastVisitAt: last ? last.visitedAt.toISOString() : null,
         isMine: b.accountAgentId === actor.sub || b.leadCreatedByStaffId === actor.sub,
+        canAct: fieldAgentCanAct(b, viewer),
       };
     });
     const prospects = await this.prospectTips({ latitude: box, longitude: boxLng });
@@ -347,6 +359,7 @@ export class ScreensFieldService {
         revisitOn: keyFromDate(v.revisitOn),
         lastVisitAt: v.visitedAt.toISOString(),
         isMine: v.staffId === actor.sub,
+        canAct: v.staffId === actor.sub,
       });
     }
     for (const p of points) p.distanceMeters = Math.round(calculateHaversineDistanceMeters(latitude, longitude, p.latitude, p.longitude));
@@ -363,6 +376,7 @@ export class ScreensFieldService {
 
   // ---------------------------------------------------------- FA08 Business
 
+  /** @deprecated Laboura Field redesign (rev 188): use GET /field-work/businesses/:ref/page. Kept until the app switches. */
   async business(actor: Actor, ref: string) {
     const business = await this.prisma.business.findFirst({
       where: { OR: [{ id: ref }, { code: ref }], anonymisedAt: null },
