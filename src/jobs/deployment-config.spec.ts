@@ -173,21 +173,26 @@ describe('Phase 6.5 Task 4: Deployment Configuration (render.yaml & DEPLOY.md)',
       expect(fs.readFileSync(deployMdPath, 'utf8')).toMatch(/PUBLIC_APP_URL.*public web address of the app/i);
     });
 
-    it('declares provider modes defaulting to mock (§3)', () => {
+    it('is the live blueprint: real OTP, SMS and payment vendors and human check must be set, never committed as mock (INF-3)', () => {
       const webService = blueprint.services.find((s) => s.type === 'web');
-
-      const providerModes = [
-        'OTP_PROVIDER_MODE',
-        'PAYMENT_PROVIDER_MODE',
-        'WHATSAPP_PROVIDER_MODE',
-        'TELEPHONY_PROVIDER_MODE',
-      ];
-
-      for (const mode of providerModes) {
-        const envVar = webService?.envVars?.find((v) => v.key === mode);
-        expect(envVar).toBeDefined();
-        expect(envVar?.value).toBe('mock');
+      const worker = blueprint.services.find((s) => s.type === 'worker');
+      const envOn = (svc: RenderService | undefined, key: string) => svc?.envVars?.find((v) => v.key === key);
+      expect(envOn(webService, 'LABOURA_SETUP')?.value).toBe('live');
+      expect(envOn(worker, 'LABOURA_SETUP')?.fromService).toEqual({ type: 'web', name: 'laboura-api', envVarKey: 'LABOURA_SETUP' });
+      for (const mode of ['OTP_PROVIDER_MODE', 'SMS_PROVIDER_MODE', 'PAYMENT_PROVIDER_MODE', 'HUMAN_CHECK_PROVIDER_MODE']) {
+        // Asked for when the blueprint is created; no committed value (a committed `mock` would refuse to start).
+        expect({ mode, ...envOn(webService, mode) }).toEqual({ mode, key: mode, sync: false });
+        expect(envOn(worker, mode)?.fromService).toEqual({ type: 'web', name: 'laboura-api', envVarKey: mode });
       }
+      for (const off of ['CUSTOMER_OTP_TEST_MODE', 'OTP_TEST_MODE']) expect(envOn(webService, off)?.value).toBe('off');
+      // WhatsApp and calling may stay mock until those vendors are signed (§3: mock by default).
+      for (const mode of ['WHATSAPP_PROVIDER_MODE', 'TELEPHONY_PROVIDER_MODE']) {
+        expect(envOn(webService, mode)?.value).toBe('mock');
+      }
+      // IN-4: the recording host allow-list is asked for on web and copied to the worker.
+      expect(envOn(webService, 'RECORDING_URL_HOSTS')).toMatchObject({ sync: false });
+      expect(envOn(worker, 'RECORDING_URL_HOSTS')?.fromService).toEqual({ type: 'web', name: 'laboura-api', envVarKey: 'RECORDING_URL_HOSTS' });
+      expect(fs.readFileSync(deployMdPath, 'utf8')).toContain('What to set before going live');
     });
 
     it('declares sensitive credentials with sync: false, generateValue: true, or fromService (no committed secrets)', () => {

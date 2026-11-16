@@ -106,6 +106,8 @@ export const hi: Messages = {
   'form.area': 'इलाका',
   'form.pincode': 'पिनकोड',
   'form.pincodeInvalid': '6 अंकों का पिनकोड डालें।',
+  'form.noLeadingSymbol': 'नाम "=" से शुरू नहीं हो सकता। शुरुआत का "=" हटा दें।',
+  'error.textStartsWithSymbol': 'नाम या इलाका "=" से शुरू नहीं हो सकता। शुरुआत का "=" हटाकर फिर से कोशिश करें।',
   'form.shift': 'शिफ़्ट',
   'form.heardFrom': 'आपको Laboura के बारे में कैसे पता चला?',
   'form.otherTrade': 'अन्य (टाइप करें)',

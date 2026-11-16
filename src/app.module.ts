@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
+import { FormulaTextInterceptor } from './common/http/formula-text.interceptor';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { IdModule } from './common/id/id.module';
@@ -133,6 +135,8 @@ import { PublicRateLimitGuard } from './common/http/public-rate-limit.guard';
     SignupTrackerModule,
   ],
   providers: [
+    // INF-6: names and localities may not start with = + - @ (CSV formula injection).
+    { provide: APP_INTERCEPTOR, useClass: FormulaTextInterceptor },
     // M4: one per-address limit across every @Public() route.
     { provide: APP_GUARD, useClass: PublicRateLimitGuard },
     // Security IN-2: query values are plain text only.

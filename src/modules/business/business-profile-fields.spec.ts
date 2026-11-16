@@ -171,7 +171,7 @@ describe('Phase 13 Task 2 — business profile and documents', () => {
   it('accepts only live camera storefront photos, stores them privately, hashes them, and flags reused photos', async () => {
     const first = await createBusiness({ name: 'Photo Shop One' });
     const second = await createBusiness({ name: 'Photo Shop Two' });
-    const photo = Buffer.from('same-private-photo-bytes');
+    const photo = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('same-private-photo-bytes')]);
     // A file picked from the gallery (or sent with no source) is refused.
     await request(app.getHttpServer()).post(`/businesses/${first.body.id}/storefront-photo`)
       .set('Authorization', `Bearer ${agentToken}`)
@@ -189,6 +189,21 @@ describe('Phase 13 Task 2 — business profile and documents', () => {
         .attach('photo', photo, { filename: 'storefront.jpg', contentType: 'image/jpeg' })
         .expect(201);
     }
+    // IN-5: the type is read from the bytes. An HTML file that claims to be a JPEG is refused…
+    await request(app.getHttpServer()).post(`/businesses/${first.body.id}/storefront-photo`)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .field('source', 'live_camera')
+      .attach('photo', Buffer.from('<html><script>alert(1)</script></html>'), { filename: 'storefront.jpg', contentType: 'image/jpeg' })
+      .expect(400);
+    // …and a PNG sent as "image/jpeg" is stored as the PNG it is.
+    const third = await createBusiness({ name: 'Photo Shop Three' });
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('png-photo-bytes-xyz')]);
+    await request(app.getHttpServer()).post(`/businesses/${third.body.id}/storefront-photo`)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .field('source', 'live_camera')
+      .attach('photo', png, { filename: 'storefront.jpg', contentType: 'image/jpeg' })
+      .expect(201);
+    expect((await prisma.business.findUniqueOrThrow({ where: { id: third.body.id } })).storefrontPhotoPath).toMatch(/\.png$/);
     const [firstRow, secondRow] = await Promise.all([
       prisma.business.findUniqueOrThrow({ where: { id: first.body.id } }),
       prisma.business.findUniqueOrThrow({ where: { id: second.body.id } }),

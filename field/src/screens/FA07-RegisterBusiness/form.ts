@@ -77,10 +77,17 @@ export function staffTrade(row: StaffRow): string {
 }
 
 /** Keys of the fields still missing or wrong ("required now" fields only). */
+/** Names may not start with "=" (a spreadsheet would run it; the server refuses it too). + - @ are fine. */
+export function startsWithSymbol(value: string): boolean {
+  const lead = value.normalize('NFKC').replace(/^[\s\u200b-\u200f\u2028-\u202f\u205f-\u206f\ufeff\u00ad\u180e]+/u, '');
+  return lead.startsWith('=');
+}
+
 export function formErrors(form: FormState, findTrade: (row: StaffRow) => Trade | undefined): string[] {
   const e: string[] = [];
   const household = form.businessType === 'household';
   if (!form.contactName.trim()) e.push('contactName');
+  else if (startsWithSymbol(form.contactName)) e.push('contactName', 'contactNameSymbol');
   if (!form.contactRole) e.push('contactRole');
   if (!form.mobile.verifiedAt) e.push('mobile');
   if (!form.whatsappSame && !/^[6-9]\d{9}$/.test(form.whatsapp)) e.push('whatsapp');
@@ -88,7 +95,9 @@ export function formErrors(form: FormState, findTrade: (row: StaffRow) => Trade 
   if (!form.heardFrom) e.push('heardFrom');
   if (form.billingEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.billingEmail.trim())) e.push('billingEmail');
   if (!form.boardName.trim()) e.push('boardName');
+  else if (startsWithSymbol(form.boardName)) e.push('boardName', 'boardNameSymbol');
   if (household && !form.familyName.trim()) e.push('familyName');
+  else if (household && startsWithSymbol(form.familyName)) e.push('familyName', 'familyNameSymbol');
   if (!form.businessType) e.push('businessType');
   if (!form.employees) e.push('employees');
   if (!form.shopNumber.trim()) e.push('shopNumber');
@@ -102,7 +111,7 @@ export function formErrors(form: FormState, findTrade: (row: StaffRow) => Trade 
     if (form.pan && !PAN.test(form.pan)) e.push('pan');
   }
   form.branches.forEach((b, i) => {
-    if (!b.name.trim() || !b.contactName.trim() || !b.contactRole || !b.mobile.verifiedAt) e.push(`branch${i}`);
+    if (!b.name.trim() || !b.contactName.trim() || !b.contactRole || !b.mobile.verifiedAt || startsWithSymbol(b.name) || startsWithSymbol(b.contactName)) e.push(`branch${i}`);
   });
   form.staff.forEach((row, i) => {
     const min = paise(row.salaryMin);

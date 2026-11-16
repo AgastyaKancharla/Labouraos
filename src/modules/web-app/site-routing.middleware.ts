@@ -1,6 +1,7 @@
 import { Injectable, Logger, NestMiddleware, Optional } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
 import { CloudflareAccessVerifier } from '../../common/auth/cloudflare-access.verifier';
+import { contentSecurityPolicyHeader, installDefaultHtmlPolicy, markOwnHtmlPolicy, type CspApp } from '../../common/http/content-security-policy';
 import { wantsHtml } from '../../common/public-pages';
 import { resolveFieldAppFile, resolveFieldDistDir, resolveFieldRootDistDir, type FieldAppFile } from '../field-app/field-app.files';
 import { fieldAppAddress, isFieldHost } from './site-hosts';
@@ -166,6 +167,8 @@ export class SiteRoutingMiddleware implements NestMiddleware {
   constructor(@Optional() private readonly cloudflare?: CloudflareAccessVerifier) {}
 
   async use(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // L3: any HTML answer of the API without a policy of its own gets the locked-down default.
+    installDefaultHtmlPolicy(res);
     const outcome = routeSiteRequest(req);
     switch (outcome.kind) {
       case 'next':
@@ -208,12 +211,21 @@ export class SiteRoutingMiddleware implements NestMiddleware {
     }
   }
 
+  /** IN-6: the page itself carries the Content-Security-Policy (content-security-policy.ts). */
+  private pageHeaders(res: Response, app: CspApp): void {
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('X-Frame-Options', 'DENY');
+    markOwnHtmlPolicy(res);
+    const csp = contentSecurityPolicyHeader(app);
+    if (csp) res.setHeader(csp[0], csp[1]);
+  }
+
   private sendWeb(res: Response, file: Exclude<WebAppFile, { kind: 'missing' }>): void {
+    res.removeHeader('X-Powered-By');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
     if (file.kind === 'index') {
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('X-Frame-Options', 'DENY');
+      this.pageHeaders(res, 'web');
       res.sendFile(file.absolutePath, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       return;
     }
@@ -222,11 +234,11 @@ export class SiteRoutingMiddleware implements NestMiddleware {
   }
 
   private sendField(res: Response, file: Exclude<FieldAppFile, { kind: 'missing' }>, scope: '/' | '/field/'): void {
+    res.removeHeader('X-Powered-By');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
     if (file.kind === 'index') {
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('X-Frame-Options', 'DENY');
+      this.pageHeaders(res, 'field');
       res.sendFile(file.absolutePath, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       return;
     }

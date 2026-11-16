@@ -25,6 +25,7 @@ import {
   profitAndLoss,
 } from './finance-rules';
 import { BILL_CONTENT_TYPES, EXPENSE_BILL_STORAGE, ExpenseBillStorage, MAX_BILL_BYTES } from './expense-bill.storage';
+import { detectBillFileType } from '../../common/image-type';
 
 export interface BillUpload {
   buffer: Buffer;
@@ -115,10 +116,12 @@ export class ExpenseService {
 
   private validateBill(bill: BillUpload | undefined): BillUpload | undefined {
     if (!bill) return undefined;
-    if (!BILL_CONTENT_TYPES[bill.mimetype]) throw new BadRequestException('The bill must be a photo (JPG, PNG, WEBP, HEIC) or a PDF');
     if ((bill.size ?? bill.buffer.length) > MAX_BILL_BYTES) throw new BadRequestException('The bill must be 10 MB or smaller');
     if (!bill.buffer.length) throw new BadRequestException('The bill file is empty');
-    return bill;
+    // IN-5: the type is read from the file's first bytes (never the browser's claim) and that type is stored.
+    const detected = detectBillFileType(bill.buffer);
+    if (!detected || !BILL_CONTENT_TYPES[detected]) throw new BadRequestException('The bill must be a photo (JPG, PNG, WEBP, HEIC) or a PDF');
+    return { ...bill, mimetype: detected };
   }
 
   private async storeBill(expenseId: string, bill: BillUpload) {

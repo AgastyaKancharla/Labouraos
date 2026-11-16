@@ -125,17 +125,20 @@ export class CustomerSignInService {
         throw bad(CUSTOMER_ERROR_CODES.OTP_EXPIRED, 'Ask for a new code.');
       }
     }
-    if (await this.limiter.needsHumanCheck(caller, now)) {
-      const passed = await this.humanCheck.verify(body?.humanCheckToken, { installationId: caller.installationId ?? null, ip: caller.ip ?? null });
-      if (!passed) {
-        throw bad(CUSTOMER_ERROR_CODES.HUMAN_CHECK_REQUIRED, 'Please confirm you are a person, then ask for the code again', HttpStatus.FORBIDDEN, { provider: this.humanCheck.name });
-      }
-    }
-    // A number that already has an account keeps getting sign-in codes even when
-    // the system-wide breaker is open (its own limits still apply), so an attack
-    // cannot lock every existing customer out (security re-check N3).
-    const existingAccount = accountId !== null || Boolean(await this.prisma.customerAccount.findUnique({ where: { phone }, select: { id: true } }));
-    const rowId = await this.limiter.claimSend(caller, now, { existingAccount });
+    // The human check token is checked once, before the limits are taken under
+    // their locks; claimSend decides whether a check was needed (M1, M2).
+    const token = body?.humanCheckToken;
+    const humanCheckPassed = token !== undefined && token !== null && token !== ''
+      ? await this.humanCheck.verify(token, { installationId: caller.installationId ?? null, ip: caller.ip ?? null })
+      : false;
+    // A number that already has an account keeps getting codes above the daily
+    // limit; only a number with no account then needs the human check (M2).
+    // Decided from the number alone: being signed in does not make an unknown
+    // number "known" (adding a new mobile to a Google account counts as a new
+    // number); a step-up code goes to the account's own verified phone, which
+    // this lookup finds.
+    const existingAccount = Boolean(await this.prisma.customerAccount.findUnique({ where: { phone }, select: { id: true } }));
+    const rowId = await this.limiter.claimSend(caller, now, { existingAccount, humanCheckPassed, humanCheckProvider: this.humanCheck.name });
     let result;
     try {
       // Codes the person asked for are sent at any hour (the real sender exempts customer_* purposes).

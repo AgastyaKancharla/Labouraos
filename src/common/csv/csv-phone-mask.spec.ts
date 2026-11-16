@@ -53,8 +53,9 @@ describe('CSV downloads mask phone columns like JSON answers', () => {
       }
     };
     walk(root);
-    // A cell escaper is the mark of a hand-built CSV: csvCell / escapeCsv / csvEscape.
-    const builder = /(function\s+(csvCell|escapeCsv|csvEscape)\s*\(|private\s+(csvCell|escapeCsv|csvEscape)\s*\(|const\s+(csvCell|escapeCsv|csvEscape)\s*=)/;
+    // Every CSV builder writes its cells with the shared csvCell (csv-formula-guard.spec.ts),
+    // so importing it is the mark of a file that builds CSV cells itself.
+    const builder = /from\s+['"][./]*(?:common\/csv\/)?csv-cell['"]/;
     const builders = files.filter((f) => builder.test(fs.readFileSync(f, 'utf8')));
     expect(builders.length).toBeGreaterThanOrEqual(4);
     const unguarded = builders.filter((f) => !fs.readFileSync(f, 'utf8').includes('maskCsvPhoneColumns')).map((f) => path.relative(root, f));

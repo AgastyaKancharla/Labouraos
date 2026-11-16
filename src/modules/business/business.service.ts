@@ -44,6 +44,7 @@ import { EditPolicyService, EditActor, pickEditableFields } from '../../common/e
 import { AnonymisationService } from '../../common/anonymisation/anonymisation.service';
 import { AgentViewer, agentViewerFor, businessForViewer } from './business-agent-view';
 import { areaAutoFillMaxMeters, areaRequiredError, DEFAULT_AREA_AUTO_FILL_MAX_METERS } from './area-auto-fill';
+import { detectSelfieImageType } from '../../common/image-type';
 
 /**
  * The only columns PATCH /businesses/:id writes (security AC-1). Not here, on
@@ -718,12 +719,15 @@ export class BusinessService {
     }));
   }
 
-  async uploadStorefrontPhoto(businessId: string, photo: Buffer, contentType: string, actorId: string) {
+  async uploadStorefrontPhoto(businessId: string, photo: Buffer, claimedType: string, actorId: string) {
+    void claimedType;
     const extensions: Record<string, string> = {
       'image/jpeg': 'jpg',
       'image/png': 'png',
       'image/webp': 'webp',
     };
+    // IN-5: the type is read from the file's first bytes, never the browser's claim.
+    const contentType = detectSelfieImageType(photo) ?? '';
     const extension = extensions[contentType];
     if (!extension || photo.length === 0) {
       throw new BadRequestException('Upload a non-empty JPEG, PNG or WebP storefront photo');

@@ -9,11 +9,13 @@ import { caseSensitiveHttpAdapter } from './common/http/case-sensitive-routing';
 import { getPublicAppUrl } from './common/public-link';
 import { assertDurableUploadStorage } from './common/storage/durable-storage';
 import { assertNoMockIdCheck } from './common/process/no-mock-id-check';
+import { assertLabouraSetup } from './common/process/laboura-setup';
 import { assertUidaiCertificatesPinned } from './modules/aadhaar-qr/uidai-certificates';
 import { assertKnownProcessRole, startupRoleMessage } from './common/process/process-role';
 import { installShutdownDeadline } from './common/process/shutdown-deadline';
 
 export async function bootstrap() {
+  assertLabouraSetup();
   const role = assertKnownProcessRole();
   getPublicAppUrl();
   assertDurableUploadStorage();
@@ -34,6 +36,8 @@ export async function bootstrap() {
   const logger = new StructuredLogger('Bootstrap');
   app.useLogger(logger);
   applyTrustProxy(app);
+  // INF-12: Express never announces itself (X-Powered-By).
+  app.getHttpAdapter().getInstance().disable('x-powered-by');
   app.use(securityHeaders());
   const alertService = app.get(AlertService);
   app.useGlobalFilters(new GlobalExceptionFilter(alertService));

@@ -162,15 +162,21 @@ describe('Phase 14 Task 2 — candidate cards and photos', () => {
     await request(app.getHttpServer())
       .post(`/job-seekers/${noSharingSeekerId}/photo`)
       .set('Authorization', `Bearer ${tokens.field_agent}`)
-      .attach('photo', Buffer.from('image'), { filename: 'candidate.png', contentType: 'image/png' })
+      .attach('photo', Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('image')]), { filename: 'candidate.png', contentType: 'image/png' })
       .expect(403);
   });
 
   it('uploads a photo only through the photo route and returns a five-minute signed card link', async () => {
+    // IN-5: the type comes from the bytes: an HTML file sent as "image/png" is refused.
     await request(app.getHttpServer())
       .post(`/job-seekers/${seekerId}/photo`)
       .set('Authorization', `Bearer ${tokens.field_agent}`)
-      .attach('photo', Buffer.from('private image data'), { filename: 'candidate.png', contentType: 'image/png' })
+      .attach('photo', Buffer.from('<html><script>alert(1)</script></html>'), { filename: 'candidate.png', contentType: 'image/png' })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post(`/job-seekers/${seekerId}/photo`)
+      .set('Authorization', `Bearer ${tokens.field_agent}`)
+      .attach('photo', Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('private image data')]), { filename: 'candidate.png', contentType: 'image/png' })
       .expect(201);
 
     const stored = await prisma.jobSeeker.findUniqueOrThrow({ where: { id: seekerId } });

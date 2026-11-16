@@ -85,9 +85,16 @@ describe('Phase 6.5 Task 5: Health Check & Readiness Probe Split', () => {
         const res = httpErr.getResponse() as Record<string, unknown>;
         expect(res.status).toBe('unavailable');
         expect(res.failed).toEqual(['postgres']);
-        expect((res.errors as Record<string, string>).postgres).toContain('5432');
+        // INF-8: names and ok/fail only in public; the error text is CEO-only.
+        expect(res.errors).toBeUndefined();
+        expect(res.postgres).toBe('fail');
+        expect(res.redis).toBe('ok');
+        expect(JSON.stringify(res)).not.toContain('5432');
         expect(res.message).toContain('postgres');
       }
+      const details = await controller.getReadinessDetails();
+      expect(details).toMatchObject({ ready: false, failed: ['postgres'], postgres: 'fail' });
+      expect(details.errors.postgres).toContain('5432');
     });
 
     it('returns 503 naming redis when Redis ping fails', async () => {
@@ -107,9 +114,11 @@ describe('Phase 6.5 Task 5: Health Check & Readiness Probe Split', () => {
         const res = httpErr.getResponse() as Record<string, unknown>;
         expect(res.status).toBe('unavailable');
         expect(res.failed).toEqual(['redis']);
-        expect((res.errors as Record<string, string>).redis).toContain('ECONNREFUSED');
+        expect(res.errors).toBeUndefined();
+        expect(JSON.stringify(res)).not.toContain('ECONNREFUSED');
         expect(res.message).toContain('redis');
       }
+      expect((await controller.getReadinessDetails()).errors.redis).toContain('ECONNREFUSED');
     });
 
     it('returns 503 naming both dependencies when both fail', async () => {
@@ -241,6 +250,9 @@ describe('Phase 6.5 Task 5: Health Check & Readiness Probe Split', () => {
       expect(res.body.status).toBe('unavailable');
       expect(res.body.failed).toContain('postgres');
       expect(res.body.message).toContain('postgres');
+      // INF-8: no error text (here an internal host name) in the public answer.
+      expect(JSON.stringify(res.body)).not.toContain('supabase.internal');
+      expect(res.body.postgres).toBe('fail');
     });
   });
 });

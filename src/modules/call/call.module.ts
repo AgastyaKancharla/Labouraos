@@ -36,7 +36,7 @@ import {
     },
     {
       provide: RECORDING_DOWNLOADER,
-      useClass: HttpRecordingDownloader,
+      useFactory: () => new HttpRecordingDownloader(),
     },
   ],
   exports: [CallService, RecordingCopyJob, RECORDING_STORAGE],

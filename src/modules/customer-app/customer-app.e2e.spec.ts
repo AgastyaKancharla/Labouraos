@@ -651,19 +651,160 @@ describe('Customer app API', () => {
       expect(refresh.body.code).toBe('INSTALLATION_REQUIRED');
     });
 
-    it('when the daily breaker is open, existing customers still get codes (N3)', async () => {
+    it('above the daily limit known customers keep getting codes; only numbers with no account get the human check (N3, INF-4, M2)', async () => {
       const existing = newPhone();
       await signIn(existing);
       const saved = process.env.CUSTOMER_OTP_DAILY_LIMIT;
       process.env.CUSTOMER_OTP_DAILY_LIMIT = '1';
       try {
-        const fresh = await json(http().post(`${API}/auth/otp/send`)).send({ phone: newPhone(), humanCheckToken: HUMAN }).expect(503);
-        expect(fresh.body.code).toBe('OTP_PAUSED');
-        await json(http().post(`${API}/auth/otp/send`)).send({ phone: existing, humanCheckToken: HUMAN }).expect(200);
+        const fresh = newPhone();
+        installation = `breaker-a-${stamp}-${seq}`;
+        const asked = await json(http().post(`${API}/auth/otp/send`)).send({ phone: fresh }).expect(403);
+        expect(asked.body.code).toBe('HUMAN_CHECK_REQUIRED');
+        await json(http().post(`${API}/auth/otp/send`)).send({ phone: fresh, humanCheckToken: HUMAN }).expect(200);
+        installation = `breaker-b-${stamp}-${seq}`;
+        // The existing customer needs no human check.
+        await json(http().post(`${API}/auth/otp/send`)).send({ phone: existing }).expect(200);
       } finally {
         if (saved === undefined) delete process.env.CUSTOMER_OTP_DAILY_LIMIT;
         else process.env.CUSTOMER_OTP_DAILY_LIMIT = saved;
       }
+    });
+
+    it('above the hard ceiling numbers with no account get no code even with the human check; known customers still do (M2)', async () => {
+      const existing = newPhone();
+      await signIn(existing);
+      const saved = process.env.CUSTOMER_OTP_NEW_NUMBER_DAILY_CEILING;
+      process.env.CUSTOMER_OTP_NEW_NUMBER_DAILY_CEILING = '1';
+      try {
+        installation = `ceiling-a-${stamp}-${seq}`;
+        const paused = await json(http().post(`${API}/auth/otp/send`)).send({ phone: newPhone(), humanCheckToken: HUMAN }).expect(503);
+        expect(paused.body.code).toBe('OTP_PAUSED');
+        installation = `ceiling-b-${stamp}-${seq}`;
+        await json(http().post(`${API}/auth/otp/send`)).send({ phone: existing, humanCheckToken: HUMAN }).expect(200);
+      } finally {
+        if (saved === undefined) delete process.env.CUSTOMER_OTP_NEW_NUMBER_DAILY_CEILING;
+        else process.env.CUSTOMER_OTP_NEW_NUMBER_DAILY_CEILING = saved;
+      }
+    });
+
+    it('a signed-in account adding an unknown mobile is a new number: above the ceiling it gets 503, step-up to its own phone still works (M2)', async () => {
+      const own = newPhone();
+      const signedIn = await signIn(own);
+      const sub = `google-ceiling-${stamp}-${seq}`;
+      const google = await json(http().post(`${API}/auth/google`))
+        .send({ idToken: googleToken({ sub, email: `c${seq}@example.com`, name: 'Ceiling Test' }), device: { installationId: `g-${sub}`, platform: 'android' } })
+        .expect(200);
+      const saved = process.env.CUSTOMER_OTP_NEW_NUMBER_DAILY_CEILING;
+      process.env.CUSTOMER_OTP_NEW_NUMBER_DAILY_CEILING = '1';
+      try {
+        installation = `ceiling-add-${stamp}-${seq}`;
+        const paused = await auth(http().post(`${API}/auth/phone/send`), google.body.accessToken).send({ phone: newPhone(), humanCheckToken: HUMAN }).expect(503);
+        expect(paused.body.code).toBe('OTP_PAUSED');
+        // A step-up code goes to the account's own verified phone: a known number.
+        installation = `ceiling-step-${stamp}-${seq}`;
+        await json(http().post(`${API}/auth/step-up/send`)).set('Authorization', `Bearer ${signedIn.accessToken}`).send({ purpose: 'delete_account' }).expect(200);
+      } finally {
+        if (saved === undefined) delete process.env.CUSTOMER_OTP_NEW_NUMBER_DAILY_CEILING;
+        else process.env.CUSTOMER_OTP_NEW_NUMBER_DAILY_CEILING = saved;
+      }
+    });
+
+    it('above the daily limit a signed-in account adding an unknown mobile needs the human check (M2)', async () => {
+      const sub = `google-limit-${stamp}-${seq}`;
+      const google = await json(http().post(`${API}/auth/google`))
+        .send({ idToken: googleToken({ sub, email: `l${seq}@example.com`, name: 'Limit Test' }), device: { installationId: `g-${sub}`, platform: 'android' } })
+        .expect(200);
+      await signIn(newPhone());
+      const saved = process.env.CUSTOMER_OTP_DAILY_LIMIT;
+      process.env.CUSTOMER_OTP_DAILY_LIMIT = '1';
+      try {
+        installation = `limit-add-${stamp}-${seq}`;
+        const asked = await auth(http().post(`${API}/auth/phone/send`), google.body.accessToken).send({ phone: newPhone() }).expect(403);
+        expect(asked.body.code).toBe('HUMAN_CHECK_REQUIRED');
+      } finally {
+        if (saved === undefined) delete process.env.CUSTOMER_OTP_DAILY_LIMIT;
+        else process.env.CUSTOMER_OTP_DAILY_LIMIT = saved;
+      }
+    });
+
+    describe('per-address limits cannot be bypassed (M1)', () => {
+      const decide = (humanCheckPassed: boolean) => ({ existingAccount: false, humanCheckPassed, humanCheckProvider: 'mock' });
+      const v6 = (i: number) => `2401:4900:1c2a:5d3e:${((i * 7919) & 0xffff).toString(16)}:${(i * 104729 % 65536).toString(16)}:abcd:${i.toString(16)}`;
+
+      it('an IPv6 address counts as its /64: rotating addresses inside it hits the same limits', async () => {
+        const { CustomerOtpLimiter } = await import('../customer-account/customer-otp-limiter.service');
+        const limiter = app.get(CustomerOtpLimiter);
+        const now = new Date();
+        for (let i = 0; i < 3; i += 1) {
+          await limiter.claimSend({ phone: `+91${newPhone()}`, ip: v6(i), installationId: `rot-${stamp}-${seq}-${i}` }, now, decide(false));
+        }
+        // A 4th number from another address in the same /64 needs the human check.
+        await expect(limiter.claimSend({ phone: `+91${newPhone()}`, ip: v6(99), installationId: `rot-${stamp}-${seq}-x` }, now, decide(false)))
+          .rejects.toMatchObject({ response: expect.objectContaining({ code: 'HUMAN_CHECK_REQUIRED' }) });
+        // Another /64 is another address.
+        await limiter.claimSend({ phone: `+91${newPhone()}`, ip: '2401:4900:1c2a:5d3f::1', installationId: `rot-${stamp}-${seq}-y` }, now, decide(false));
+        // IPv4-mapped and plain IPv4 are the same address.
+        const { addressHash } = await import('../customer-account/customer-otp-limiter.service');
+        expect(addressHash('::ffff:203.0.113.9')).toBe(addressHash('203.0.113.9'));
+        expect(addressHash('2401:4900:1c2a:5d3e::1')).toBe(addressHash('2401:4900:1c2a:5d3e:ffff:ffff:ffff:ffff'));
+      });
+
+      it('40 parallel requests from one address, each for another number and installation: only the allowed number get through', async () => {
+        const { CustomerOtpLimiter, CUSTOMER_OTP_LIMITS } = await import('../customer-account/customer-otp-limiter.service');
+        const limiter = app.get(CustomerOtpLimiter);
+        const now = new Date();
+        const ip = '198.51.100.77';
+        const attempt = (i: number, passed: boolean) => limiter.claimSend({ phone: `+91${newPhone()}`, ip, installationId: `par-${stamp}-${seq}-${passed}-${i}` }, now, decide(passed));
+        // Without the human check: the 3 numbers before the address check.
+        const free = await Promise.allSettled(Array.from({ length: 40 }, (_, i) => attempt(i, false)));
+        expect(free.filter((r) => r.status === 'fulfilled')).toHaveLength(3);
+        // With the human check passed: never more than the hourly cap for the address.
+        const checked = await Promise.allSettled(Array.from({ length: 40 }, (_, i) => attempt(i, true)));
+        expect(checked.filter((r) => r.status === 'fulfilled')).toHaveLength(CUSTOMER_OTP_LIMITS.perAddressPerHour - 3);
+        const { addressHash } = await import('../customer-account/customer-otp-limiter.service');
+        expect(await prisma.customerOtpAttempt.count({ where: { kind: 'send', ipHash: addressHash(ip) } })).toBe(CUSTOMER_OTP_LIMITS.perAddressPerHour);
+      });
+    });
+
+    it('asks for the human check by address after 3 different numbers in an hour (INF-4)', async () => {
+      // Each number from its own installation: only the address links them.
+      for (let i = 0; i < 3; i += 1) {
+        installation = `addr-${stamp}-${seq}-${i}`;
+        await json(http().post(`${API}/auth/otp/send`)).send({ phone: newPhone() }).expect(200);
+      }
+      installation = `addr-${stamp}-${seq}-last`;
+      const fourth = newPhone();
+      const asked = await json(http().post(`${API}/auth/otp/send`)).send({ phone: fourth }).expect(403);
+      expect(asked.body).toEqual(expect.objectContaining({ code: 'HUMAN_CHECK_REQUIRED' }));
+      await json(http().post(`${API}/auth/otp/send`)).send({ phone: fourth, humanCheckToken: HUMAN }).expect(200);
+    });
+
+    it('the number of different numbers before the address check is a setting', async () => {
+      const saved = process.env.CUSTOMER_OTP_ADDRESS_PHONES_BEFORE_CHECK;
+      process.env.CUSTOMER_OTP_ADDRESS_PHONES_BEFORE_CHECK = '1';
+      try {
+        installation = `addr1-${stamp}-${seq}-a`;
+        await json(http().post(`${API}/auth/otp/send`)).send({ phone: newPhone() }).expect(200);
+        installation = `addr1-${stamp}-${seq}-b`;
+        await json(http().post(`${API}/auth/otp/send`)).send({ phone: newPhone() }).expect(403);
+      } finally {
+        if (saved === undefined) delete process.env.CUSTOMER_OTP_ADDRESS_PHONES_BEFORE_CHECK;
+        else process.env.CUSTOMER_OTP_ADDRESS_PHONES_BEFORE_CHECK = saved;
+      }
+    });
+
+    it('caps one address at 20 codes an hour, even with the human check passed (INF-4)', async () => {
+      const { CUSTOMER_OTP_LIMITS, hashOf, customerPhoneHash } = await import('../customer-account/customer-otp-limiter.service');
+      expect(CUSTOMER_OTP_LIMITS.perAddressPerHour).toBe(20);
+      // 20 earlier sends from this test's address (the test client's own address), each for another number.
+      const addresses = ['127.0.0.1', '::ffff:127.0.0.1', '::1'];
+      await prisma.customerOtpAttempt.createMany({
+        data: addresses.flatMap((ip) => Array.from({ length: 20 }, (_, i) => ({ kind: 'send', ipHash: hashOf('ip', ip), phoneHash: customerPhoneHash(`+9198${String(i).padStart(8, '0')}`) }))),
+      });
+      installation = `cap-${stamp}-${seq}`;
+      const res = await json(http().post(`${API}/auth/otp/send`)).send({ phone: newPhone(), humanCheckToken: HUMAN }).expect(429);
+      expect(res.body.code).toBe('OTP_LIMIT');
     });
 
     it('wrong codes from another installation never lock the owner\'s phone (N4)', async () => {

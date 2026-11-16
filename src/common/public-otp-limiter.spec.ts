@@ -68,3 +68,16 @@ describe('Public OTP sends are limited on the server', () => {
     expect(rows[0]!.phoneHash).toBe(publicOtpPhoneHash('9876512345'));
   });
 });
+
+describe('Public OTP phone hashes are keyed (L6)', () => {
+  it('is an HMAC, the same for every spelling of a number, and not the old plain hash', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { createHash } = require('node:crypto') as typeof import('node:crypto');
+    const h = publicOtpPhoneHash('9876512345');
+    expect(h).toMatch(/^[0-9a-f]{64}$/);
+    expect(publicOtpPhoneHash('+91 98765 12345')).toBe(h);
+    expect(h).not.toBe(createHash('sha256').update('laboura:public-otp:9876512345').digest('hex'));
+    expect(h).not.toBe(createHash('sha256').update('9876512345').digest('hex'));
+    expect(publicOtpPhoneHash('9876512346')).not.toBe(h);
+  });
+});

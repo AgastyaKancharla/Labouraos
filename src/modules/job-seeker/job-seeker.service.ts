@@ -79,6 +79,7 @@ import {
   requireIndianMobile,
   sameIndianMobile,
 } from '../../common/phone/indian-mobile';
+import { detectSelfieImageType } from '../../common/image-type';
 
 const ALLOWED_JOB_SEEKER_UPDATE_FIELDS = new Set([
   'name',
@@ -1517,8 +1518,10 @@ export class JobSeekerService {
   }
 
   async uploadPhoto(jobSeekerId: string, photo: { buffer: Buffer; mimetype: string }, actorId: string) {
-    if (!photo.buffer.length || !photo.mimetype.toLowerCase().startsWith('image/')) {
-      throw new BadRequestException('A valid image file is required');
+    // IN-5: JPEG, PNG or WebP told by the first bytes; that type is stored, not the client's.
+    const contentType = detectSelfieImageType(photo.buffer);
+    if (!photo.buffer.length || !contentType) {
+      throw new BadRequestException('A valid image file is required (JPEG, PNG or WebP)');
     }
     const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: jobSeekerId } });
     if (!seeker) throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
@@ -1538,7 +1541,7 @@ export class JobSeekerService {
 
     const path = `job-seekers/${seeker.id}/profile-photo`;
     const photoTakenAt = this.consentClock.now();
-    await this.photoStorage.put(path, photo.buffer, photo.mimetype);
+    await this.photoStorage.put(path, photo.buffer, contentType);
     const updated = await this.prisma.jobSeeker.update({
       where: { id: seeker.id },
       data: { photoStoragePath: path, photoTakenAt },

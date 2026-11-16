@@ -1,3 +1,6 @@
+import { request as httpsRequest } from 'node:https';
+import { checkRecordingUrl, publicOnlyLookup, recordingHostAllowList, RecordingUrlRefusedError } from './recording-url-policy';
+
 export const RECORDING_STORAGE = 'RECORDING_STORAGE';
 export const RECORDING_DOWNLOADER = 'RECORDING_DOWNLOADER';
 
@@ -38,13 +41,93 @@ export class MemoryRecordingStorage implements RecordingStorage {
 
 export const sharedMemoryRecordingStorage = new MemoryRecordingStorage();
 
+/** Largest recording copied (Supabase's free-plan per-file limit; the recordings bucket is capped the same). */
+export const MAX_RECORDING_BYTES = 50 * 1024 * 1024;
+const RECORDING_DOWNLOAD_TIMEOUT_MS = 60_000;
+/** L4: the whole copy (every redirect and the body) must finish within this. */
+export const RECORDING_DOWNLOAD_DEADLINE_MS = 3 * 60_000;
+const MAX_REDIRECTS = 3;
+
+/** One GET, without following redirects (tests replace it). */
+export type RecordingGet = (url: URL, lookup: ReturnType<typeof publicOnlyLookup>, signal?: AbortSignal) => Promise<{ status: number; location?: string; body: AsyncIterable<Buffer> & { destroy?: () => void } }>;
+
+const httpsGet: RecordingGet = (url, lookup, signal) =>
+  new Promise((resolve, reject) => {
+    const req = httpsRequest(url, { method: 'GET', lookup: lookup as never, timeout: RECORDING_DOWNLOAD_TIMEOUT_MS, signal }, (res) => {
+      const location = res.headers.location;
+      resolve({ status: res.statusCode ?? 0, location: typeof location === 'string' ? location : undefined, body: res });
+    });
+    req.on('timeout', () => req.destroy(new Error('Recording download timed out')));
+    req.on('error', reject);
+    req.end();
+  });
+
+/**
+ * Downloads a provider recording under the IN-4 rules (recording-url-policy.ts):
+ * https only, a host on RECORDING_URL_HOSTS, never an internal address (also
+ * after DNS, at connect time), at most 3 redirects, at most 50 MB, and the
+ * whole copy within RECORDING_DOWNLOAD_DEADLINE_MS (a slow drip cannot hold it).
+ */
 export class HttpRecordingDownloader implements RecordingDownloader {
-  async download(url: string): Promise<Buffer> {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Recording download failed with status ${response.status}`);
+  constructor(
+    private readonly env: NodeJS.ProcessEnv = process.env,
+    private readonly get: RecordingGet = httpsGet,
+    private readonly lookup = publicOnlyLookup(),
+    private readonly deadlineMs = RECORDING_DOWNLOAD_DEADLINE_MS,
+  ) {}
+
+  async download(rawUrl: string): Promise<Buffer> {
+    const allowList = recordingHostAllowList(this.env);
+    const first = checkRecordingUrl(rawUrl, allowList);
+    const controller = new AbortController();
+    let current: { destroy?: () => void } | null = null;
+    let timer: NodeJS.Timeout | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        current?.destroy?.();
+        reject(new Error(`Recording download did not finish within ${Math.round(this.deadlineMs / 1000)} s`));
+      }, this.deadlineMs);
+    });
+    try {
+      return await Promise.race([this.fetchAll(first, allowList, controller.signal, (body) => { current = body; }), deadline]);
+    } finally {
+      clearTimeout(timer);
     }
-    return Buffer.from(await response.arrayBuffer());
+  }
+
+  private async fetchAll(first: URL, allowList: string[], signal: AbortSignal, track: (body: { destroy?: () => void }) => void): Promise<Buffer> {
+    let url = first;
+    for (let hop = 0; ; hop += 1) {
+      const res = await this.get(url, this.lookup, signal);
+      track(res.body);
+      if (signal.aborted) {
+        res.body.destroy?.();
+        throw new Error('Recording download stopped');
+      }
+      if (res.status >= 300 && res.status < 400 && res.location) {
+        res.body.destroy?.();
+        if (hop >= MAX_REDIRECTS) throw new RecordingUrlRefusedError('too many redirects');
+        url = checkRecordingUrl(new URL(res.location, url).toString(), allowList);
+        continue;
+      }
+      if (res.status < 200 || res.status >= 300) {
+        res.body.destroy?.();
+        throw new Error(`Recording download failed with status ${res.status}`);
+      }
+      const chunks: Buffer[] = [];
+      let size = 0;
+      for await (const chunk of res.body) {
+        if (signal.aborted) throw new Error('Recording download stopped');
+        size += chunk.length;
+        if (size > MAX_RECORDING_BYTES) {
+          res.body.destroy?.();
+          throw new RecordingUrlRefusedError('the recording is larger than 50 MB');
+        }
+        chunks.push(Buffer.from(chunk));
+      }
+      return Buffer.concat(chunks);
+    }
   }
 }
 

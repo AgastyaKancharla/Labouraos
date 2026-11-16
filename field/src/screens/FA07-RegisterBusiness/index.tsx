@@ -148,6 +148,9 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
       setShowErrors(true);
       return setProblem(t('fa07.areaNoneNear', { distance: distanceText(typeof body.maxMeters === 'number' ? body.maxMeters : areaMaxMeters) }));
     }
+    if (isApiError(e) && e.body && typeof e.body === 'object' && (e.body as { code?: unknown }).code === 'TEXT_STARTS_WITH_SYMBOL') {
+      return setProblem(t('common.noLeadingSymbol'));
+    }
     setProblem(isNeedsSignalError(e) ? t('common.needsSignal') : isApiError(e) ? e.message : t('common.error'));
   }
 
@@ -273,7 +276,7 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
 
         <Card style={styles.gapCard} stripe accent={SECTION_ACCENTS[0]}>
           <Section n={1} title={t('fa07.s1')} />
-          <TextField label={t('fa07.contactName')} value={form.contactName} onChangeText={(v) => set({ contactName: v })} error={err('contactName') ? t('fa07.required') : null} testID="fa07-contact-name" />
+          <TextField label={t('fa07.contactName')} value={form.contactName} onChangeText={(v) => set({ contactName: v })} error={err('contactNameSymbol') ? t('common.noLeadingSymbol') : err('contactName') ? t('fa07.required') : null} testID="fa07-contact-name" />
           <SelectField label={t('fa07.contactRole')} value={form.contactRole} choices={choice(ROLES, 'role')} onChange={(v) => set({ contactRole: v })} error={err('contactRole')} testID="fa07-role" />
           {mobileBlock(form.mobile, (mobile) => set({ mobile }), 'mobile', t('fa07.mobile'))}
           <Toggle label={t('fa07.whatsappSame')} value={form.whatsappSame} onChange={(v) => set({ whatsappSame: v })} />
@@ -287,9 +290,9 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
 
         <Card style={styles.gapCard} stripe accent={SECTION_ACCENTS[1]}>
           <Section n={2} title={t('fa07.s2')} />
-          <TextField label={t('fa07.boardName')} value={form.boardName} onChangeText={(v) => set({ boardName: v })} error={err('boardName') ? t('fa07.required') : null} testID="fa07-board-name" />
+          <TextField label={t('fa07.boardName')} value={form.boardName} onChangeText={(v) => set({ boardName: v })} error={err('boardNameSymbol') ? t('common.noLeadingSymbol') : err('boardName') ? t('fa07.required') : null} testID="fa07-board-name" />
           {household ? (
-            <TextField label={t('fa07.familyName')} value={form.familyName} onChangeText={(v) => set({ familyName: v })} error={err('familyName') ? t('fa07.required') : null} />
+            <TextField label={t('fa07.familyName')} value={form.familyName} onChangeText={(v) => set({ familyName: v })} error={err('familyNameSymbol') ? t('common.noLeadingSymbol') : err('familyName') ? t('fa07.required') : null} />
           ) : (
             <TextField label={t('fa07.legalName')} value={form.legalName} onChangeText={(v) => set({ legalName: v })} />
           )}

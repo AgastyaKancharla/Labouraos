@@ -77,6 +77,6 @@ describe('B1: one free web service with PROCESS_ROLE=all serves the API and runs
   it('/health/ready reports the job schedules as present', async () => {
     const res = await request(app!.getHttpServer()).get('/health/ready');
     // The heartbeat is written at start in a job-running process; both checks pass.
-    expect(res.body.schedules ?? res.body).toEqual(expect.objectContaining({ status: 'ok', missing: [] }));
+    expect(res.body).toEqual(expect.objectContaining({ status: 'ready', schedules: 'ok', worker: 'ok' }));
   });
 });

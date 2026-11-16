@@ -35,6 +35,7 @@ import {
 } from './field-visit.constants';
 import { dateFromKey, DAY_MS, FieldVisitClock, istDateKey, keyFromDate } from './field-visit-clock';
 import { gpsSuspicions, isShortVisit, noOnboardingPattern, Reading, travelCheck } from './visit-fraud';
+import { detectSelfieImageType } from '../../common/image-type';
 
 export interface UploadedPhoto {
   buffer: Buffer;
@@ -585,9 +586,11 @@ export class FieldVisitService {
       throw new BadRequestException("Only a photo taken with the app's own camera is accepted");
     }
     if (!photo || !photo.buffer?.length) throw new BadRequestException('The photo is missing');
-    if (!PHOTO_TYPES[photo.mimetype]) throw new BadRequestException('The photo must be a JPEG, PNG or WebP image');
+    // IN-5: the type comes from the file's first bytes; the stored type is that one, not the phone's claim.
+    const detected = detectSelfieImageType(photo.buffer);
+    if (!detected || !PHOTO_TYPES[detected]) throw new BadRequestException('The photo must be a JPEG, PNG or WebP image');
     if (photo.buffer.length > MAX_PHOTO_BYTES) throw new BadRequestException('The photo is too large');
-    return photo;
+    return { ...photo, mimetype: detected };
   }
 
   /** "A photo already used before is rejected" — and the Team Lead hears about it. */

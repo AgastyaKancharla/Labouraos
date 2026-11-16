@@ -23,6 +23,8 @@ const CODE_KEYS: Record<string, MessageKey> = {
   CUSTOMER_ACCOUNT_BLOCKED: 'error.blocked',
   NOT_IMPLEMENTED: 'error.notYet',
   STEP_UP_REQUIRED: 'error.stepUp',
+  /** A name or locality starting with = + - @ (CSV formula guard, INF-6). */
+  TEXT_STARTS_WITH_SYMBOL: 'error.textStartsWithSymbol',
 };
 
 /**

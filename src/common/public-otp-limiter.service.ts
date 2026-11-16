@@ -1,5 +1,6 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import { createHmac } from 'node:crypto';
+import { getJwtSecret } from './auth/jwt-secret';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from './prisma/prisma.service';
 
@@ -18,10 +19,18 @@ export const PUBLIC_OTP_RESEND_SECONDS = 30;
 export const PUBLIC_OTP_MAX_SENDS_PER_DAY = 4;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * L6: a keyed hash (HMAC with a key derived from JWT_SECRET), like the customer
+ * OTP limiter and OtpSession, so a leaked table cannot be reversed by hashing
+ * every mobile number. Old plain hashes were cleared by the migration
+ * 20261202000000_public_otp_phone_hmac (they only matter for 24 hours).
+ */
+let phoneKey: Buffer | null = null;
 export function publicOtpPhoneHash(phone: string): string {
   const digits = phone.replace(/\D/g, '');
   const national = digits.length > 10 ? digits.slice(-10) : digits;
-  return createHash('sha256').update(`laboura:public-otp:${national}`).digest('hex');
+  if (!phoneKey) phoneKey = createHmac('sha256', getJwtSecret()).update('laboura:public-otp-phone:v1').digest();
+  return createHmac('sha256', phoneKey).update(national).digest('hex');
 }
 
 export class PublicOtpLimitError extends HttpException {

@@ -10,6 +10,13 @@
 # Values written here (value: ...) are put back every time Render syncs this
 # file. Values marked `sync: false` are asked for once, when the blueprint is
 # first created, and after that are changed only in the dashboard.
+#
+# THIS IS THE LIVE BLUEPRINT (LABOURA_SETUP=live, INF-3). It does not start
+# with pretend vendors: the OTP, SMS and payment vendors and the human check are
+# asked for (sync: false) and must name the real ones; the service refuses to
+# start on `mock`, on OTP test mode or on the customer OTP test mode.
+# DEPLOY.md, "What to set before going live", lists every value. For a test
+# copy with made-up data use render.free.yaml (LABOURA_SETUP=test).
 
 services:
   - type: web
@@ -103,21 +110,32 @@ services:
         sync: false
       - key: APPLE_CLIENT_ID_WEB
         sync: false
-      # Customer OTP abuse protection: system-wide codes per 24 hours before
-      # sending pauses and an alert goes out; the human check (CAPTCHA /
-      # attestation) asked for after repeated tries: mock until a provider is chosen.
+      # Customer OTP abuse protection (INF-4, M2): system-wide codes per 24 hours;
+      # above it a number with no account needs the human check (customers with an
+      # account still get codes) and an alert goes out. Above the ceiling below,
+      # numbers with no account get no code at all (bounds the SMS spend).
       - key: CUSTOMER_OTP_DAILY_LIMIT
         value: "3000"
-      # mock is refused at start-up when LABOURA_SETUP=live: choose a real provider
-      # (CAPTCHA, Play Integrity / App Attest) before the live customer app opens.
+      - key: CUSTOMER_OTP_NEW_NUMBER_DAILY_CEILING
+        value: "9000"
+      # Different numbers one internet address may ask codes for in an hour
+      # before the human check is asked for.
+      - key: CUSTOMER_OTP_ADDRESS_PHONES_BEFORE_CHECK
+        value: "3"
+      # The human check (CAPTCHA, Play Integrity / App Attest). Asked once: it must
+      # name a provider that is BUILT in the code (none is yet; Cloudflare Turnstile
+      # is suggested). Anything else is refused at start-up on live (M2).
       - key: HUMAN_CHECK_PROVIDER_MODE
-        value: mock
-      # Which setup this is: "live" or "test" (asked once). The customer OTP test
-      # mode below can only be on when this is "test"; the server refuses to start otherwise.
-      - key: LABOURA_SETUP
         sync: false
-      # Customer app OTP codes shown on screen: off. Turn on only on the test setup.
+      # This blueprint is the live setup. The server refuses to start unless
+      # LABOURA_SETUP is exactly live or test, and on live with any mock vendor.
+      - key: LABOURA_SETUP
+        value: live
+      # Customer app OTP codes shown on screen: off (refused on live).
       - key: CUSTOMER_OTP_TEST_MODE
+        value: "off"
+      # Staff OTP test mode: off (refused on live).
+      - key: OTP_TEST_MODE
         value: "off"
       - key: JWT_EXPIRES_IN
         value: "15m"
@@ -147,6 +165,11 @@ services:
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
+      # Call recordings are copied only from these hosts (IN-4): the calling
+      # vendor's recording host(s), comma-separated, e.g. recordings.vendor.com
+      # or *.vendor-cdn.com. Empty = no recording is ever fetched.
+      - key: RECORDING_URL_HOSTS
+        sync: false
 
       # --- Company details ---
       - key: COMPANY_UPI_VPA
@@ -170,13 +193,18 @@ services:
       - key: ALERT_WEBHOOK_URL
         sync: false
 
-      # --- Vendors: mock until each one is signed up (AGENTS.md section 3) ---
+      # --- Vendors (AGENTS.md section 3) ---
+      # Live needs the real OTP, SMS and payment vendors (INF-3). Asked once when
+      # the blueprint is created: OTP_PROVIDER_MODE real (or msg91 / dlt),
+      # SMS_PROVIDER_MODE real, PAYMENT_PROVIDER_MODE real (or razorpay).
+      # `mock` or empty refuses to start.
       - key: OTP_PROVIDER_MODE
-        value: mock
+        sync: false
       - key: SMS_PROVIDER_MODE
-        value: mock
+        sync: false
       - key: PAYMENT_PROVIDER_MODE
-        value: mock
+        sync: false
+      # WhatsApp and calling may stay mock until those vendors are signed.
       - key: WHATSAPP_PROVIDER_MODE
         value: mock
       - key: TELEPHONY_PROVIDER_MODE
@@ -257,8 +285,8 @@ services:
         sync: false
       - key: PROCESS_ROLE
         value: worker
-      # Which setup this is ("live" or "test"), the same as on the web service: the worker
-      # checks the UIDAI certificates at start-up too (UIDAI_CERT_FINGERPRINTS above).
+      # Which setup this is (live here), the same as on the web service: the worker
+      # refuses to start without it, checks the vendors (INF-3) and the UIDAI certificates.
       - key: LABOURA_SETUP
         fromService:
           type: web
@@ -350,16 +378,39 @@ services:
           type: web
           name: laboura-api
           envVarKey: ALERT_WEBHOOK_URL
+      # The same vendors as the web service (the worker refuses to start on live with a mock one).
       - key: OTP_PROVIDER_MODE
-        value: mock
+        fromService:
+          type: web
+          name: laboura-api
+          envVarKey: OTP_PROVIDER_MODE
       - key: SMS_PROVIDER_MODE
-        value: mock
+        fromService:
+          type: web
+          name: laboura-api
+          envVarKey: SMS_PROVIDER_MODE
       - key: PAYMENT_PROVIDER_MODE
-        value: mock
+        fromService:
+          type: web
+          name: laboura-api
+          envVarKey: PAYMENT_PROVIDER_MODE
+      - key: HUMAN_CHECK_PROVIDER_MODE
+        fromService:
+          type: web
+          name: laboura-api
+          envVarKey: HUMAN_CHECK_PROVIDER_MODE
+      - key: OTP_TEST_MODE
+        value: "off"
       - key: WHATSAPP_PROVIDER_MODE
         value: mock
       - key: TELEPHONY_PROVIDER_MODE
         value: mock
+      # Call recordings are copied by the worker too (IN-4).
+      - key: RECORDING_URL_HOSTS
+        fromService:
+          type: web
+          name: laboura-api
+          envVarKey: RECORDING_URL_HOSTS
       # The worker sends the customer app pushes.
       - key: CUSTOMER_PUSH_PROVIDER_MODE
         value: mock

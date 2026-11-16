@@ -1,4 +1,6 @@
-import { Controller, Get, INestApplication, MiddlewareConsumer, Module, NestModule, Post } from '@nestjs/common';
+import { Controller, Get, Header, INestApplication, MiddlewareConsumer, Module, NestModule, Post, Res } from '@nestjs/common';
+import type { Response } from 'express';
+import { invoicePagePolicy } from '../../common/http/content-security-policy';
 import { Test } from '@nestjs/testing';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -36,6 +38,28 @@ class FakeApiController {
   @Get('finance/reports/books.csv')
   books() {
     return { api: 'books' };
+  }
+
+  /** Like the receipt and invoice routes: HTML chosen in the handler. */
+  @Get('payments/p1/receipt')
+  receipt(@Res({ passthrough: true }) res: Response) {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return '<!doctype html><p>receipt</p>';
+  }
+
+  /** Like the legal acceptance text and customer documents: HTML by decorator. */
+  @Get('legal/acceptance-text/a1')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  acceptance() {
+    return '<!doctype html><p>terms</p>';
+  }
+
+  /** A route with its own policy keeps it. */
+  @Get('placements/p1/invoice')
+  invoice(@Res({ passthrough: true }) res: Response) {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Content-Security-Policy', invoicePagePolicy());
+    return '<!doctype html><button onclick="window.print()">Print</button>';
   }
 }
 
@@ -406,6 +430,67 @@ describe('Web addresses (decided 14 Nov): app.laboura.com, field.laboura.com and
       } finally {
         process.env.FIELD_HOST = FIELD;
       }
+    });
+  });
+
+  describe('IN-6 / INF-12: Content-Security-Policy on every page, no X-Powered-By', () => {
+    it.each([
+      [APP, '/ceo', 'web'],
+      [APP, '/p/register/tok123', 'web'],
+      [RENDER, '/field/visits', 'field'],
+      [FIELD, '/', 'field'],
+    ])('%s%s carries a strict policy', async (host, url, appName) => {
+      const res = await get(host, url);
+      expect(res.status).toBe(200);
+      expect(res.headers['x-powered-by']).toBeUndefined();
+      const csp = String(res.headers['content-security-policy']);
+      expect(csp).toContain("script-src 'self' 'wasm-unsafe-eval'");
+      expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
+      expect(csp).not.toMatch(/script-src[^;]*'unsafe-eval'/);
+      expect(csp).toContain("frame-ancestors 'none'");
+      expect(csp).toContain("object-src 'none'");
+      if (appName === 'field') expect(csp).toContain('https://tile.openstreetmap.org');
+      else expect(csp).toContain('https://fonts.gstatic.com');
+    });
+
+    it('only on pages: files are served without it, and API answers are untouched', async () => {
+      const asset = await get(APP, '/assets/index-abc123.js', '*/*');
+      expect(asset.headers['content-security-policy']).toBeUndefined();
+      expect(asset.headers['x-powered-by']).toBeUndefined();
+    });
+
+    it('report-only and off are a setting (CONTENT_SECURITY_POLICY)', async () => {
+      process.env.CONTENT_SECURITY_POLICY = 'report-only';
+      try {
+        const res = await get(APP, '/login');
+        expect(res.headers['content-security-policy']).toBeUndefined();
+        expect(res.headers['content-security-policy-report-only']).toContain("script-src 'self'");
+        process.env.CONTENT_SECURITY_POLICY = 'off';
+        const off = await get(APP, '/login');
+        expect(off.headers['content-security-policy']).toBeUndefined();
+        expect(off.headers['content-security-policy-report-only']).toBeUndefined();
+      } finally {
+        delete process.env.CONTENT_SECURITY_POLICY;
+      }
+    });
+  });
+
+  describe('L3: every other HTML answer of the API gets a locked-down policy', () => {
+    it.each(['/payments/p1/receipt', '/legal/acceptance-text/a1'])('%s: nothing runs, nothing loads', async (url) => {
+      const res = await get(APP, url, 'text/html');
+      expect(res.status).toBe(200);
+      expect(res.headers['content-security-policy']).toBe("default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+    });
+
+    it('a route with its own policy keeps it (the invoice allows only its print button handler, by hash)', async () => {
+      const res = await get(APP, '/placements/p1/invoice', 'text/html');
+      expect(res.headers['content-security-policy']).toContain("script-src 'unsafe-hashes' 'sha256-");
+      expect(res.headers['content-security-policy']).toContain("default-src 'none'");
+    });
+
+    it('JSON answers are untouched', async () => {
+      const res = await get(APP, '/ceo/pricing/history', 'application/json');
+      expect(res.headers['content-security-policy']).toBeUndefined();
     });
   });
 

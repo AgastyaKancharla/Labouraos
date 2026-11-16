@@ -1,4 +1,5 @@
 import { maskCsvPhoneColumns } from '../../../common/csv/csv-phone-mask';
+import { csvCell, csvLine } from '../../../common/csv/csv-cell';
 
 export interface ExportPlacementsQueryDto {
   from?: string;
@@ -43,32 +44,25 @@ export function formatPlacementsCsv(
     'City',
   ];
 
-  const escapeCsv = (val: string | number | null | undefined): string => {
-    if (val === null || val === undefined) return '';
-    const str = String(val);
-    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-      return `"${str.replace(/"/g, '""')}"`;
-    }
-    return str;
-  };
-
-  const lines = [headers.join(',')];
+  // IN-3: every cell goes through the shared csvCell, so a business name or
+  // locality typed as "=HYPERLINK(...)" opens as text, never as a formula.
+  const lines = [csvLine(headers)];
   const body = rows.map((row) => [
-      escapeCsv(row.placementCode),
-      escapeCsv(row.joinedDate),
-      escapeCsv(row.dropoutDate),
-      escapeCsv(row.tradeSkill),
-      escapeCsv(row.candidateCode),
-      escapeCsv(row.employerCode),
-      escapeCsv(row.employerName),
-      escapeCsv(row.monthlySalaryINR),
-      ...(includeMoney ? [escapeCsv(row.placementFeeINR)] : []),
-      escapeCsv(row.status),
-      escapeCsv(row.locality),
-      escapeCsv(row.city),
+      row.placementCode,
+      row.joinedDate,
+      row.dropoutDate,
+      row.tradeSkill,
+      row.candidateCode,
+      row.employerCode,
+      row.employerName,
+      row.monthlySalaryINR,
+      ...(includeMoney ? [row.placementFeeINR] : []),
+      row.status,
+      row.locality,
+      row.city,
     ]);
   for (const cells of maskCsvPhoneColumns(headers, body, options.viewerRole)) {
-    lines.push(cells.join(','));
+    lines.push(cells.map(csvCell).join(','));
   }
   return lines.join('\n');
 }

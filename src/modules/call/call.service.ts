@@ -32,6 +32,7 @@ import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-poli
 import { AttendanceService } from '../attendance/attendance.service';
 import { CallFollowThroughService } from './call-follow-through.service';
 import { parseClock } from './call-window';
+import { RecordingUrlRefusedError } from './recording-url-policy';
 
 export interface CallActor {
   id: string;
@@ -542,6 +543,11 @@ export class CallService {
     try {
       await this.copyJob.run(callRecordId, event.recordingUrl);
     } catch (err) {
+      // IN-4: an address outside RECORDING_URL_HOSTS (or an internal one) is never fetched, now or later.
+      if (err instanceof RecordingUrlRefusedError) {
+        this.logger.warn(`Recording copy refused for ${callRecordId}: ${err.message}`);
+        return;
+      }
       this.logger.warn(`Recording copy failed for ${callRecordId}`);
       try {
         await this.copyJob.schedule(callRecordId, event.recordingUrl);

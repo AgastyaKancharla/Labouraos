@@ -157,6 +157,25 @@ describe('Finance back office (Phase 22 Part A)', () => {
       await request(server()).get(`/finance/expenses/${created.body.id}/bill`).set(as('manager')).expect(403);
     });
 
+    it('IN-5: a bill is judged by its first bytes, never by the type the browser claims', async () => {
+      // An HTML page sent as "application/pdf" is refused…
+      const fake = await request(server()).post('/finance/expenses').set(as('finance'))
+        .field('category', 'field_travel').field('supplier', `W4F Supplier ${stamp}`).field('description', 'Petrol')
+        .field('amountPaise', '10000').field('billDate', new Date().toISOString())
+        .attach('bill', Buffer.from('<html><script>alert(document.cookie)</script></html>'), { filename: 'bill.pdf', contentType: 'application/pdf' })
+        .expect(400);
+      expect(fake.body.message).toContain('photo (JPG, PNG, WEBP, HEIC) or a PDF');
+      // …and a real PDF sent as "image/png" is stored, and served back, as the PDF it is.
+      const created = await addExpense('finance', 10000, { bill: false }).expect(201);
+      await request(server()).post(`/finance/expenses/${created.body.id}/bill`).set(as('finance'))
+        .attach('bill', pdf, { filename: 'bill.png', contentType: 'image/png' }).expect(201);
+      const row = await prisma.expense.findUniqueOrThrow({ where: { id: created.body.id } });
+      expect(row.billContentType).toBe('application/pdf');
+      expect(row.billPath).toMatch(/\.pdf$/);
+      const bill = await request(server()).get(`/finance/expenses/${created.body.id}/bill`).set(as('finance')).expect(200);
+      expect(bill.headers['content-type']).toContain('application/pdf');
+    });
+
     it('above ₹10,000 Finance is sent to the CEO; the CEO approves and Finance pays', async () => {
       const created = await addExpense('finance', 1840000, { category: 'calling' }).expect(201);
       expect(created.body).toMatchObject({ status: 'waiting_ceo', needsCeo: true });

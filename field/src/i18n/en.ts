@@ -31,6 +31,7 @@ export const en = {
   'common.offline': 'No signal. Forms and photos are saved on the phone and sent when the signal returns.',
   'common.needsSignal': 'This step needs signal: the other person has to be on the line. Move to a spot with signal and try again.',
   'common.error': 'Something went wrong. Please try again.',
+  'common.noLeadingSymbol': 'A name or area can\'t start with "=". Remove it from the start.',
   'common.networkError': 'Could not reach Laboura. Check the signal and try again.',
   'common.empty': 'Nothing here yet.',
   'common.comingSoon': 'Coming soon',

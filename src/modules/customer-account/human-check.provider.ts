@@ -11,6 +11,15 @@ import { Injectable } from '@nestjs/common';
  * before the public launch (docs/customer-app-api.md, DEPLOY.md).
  */
 export const HUMAN_CHECK_PROVIDER = 'HUMAN_CHECK_PROVIDER';
+
+/**
+ * M2: the real human-check providers that are actually built. The live setup
+ * starts only with one of these (src/common/process/laboura-setup.ts). None is
+ * built yet (Cloudflare Turnstile is the suggested one), so the live setup
+ * refuses to start until it is; add its mode here in the same change that adds
+ * its implementation to humanCheckProviderFactory.
+ */
+export const IMPLEMENTED_HUMAN_CHECK_PROVIDERS: readonly string[] = [];
 export const MOCK_HUMAN_CHECK_TOKEN = 'mock-human-ok';
 
 export interface HumanCheckProvider {
@@ -36,7 +45,9 @@ export class UnavailableHumanCheckProvider implements HumanCheckProvider {
   }
 }
 
-export function humanCheckProviderFactory(): HumanCheckProvider {
-  const mode = process.env.HUMAN_CHECK_PROVIDER_MODE?.trim().toLowerCase() || 'mock';
+export function humanCheckProviderFactory(env: NodeJS.ProcessEnv = process.env): HumanCheckProvider {
+  const mode = env.HUMAN_CHECK_PROVIDER_MODE?.trim().toLowerCase() || 'mock';
+  // INF-3: the mock (public token) never answers on the live setup, even if start-up were bypassed.
+  if (mode === 'mock' && env.LABOURA_SETUP === 'live') return new UnavailableHumanCheckProvider();
   return mode === 'mock' ? new MockHumanCheckProvider() : new UnavailableHumanCheckProvider();
 }

@@ -1,6 +1,6 @@
 import type { Area, BusinessContactRole, BusinessForm, BusinessType, EmployeeBand, HeardFrom, Pin, Shift, YearsBand } from '@/api/types';
 import type { MessageKey } from '@/i18n';
-import { isEmail, isGstin, isPincode } from '@/lib/validate';
+import { isEmail, isGstin, isPincode, startsWithSymbol } from '@/lib/validate';
 
 export interface StaffRow {
   trade: string;
@@ -87,6 +87,9 @@ export function validateBusiness(d: BusinessDraft): BusinessErrors {
   if (!isPincode(d.pincode)) e.pincode = 'form.pincodeInvalid';
   if (d.gstin.trim() && !isGstin(d.gstin)) e.gstin = 'business.gstinInvalid';
   if (d.billingEmail.trim() && !isEmail(d.billingEmail)) e.billingEmail = 'business.emailInvalid';
+  for (const key of ['contactName', 'boardName', 'legalName'] as const) {
+    if (!e[key] && startsWithSymbol(d[key])) e[key] = 'form.noLeadingSymbol';
+  }
   if (d.staffNeeded.length === 0) e.staff = 'business.staffNeeded';
   d.staffNeeded.forEach((row, i) => {
     if (!row.trade) e[`staffTrade${i}`] = 'form.required';

@@ -148,10 +148,14 @@ describe('Worker heartbeat', () => {
         expect(err).toBeInstanceOf(HttpException);
         const http = err as HttpException;
         expect(http.getStatus()).toBe(HttpStatus.SERVICE_UNAVAILABLE);
-        const body = http.getResponse() as { failed: string[]; errors: Record<string, string> };
+        const body = http.getResponse() as { failed: string[]; worker: string; errors?: unknown };
         expect(body.failed).toEqual(['worker']);
-        expect(body.errors.worker).toMatch(/No heartbeat from the background worker/);
+        // INF-8: public answer names the component only; the reason is CEO-only.
+        expect(body.worker).toBe('fail');
+        expect(body.errors).toBeUndefined();
       }
+      const details = await controller.getReadinessDetails();
+      expect(details.errors.worker).toMatch(/No heartbeat from the background worker/);
     });
 
     it('reports the worker as alive when the heartbeat is fresh', async () => {
@@ -168,9 +172,10 @@ describe('Worker heartbeat', () => {
         status: 'ready',
         postgres: 'ok',
         redis: 'ok',
-        worker: alive,
-        schedules: { status: 'ok', missing: [] },
+        worker: 'ok',
+        schedules: 'ok',
       });
+      expect((await controller.getReadinessDetails()).worker).toEqual(alive);
     });
 
     it('reports Redis as unreachable rather than hanging', async () => {

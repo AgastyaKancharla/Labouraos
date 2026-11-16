@@ -8,6 +8,17 @@ export function isMobile(digits: string): boolean {
   return /^[6-9]\d{9}$/.test(digits);
 }
 
+/**
+ * Names and localities may not start with "=" (read like a spreadsheet: full-width
+ * signs, spaces and zero-width characters count): in a spreadsheet it runs as a
+ * formula (the server refuses it too: TEXT_STARTS_WITH_SYMBOL). A leading + - @ is
+ * fine: the server's CSV files make those safe.
+ */
+export function startsWithSymbol(value: string): boolean {
+  const lead = value.normalize('NFKC').replace(/^[\s\u200b-\u200f\u2028-\u202f\u205f-\u206f\ufeff\u00ad\u180e]+/u, '');
+  return lead.startsWith('=');
+}
+
 export function isPincode(value: string): boolean {
   return /^[1-9]\d{5}$/.test(value.trim());
 }

@@ -1,5 +1,5 @@
 import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { Job } from 'bullmq';
+import { Job, UnrecoverableError } from 'bullmq';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import {
   RECORDING_DOWNLOADER,
@@ -7,6 +7,7 @@ import {
   RecordingDownloader,
   RecordingStorage,
 } from './recording-storage';
+import { RecordingUrlRefusedError } from './recording-url-policy';
 import { runsJobs } from '../../common/process/process-role';
 import { jobQueue, LABOURA_JOBS_QUEUE } from '../../jobs/job-queue';
 
@@ -26,7 +27,13 @@ export class RecordingCopyJob implements OnModuleInit, OnModuleDestroy {
   /** What the shared job worker runs for each queued copy (src/jobs/job-queue.ts). */
   readonly handle = async (job: Job): Promise<void> => {
     const data = job.data as { callRecordId: string; recordingUrl: string };
-    await this.run(data.callRecordId, data.recordingUrl);
+    try {
+      await this.run(data.callRecordId, data.recordingUrl);
+    } catch (error) {
+      // IN-4: a refused address will be refused again: no more attempts.
+      if (error instanceof RecordingUrlRefusedError) throw new UnrecoverableError(error.message);
+      throw error;
+    }
   };
 
   async onModuleInit(): Promise<void> {

@@ -67,7 +67,8 @@ model PublicOtpSend {
 model OtpSession {
   id             String   @id @default(uuid())
   requestId      String   @unique
-  phoneHash      String
+  /// HMAC-SHA256 of the 10 national digits (key from JWT_SECRET; INF-13). Null: a cleared pre-HMAC row.
+  phoneHash      String?
   phoneEncrypted String
   purpose        String   @default("job_seeker")
   verified       Boolean  @default(false)

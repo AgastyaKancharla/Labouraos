@@ -1,11 +1,38 @@
 import { Controller, Get, Header, HttpException, HttpStatus, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
-import { HealthService, ScheduleCheckStatus, WorkerHeartbeatStatus } from './health.service';
+import { HealthService, ReadinessCheckResult, ScheduleCheckStatus, WorkerHeartbeatStatus } from './health.service';
 import { Public } from '../common/rbac/public.decorator';
 import { JwtAuthGuard } from '../common/auth/jwt-auth.guard';
 import { RbacGuard } from '../common/rbac/rbac.guard';
 import { RequireRoles } from '../common/rbac/roles.decorator';
 import { ProxyCheck, proxyCheckFor } from '../common/http/proxy-check';
+
+type Check = 'ok' | 'fail';
+
+/** What anyone may see: component names and ok / fail only. */
+export interface PublicReadiness {
+  status: 'ready' | 'unavailable';
+  /** Only when not ready: the names of the failed components. */
+  failed?: string[];
+  postgres: Check;
+  redis: Check;
+  worker?: Check;
+  schedules?: Check;
+  sweep?: Check;
+}
+
+export function publicReadiness(result: ReadinessCheckResult): PublicReadiness {
+  const state = (name: string): Check => (result.failed.includes(name) ? 'fail' : 'ok');
+  return {
+    status: result.ready ? 'ready' : 'unavailable',
+    ...(result.ready ? {} : { failed: [...result.failed] }),
+    postgres: state('postgres'),
+    redis: state('redis'),
+    ...(result.worker ? { worker: result.worker.status === 'alive' ? 'ok' : 'fail' } : {}),
+    ...(result.schedules ? { schedules: result.schedules.status === 'ok' ? 'ok' : 'fail' } : {}),
+    ...(result.sweep ? { sweep: result.sweep.status === 'healthy' ? 'ok' : 'fail' } : {}),
+  };
+}
 
 @Controller('health')
 export class HealthController {
@@ -23,44 +50,56 @@ export class HealthController {
     };
   }
 
+  /**
+   * Readiness for monitors and the host (INF-8): public, so it answers only
+   * each component's name and `ok` / `fail`, never an error text, a time or a
+   * count. 503 when postgres, redis or (with WORKER_HEARTBEAT_CHECK=true) the
+   * worker or the job schedules fail; the sweep is informational (`fail` when
+   * stale, still 200). Details: GET /health/ready/details (CEO only).
+   */
   @Get('ready')
   @Public('liveness and readiness probes for the host and monitors')
-  async getReadiness(): Promise<{
-    status: string;
-    postgres: string;
-    redis: string;
-    sweep?: {
-      status: 'healthy' | 'stale';
-      hoursElapsed: number | null;
-      lastCompletedAt: string | null;
-    };
-    worker?: WorkerHeartbeatStatus;
-    schedules?: ScheduleCheckStatus;
-  }> {
-    // Quick readiness probe checking PostgreSQL and Redis with a 2-second timeout.
-    // Pointed to by monitoring and alert systems; returns 503 naming which dependency failed.
-    // Note: Sweep staleness is reported in body as informational and never forces a 503.
-    // With WORKER_HEARTBEAT_CHECK=true (set on Render's web service) a missing
-    // background-worker heartbeat also answers 503, naming `worker`, and so
-    // does a job schedule missing from Redis, naming `schedules`.
+  @Header('Cache-Control', 'no-store')
+  async getReadiness(): Promise<PublicReadiness> {
     const result = await this.healthService.checkReadiness();
+    const body = publicReadiness(result);
     if (!result.ready) {
       throw new HttpException(
-        {
-          status: 'unavailable',
-          failed: result.failed,
-          errors: result.errors,
-          ...(result.schedules ? { schedules: result.schedules } : {}),
-          message: `Readiness check failed for: ${result.failed.join(', ')}`,
-        },
+        { ...body, message: `Readiness check failed for: ${result.failed.join(', ')}` },
         HttpStatus.SERVICE_UNAVAILABLE,
       );
     }
+    return body;
+  }
 
+  /**
+   * CEO only: the full readiness answer — error texts, the worker's last
+   * heartbeat, missing job schedules and the sweep's age. Always 200 (`ready`
+   * says whether the public check passes).
+   */
+  @Get('ready/details')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequireRoles('ceo')
+  @Header('Cache-Control', 'no-store')
+  async getReadinessDetails(): Promise<{
+    ready: boolean;
+    status: 'ready' | 'unavailable';
+    failed: string[];
+    errors: Record<string, string>;
+    postgres: 'ok' | 'fail';
+    redis: 'ok' | 'fail';
+    sweep?: { status: 'healthy' | 'stale'; hoursElapsed: number | null; lastCompletedAt: string | null };
+    worker?: WorkerHeartbeatStatus;
+    schedules?: ScheduleCheckStatus;
+  }> {
+    const result = await this.healthService.checkReadiness();
     return {
-      status: 'ready',
-      postgres: 'ok',
-      redis: 'ok',
+      ready: result.ready,
+      status: result.ready ? 'ready' : 'unavailable',
+      failed: result.failed,
+      errors: result.errors,
+      postgres: result.failed.includes('postgres') ? 'fail' : 'ok',
+      redis: result.failed.includes('redis') ? 'fail' : 'ok',
       ...(result.sweep ? { sweep: result.sweep } : {}),
       ...(result.worker ? { worker: result.worker } : {}),
       ...(result.schedules ? { schedules: result.schedules } : {}),

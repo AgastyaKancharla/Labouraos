@@ -21,7 +21,7 @@ import { CreateReferralDto } from '../referral/dto/create-referral.dto';
 import { CustomerAccountService } from '../customer-account/customer-account.service';
 import { CustomerLinkingService } from '../customer-account/customer-linking.service';
 import { CustomerSignInService, RequestContext } from '../customer-account/customer-sign-in.service';
-import { hashOf } from '../customer-account/customer-otp-limiter.service';
+import { addressHash, hashOf } from '../customer-account/customer-otp-limiter.service';
 
 type Body = Record<string, unknown>;
 
@@ -254,7 +254,7 @@ export class CustomerRegistrationService {
       : null;
     if (!referral || referral.anonymisedAt || referral.pausedAt || sameIndianMobile(referral.phone, phone)) {
       await this.prisma.customerOtpAttempt.create({
-        data: { kind: 'referral_code_refused', accountId, ipHash: hashOf('ip', ctx?.ip ?? null), deviceHash: hashOf('device', ctx?.installationId ?? null), createdAt: now },
+        data: { kind: 'referral_code_refused', accountId, ipHash: addressHash(ctx?.ip ?? null), deviceHash: hashOf('device', ctx?.installationId ?? null), createdAt: now },
       });
       throw new CustomerApiError(HttpStatus.UNPROCESSABLE_ENTITY, CUSTOMER_ERROR_CODES.REFERRAL_UNUSABLE, REFERRAL_CODE_UNUSABLE_MESSAGE, { field: 'referralCode' });
     }

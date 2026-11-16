@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { randomBytes, randomInt } from 'node:crypto';
 import { nationalMobileDigits } from '../phone/indian-mobile';
 import { OtpProvider, OtpSendOptions, OtpSendResult } from './otp.interface';
 import { otpTestModeEnabled } from './otp-test-mode';
@@ -75,9 +76,10 @@ export class MockOtpProvider implements OtpProvider {
       return this.sendResult(record);
     }
 
-    const requestId = `otp_${Math.random().toString(36).substring(2, 10)}_${now}`;
+    // INF-9: from the operating system's secure random source, never Math.random.
+    const requestId = `otp_${randomBytes(16).toString('hex')}_${now}`;
     // 6-digit random code
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const code = randomInt(100000, 1000000).toString();
 
     this.records.set(requestId, {
       requestId,
