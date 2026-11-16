@@ -66,7 +66,7 @@ Everything the Today tab shows in one call.
   | number | counts (today, IST, this agent) | day item `type` |
   | --- | --- | --- |
   | `shopsVisited` | visits with the board photo or the selfie | `visit` |
-  | `onboarded` | distinct businesses onboarded: a visit of mine marked onboarded today **or** a business I registered from a shop visit today (B3/B24 fixed: an onboarded visit can no longer be overwritten) | `business_registered` |
+  | `onboarded` | distinct businesses onboarded: a visit of mine marked onboarded today **or** a business I registered from a shop visit today (B3/B24 fixed: an onboarded visit can no longer be overwritten) | `business_registered` + `visit` rows with `status: 'onboarded'` |
   | `vacanciesConfirmed` | vacancies I captured that the owner confirmed today | `vacancy_confirmed` |
   | `candidatesShown` | candidates I showed (in-person introductions) | `candidates_shown` |
   | `interviewsBooked` | interviews I booked | `interview_booked` |
@@ -88,7 +88,7 @@ Everything the Today tab shows in one call.
 
 | `kind` | when | `target` | extra fields |
 | --- | --- | --- | --- |
-| `interview_today` | an interview at a shop today that I attend (my interview visit assignment, or I booked it and said I will attend) and that has no arrival / result yet | `{type:'interview', id, step:'attend', businessId}` | `interview: {startsAt, candidateName}` (first name + initial) |
+| `interview_today` | an interview (status offered / confirmed) today that I attend (my interview visit assignment, or I booked it and said I will attend) and that has no arrival / result yet | `{type:'interview', id, step:'attend', businessId}` | `interview: {startsAt, candidateName}` (first name + initial) |
 | `visit_unfinished` | my visit in the last 7 days that has no result: selfie done but no business form; "onboard now" chosen but no selfie; or no result at all; or a verification visit not completed | `{type:'visit', id, step}` with `step` = `continue_business_form` · `mark_onboarded` · `take_selfie` · `record_result` · `verify` | `visit: {startedAt, purpose}` |
 | `agreement_waiting` | my business with no signed agreement | `{type:'business', id, step:'agreement'}` | `agreement: {state, linkSentAt, linkExpiresAt}` (`state`: `link_sent` / `link_expired` / `not_sent`) |
 | `vacancy_awaiting_owner` | a vacancy on my business waiting for the owner's code / link | `{type:'vacancy', id, step:'enter_code', businessId}` | `vacancy: {code, trade, headcount}` |
@@ -309,7 +309,7 @@ Replaces `GET /field-work/businesses/:ref` and `GET /screens/field-selling/busin
     {
       "id": "…", "code": "VC-00031", "trade": "baker", "roleTitle": null, "headcount": 2,
       "salaryMinPaise": 1500000, "salaryMaxPaise": 1800000, "salaryPeriod": "monthly", "shift": "day",
-      "startDate": "2026-11-20", "status": "draft", "confirmedAt": null,
+      "startDate": "2026-11-20", "status": "draft", "confirmedAt": null, "belowLegalMinimum": false,
       "contactName": "Manjunath", "contactPhoneLast4": "4321",
       "nextStep": { "kind": "send_to_owner", "missing": [], "needsMinimumWageTick": false, "legalMinimumPaise": 1234500 }
     }
