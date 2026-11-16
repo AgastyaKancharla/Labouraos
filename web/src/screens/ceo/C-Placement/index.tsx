@@ -9,7 +9,8 @@ import { ReportWorkerLeft } from '../../../claims/WorkerLeft';
 import { api } from '../../../lib/api/client';
 import { formatDateIST } from '../../../lib/format/date';
 import { formatINR } from '../../../lib/format/money';
-import { useScreenPath } from '../../../portals/PortalContext';
+import type { ReactNode } from 'react';
+import { useRecordsPortal } from '../_kit/records';
 import { ActionButton } from '../_kit/actions';
 import { Kv, Timeline, humanize } from '../_kit/kit';
 import { PAYMENT_STATUS, PLACEMENT_STAGE } from '../_kit/labels';
@@ -31,15 +32,16 @@ interface Detail {
   business: { id: string; code: string; name: string };
   vacancy: { id: string; code: string; tradeSkill: string; roleTitle: string | null };
   salaryPaise: number;
+  /** Money (fee, GST, payments, refund) is the CEO's only: a Manager's answer leaves it out. */
   feePaise: number;
   gstPaise: number;
-  paidAt: string | null;
-  invoiceCode: string | null;
-  feePayment: Pay | null;
+  paidAt?: string | null;
+  invoiceCode?: string | null;
+  feePayment?: Pay | null;
   joinedDate: string | null;
   joiningCallsAnswered: boolean;
-  referral: { partner: { id: string; code: string; name: string }; payment: Pay | null } | null;
-  joiningReward: Pay | null;
+  referral: { partner: { id: string; code: string; name: string }; payment?: Pay | null } | null;
+  joiningReward?: Pay | null;
   guarantee: {
     windowDays: number;
     searchDays: number;
@@ -74,8 +76,8 @@ const EVENT: Record<string, string> = {
 
 export default function PlacementDetail() {
   const { id = '' } = useParams();
-  const to = useScreenPath();
-  const query = useQuery({ queryKey: ['ceo', 'placement', id], queryFn: () => api.get<Detail>(`/ceo/placements/${id}`) });
+  const { api: base, ceo, to } = useRecordsPortal();
+  const query = useQuery({ queryKey: [base, 'placement', id], queryFn: () => api.get<Detail>(`${base}/placements/${id}`) });
   const d = query.data;
   const back = { to: to('C-Placements'), label: 'Placements' };
   if (query.isPending)
@@ -96,14 +98,17 @@ export default function PlacementDetail() {
   const g = d.guarantee;
   const paused = g.endedReason === 'two_rejections';
   const subtitle = paused
-    ? 'Guarantee paused: the business rejected replacement candidates. You decide.'
-    : d.refund?.withCeo
+    ? ceo
+      ? 'Guarantee paused: the business rejected replacement candidates. You decide.'
+      : 'Guarantee paused: the business rejected replacement candidates. The CEO decides.'
+    : ceo && d.refund?.withCeo
       ? `A ${formatINR(d.refund.amountPaise)} refund is waiting for your approval.`
       : d.stage === 'replacement'
         ? `Replacement search · ${g.searchDaysLeft !== null && g.searchDaysLeft >= 0 ? `${g.searchDaysLeft} days left before the refund falls due` : 'refund due'}`
         : `${PLACEMENT_STAGE[d.stage]?.label ?? humanize(d.stage)}${g.day ? ` · day ${Math.min(g.day, g.windowDays)} of ${g.windowDays}` : ''}`;
   const refundAmount = d.refund?.amountPaise ?? d.feePaise;
-  const canApproveByRules = !d.refund && d.stage === 'replacement';
+  // Releasing money is the CEO's (or Finance's); a Manager's answer has no refund or fee at all.
+  const canApproveByRules = ceo && !d.refund && d.stage === 'replacement';
   // "Report worker left" (the old Admin Dashboard's Report Claim): an active, joined placement with no claim waiting.
   const canReportLeft = d.status === 'active' && Boolean(d.joinedDate) && !(d.claim && !d.claim.decision);
   const payPill = (p: Pay | null) => (p ? <StatusPill tone={PAYMENT_STATUS[p.status]?.tone ?? 'muted'}>{`${formatINR(p.amountPaise)} · ${PAYMENT_STATUS[p.status]?.label ?? p.status}`}</StatusPill> : '—');
@@ -129,7 +134,7 @@ export default function PlacementDetail() {
                 success="Replacement cancelled"
               />
             )}
-            {d.refund?.withCeo && (
+            {ceo && d.refund?.withCeo && (
               <>
                 <ActionButton
                   label={`Approve refund ${formatINR(refundAmount)}`}
@@ -171,10 +176,21 @@ export default function PlacementDetail() {
               ['Candidate', <Link to={to('C-JobSeeker', { id: d.jobSeeker.id })}>{`${d.jobSeeker.name} · ${d.jobSeeker.code}`}</Link>],
               ['Business', <Link to={to('C-Business', { id: d.business.id })}>{`${d.business.name} · ${d.business.code}`}</Link>],
               ['Role / salary', `${d.vacancy.roleTitle ?? d.vacancy.tradeSkill} · ${formatINR(d.salaryPaise)}`],
-              ['Fee', `${formatINR(d.feePaise)} + GST ${formatINR(d.gstPaise)} = ${formatINR(d.feePaise + d.gstPaise)}${d.paidAt ? ` · paid ${formatDateIST(d.paidAt)}` : ' · not paid yet'}${d.invoiceCode ? ` · invoice ${d.invoiceCode}` : ''}`],
+              ...(ceo
+                ? ([
+                    [
+                      'Fee',
+                      `${formatINR(d.feePaise)} + GST ${formatINR(d.gstPaise)} = ${formatINR(d.feePaise + d.gstPaise)}${d.paidAt ? ` · paid ${formatDateIST(d.paidAt)}` : ' · not paid yet'}${d.invoiceCode ? ` · invoice ${d.invoiceCode}` : ''}`,
+                    ],
+                  ] as [string, string][])
+                : []),
               ['Joined', d.joinedDate ? `${formatDateIST(d.joinedDate)}${d.joiningCallsAnswered ? ' (calls to both answered)' : ''}` : 'Not yet'],
-              ['Referral payout', d.referral ? <>{`${d.referral.partner.code} · `}{payPill(d.referral.payment)}</> : 'No referral partner'],
-              ['Joining reward', payPill(d.joiningReward)],
+              ...(ceo
+                ? ([
+                    ['Referral payout', d.referral ? <>{`${d.referral.partner.code} · `}{payPill(d.referral.payment ?? null)}</> : 'No referral partner'],
+                    ['Joining reward', payPill(d.joiningReward ?? null)],
+                  ] as [string, ReactNode][])
+                : ([['Referred by', d.referral ? <Link to={to('C-Partner', { id: d.referral.partner.id })}>{`${d.referral.partner.code} · ${d.referral.partner.name}`}</Link> : 'No referral partner']] as [string, ReactNode][])),
             ]}
           />
         </Card>
@@ -197,8 +213,19 @@ export default function PlacementDetail() {
                   <StatusPill tone="good">Running</StatusPill>
                 ),
               ],
-              ['Refund', d.refund ? <StatusPill tone={PAYMENT_STATUS[d.refund.status]?.tone ?? 'muted'}>{`${d.refund.code} · ${formatINR(d.refund.amountPaise)} · ${d.refund.withCeo ? 'waiting for you' : (PAYMENT_STATUS[d.refund.status]?.label ?? d.refund.status)}`}</StatusPill> : 'None'],
-              ...(paused ? ([['Decision needed', `Is the business rejecting suitable candidates? If yes → no refund; if no → refund ${formatINR(refundAmount)}`]] as [string, string][]) : []),
+              ...(ceo
+                ? ([
+                    [
+                      'Refund',
+                      d.refund ? (
+                        <StatusPill tone={PAYMENT_STATUS[d.refund.status]?.tone ?? 'muted'}>{`${d.refund.code} · ${formatINR(d.refund.amountPaise)} · ${d.refund.withCeo ? 'waiting for you' : (PAYMENT_STATUS[d.refund.status]?.label ?? d.refund.status)}`}</StatusPill>
+                      ) : (
+                        'None'
+                      ),
+                    ],
+                  ] as [string, ReactNode][])
+                : []),
+              ...(ceo && paused ? ([['Decision needed', `Is the business rejecting suitable candidates? If yes → no refund; if no → refund ${formatINR(refundAmount)}`]] as [string, string][]) : []),
             ]}
           />
           {d.chain.length > 1 && (

@@ -133,6 +133,30 @@ export function NewTempPasswordButton({ id, name }: { id: string; name: string }
   );
 }
 
+/**
+ * "Set calling phone": the mobile the calling system rings first when this
+ * staff member places a call (PUT /staff/:id/call-routing-phone). The server
+ * allows the person themselves, their Team Lead, a Manager over them or the CEO.
+ */
+export function SetCallingPhoneButton({ id, name }: { id: string; name: string }) {
+  const t = useT();
+  return (
+    <ActionButton
+      label={t('access.action.callPhone')}
+      title={t('access.action.callPhoneTitle', { name })}
+      description={t('access.action.callPhoneBody')}
+      reason={{ label: t('access.action.callPhoneField'), required: true }}
+      confirmLabel={t('access.action.callPhone')}
+      run={async ({ reason }) => {
+        const phone = reason.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
+        if (!/^[6-9]\d{9}$/.test(phone)) throw new ApiError({ status: 400, messages: [t('access.action.callPhoneInvalid')] });
+        return api.put(`/staff/${id}/call-routing-phone`, { phone });
+      }}
+      success={t('access.action.callPhoneSaved')}
+    />
+  );
+}
+
 /** S2: "Reset sign-in completely" (lost phone or authenticator). */
 export function ResetSignInButton({ id, name }: { id: string; name: string }) {
   const t = useT();

@@ -7,7 +7,7 @@ import { StatGrid, StatTile } from '../../../components/StatTile';
 import { StatusPill, type StatusTone } from '../../../components/Badge';
 import { TopBar } from '../../../components/TopBar';
 import { formatINR } from '../../../lib/format/money';
-import { useScreenPath } from '../../../portals/PortalContext';
+import { homeBack, useRecordsPortal } from '../_kit/records';
 import { DateFilter, FilterPanel, HBar, Kv, OpenLink, PagedTable, SearchField, SelectFilter, humanize, rangeQuery, useCeoList, useDebounced, type ListPeriod } from '../_kit/kit';
 
 /** Referral partners — design C-Referrals.dc.html. */
@@ -56,7 +56,7 @@ function payout(r: Row) {
 }
 
 export default function Referrals() {
-  const to = useScreenPath();
+  const { api: base, ceo, link, to } = useRecordsPortal();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [type, setType] = useState('');
@@ -64,7 +64,13 @@ export default function Referrals() {
   const [checks, setChecks] = useState('');
   const [period, setPeriod] = useState<ListPeriod>(null);
   const q = useDebounced(search);
-  const list = useCeoList<Row, Extra, Summary>('/ceo/referrals', { search: q, type, payout: payoutF, checks, ...rangeQuery(period) });
+  const list = useCeoList<Row, Extra, Summary>(`${base}/referrals`, { search: q, type, payout: ceo ? payoutF : '', checks, ...rangeQuery(period) });
+  const showAll = () => {
+    setType('');
+    setPayout('');
+    setChecks('');
+  };
+  const paymentsOut = link('C-Payments-Out');
   const d = list.query.data;
   const s = d?.summary;
   const loading = list.query.isPending;
@@ -91,8 +97,13 @@ export default function Referrals() {
     { key: 'referred', header: 'Referred', cell: (r) => r.referred, csv: (r) => r.referred },
     { key: 'registered', header: 'Registered', cell: (r) => r.registered, csv: (r) => r.registered, hideOnPhone: true },
     { key: 'joined', header: 'Joined', cell: (r) => r.joined, csv: (r) => r.joined },
-    { key: 'earned', header: 'Earned', cell: (r) => formatINR(r.earnedPaise), csv: (r) => r.earnedPaise / 100, align: 'right' },
-    { key: 'payout', header: 'Payout', cell: payout, csv: (r) => r.payout.state },
+    // Money: the CEO only (a Manager's answer has no earnings or payouts).
+    ...(ceo
+      ? [
+          { key: 'earned', header: 'Earned', cell: (r: Row) => formatINR(r.earnedPaise), csv: (r: Row) => r.earnedPaise / 100, align: 'right' as const },
+          { key: 'payout', header: 'Payout', cell: payout, csv: (r: Row) => r.payout.state },
+        ]
+      : []),
     { key: 'checks', header: 'Checks', cell: (r) => <StatusPill tone={CHECKS[r.checks]?.tone ?? 'muted'}>{CHECKS[r.checks]?.label ?? r.checks}</StatusPill>, csv: (r) => CHECKS[r.checks]?.label, hideOnPhone: true },
     { key: 'go', header: '', cell: (r) => <OpenLink to={to('C-Partner', { id: r.id })} /> },
   ];
@@ -101,14 +112,29 @@ export default function Referrals() {
   const fraudPill = (n: number | undefined) => <StatusPill tone={n ? 'warn' : 'good'}>{n ?? 0}</StatusPill>;
   return (
     <div className="lb-page">
-      <TopBar back={{ to: to('Main'), label: 'Command Center' }} title="Referral partners" subtitle="Who sends Laboura job seekers, how many join, and what we owe them." />
+      <TopBar
+        back={homeBack(link)}
+        title="Referral partners"
+        subtitle={ceo ? 'Who sends Laboura job seekers, how many join, and what we owe them.' : 'Who sends your teams job seekers, and how many join.'}
+      />
       <StatGrid>
-        <StatTile label="Partners" value={s?.partners ?? '—'} tone="orange" loading={loading} />
+        <StatTile label="Partners" value={s?.partners ?? '—'} tone="orange" loading={loading} onClick={showAll} active={!type && !payoutF && !checks} />
         <StatTile label="Individual / business" value={s ? `${s.individual} / ${s.business}` : '—'} tone="royal" loading={loading} />
         <StatTile label={period ? 'People referred in the period' : 'People referred'} value={s?.referredInRange ?? '—'} tone="cyan" loading={loading} />
         <StatTile label="Referred people joined" value={s?.joinedInRange ?? '—'} tone="good" loading={loading} />
-        <StatTile label={`Payouts due · ${s?.payoutsDueCount ?? 0}`} value={s ? formatINR(s.payoutsDuePaise) : '—'} tone="gold" loading={loading} to={to('C-Payments-Out')} />
-        <StatTile label="Payouts failed" value={s?.payoutsFailed ?? '—'} tone="red" loading={loading} />
+        {ceo && (
+          <StatTile label={`Payouts due · ${s?.payoutsDueCount ?? 0}`} value={s ? formatINR(s.payoutsDuePaise) : '—'} tone="gold" loading={loading} to={paymentsOut ?? undefined} />
+        )}
+        {ceo && (
+          <StatTile
+            label="Payouts failed"
+            value={s?.payoutsFailed ?? '—'}
+            tone="red"
+            loading={loading}
+            onClick={() => setPayout((current) => (current === 'failed' ? '' : 'failed'))}
+            active={payoutF === 'failed'}
+          />
+        )}
       </StatGrid>
       <FilterPanel>
         <SearchField value={search} onChange={setSearch} placeholder="Name, phone or RF- code" />
@@ -122,17 +148,19 @@ export default function Referrals() {
             { value: 'business', label: 'Business' },
           ]}
         />
-        <SelectFilter
-          label="Payout"
-          value={payoutF}
-          onChange={setPayout}
-          options={[
-            { value: '', label: 'Any' },
-            { value: 'due', label: 'Due' },
-            { value: 'failed', label: 'Failed' },
-            { value: 'paid', label: 'Paid' },
-          ]}
-        />
+        {ceo && (
+          <SelectFilter
+            label="Payout"
+            value={payoutF}
+            onChange={setPayout}
+            options={[
+              { value: '', label: 'Any' },
+              { value: 'due', label: 'Due' },
+              { value: 'failed', label: 'Failed' },
+              { value: 'paid', label: 'Paid' },
+            ]}
+          />
+        )}
         <SelectFilter
           label="Checks"
           value={checks}
@@ -152,7 +180,7 @@ export default function Referrals() {
         caption="Referral partners"
         download="referral-partners"
         onOpen={(r) => navigate(to('C-Partner', { id: r.id }))}
-        note="₹200 is paid only when a referred person joins a job · business referrals are not paid yet."
+        note={ceo ? '₹200 is paid only when a referred person joins a job · business referrals are not paid yet.' : undefined}
       />
       <div className="two-col">
         <Card title="Best partners">
@@ -161,7 +189,7 @@ export default function Referrals() {
           ))}
           {d && d.best.length === 0 && <p className="ceo-sub">No referred person has joined yet.</p>}
         </Card>
-        <Card title="Fraud checks">
+        {ceo && <Card title="Fraud checks">
           <Kv
             rows={[
               ['UPI matches a staff member', fraudPill(fraud?.matchesStaff)],
@@ -169,7 +197,7 @@ export default function Referrals() {
               ['Payout name ≠ ID name', fraudPill(fraud?.nameMismatch)],
             ]}
           />
-        </Card>
+        </Card>}
       </div>
     </div>
   );

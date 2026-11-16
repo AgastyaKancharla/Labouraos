@@ -6,7 +6,7 @@ import { StatGrid, StatTile } from '../../../components/StatTile';
 import { StatusPill } from '../../../components/Badge';
 import { TopBar } from '../../../components/TopBar';
 import { formatINR } from '../../../lib/format/money';
-import { useScreenPath } from '../../../portals/PortalContext';
+import { homeBack, useRecordsPortal } from '../_kit/records';
 import { DateFilter, FilterPanel, HBar, Kv, OpenLink, PagedTable, SearchField, SelectFilter, facetOptions, humanize, rangeQuery, useCeoList, useDebounced, type ListPeriod } from '../_kit/kit';
 import { VACANCY_STATUS } from '../_kit/labels';
 
@@ -58,19 +58,27 @@ function statusPill(r: Row) {
 }
 
 export default function VacanciesList() {
-  const to = useScreenPath();
+  const { api: base, link, to } = useRecordsPortal();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('open');
+  // "All" by default (owner, testing 16 Nov): nothing is hidden until a filter or tile is chosen.
+  const [status, setStatus] = useState('');
   const [trade, setTrade] = useState('');
   const [area, setArea] = useState('');
   const [age, setAge] = useState('');
   const [period, setPeriod] = useState<ListPeriod>(null);
   const q = useDebounced(search);
-  const list = useCeoList<Row, Extra, Summary>('/ceo/vacancies', { search: q, status: status || 'all', trade, area, age, ...rangeQuery(period) });
+  const list = useCeoList<Row, Extra, Summary>(`${base}/vacancies`, { search: q, status: status || 'all', trade, area, age, ...rangeQuery(period) });
   const d = list.query.data;
   const s = d?.summary;
   const loading = list.query.isPending;
+  /** A tile sets the filters to its own rows (click it again to show all). */
+  const tileKey = `${status}|${age}`;
+  const tile = (nextStatus: string, nextAge = '') => () => {
+    const same = tileKey === `${nextStatus}|${nextAge}`;
+    setStatus(same ? '' : nextStatus);
+    setAge(same ? '' : nextAge);
+  };
   const maxDays = Math.max(1, ...(d?.timeToFillByTrade ?? []).map((t) => t.days));
 
   const columns: Column<Row>[] = [
@@ -104,14 +112,14 @@ export default function VacanciesList() {
 
   return (
     <div className="lb-page">
-      <TopBar back={{ to: to('Main'), label: 'Command Center' }} title="Vacancies" subtitle="Every open job, how long it has been open and how close it is to being filled." />
+      <TopBar back={homeBack(link)} title="Vacancies" subtitle="Every job, how long it has been open and how close it is to being filled." />
       <StatGrid>
-        <StatTile label={`Open · ${s?.openPositions ?? 0} positions`} value={s?.open ?? '—'} tone="gold" loading={loading} />
-        <StatTile label="Open more than 15 days" value={s?.openOver15Days ?? '—'} tone="orange" loading={loading} />
-        <StatTile label="Replacements" value={s?.replacements ?? '—'} tone="royal" loading={loading} />
+        <StatTile label={`Open · ${s?.openPositions ?? 0} positions`} value={s?.open ?? '—'} tone="gold" loading={loading} onClick={tile('open')} active={tileKey === 'open|'} />
+        <StatTile label="Open more than 15 days" value={s?.openOver15Days ?? '—'} tone="orange" loading={loading} onClick={tile('open', 'over_15')} active={tileKey === 'open|over_15'} />
+        <StatTile label="Replacements" value={s?.replacements ?? '—'} tone="royal" loading={loading} onClick={tile('replacement')} active={tileKey === 'replacement|'} />
         <StatTile label="Average time to fill" value={s?.averageDaysToFill !== null && s?.averageDaysToFill !== undefined ? `${s.averageDaysToFill} days` : '—'} tone="cyan" loading={loading} />
         <StatTile label="Fill rate (this month)" value={s ? `${s.fillRatePercent}%` : '—'} tone="good" loading={loading} />
-        <StatTile label="Below legal minimum wage" value={s?.belowLegalMinimum ?? '—'} tone="red" loading={loading} />
+        <StatTile label="Below legal minimum wage" value={s?.belowLegalMinimum ?? '—'} tone="red" loading={loading} onClick={tile('below_minimum')} active={tileKey === 'below_minimum|'} />
       </StatGrid>
       <FilterPanel>
         <SearchField value={search} onChange={setSearch} placeholder="Business, trade or VC- code" />
@@ -120,8 +128,10 @@ export default function VacanciesList() {
           value={status}
           onChange={setStatus}
           options={[
-            { value: 'open', label: 'Open' },
             { value: '', label: 'All' },
+            { value: 'open', label: 'Open' },
+            { value: 'replacement', label: 'Open replacements' },
+            { value: 'below_minimum', label: 'Open, below legal minimum wage' },
             { value: 'filled', label: 'Filled' },
             { value: 'closed', label: 'Closed' },
             { value: 'draft', label: 'Draft / waiting for owner OTP' },

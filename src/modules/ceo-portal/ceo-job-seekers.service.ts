@@ -36,6 +36,8 @@ export interface JobSeekerListQuery {
   trade?: string;
   kyc?: string;
   sort?: string;
+  /** Manager portal: only these job seekers (record-scope.ts). The CEO passes none. */
+  scope?: Prisma.JobSeekerWhereInput;
 }
 
 export interface JobSeekerRow {
@@ -100,8 +102,12 @@ export class CeoJobSeekersService {
     return latest.status === 'failed' ? 'failed' : 'pending';
   }
 
-  private listWhere(query: JobSeekerListQuery): Prisma.JobSeekerWhereInput {
+  private listWhere(
+    query: JobSeekerListQuery,
+    tiles: { maxHits: number; deactivatedThisMonthIds?: string[] },
+  ): Prisma.JobSeekerWhereInput {
     const and: Prisma.JobSeekerWhereInput[] = [{ anonymisedAt: null }];
+    if (query.scope) and.push(query.scope);
     const created = dateFilter(query.range);
     if (created) and.push({ createdAt: created });
     if (query.search) {
@@ -137,6 +143,16 @@ export class CeoJobSeekersService {
       case 'refunded':
         and.push({ status: 'refunded' });
         break;
+      // The tiles' own rows (clicking a tile sets its filter; same rules as summary()).
+      case 'waiting_kyc':
+        and.push({ status: { notIn: [...ENDED_STATUSES, 'lead'] }, identityVerifications: { none: { status: 'verified' } } });
+        break;
+      case 'two_hits':
+        and.push({ status: { notIn: ENDED_STATUSES }, hitCount: Math.max(0, tiles.maxHits - 1) });
+        break;
+      case 'deactivated_this_month':
+        and.push({ id: { in: tiles.deactivatedThisMonthIds ?? [] } });
+        break;
       default:
         break;
     }
@@ -148,7 +164,16 @@ export class CeoJobSeekersService {
 
   async list(query: JobSeekerListQuery, now: Date = new Date()): Promise<Paged<JobSeekerRow, JobSeekerListSummary> & { trades: string[] }> {
     const policy = await this.pricing.current();
-    const where = this.listWhere(query);
+    const deactivatedThisMonthIds =
+      query.status === 'deactivated_this_month'
+        ? (
+            await this.prisma.statusHistory.findMany({
+              where: { subjectType: 'job_seeker', toStatus: 'deactivated', changedAt: { gte: istStartOfMonth(now), lte: now } },
+              select: { subjectId: true },
+            })
+          ).map((h) => h.subjectId)
+        : undefined;
+    const where = this.listWhere(query, { maxHits: policy.maxHits, deactivatedThisMonthIds });
     const orderBy: Prisma.JobSeekerOrderByWithRelationInput[] =
       query.sort === 'latest'
         ? [{ paymentReceivedAt: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }]
@@ -169,7 +194,7 @@ export class CeoJobSeekersService {
           registeredBy: { select: { name: true } },
         },
       }),
-      this.summary(now, policy.jobSeekerGuaranteeDays, policy.maxHits),
+      this.summary(now, policy.jobSeekerGuaranteeDays, policy.maxHits, query.scope),
       this.prisma.trade.findMany({ where: { active: true }, orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }], select: { name: true } }),
     ]);
 
@@ -199,8 +224,8 @@ export class CeoJobSeekersService {
   }
 
   /** The six tiles on the Job Seekers list ("right now", not filtered). */
-  async summary(now: Date, guaranteeDays: number, maxHits: number): Promise<JobSeekerListSummary> {
-    const base: Prisma.JobSeekerWhereInput = { anonymisedAt: null };
+  async summary(now: Date, guaranteeDays: number, maxHits: number, scope?: Prisma.JobSeekerWhereInput): Promise<JobSeekerListSummary> {
+    const base: Prisma.JobSeekerWhereInput = scope ? { anonymisedAt: null, AND: [scope] } : { anonymisedAt: null };
     const fiveDayStart = new Date(now.getTime() - (guaranteeDays - 5) * DAY_MS);
     const guaranteeStart = new Date(now.getTime() - guaranteeDays * DAY_MS);
     const [activeInPool, registeredNotPaid, waitingOnKyc, withinFiveDaysOfRefund, atTwoOfThreeHits, deactivatedThisMonth] =
@@ -222,9 +247,16 @@ export class CeoJobSeekersService {
           },
         }),
         this.prisma.jobSeeker.count({ where: { ...base, status: { notIn: ENDED_STATUSES }, hitCount: Math.max(0, maxHits - 1) } }),
-        this.prisma.statusHistory.count({
-          where: { subjectType: 'job_seeker', toStatus: 'deactivated', changedAt: { gte: istStartOfMonth(now), lte: now } },
-        }),
+        scope
+          ? this.prisma.statusHistory
+              .findMany({
+                where: { subjectType: 'job_seeker', toStatus: 'deactivated', changedAt: { gte: istStartOfMonth(now), lte: now } },
+                select: { subjectId: true },
+              })
+              .then((rows) => this.prisma.jobSeeker.count({ where: { AND: [{ id: { in: rows.map((r) => r.subjectId) } }, scope] } }))
+          : this.prisma.statusHistory.count({
+              where: { subjectType: 'job_seeker', toStatus: 'deactivated', changedAt: { gte: istStartOfMonth(now), lte: now } },
+            }),
       ]);
     return { activeInPool, registeredNotPaid, waitingOnKyc, withinFiveDaysOfRefund, atTwoOfThreeHits, deactivatedThisMonth };
   }
@@ -366,7 +398,19 @@ export class CeoJobSeekersService {
         registeredBy: seeker.registeredBy,
         heardFrom: seeker.heardFrom,
         dateOfBirth: seeker.dateOfBirth?.toISOString().slice(0, 10) ?? null,
+        // As on the call agent's person page: when he can be called.
+        bestTime: seeker.preferredCallWindowStart && seeker.preferredCallWindowEnd ? { start: seeker.preferredCallWindowStart, end: seeker.preferredCallWindowEnd } : null,
       },
+      // Each consent item he was asked for, granted or withdrawn (purpose and time only).
+      consents: [...askedPurposes].map((purpose) => {
+        const latest = consents.filter((c) => c.purpose === purpose).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+        return {
+          purpose,
+          granted: Boolean(latest?.granted && !latest.withdrawnAt),
+          at: (latest?.withdrawnAt ?? latest?.grantedAt ?? latest?.createdAt)?.toISOString() ?? null,
+          withdrawn: Boolean(latest?.withdrawnAt),
+        };
+      }),
       registration: {
         phoneVerified: seeker.phoneVerified,
         consentsGranted: grantedPurposes.size,

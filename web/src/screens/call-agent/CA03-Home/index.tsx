@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { CallRoutingPhoneCard } from '../_lib/CallRoutingPhoneCard';
 import { ToneTile } from '../../../components/ToneTile';
 import { Link } from 'react-router-dom';
 import { ErrorState } from '../../../components/ErrorState';
@@ -68,6 +69,8 @@ export default function CallAgentHome() {
           {data?.inCallingHours && <Link to={to('CA14b-AttendanceActive')}>{t('ca.goAttendance')}</Link>}
         </div>
       )}
+
+      {data?.callRoutingPhoneSet === false && <CallRoutingPhoneCard isSet={false} onSaved={() => void home.refetch()} />}
 
       {home.error && <ErrorState error={home.error} onRetry={() => void home.refetch()} />}
 
@@ -217,6 +220,8 @@ export default function CallAgentHome() {
           </div>
         </section>
       </div>
+      {/* Set: a small card at the end to change it (not set: the warning card at the top). */}
+      {data?.callRoutingPhoneSet === true && <CallRoutingPhoneCard isSet onSaved={() => void home.refetch()} />}
     </div>
   );
 }

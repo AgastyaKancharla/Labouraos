@@ -58,7 +58,14 @@ describe('CEO Job Seekers list', () => {
     // "+ Register job seeker" opens the one job seeker form inside the CEO portal.
     expect(screen.getByRole('link', { name: '+ Register job seeker' })).toHaveAttribute('href', '/ceo/register/job-seeker');
     expect(screen.getAllByText('2 days left')[0]).toBeInTheDocument();
-    expect(api.calls('GET /ceo/job-seekers')[0].query.get('status')).toBe('active');
+    // Owner, testing 16 Nov: the list opens on "All", so a just-registered unpaid job seeker is never hidden.
+    expect(api.calls('GET /ceo/job-seekers')[0].query.get('status')).toBeNull();
+    // A tile sets its own filter; clicking it again shows everyone.
+    await userEvent.click(screen.getByRole('button', { name: /Registered, not paid/ }));
+    await waitFor(() => expect(api.calls('GET /ceo/job-seekers').at(-1)!.query.get('status')).toBe('not_paid'));
+    expect(screen.getByRole('button', { name: /Registered, not paid/ })).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.click(screen.getByRole('button', { name: /Registered, not paid/ }));
+    await waitFor(() => expect(api.calls('GET /ceo/job-seekers').at(-1)!.query.get('status')).toBeNull());
 
     await userEvent.click(screen.getByRole('button', { name: 'Next →' }));
     expect(await screen.findByText('Showing 26–30 of 30')).toBeInTheDocument();

@@ -351,7 +351,7 @@ export class CallService {
     });
     if (!caller?.callRoutingPhone) {
       throw new BadRequestException(
-        'Set the phone the calling system rings before placing a call',
+        'Set the phone the calling system rings before placing a call: Home → "Your calling phone" (a Team Lead, Manager or the CEO can also set it on Team & Access)',
       );
     }
     const agentPhone = normaliseIndianMobile(decryptCallRoutingPhone(caller.callRoutingPhone));

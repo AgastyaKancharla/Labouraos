@@ -1,28 +1,62 @@
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { onTestModeBanner } from '@/api/testMode';
+import { onTestModeBanner, type TestModeNotice } from '@/api/testMode';
+import { useI18n } from '@/i18n';
 import { colors, radius } from '@/theme';
 import { Text } from './Text';
 
 /**
- * The amber "Test mode code: 123456" strip shown over every screen after a
- * "Send OTP" while the server is in OTP test mode (pretend vendors). Tap ×
- * to close. Never appears on a live system: the server does not send it.
+ * The amber test-mode strip shown over every screen while the server is in
+ * test mode (pretend vendors): "Test mode code: 123456" after a "Send OTP",
+ * and "Test mode link · Open link" after anything that sends a link by SMS
+ * (the SMS never arrives on the test site). Tap × to close. Never appears on
+ * a live system: the server does not send the code or the link there.
  */
 export function TestModeBanner() {
-  const [banner, setBanner] = useState<string | null>(null);
+  const { t } = useI18n();
+  const [notice, setNotice] = useState<TestModeNotice | null>(null);
   const insets = useSafeAreaInsets();
-  useEffect(() => onTestModeBanner(setBanner), []);
-  if (!banner) return null;
+  useEffect(
+    () =>
+      onTestModeBanner((next) =>
+        setNotice((prev) => ({
+          code: next.code ?? (next.links ? undefined : prev?.code),
+          links: next.links ?? (next.code ? undefined : prev?.links),
+        })),
+      ),
+    [],
+  );
+  if (!notice || (!notice.code && !notice.links?.length)) return null;
+  const links = notice.links ?? [];
   return (
     <View style={[styles.wrap, { top: insets.top + 8 }]} pointerEvents="box-none">
       <View style={styles.box} testID="test-mode-banner" accessibilityRole="alert">
         <View style={styles.text}>
-          <Text variant="bodyStrong">{banner}</Text>
-          <Text variant="small">Test mode: no SMS is sent.</Text>
+          {notice.code && <Text variant="bodyStrong">{notice.code}</Text>}
+          {links.length > 0 && (
+            <View style={styles.links} testID="test-mode-link">
+              <Text variant="bodyStrong">{t('testMode.link')}</Text>
+              {links.map((url, i) => (
+                <Pressable
+                  key={url}
+                  style={styles.open}
+                  // On the installed web app this opens a new tab (react-native-web Linking).
+                  onPress={() => void Linking.openURL(url)}
+                  accessibilityRole="link"
+                  accessibilityHint={url}
+                  hitSlop={6}
+                >
+                  <Text variant="bodyStrong" style={styles.openText}>
+                    {links.length > 1 ? t('testMode.openLinkN', { n: i + 1 }) : t('testMode.openLink')}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+          <Text variant="small">{links.length > 0 ? t('testMode.linkNote') : t('testMode.codeNote')}</Text>
         </View>
-        <Pressable onPress={() => setBanner(null)} accessibilityRole="button" accessibilityLabel="Close" hitSlop={12}>
+        <Pressable onPress={() => setNotice(null)} accessibilityRole="button" accessibilityLabel={t('common.close')} hitSlop={12}>
           <Text variant="bodyStrong">×</Text>
         </Pressable>
       </View>
@@ -46,4 +80,7 @@ const styles = StyleSheet.create({
     borderColor: colors.amberBorder,
   },
   text: { flex: 1, gap: 2 },
+  links: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
+  open: { paddingVertical: 4, paddingHorizontal: 10, borderRadius: radius.md, backgroundColor: colors.ink },
+  openText: { color: colors.white },
 });

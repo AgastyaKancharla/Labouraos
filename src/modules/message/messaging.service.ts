@@ -14,6 +14,7 @@ import { dltTemplateId, SMS_PROVIDER, SmsProvider } from './sms.provider';
 import { callStatusSignatureMatches } from '../call/call-signature';
 import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 import { normaliseIndianMobile } from '../../common/phone/indian-mobile';
+import { recordTestModeLink } from '../../common/test-mode-link';
 
 export interface SendMessageInput {
   channel: 'sms' | 'whatsapp';
@@ -40,6 +41,8 @@ export class MessagingService {
   ) {}
 
   async send(input: SendMessageInput) {
+    // Test site only (pretend SMS): the request that sent a link answers with it (DEPLOY.md F12).
+    recordTestModeLink(input.template, input.variables?.link);
     const row = await this.prisma.messageLog.create({
       data: {
         channel: input.channel,
