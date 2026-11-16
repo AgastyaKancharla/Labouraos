@@ -77,6 +77,14 @@ describe('Security M2: vacancy edits re-check the minimum wage and need the owne
     expect((await prisma.vacancy.findUniqueOrThrow({ where: { id: v.id } })).salaryMinPaise).toBe(2500000);
   });
 
+  it('M2-R3: past the draft the starting salary cannot be cleared or set to 0 (the minimum wage check always runs)', async () => {
+    const v = await vacancy();
+    for (const value of [null, 0]) {
+      expect((await patch(v.id, { salaryMinPaise: value, ownerToldMinimumWage: true, reason: 'x' })).status).toBe(400);
+    }
+    expect((await prisma.vacancy.findUniqueOrThrow({ where: { id: v.id } })).salaryMinPaise).toBe(2500000);
+  });
+
   it('a salary below the legal minimum needs the owner-told tick again; then it is saved and flagged', async () => {
     const v = await vacancy();
     const refused = await patch(v.id, { salaryMinPaise: 100000, reason: 'owner lowered it' });

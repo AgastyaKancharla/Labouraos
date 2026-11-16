@@ -154,6 +154,10 @@ export class VacancyService {
     if (salaryMin !== null && salaryMin !== undefined && salaryMax !== null && salaryMax !== undefined && salaryMin > salaryMax) {
       throw new BadRequestException('salaryMinPaise cannot be more than salaryMaxPaise');
     }
+    // M2-R3: past the draft a vacancy always has a starting salary, so the minimum wage check always runs.
+    if (fromStatus !== 'draft' && diff.changedFields.some((field) => MINIMUM_WAGE_FIELDS.includes(field)) && !(typeof salaryMin === 'number' && salaryMin > 0)) {
+      throw new BadRequestException('salaryMinPaise is required (more than 0) once a vacancy is past the draft');
+    }
     if (fromStatus !== 'draft' && diff.changedFields.some((field) => MINIMUM_WAGE_FIELDS.includes(field)) && typeof salaryMin === 'number') {
       Object.assign(data, await this.confirmationService.legalMinimumFields(
         effective<string>('tradeSkill'),
