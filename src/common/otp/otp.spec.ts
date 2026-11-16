@@ -144,7 +144,7 @@ describe('OTP Provider and Mock Implementation', () => {
         staff: { findUnique: jest.fn(), findFirst: jest.fn() },
       } as unknown as PrismaService;
       const auditLog = jest.fn().mockResolvedValue(undefined);
-      const audit = { log: auditLog } as unknown as AuditService;
+      const audit = { log: auditLog, prepare: jest.fn().mockResolvedValue({ code: 'AU-1', device: {} }) } as unknown as AuditService;
       const service = new OtpService(provider, audit, prisma);
 
       await expect(service.sendOtp('9876543210', 'job_seeker', 'agent-1', 'call_agent'))
@@ -172,7 +172,7 @@ describe('OTP Provider and Mock Implementation', () => {
           findMany: jest.fn().mockResolvedValue([]),
         },
       } as unknown as PrismaService;
-      const audit = { log: jest.fn().mockResolvedValue(undefined) } as unknown as AuditService;
+      const audit = { log: jest.fn().mockResolvedValue(undefined), prepare: jest.fn().mockResolvedValue({ code: 'AU-1', device: {} }) } as unknown as AuditService;
       const service = new OtpService(provider, audit, prisma);
 
       await expect(service.sendOtp('9876543210', 'job_seeker', 'lead-1', 'team_lead'))
