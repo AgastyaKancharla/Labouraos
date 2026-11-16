@@ -20,6 +20,7 @@ export const en = {
   ...accessEn,
   'common.appName': 'Laboura Field',
   'common.brand': 'Laboura',
+  'common.logoHome': 'Laboura — go to Home',
   'common.fieldAgent': 'Field agent',
   'common.retry': 'Try again',
   'common.loading': 'Loading…',

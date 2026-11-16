@@ -18,6 +18,7 @@ export const kn: Messages = {
   ...accessKn,
   'common.appName': 'Laboura Field',
   'common.brand': 'Laboura',
+  'common.logoHome': 'Laboura — ಮುಖಪುಟಕ್ಕೆ ಹೋಗಿ',
   'common.fieldAgent': 'ಫೀಲ್ಡ್ ಏಜೆಂಟ್',
   'common.retry': 'ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ',
   'common.loading': 'ಲೋಡ್ ಆಗುತ್ತಿದೆ…',

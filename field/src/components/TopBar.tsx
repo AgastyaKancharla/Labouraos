@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { Image, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useI18n } from '@/i18n';
 import { initials } from '@/lib/format';
+import { routes } from '@/navigation/routes';
 import { colors, fonts, headerGradient, radius, touch } from '@/theme';
 import { Button } from './Button';
 import { LanguageSwitcher } from './LanguageSwitcher';
@@ -33,7 +35,20 @@ export function TopBar({ title, subtitle, personName, onLogout }: Props) {
     <View>
       <LinearGradient colors={headerGradient} style={[styles.bar, { paddingTop: insets.top + 12 }]}>
         <View style={styles.left}>
-          <Image source={logo} style={styles.logo} accessibilityLabel={t('common.brand')} />
+          {personName ? (
+            // The logo goes Home (decided 16 Nov) once the person is signed in.
+            <Pressable
+              accessibilityRole="link"
+              accessibilityLabel={t('common.logoHome')}
+              onPress={() => router.navigate(routes.home)}
+              hitSlop={6}
+              testID="logo-home"
+            >
+              <Image source={logo} style={styles.logo} />
+            </Pressable>
+          ) : (
+            <Image source={logo} style={styles.logo} accessibilityLabel={t('common.brand')} />
+          )}
           <View style={styles.titles}>
             <Text style={styles.title} numberOfLines={1} accessibilityRole="header">
               {title}
