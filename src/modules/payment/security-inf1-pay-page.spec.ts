@@ -7,7 +7,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { UpiCollectionService } from './upi-collection.service';
 import { PAY_PAGE_DAYS_AFTER_PAYMENT, payPageTokenFor, payPageTokenHash } from './pay-page-token';
-import { backfillPayPageTokens } from '../../scripts/backfill-pay-page-tokens';
+import { backfillPayPageTokens, paymentsToResend, resendCodesFromArgs } from '../../scripts/backfill-pay-page-tokens';
 import { PlacementService } from '../placement/placement.service';
 import { GstInvoiceResponse } from '../placement/dto/gst-invoice.dto';
 
@@ -101,6 +101,27 @@ describe('Security INF-1: the pay page has its own token, expires after payment 
     expect((await summary(legacy.upiReference!)).status).toBe(404);
     // Run again: nothing left to do for it.
     expect((await backfillPayPageTokens(prisma)).backfilled.map((r) => r.id)).not.toContain(legacy.id);
+  });
+
+  it('L3-R1: a stopped run can be resumed for named codes; only requests still waiting for money by UPI are picked', async () => {
+    expect(resendCodesFromArgs(['node', 'x', '--resend-codes', 'pay-00001, PAY-00002,,PAY-00001'])).toEqual(['PAY-00001', 'PAY-00002']);
+    expect(resendCodesFromArgs(['node', 'x', '--resend-codes=PAY-00003'])).toEqual(['PAY-00003']);
+    expect(resendCodesFromArgs(['node', 'x', '--resend'])).toBeNull();
+    const make = async (status: string) => {
+      const id = randomUUID();
+      const code = await app.get(IdService).generateCode('payment');
+      await prisma.payment.create({
+        data: { id, code, type: 'placement_fee', amount: 1000, expectedAmountPaise: 1000, status, method: 'upi_direct', upiReference: `${code}-ab12cd34`, subjectType: 'placement', subjectId: randomUUID() },
+      });
+      created.push(id);
+      return { id, code };
+    };
+    const waiting = await make('pending');
+    const paid = await make('succeeded');
+    const { ready, skipped } = await paymentsToResend(prisma, [waiting.code, paid.code, 'PAY-NOPE']);
+    expect(ready).toEqual([{ id: waiting.id, code: waiting.code }]);
+    expect(skipped).toEqual([paid.code, 'PAY-NOPE']);
+    expect((await prisma.payment.findUniqueOrThrow({ where: { id: waiting.id } })).pageTokenHash).toBe(payPageTokenHash(payPageTokenFor(waiting.id)));
   });
 
   it('L3: the backfill leaves paid requests alone', async () => {

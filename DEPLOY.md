@@ -634,7 +634,7 @@ Payment links sent before PR #152 opened by the payment reference. PR #152 kept 
 2. Run `npm run backfill:pay-page-tokens -- --resend`.
 3. It prints how many waiting requests got a page token and "Sent a new link: PAY-…" for each (by SMS / WhatsApp, to the person the request was for). A line "Not sent (PAY-…)" names one to re-send by hand from its screen ("Resend payment link"); the reason is printed with it (for example, a ₹499 whose ID check is not finished).
 
-Without `--resend` it only saves the tokens and lists the payment codes. Running it again does nothing to a request that already has its token. Until it runs, an old unpaid link answers "Payment request not found".
+Without `--resend` it only saves the tokens and lists the payment codes. Running it again does nothing to a request that already has its token. **If it stopped part-way** (or printed "Not sent" lines), send just those again: `npm run backfill:pay-page-tokens -- --resend-codes PAY-00012,PAY-00013` (the codes it printed; it ends with the exact line to copy for any that were not sent). Codes no longer waiting for money are skipped. Until it runs, an old unpaid link answers "Payment request not found".
 
 Before the deploy: register the DLT template `phone_number_changed` and add its id to `SMS_DLT_TEMPLATE_IDS` (All settings, the SMS row). It goes to the OLD number when a record's mobile number is changed (M3).
 
