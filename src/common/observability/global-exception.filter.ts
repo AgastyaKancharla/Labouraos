@@ -23,6 +23,13 @@ export function safeRoutePath(request: { route?: { path?: unknown }; baseUrl?: s
   return raw.replace(/[A-Za-z0-9_-]{16,}/g, ':value');
 }
 
+/** The stable UPPER_SNAKE `code` of a coded error's body (src/common/http/coded-error.ts), if any. */
+function codeOf(details: unknown): string | null {
+  if (typeof details !== 'object' || details === null) return null;
+  const code = (details as Record<string, unknown>).code;
+  return typeof code === 'string' && /^[A-Z][A-Z0-9_]{2,63}$/.test(code) ? code : null;
+}
+
 @Injectable()
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -70,10 +77,14 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         path: where,
       });
 
-      // Avoid leaking server internals in 500 responses
+      // Avoid leaking server internals in 500 responses. A deliberate coded error
+      // (codedError, e.g. 502 AGREEMENT_SMS_FAILED) keeps only its stable code, so the
+      // apps can show their own words for it; never its text or anything else.
+      const code = codeOf(errorDetails);
       response.status(status).json({
         statusCode: status,
         message: 'Internal server error',
+        ...(code ? { details: { code } } : {}),
         requestId,
         timestamp: new Date().toISOString(),
       });

@@ -1,6 +1,7 @@
 # Laboura Field redesign — server API contract
 
-Branch `build/field-redesign-server`. Owner decision: Master Guide rev 188 (16 Nov), "Laboura Field redesign".
+Branch `build/field-redesign-server`. Owner decision: Master Guide rev 188 (16 Nov), "Laboura Field redesign";
+fixes after the end-to-end check: rev 192 (S1–S5, see §9).
 This file is the contract between the server and the Laboura Field app (`field/`). It lists every endpoint
 the redesigned app uses: **new**, **changed** and **reused** (unchanged). It is kept up to date with every
 server change on the branch.
@@ -10,16 +11,30 @@ server change on the branch.
 - Signed in as a **field agent** (`Authorization: Bearer <staff token>`); any other role gets `403`.
 - Works only on the agent's **own records**. "Own business" (`canAct: true`) = the agent is the business's
   account agent, or created the lead and it is still `lead` / `pending_visit` with no other account agent, or
-  holds an open verification visit (assignment) for it. Other businesses are **view-only** (`canAct: false`):
-  reads work, writes answer `403` with code `NOT_YOUR_BUSINESS`.
+  holds an open verification visit (assignment) for it. Completing a verification visit of a business that has
+  no account agent makes the verifying agent its account agent (rev 192 S1), so he keeps acting on it after the
+  assignment closes. Other businesses are **view-only** (`canAct: false`): reads work, writes answer `403` with
+  code `NOT_YOUR_BUSINESS`.
 - **Phone numbers are masked** (last 4 digits) by the server; only `…Last4` fields are sent where a number is
   needed. No rupee totals (fees, GST, invoices) are sent. Vacancy salaries are sent (job details).
 - **Days are IST** (UTC+05:30) calendar days. Dates are `YYYY-MM-DD` (IST); instants are ISO 8601 UTC.
 - `title` / `subtitle` in lists are **data** (a business name, a person's first name, a trade, an area), never
   sentences. The app writes the words for each `kind` / `type` in the agent's language (Kannada / English).
-- Errors are JSON: `{ "statusCode": 409, "error": "Conflict", "code": "VISIT_RESULT_ALREADY_SET", "message": "…" }`.
-  `code` is stable (switch on it); `message` is English text for logs / fallback. Older errors that have no
-  `code` yet keep only `message`.
+- **Errors** (rev 192 S5: the shape as the server really sends it). Every error goes through the global error
+  filter, so the stable **`code` is at `details.code`**, never at the top:
+
+  ```json
+  { "statusCode": 409, "message": "…English…",
+    "details": { "statusCode": 409, "error": "Conflict", "code": "VISIT_RESULT_ALREADY_SET", "message": "…English…", "currentOutcome": "owner_not_there" },
+    "requestId": "…", "timestamp": "2026-11-16T05:30:00.000Z" }
+  ```
+
+  Switch on `details.code`; the extra fields of an error (`currentOutcome`, `retryAt`, `missing`,
+  `legalMinimumPaise`, …) are next to it in `details`. `message` is English, for logs only: the app shows its own
+  Kannada / English words for each code and never the raw `message`. A `5xx` error says only
+  `"message": "Internal server error"`; a coded one keeps its code (`"details": { "code": "AGREEMENT_SMS_FAILED" }`)
+  and nothing else. Older errors with no code: `details` is `{ statusCode, message, error }` (no `code`); for a
+  validation error `message` can be a list. `429` from a public page's "Send code" carries `details.retryAfterSeconds`.
 - Writes may carry `Idempotency-Key` (offline queue): a repeat with the same key replays the first answer.
 
 Status: ✅ built and tested on the branch · 🟡 being built (shape fixed, may gain fields). All endpoints below are ✅.
@@ -110,8 +125,15 @@ Same shape as before. `today.onboarded` now uses the corrected count above.
 ### Reused (unchanged)
 
 - `GET /attendance/today`, `POST /attendance/login` `{latitude, longitude, accuracy}`, `POST /field-agent/check-in`,
-  `POST /attendance/status` `{status}` (status chip: on visit, travelling, meeting, lunch, break),
   `POST /attendance/logout` (End my day).
+- **Status chip** — `POST /attendance/status` `{status}` (rev 192 S5). The statuses a person can pick are exactly:
+  `available` · `team_meeting` · `training` · `one_to_one` · `system_problem` · `short_break` · `lunch`.
+  Anything else answers `400` ("On call, after-call notes, on visit, travelling and idle cannot be set by hand").
+  The server sets the others by itself, and `GET /attendance/today` reports them as the current status:
+  `on_visit` when a visit starts (board photo; or `POST /attendance/business-check-in`), `travelling` when it
+  ends (selfie, or the result of a visit with no selfie; or `POST /attendance/business-check-out`), `on_call` /
+  `after_call_notes` from the phone system, `idle` after no activity. Show those as the current status, never as
+  choices.
 - `GET /search?q=` (search bar on every main tab).
 - `GET /screens/field-selling/settings` — fee calculator (see §8; gained fields).
 
@@ -167,6 +189,8 @@ that the Onboarded number counts for that day (its first onboarding; the visit w
 
 - `GET /field-work/visits` (planned today, revisits due, done today) — unchanged, except `doneToday[]` rows gain
   `nextStep` (same values as visit details below) so "Selfie needed" / "Continue to business form" open the right step.
+  **Rev 192 S4:** `planned[]` leaves out an interview visit whose attendance is recorded ("candidate arrived" or
+  "didn't come"); it shows in Today's work as `interview_attended` instead. The app needs no change for this.
 - **Planned today** rows: `purpose: 'interview'` → interview screen (`GET /screens/field-selling/interviews/:id`,
   "candidate arrived": `POST /field-selling/interviews/:id/arrival`); `verification` / `business_signup` → verify flow.
 
@@ -178,7 +202,7 @@ that the Onboarded number counts for that day (its first onboarding; the visit w
 | talk + result | `POST /field-visits/:id/outcome` `{outcome, shopName?, spokeTo?, contactPhone?, reason?, revisitOn?, note?, endedAt?}`; `outcome` = `onboard_now` · `interested_later` · `not_interested` · `owner_not_there` · `onboarded`. **CHANGED:** see below. |
 | selfie with the board | `POST /field-visits/:id/proof` multipart (unchanged) |
 | business form | `POST /businesses` with `fieldVisitId` (unchanged). **Saving it marks the visit `onboarded` on the server** (existing). `staffNeededRows` may be empty or left out (verified). |
-| verification visit | `POST /businesses/:businessId/visit-assignments/:assignmentId/owner-otp`, `POST /field-visits/:id/verify` — **CHANGED:** completing it now also sets the visit result to `onboarded` (B19). |
+| verification visit | `POST /businesses/:businessId/visit-assignments/:assignmentId/owner-otp`, `POST /field-visits/:id/verify` — **CHANGED:** completing it now also sets the visit result to `onboarded` (B19). **Rev 192 S1:** if the business has no account agent, the verifying agent becomes it (recorded in the audit log as `business.account_agent_assigned`, like every account-agent change); a business that already has one keeps it. The answer gains `isAccountAgent` (he is its account agent now) and `becameAccountAgent` (this visit made him so; show "You are now its account agent" only then). The next step (agreement) then works for him. |
 
 **Visit results** (`outcome`) and their meaning (the app writes the label in Kannada / English):
 
@@ -395,9 +419,16 @@ Errors: `403 NOT_YOUR_BUSINESS` · `404` · `409 AGREEMENT_ALREADY_SIGNED` (curr
 `429 AGREEMENT_RESEND_LIMIT` (`retryAt`; at most 5 links per business in 24 hours) ·
 `502 AGREEMENT_SMS_FAILED` (the SMS did not go: nothing was sent, the old link still works; show it, let him retry).
 
-The business form's automatic first link stays `POST /businesses/:id/agreement-links` (unchanged for the office);
+The business form's automatic first link stays `POST /businesses/:id/agreement-links` (same route for the office);
 its answer now also carries `smsSent: true|false` so the app no longer has to swallow a failure — if `false`,
 show "Resend agreement link".
+
+**Rev 192 S2 — one limit for every route that sends an agreement link.** The one-a-minute and five-in-24-hours
+limit is per business and shared: `POST /businesses/:id/agreement-links` (business form, office) and
+`POST /field-work/businesses/:ref/agreement-link` (Resend) count against the same links and both answer
+`429 AGREEMENT_RESEND_TOO_SOON` / `429 AGREEMENT_RESEND_LIMIT` (`details.retryAt`). A link whose SMS failed is
+withdrawn on both routes, so it never uses up the limit (`smsSent: false` on the first route, `502` on Resend).
+Links the owner opens himself in the Laboura app send no SMS and are not limited here.
 
 ### Vacancies inside the business page (reused; one change)
 
@@ -407,7 +438,22 @@ show "Resend agreement link".
 | fill a draft's missing fields | `PATCH /vacancies/:id` (allowed fields only; unchanged) |
 | **Check and send to owner** (draft) | `POST /vacancies/:id/submit-for-confirmation` `{ownerToldMinimumWage?: boolean}` — works for a field agent on his own business (verified). **CHANGED:** errors now carry codes. |
 | owner's code | `POST /vacancies/:id/confirmation/send-code` `{otpRequestId?}` (resend) → `{otpRequestId, sentToLast4, contactName, resendAvailableAt, resendsLeft}`; `POST /vacancies/:id/confirm` `{otpRequestId, code, method:'code_on_visit'}` |
-| link instead | `POST /vacancies/:id/confirmation-link` → `{success, expiresAt, sentToLast4}` |
+| link instead | `POST /vacancies/:id/confirmation-link` → `{success, expiresAt, sentToLast4}`. **Rev 192 S3:** the SMS now opens the owner's phone page (below). |
+
+**Owner's page to confirm by link (rev 192 S3).** The SMS link is `https://app.laboura.com/p/vacancy-confirm/<token>`
+(web app page P07-VacancyConfirm, built like the agreement page P04: no login, the token in the link is the key,
+Kannada / Hindi / English starting in the language the link was sent in). It shows the job (role / trade), how many
+people, the salary range, shift, start date and the business name, then "Send code" → the code the owner gets on the
+number the link went to → **Confirm vacancy** → "Confirmed, thank you". A used, expired or replaced link, or a
+vacancy already confirmed (by code on the visit), shows its own message. Links sent before (`/vacancy-confirm/<token>`)
+open the same page in a browser. The page calls the public API (no staff login):
+`GET /vacancy-confirm/:token` → `{vacancyCode, status, maskedPhone, sentToLast4, expiresAt, preferredLanguage, business,
+trade, roleTitle, headcountCount, salaryMinPaise, salaryMaxPaise, salaryPeriod, shift, startDate, …}` (never a full phone
+number); `POST /vacancy-confirm/:token/send-otp` → `{requestId, phone (masked), …}` — limited per link and per phone
+like every public page (one code per 30 seconds, 4 per link a day: `429` with `details.retryAfterSeconds`);
+`POST /vacancy-confirm/:token` `{otpRequestId, code}` → `{vacancyCode, status: 'open', confirmedAt, confirmationMethod:
+'sms_link', confirmedByName}` (no business record, no staff ids). The link works 48 hours and once. The field app learns
+of the confirmation by reading the vacancy again (it becomes `open`).
 
 `POST /vacancies/:id/submit-for-confirmation` answer: the vacancy (`id`, `code`, `status: 'awaiting_confirmation'`,
 trade/salary fields, `belowLegalMinimum`, …) plus
@@ -500,8 +546,8 @@ leave / correction / payslip endpoints as today (FA04e–h), `POST /auth/logout`
 | `CHANGE_REASON_REQUIRED`, `OUTCOME_INVALID`, `REVISIT_DATE_REQUIRED`, `REVISIT_DATE_PAST`, `NOT_INTERESTED_REASON_REQUIRED`, `RESULT_UNCHANGED` | 400 | `change-result` |
 | `DATE_INVALID`, `DATE_IN_FUTURE`, `DATE_TOO_OLD` | 400 | `GET /field-work/day` |
 | `AGREEMENT_ALREADY_SIGNED` | 409 | agreement resend |
-| `AGREEMENT_RESEND_TOO_SOON`, `AGREEMENT_RESEND_LIMIT` | 429 | agreement resend (`retryAt`) |
-| `AGREEMENT_SMS_FAILED` | 502 | agreement resend |
+| `AGREEMENT_RESEND_TOO_SOON`, `AGREEMENT_RESEND_LIMIT` | 429 | agreement resend and `POST /businesses/:id/agreement-links` (shared limit, rev 192 S2; `details.retryAt`) |
+| `AGREEMENT_SMS_FAILED` | 502 | agreement resend (`message` is "Internal server error"; read `details.code`) |
 | `NOT_A_DRAFT`, `DRAFT_INCOMPLETE`, `MINIMUM_WAGE_TICK_REQUIRED`, `DRAFT_CHANGED` | 400 | submit draft vacancy |
 
 ---
@@ -520,3 +566,16 @@ leave / correction / payslip endpoints as today (FA04e–h), `POST /auth/logout`
 
 The same numbers are also in `GET /screens/call-registration/options` → `scriptTerms` (already used by the
 business form). Use either; never hard-code them (B22).
+
+---
+
+## 9. Fixes after the end-to-end check (Master Guide rev 192)
+
+| fix | what changed on the server | where above |
+| --- | --- | --- |
+| S1 | Completing a verification visit of a business with no account agent makes the verifying field agent its account agent (audit `business.account_agent_assigned`); the business is then in My businesses and Needs you now and its agreement step works for him (no more `403 NOT_YOUR_BUSINESS`). Never takes a business from an existing account agent. `POST /field-visits/:id/verify` answer gains `isAccountAgent`, `becameAccountAgent`. | §2 visit flow, rules |
+| S2 | The agreement-link limit (1 a minute, 5 in 24 hours per business) is one shared counter on every route that sends a link by SMS, including `POST /businesses/:id/agreement-links`. | §3 agreement |
+| S3 | Owner's page to confirm a vacancy by link: `/p/vacancy-confirm/:token` (web app), using the public confirm API; "Send code" there is now rate-limited like the other public pages; the confirm answer no longer returns the business record. | §3 vacancies |
+| S4 | `GET /field-work/visits` `planned[]` drops interviews whose attendance is recorded. Server-only; no app change needed. | §2 Visits main page |
+| S5 | This file: pickable statuses, the real error shape (`details.code`), S1–S4. A coded `5xx` error (`502 AGREEMENT_SMS_FAILED`) now keeps its `details.code` (before, the filter dropped it). | rules, §1, §7 |
+
