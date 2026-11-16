@@ -1,3 +1,4 @@
+import * as crypto from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AppModule } from '../../app.module';
@@ -160,7 +161,9 @@ describe('Phase 19 Task 3: Daily Keeping-Data Job', () => {
   describe('2. Profiles Cleanup (23 months)', () => {
     it('anonymises job seeker inactive for 23m+1d, leaves 22m inactive untouched', async () => {
       const stamp = Date.now();
-      const photoPathOld = `candidates/retention-old-${stamp}.jpg`;
+      // Security L5: a job seeker's files live under job-seekers/<id>/ (anonymisation deletes only those).
+      const jsOldId = crypto.randomUUID();
+      const photoPathOld = `job-seekers/${jsOldId}/profile-photo`;
       await photoStorage.put(photoPathOld, Buffer.from('old-photo'), 'image/jpeg');
 
       const date23m1d = new Date(now.getTime());
@@ -173,6 +176,7 @@ describe('Phase 19 Task 3: Daily Keeping-Data Job', () => {
       // Candidate 1: Inactive > 23m
       const jsOld = await prisma.jobSeeker.create({
         data: {
+          id: jsOldId,
           code: `JS-RET1-${stamp}`,
           name: 'Inactive Candidate Old',
           phone: `+91991000${stamp.toString().slice(-4)}`,
