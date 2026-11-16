@@ -177,11 +177,18 @@ export class OtpService {
     return this.consumeVerified(requestId, phone, publicPageOtpPurpose(linkToken));
   }
 
-  async isVerified(requestId: string, phone?: string, purpose?: string): Promise<boolean> {
+  /**
+   * A phone that is passed but empty (`''`, null) never matches: it refuses, rather
+   * than skipping the check that the code went to that number (a link or record
+   * with no phone must not accept any verified code).
+   */
+  async isVerified(requestId: string, phone?: string | null, purpose?: string): Promise<boolean> {
+    if (phone !== undefined && !phone) return false;
     return this.provider.isVerified ? this.provider.isVerified(requestId, phone, purpose) : false;
   }
 
-  async consumeVerified(requestId: string, phone: string, purpose?: string): Promise<boolean> {
+  async consumeVerified(requestId: string, phone: string | null, purpose?: string): Promise<boolean> {
+    if (!phone) return false;
     return this.provider.consumeVerified
       ? this.provider.consumeVerified(requestId, phone, purpose)
       : false;

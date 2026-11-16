@@ -477,14 +477,18 @@ export class ConsentLinkService {
       if (!purpose || !row.phone) throw new BadRequestException('Invalid interview link token');
       return { ...base, subjectType: 'interview', interviewId: row.subjectId, purpose, phone: row.phone };
     }
+    // A link is bound to the number it was sent to: one without a phone opens nothing.
+    if ((row.purpose === 'business_agreement' || row.purpose === 'referral_registration') && !row.phone) {
+      throw new BadRequestException('Invalid link token');
+    }
     if (row.purpose === 'business_agreement') {
       return { ...base, subjectType: 'business', subjectId: row.subjectId, businessId: row.subjectId,
-        businessPhone: row.phone ?? '', createdByStaffId: row.createdByStaffId ?? '',
+        businessPhone: row.phone!, createdByStaffId: row.createdByStaffId ?? '',
         agreement: metadata.agreement as Extract<ConsentLinkTokenRecord, { subjectType: 'business' }>['agreement'] };
     }
     if (row.purpose === 'referral_registration') {
       return { ...base, subjectType: 'referral', subjectId: row.subjectId, referralId: row.subjectId,
-        partnerPhone: row.phone ?? '', partnerName: String(metadata.partnerName ?? ''),
+        partnerPhone: row.phone!, partnerName: String(metadata.partnerName ?? ''),
         createdByStaffId: row.createdByStaffId ?? '',
         terms: metadata.terms as Extract<ConsentLinkTokenRecord, { subjectType: 'referral' }>['terms'] };
     }

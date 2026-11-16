@@ -247,4 +247,19 @@ describe('OTP Provider and Mock Implementation', () => {
       ).rejects.toThrow('Unsupported OTP provider: unknown_provider');
     });
   });
+
+  describe('security: an empty phone never matches', () => {
+    it('isVerified and consumeVerified refuse a verified code when the phone passed is empty or missing', async () => {
+      const provider = { isVerified: jest.fn().mockResolvedValue(true), consumeVerified: jest.fn().mockResolvedValue(true) } as unknown as OtpProvider;
+      const service = new OtpService(provider, {} as AuditService, {} as PrismaService);
+      await expect(service.isVerified('req-1', '')).resolves.toBe(false);
+      await expect(service.isVerified('req-1', null)).resolves.toBe(false);
+      await expect(service.consumeVerified('req-1', '')).resolves.toBe(false);
+      await expect(service.consumeVerified('req-1', null)).resolves.toBe(false);
+      await expect(service.isVerifiedForPage('req-1', '', 'token')).resolves.toBe(false);
+      expect(provider.isVerified).not.toHaveBeenCalled();
+      expect(provider.consumeVerified).not.toHaveBeenCalled();
+      await expect(service.isVerified('req-1', '+919876543210')).resolves.toBe(true);
+    });
+  });
 });
