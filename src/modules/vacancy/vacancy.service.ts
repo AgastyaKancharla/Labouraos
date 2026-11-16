@@ -180,6 +180,15 @@ export class VacancyService {
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      // M2-R1: lock the row (a confirm locks it too) and decide from the locked row. If the status
+      // moved since it was loaded (confirmed, sent for confirmation, closed), the checks above were
+      // made for another state: refuse, and the agent opens it again.
+      const [locked] = await tx.$queryRaw<{ status: string }[]>(
+        Prisma.sql`SELECT "status" FROM "Vacancy" WHERE "id" = ${record.id as string} FOR UPDATE`,
+      );
+      if (!locked || locked.status !== fromStatus) {
+        throw new ConflictException('This vacancy changed while you were editing it. Open it again.');
+      }
       const row = await tx.vacancy.update({ where: { id: record.id as string }, data });
       if (reconfirm) {
         await recordStatusChange(tx, {
@@ -511,11 +520,12 @@ export class VacancyService {
       body?.ownerToldMinimumWage,
     );
     const updated = await this.prisma.$transaction(async (tx) => {
+      // M2-R1: only the draft that was checked above (an edit since then changes updatedAt).
       const changed = await tx.vacancy.updateMany({
-        where: { id: vacancy.id, status: 'draft' },
+        where: { id: vacancy.id, status: 'draft', updatedAt: vacancy.updatedAt },
         data: { ...legalMinimum, status: 'awaiting_confirmation' },
       });
-      if (changed.count !== 1) throw new BadRequestException('This draft was already completed');
+      if (changed.count !== 1) throw new BadRequestException('This draft was already completed or changed. Open it again.');
       await recordStatusChange(tx, {
         subjectType: 'vacancy',
         subjectId: vacancy.id,

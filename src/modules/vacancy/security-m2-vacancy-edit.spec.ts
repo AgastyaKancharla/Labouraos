@@ -6,6 +6,9 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
+import { VacancyConfirmationService } from './vacancy-confirmation.service';
+import { EditPolicyService } from '../../common/edit-policy/edit-policy.service';
+import { PublicLinkStoreService } from '../../common/public-link-store.service';
 
 /**
  * Security follow-up M2 (proved): PATCH /vacancies/:id skipped the legal
@@ -137,5 +140,86 @@ describe('Security M2: vacancy edits re-check the minimum wage and need the owne
   it('a closed vacancy cannot be edited', async () => {
     const v = await vacancy({ status: 'cancelled' });
     expect((await patch(v.id, { roleTitle: 'x' })).status).toBe(409);
+  });
+
+  describe('M2-R1: an edit and a confirm racing (forced order)', () => {
+    afterEach(() => jest.restoreAllMocks());
+    const waiting = { status: 'awaiting_confirmation', confirmedAt: null, confirmationMethod: null, confirmedByName: null, confirmedPhoneLast4: null };
+
+    it('a code checked for the old details does not confirm once an edit lands between the check and the confirm', async () => {
+      const v = await vacancy(waiting);
+      const sent = await request(server()).post(`/vacancies/${v.id}/confirmation/send-code`).set(auth()).send({}).expect(201);
+      const provider = app.get(OtpService).getProvider() as MockOtpProvider;
+      const code = provider.getCode(sent.body.otpRequestId)!;
+      const otp = app.get(OtpService);
+      const real = otp.consumeVerified.bind(otp);
+      jest.spyOn(otp, 'consumeVerified').mockImplementationOnce(async (...args: Parameters<OtpService['consumeVerified']>) => {
+        const ok = await real(...args);
+        // The edit lands right after the code was checked for the old details.
+        expect((await patch(v.id, { headcount: 3, reason: 'one more' })).status).toBe(200);
+        return ok;
+      });
+      const res = await request(server()).post(`/vacancies/${v.id}/confirm`).set(auth()).send({ otpRequestId: sent.body.otpRequestId, code, method: 'code_on_call' });
+      expect(res.status).toBe(400);
+      const saved = await prisma.vacancy.findUniqueOrThrow({ where: { id: v.id } });
+      expect([saved.status, saved.headcount, saved.confirmedAt]).toEqual(['awaiting_confirmation', 3, null]);
+    });
+
+    it('a link sent for the old details does not confirm once an edit lands while it is being used', async () => {
+      const v = await vacancy(waiting);
+      const links = app.get(PublicLinkStoreService);
+      const realCreate = links.create.bind(links);
+      let token = '';
+      jest.spyOn(links, 'create').mockImplementationOnce(async (input) => {
+        const made = await realCreate(input);
+        token = made.token;
+        return made;
+      });
+      await request(server()).post(`/vacancies/${v.id}/confirmation-link`).set(auth()).send({}).expect(201);
+      const sentOtp = await request(server()).post(`/vacancy-confirm/${token}/send-otp`).send({});
+      const otp = app.get(OtpService);
+      const requestId = sentOtp.body.otpRequestId as string;
+      const code = (otp.getProvider() as MockOtpProvider).getCode(requestId)!;
+      const realMark = links.markUsed.bind(links);
+      jest.spyOn(links, 'markUsed').mockImplementationOnce(async (...args: Parameters<PublicLinkStoreService['markUsed']>) => {
+        // The edit's transaction has committed, and its revoking of the links has not run yet.
+        jest.spyOn(app.get(VacancyConfirmationService), 'revokeLiveConfirmations').mockResolvedValueOnce(undefined);
+        expect((await patch(v.id, { description: 'Night shift too', reason: 'owner asked' })).status).toBe(200);
+        return realMark(...args);
+      });
+      const res = await request(server()).post(`/vacancy-confirm/${token}`).send({ otpRequestId: requestId, code });
+      expect(res.status).toBe(400);
+      expect((await prisma.vacancy.findUniqueOrThrow({ where: { id: v.id } })).status).toBe('awaiting_confirmation');
+    });
+
+    it('an edit that loaded the vacancy before a confirm landed is refused, not saved on top of the confirmation', async () => {
+      const v = await vacancy(waiting);
+      const sent = await request(server()).post(`/vacancies/${v.id}/confirmation/send-code`).set(auth()).send({}).expect(201);
+      const code = (app.get(OtpService).getProvider() as MockOtpProvider).getCode(sent.body.otpRequestId)!;
+      const policy = app.get(EditPolicyService);
+      const real = policy.assertCanEdit.bind(policy);
+      jest.spyOn(policy, 'assertCanEdit').mockImplementationOnce(async (...args: Parameters<EditPolicyService['assertCanEdit']>) => {
+        const loaded = await real(...args);
+        await request(server()).post(`/vacancies/${v.id}/confirm`).set(auth()).send({ otpRequestId: sent.body.otpRequestId, code, method: 'code_on_call' }).expect(201);
+        return loaded;
+      });
+      expect((await patch(v.id, { headcount: 4, reason: 'more' })).status).toBe(409);
+      const saved = await prisma.vacancy.findUniqueOrThrow({ where: { id: v.id } });
+      expect([saved.status, saved.headcount]).toEqual(['open', 1]);
+    });
+
+    it('a draft edited while it is being sent for confirmation: the edit is refused', async () => {
+      const v = await vacancy({ ...waiting, status: 'draft', shift: 'day', startDate: new Date('2026-12-01') });
+      const policy = app.get(EditPolicyService);
+      const real = policy.assertCanEdit.bind(policy);
+      jest.spyOn(policy, 'assertCanEdit').mockImplementationOnce(async (...args: Parameters<EditPolicyService['assertCanEdit']>) => {
+        const loaded = await real(...args);
+        await request(server()).post(`/vacancies/${v.id}/submit-for-confirmation`).set(auth()).send({}).expect(201);
+        return loaded;
+      });
+      expect((await patch(v.id, { salaryMinPaise: 100000, reason: 'lower' })).status).toBe(409);
+      const saved = await prisma.vacancy.findUniqueOrThrow({ where: { id: v.id } });
+      expect([saved.status, saved.salaryMinPaise]).toEqual(['awaiting_confirmation', 2500000]);
+    });
   });
 });

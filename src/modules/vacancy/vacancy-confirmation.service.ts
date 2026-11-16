@@ -208,27 +208,34 @@ export class VacancyConfirmationService {
       throw new BadRequestException(`This vacancy is not awaiting confirmation (it is ${vacancy.status})`);
     }
     const contact = this.contactOf(vacancy);
+    // M2-R1: the round the code is checked against; the confirm below holds only if it is still current.
+    const round = await this.currentRound(vacancy.id);
     const valid = await this.otpService.verifyOtp(body.otpRequestId, body.code, actor.id);
     if (!valid) throw new BadRequestException('Wrong or expired code');
-    if (!(await this.otpService.consumeVerified(body.otpRequestId, contact.phone, await this.codePurpose(vacancy.id)))) {
+    if (!(await this.otpService.consumeVerified(body.otpRequestId, contact.phone, await this.codePurpose(vacancy.id, round)))) {
       throw new BadRequestException("This code was not sent to the vacancy's contact person for these details. Send a new code.");
     }
-    return this.markConfirmed(vacancy, contact, method, actor.id);
+    return this.markConfirmed(vacancy, contact, method, actor.id, undefined, round);
   }
 
   /**
-   * M2: the OTP purpose of this vacancy's current confirmation round: the vacancy and
-   * the latest move to awaiting_confirmation (a details change writes a new one).
+   * M2: the vacancy's current confirmation round: the id of its latest move to
+   * awaiting_confirmation (every details change past the draft writes a new one).
    */
-  async codePurpose(vacancyId: string): Promise<string> {
-    const round = typeof this.prisma.statusHistory?.findFirst === 'function'
-      ? await this.prisma.statusHistory.findFirst({
+  async currentRound(vacancyId: string, client: Pick<Prisma.TransactionClient, 'statusHistory'> = this.prisma): Promise<string> {
+    const round = typeof client.statusHistory?.findFirst === 'function'
+      ? await client.statusHistory.findFirst({
         where: { subjectType: 'vacancy', subjectId: vacancyId, toStatus: 'awaiting_confirmation' },
         orderBy: { changedAt: 'desc' },
         select: { id: true },
       })
       : null;
-    return `vacancy_confirm:${vacancyId}:${round?.id ?? 'first'}`;
+    return round?.id ?? 'first';
+  }
+
+  /** M2: the OTP purpose of a confirmation round (by default the current one). */
+  async codePurpose(vacancyId: string, round?: string): Promise<string> {
+    return `vacancy_confirm:${vacancyId}:${round ?? (await this.currentRound(vacancyId))}`;
   }
 
   /** M2: after a details change, no earlier link confirms the vacancy (earlier codes die with the round). */
@@ -254,6 +261,8 @@ export class VacancyConfirmationService {
       language: contact.language,
       expiresAt,
       createdByStaffId: actor.id,
+      // M2-R1: the link confirms the details of this round only.
+      metadata: { round: await this.currentRound(vacancy.id) },
     });
     await this.messagingService.send({
       channel: 'sms',
@@ -326,6 +335,11 @@ export class VacancyConfirmationService {
     if (vacancy.status !== 'awaiting_confirmation') {
       throw new BadRequestException(`This vacancy is not awaiting confirmation (it is ${vacancy.status})`);
     }
+    // M2-R1: the link confirms the round it was sent for; any change since refuses the confirm.
+    const round = (link.metadata as { round?: unknown } | null)?.round;
+    if (typeof round !== 'string') {
+      throw new BadRequestException('This confirmation link is out of date. Ask Laboura for a new link.');
+    }
     const valid = await this.otpService.verifyOtp(body.otpRequestId, body.code);
     if (!valid) throw new BadRequestException('Wrong or expired code');
     if (!(await this.otpService.consumeVerifiedForPage(body.otpRequestId, link.phone!, token))) {
@@ -333,7 +347,7 @@ export class VacancyConfirmationService {
     }
     await this.publicLinks.markUsed(token, new Date(), context);
     const contact = this.contactOf(vacancy);
-    return this.markConfirmed(vacancy, contact, 'sms_link', null);
+    return this.markConfirmed(vacancy, contact, 'sms_link', null, undefined, round);
   }
 
   /**
@@ -341,14 +355,19 @@ export class VacancyConfirmationService {
    * their own verified mobile. The caller checks that the mobile is this
    * vacancy's contact; refused otherwise.
    */
-  async confirmInApp(vacancyId: string, verifiedPhone: string, auditActorId: string) {
+  async confirmInApp(vacancyId: string, verifiedPhone: string, auditActorId: string, expectedUpdatedAt?: Date) {
     const vacancy = await this.prisma.vacancy.findUnique({ where: { id: vacancyId }, include: { business: true, branch: true } });
     if (!vacancy) throw new NotFoundException(`Vacancy '${vacancyId}' not found`);
+    // M2-R1: the details the contact person confirmed in the app are the ones just created.
+    if (expectedUpdatedAt && vacancy.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
+      throw new BadRequestException('The vacancy details changed. Open it again.');
+    }
+    const round = await this.currentRound(vacancy.id);
     const contact = this.contactOf(vacancy);
     if (last4(contact.phone) !== last4(verifiedPhone) || contact.phone.replace(/\D/g, '').slice(-10) !== verifiedPhone.replace(/\D/g, '').slice(-10)) {
       throw new ForbiddenException('Only the vacancy contact person can confirm it');
     }
-    return this.markConfirmed(vacancy, contact, 'in_app', null, auditActorId);
+    return this.markConfirmed(vacancy, contact, 'in_app', null, auditActorId, round);
   }
 
   private async markConfirmed(
@@ -356,12 +375,19 @@ export class VacancyConfirmationService {
     contact: VacancyContact,
     method: VacancyConfirmationMethod,
     recordedByStaffId: string | null,
-    auditActorId?: string,
+    auditActorId: string | undefined,
+    expectedRound: string,
   ) {
     const now = new Date();
     const confirmed = await this.prisma.$transaction(async (tx) => {
+      // M2-R1: lock the row (an edit locks it too), then check that the details are still the
+      // ones the code or link was for: same round, unchanged since they were loaded.
+      await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Vacancy" WHERE "id" = ${vacancy.id} FOR UPDATE`);
+      if ((await this.currentRound(vacancy.id, tx)) !== expectedRound) {
+        throw new BadRequestException('The vacancy details changed after this code or link was sent. Send the owner a new code or link.');
+      }
       const changed = await tx.vacancy.updateMany({
-        where: { id: vacancy.id, status: 'awaiting_confirmation' },
+        where: { id: vacancy.id, status: 'awaiting_confirmation', updatedAt: vacancy.updatedAt },
         data: {
           status: 'open',
           confirmedAt: now,
@@ -372,7 +398,9 @@ export class VacancyConfirmationService {
           confirmationRecordedByStaffId: recordedByStaffId,
         },
       });
-      if (changed.count !== 1) throw new BadRequestException('This vacancy was already confirmed');
+      if (changed.count !== 1) {
+        throw new BadRequestException('This vacancy was already confirmed, or its details changed. Open it again.');
+      }
       await recordStatusChange(tx as Prisma.TransactionClient, {
         subjectType: 'vacancy',
         subjectId: vacancy.id,
