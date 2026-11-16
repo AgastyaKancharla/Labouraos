@@ -104,7 +104,7 @@ export class CeoJobSeekersService {
 
   private listWhere(
     query: JobSeekerListQuery,
-    tiles: { maxHits: number; deactivatedThisMonthIds?: string[] } = { maxHits: 3 },
+    tiles: { maxHits: number; deactivatedThisMonthIds?: string[] },
   ): Prisma.JobSeekerWhereInput {
     const and: Prisma.JobSeekerWhereInput[] = [{ anonymisedAt: null }];
     if (query.scope) and.push(query.scope);
