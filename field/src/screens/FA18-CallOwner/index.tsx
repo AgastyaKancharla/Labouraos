@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
+import { useAfterSave } from '@/api/refresh';
 import type { BusinessDetail } from '@/api/endpoints';
 import { Banner, Button, Icon, IconTile, Screen, Text, TextField } from '@/components';
 import { addDays, DateField, RadioGroup, TimeField, todayKeyIst } from '@/components/form';
@@ -55,6 +56,7 @@ function CallOwner({ business }: { business: BusinessDetail }) {
   const { t } = useI18n();
   const { selling } = useEndpoints();
   const queue = useOfflineQueue();
+  const afterSave = useAfterSave();
   const [callId, setCallId] = useState<string | null>(null);
   const [startedAt, setStartedAt] = useState(0);
   const [now, setNow] = useState(() => Date.now());
@@ -90,6 +92,7 @@ function CallOwner({ business }: { business: BusinessDetail }) {
         .then((r) => ({ r, andAddVacancy })),
     onSuccess: ({ r, andAddVacancy }) => {
       setSaved(r.status);
+      afterSave(['selling']);
       if (andAddVacancy) router.replace(sr.addVacancy(business.id));
     },
   });

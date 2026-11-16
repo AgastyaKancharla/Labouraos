@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
+import { useAfterSave } from '@/api/refresh';
 import type { BookingContext } from '@/api/endpoints';
 import { Button, Card, HeroCard, Screen } from '@/components';
 import { Checkbox, DateField, formatClock, SelectField, TimeField, todayKeyIst } from '@/components/form';
@@ -50,6 +51,7 @@ function Book({ ctx, jobSeekerId }: { ctx: BookingContext; jobSeekerId: string }
   const from = useParam('from');
   const { selling } = useEndpoints();
   const queue = useOfflineQueue();
+  const afterSave = useAfterSave();
   const settings = useSellingSettings();
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
@@ -61,7 +63,10 @@ function Book({ ctx, jobSeekerId }: { ctx: BookingContext; jobSeekerId: string }
       const body = { date, time: type === 'walk_in' ? ctx.walkInStart : time, type, agentWillAttend: willAttend };
       return queue.live(() => (from ? selling.meet(from, body) : selling.book({ ...body, vacancyId: ctx.vacancyId, jobSeekerId })));
     },
-    onSuccess: (r) => router.replace(sr.booked(r.interviewId)),
+    onSuccess: (r) => {
+      afterSave(['selling']);
+      router.replace(sr.booked(r.interviewId));
+    },
   });
   const hours = settings.data;
   const ready = !!date && (type === 'walk_in' || !!time);

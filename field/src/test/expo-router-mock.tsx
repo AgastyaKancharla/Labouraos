@@ -14,6 +14,9 @@ export function Redirect({ href }: { href: string }) {
   return <Text testID="redirect">{href}</Text>;
 }
 export const useRouter = () => router;
+/** The screen's navigation object (the back arrow walks up its parents to tidy their params). */
+export const navigation = { getParent: jest.fn(() => undefined), getState: jest.fn(() => undefined), dispatch: jest.fn() };
+export const useNavigation = jest.fn(() => navigation);
 
 /** Tests set the route's query: `searchParams.current = { id: 'v-1' }` (or `(useLocalSearchParams as jest.Mock).mockReturnValue(…)`). */
 export const searchParams: { current: Record<string, string | undefined> } = { current: {} };

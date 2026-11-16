@@ -56,7 +56,7 @@ export function TopBar({ title, subtitle, personName, onLogout, onBack }: Props)
               accessibilityRole="link"
               accessibilityLabel={t('common.logoHome')}
               onPress={() => router.navigate(routes.home)}
-              hitSlop={6}
+              style={[styles.tap, styles.logoTap]}
               testID="logo-home"
             >
               <Image source={logo} style={styles.logo} />
@@ -82,11 +82,12 @@ export function TopBar({ title, subtitle, personName, onLogout, onBack }: Props)
               accessibilityRole="button"
               accessibilityLabel={t('common.accountMenu', { name: personName })}
               onPress={() => setMenuOpen(true)}
-              style={styles.avatar}
-              hitSlop={6}
+              style={[styles.tap, styles.avatarTap]}
               testID="account-menu"
             >
-              <Text style={styles.avatarText}>{initials(personName)}</Text>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{initials(personName)}</Text>
+              </View>
             </Pressable>
           ) : null}
         </View>
@@ -126,6 +127,11 @@ const styles = StyleSheet.create({
   left: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 },
   back: { width: touch.min, height: touch.min, marginLeft: -12, marginRight: -8, alignItems: 'center', justifyContent: 'center' },
   logo: { width: 30, height: 30, borderRadius: radius.sm },
+  /** The logo and the avatar keep their look; what you tap is at least 44 × 44 (fix list A8). */
+  tap: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  // Negative margins keep the header's spacing as it was; only the area you can tap grows.
+  logoTap: { marginHorizontal: -7, marginVertical: -7 },
+  avatarTap: { margin: -4 },
   titles: { flex: 1, minWidth: 0 },
   title: { fontFamily: fonts.display700, fontSize: 15, color: colors.white },
   subtitle: { fontFamily: fonts.body500, fontSize: 11, color: colors.navAccent },

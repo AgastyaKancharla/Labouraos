@@ -9,7 +9,7 @@ export const redesignKn: Record<keyof typeof redesignEn, string> = {
   'tabs.today': 'ಇಂದು',
   'tabs.businesses': 'ವ್ಯಾಪಾರಗಳು',
   'tabs.me': 'ನಾನು',
-  'tabs.jobSeekersTab': 'ಉದ್ಯೋಗ ಆಕಾಂಕ್ಷಿಗಳು',
+  'tabs.jobSeekersTab': 'ಆಕಾಂಕ್ಷಿಗಳು',
   'common.back': 'ಹಿಂದೆ',
   'common.searchEveryone': 'ಹೆಸರು, ಮೊಬೈಲ್ ಅಥವಾ ID ಮೂಲಕ ಎಲ್ಲರನ್ನೂ ಹುಡುಕಿ',
 
@@ -308,4 +308,16 @@ export const redesignKn: Record<keyof typeof redesignEn, string> = {
 
   // Fee calculator during a visit
   'fa14.backToVisit': 'ಭೇಟಿಗೆ ಹಿಂತಿರುಗಿ',
+
+  // Fixes after the end-to-end check (16 Nov, fix list A1–A8)
+  'today.statusFailed': 'ನಿಮ್ಮ ಸ್ಥಿತಿ ಬದಲಿಸಲು ಆಗಲಿಲ್ಲ. ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.',
+  'today.endDayFailed': 'ನಿಮ್ಮ ದಿನ ಮುಗಿಸಲು ಆಗಲಿಲ್ಲ. ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.',
+  'today.loginFailed': 'ಲಾಗಿನ್ ಆಗಲಿಲ್ಲ. ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ, ಅಥವಾ ಟೀಮ್ ಲೀಡ್‌ಗೆ ತಿಳಿಸಿ.',
+  'today.statusOther': 'ಸ್ಥಿತಿ ಬದಲಾಗಿದೆ',
+  'today.statusAutomatic': 'ಈಗ: {status}. ಇದು ತಾನಾಗಿ ಬದಲಾಗುತ್ತದೆ.',
+  'steps.save': 'ಭೇಟಿ ಉಳಿಸಿ',
+  'fa22.continueRevisit': 'ಭೇಟಿ ಉಳಿಸಲು ಮುಂದುವರಿಯಿರಿ',
+  'fa22.nextRevisit': 'ಮುಂದೆ: ಈ ಅಂಗಡಿ ಈಗಾಗಲೇ Laboura ನಲ್ಲಿದೆ, ಮತ್ತೆ ನೋಂದಣಿ ಬೇಡ. ಸೇರಿಸಲಾಗಿದೆ ಎಂದು ಗುರುತಿಸಿ ಅಥವಾ ಭೇಟಿ ಉಳಿಸಿ.',
+  'common.smsFailed': 'SMS ಕಳುಹಿಸಲು ಆಗಲಿಲ್ಲ. ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.',
+  'fa17b.watching': 'ಮಾಲೀಕರಿಗಾಗಿ ಕಾಯುತ್ತಿದೆ. ಅವರು ದೃಢಪಡಿಸಿದಾಗ ಈ ಪುಟ ತಾನಾಗಿ ಬದಲಾಗುತ್ತದೆ.',
 };

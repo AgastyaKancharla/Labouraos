@@ -62,7 +62,23 @@ describe('FA22 Visit a shop · proof', () => {
     await fireEvent.press(screen.getByTestId('fa22-take-selfie'));
     await fireEvent.press(screen.getByTestId('fake-camera-front'));
     await waitFor(() => expect(screen.getByTestId('fa22-continue').props.accessibilityState.disabled).toBe(false));
+    // Revisit wording and its own four steps, never "register the business" or "of 7" (A8).
+    expect(screen.getByTestId('step-counter')).toHaveTextContent('Step 3 of 4 · selfie with the board');
+    expect(screen.getByTestId('fa22-continue')).toHaveTextContent('Continue to save the visit');
+    expect(screen.queryByText(/register the business/)).toBeNull();
+    expect(screen.getByText(/already in Laboura, so it is not registered again/)).toBeTruthy();
     await fireEvent.press(screen.getByTestId('fa22-continue'));
     expect(router.push).toHaveBeenCalledWith('/visit/details/p-2');
+  });
+
+  it('the revisit wording is in Kannada too', async () => {
+    saveDraft({
+      id: 'p-3', startedAt: '2026-11-09T05:58:00.000Z', latitude: 12.9116, longitude: 77.6101, accuracy: 8, shopName: 'Annapoorna Mess',
+      businessId: 'b-1', businessName: 'Annapoorna Mess', spokeTo: 'owner', contactPhone: '', endedAt: '2026-11-09T06:12:00.000Z', proofDistance: null, proofAt: null,
+    });
+    searchParams.current = { id: 'p-3' };
+    await renderWithApp(<VisitProofScreen />, { signedInAs: kiran, language: 'kn' });
+    expect(screen.getByTestId('step-counter')).toHaveTextContent(/3.*4/);
+    expect(screen.getByTestId('fa22-continue')).toHaveTextContent('ಭೇಟಿ ಉಳಿಸಲು ಮುಂದುವರಿಯಿರಿ');
   });
 });

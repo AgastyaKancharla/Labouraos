@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
+import { useAfterSave } from '@/api/refresh';
 import type { JobSeekerStatus, Step } from '@/api/endpoints';
 import { Banner, Button, Card, Icon, IconTile, Text } from '@/components';
 import { MobileField, SelectField } from '@/components/form';
@@ -58,8 +59,14 @@ export function RegistrationPanel({ jobSeekerId, variant }: { jobSeekerId: strin
   return <QueryView query={status}>{(s) => <Panel status={s} variant={variant} refetch={() => void status.refetch()} />}</QueryView>;
 }
 
-function Panel({ status: s, variant, refetch }: { status: JobSeekerStatus; variant: 'saved' | 'progress'; refetch: () => void }) {
+function Panel({ status: s, variant, refetch: refetchStatus }: { status: JobSeekerStatus; variant: 'saved' | 'progress'; refetch: () => void }) {
   const { t } = useI18n();
+  const afterSave = useAfterSave();
+  // A link sent or an ID step done changes the row in My job seekers too (fix list A1).
+  const refetch = () => {
+    refetchStatus();
+    afterSave();
+  };
   const { selling } = useEndpoints();
   const queue = useOfflineQueue();
   const [otherOpen, setOtherOpen] = useState(false);

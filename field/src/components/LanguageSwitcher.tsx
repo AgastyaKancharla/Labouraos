@@ -57,7 +57,8 @@ export function LanguageSwitcher() {
 
 const styles = StyleSheet.create({
   pill: {
-    minHeight: 36,
+    minHeight: 44,
+    marginVertical: -4,
     justifyContent: 'center',
     paddingHorizontal: 10,
     borderRadius: radius.sm,

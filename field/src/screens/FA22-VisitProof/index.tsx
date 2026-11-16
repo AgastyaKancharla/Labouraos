@@ -84,7 +84,7 @@ export default function VisitProofScreen() {
     <View style={styles.flex} testID="screen-FA22">
       <AppHeader title={t('fa20.title')} />
       <Screen>
-        <StepHeader step={3} />
+        <StepHeader step={3} revisit={Boolean(visit.businessId)} />
         <Card title={t('fa22.selfieTitle')} icon="user" accent="green">
           <LinearGradient colors={done ? doneGradient : heroGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.photoBox}>
             <IconTile icon={done ? 'check' : 'camera'} accent={done ? 'green' : 'cyan'} size={60} />
@@ -127,7 +127,7 @@ export default function VisitProofScreen() {
         </Card>
         {problem ? <Banner tone="error" message={problem} testID="fa22-problem" /> : null}
         <Button
-          label={t('fa22.continue')}
+          label={visit.businessId ? t('fa22.continueRevisit') : t('fa22.continue')}
           disabled={!done}
           onPress={() =>
             // A shop already in Laboura (a revisit) is not registered again: its visit details offer the
@@ -138,7 +138,7 @@ export default function VisitProofScreen() {
           }
           testID="fa22-continue"
         />
-        <Text variant="muted">{t('fa22.next')}</Text>
+        <Text variant="muted">{visit.businessId ? t('fa22.nextRevisit') : t('fa22.next')}</Text>
       </Screen>
       <CameraSheet open={cameraOpen} facing="front" label={visit.shopName} onCapture={(p) => void onSelfie(p)} onClose={() => setCameraOpen(false)} />
     </View>

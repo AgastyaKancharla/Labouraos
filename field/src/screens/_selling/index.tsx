@@ -5,7 +5,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { isApiError } from '@/api/errors';
-import type { BusinessHit } from '@/api/endpoints';
+import { errorCode, type BusinessHit } from '@/api/endpoints';
 import { Banner, Card, EmptyState, ErrorState, IconTile, ListRow, LoadingState, StatusChip, Text, TextField, type IconName } from '@/components';
 import { isNeedsSignalError } from '@/device/offline-queue';
 import { useI18n, type MessageKey } from '@/i18n';
@@ -75,6 +75,8 @@ export function useErrorText() {
     if (!error) return null;
     if (isNeedsSignalError(error)) return t('common.needsSignal');
     if (error instanceof UserFacingError) return error.message;
+    // Codes come under details.code (errorCode reads it first): an SMS the server could not send (502).
+    if (errorCode(error) === 'AGREEMENT_SMS_FAILED') return t('common.smsFailed');
     if (isApiError(error)) return error.isNetworkError ? t('common.networkError') : error.message;
     return t('common.error');
   };
@@ -290,7 +292,7 @@ export function BusinessHeader({ name, sub, onChange, testID }: { name: string; 
         <Text variant="muted">{sub}</Text>
       </View>
       {onChange ? (
-        <Pressable accessibilityRole="button" onPress={onChange} hitSlop={12} testID="change-business">
+        <Pressable accessibilityRole="button" onPress={onChange} style={styles.changeTap} testID="change-business">
           <Text style={styles.change}>{t('selling.change')}</Text>
         </Pressable>
       ) : null}
@@ -342,6 +344,8 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerName: { fontSize: 17 },
   change: { color: colors.blue, fontFamily: fonts.body700 },
+  /** At least 44 × 44 to tap (fix list A8), however short the word. */
+  changeTap: { minHeight: 44, minWidth: 44, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center' },
   script: { backgroundColor: colors.blue100, borderRadius: radius.lg, borderWidth: 1, borderColor: '#C7DAF5', borderLeftWidth: 4, borderLeftColor: colors.cyanRaw, padding: 14 },
   scriptText: { color: colors.ink, fontSize: 14, lineHeight: 21 },
 });

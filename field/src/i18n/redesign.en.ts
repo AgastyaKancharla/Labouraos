@@ -10,7 +10,7 @@ export const redesignEn = {
   'tabs.today': 'Today',
   'tabs.businesses': 'Businesses',
   'tabs.me': 'Me',
-  /** The tab bar's label: five tabs share 360 px, so the Kannada words may break in two lines. */
+  /** The tab bar's label: five tabs share 360 px, so it must fit one line there (Kannada uses the short word, fix list A8). */
   'tabs.jobSeekersTab': 'Job seekers',
   'common.back': 'Back',
   'common.searchEveryone': 'Search everyone by name, mobile or ID',
@@ -311,4 +311,16 @@ export const redesignEn = {
 
   // Fee calculator during a visit
   'fa14.backToVisit': 'Back to the visit',
+
+  // Fixes after the end-to-end check (16 Nov, fix list A1–A8)
+  'today.statusFailed': 'Could not change your status. Try again.',
+  'today.endDayFailed': 'Could not end your day. Try again.',
+  'today.loginFailed': 'Could not log you in. Try again, or tell your Team Lead.',
+  'today.statusOther': 'Status updated',
+  'today.statusAutomatic': 'Now: {status}. This one is set automatically.',
+  'steps.save': 'save the visit',
+  'fa22.continueRevisit': 'Continue to save the visit',
+  'fa22.nextRevisit': 'Next: this shop is already in Laboura, so it is not registered again. Mark it onboarded or save the visit.',
+  'common.smsFailed': 'The SMS could not be sent. Try again.',
+  'fa17b.watching': 'Waiting for the owner. This page updates by itself when he confirms.',
 } as const;

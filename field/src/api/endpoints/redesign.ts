@@ -353,6 +353,10 @@ export const redesignApi = (api: ApiClient) => ({
 /** The stable `code` of an API error (docs/api/field-redesign.md §7), if any. */
 export function errorCode(error: unknown): string | null {
   const body = (error as { body?: unknown } | null)?.body;
-  if (body && typeof body === 'object' && typeof (body as { code?: unknown }).code === 'string') return (body as { code: string }).code;
+  if (!body || typeof body !== 'object') return null;
+  // The server sends the code under details.code (docs/api/field-redesign.md); older answers had it at the top.
+  const details = (body as { details?: unknown }).details;
+  if (details && typeof details === 'object' && typeof (details as { code?: unknown }).code === 'string') return (details as { code: string }).code;
+  if (typeof (body as { code?: unknown }).code === 'string') return (body as { code: string }).code;
   return null;
 }

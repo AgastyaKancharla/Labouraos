@@ -68,4 +68,33 @@ describe('FA13 Shops near me', () => {
     expect(router.push).toHaveBeenCalledWith('/businesses/b-5');
     expect(screen.queryByTestId('marker-v-7')).toBeNull();
   });
+
+  it('his own unregistered shop (not interested, come back later) opens his latest visit there; "Open" shows only when something opens (A4)', async () => {
+    const noVisit = { ...shop('p-9', 'Old Kiosk', 'not_interested', 400, null), visitId: null };
+    await renderWithApp(<MapScreen />, {
+      signedInAs: kiran,
+      route: (url) =>
+        url.includes('/field-work/map')
+          ? {
+              status: 200,
+              body: {
+                me: { latitude: 12.9116, longitude: 77.6389 }, radiusMeters: 3000, duplicateRadiusMeters: 50,
+                shops: [shop('v-3', 'Ganesh Juice', 'not_interested', 150, null), shop('v-4', 'Mani Bakery', 'interested', 250, null), noVisit],
+                revisitsDue: [],
+              },
+            }
+          : undefined,
+    });
+    await waitFor(() => screen.getByTestId('fa13-shop-v-3'));
+    expect(screen.getByTestId('fa13-shop-v-3')).toHaveTextContent(/Ganesh Juice.*Open/);
+    expect(screen.getByTestId('fa13-shop-v-4')).toHaveTextContent(/Mani Bakery.*Open/);
+    expect(screen.getByTestId('fa13-shop-p-9')).not.toHaveTextContent(/Open/);
+    await fireEvent.press(screen.getByTestId('fa13-shop-v-3'));
+    expect(router.push).toHaveBeenLastCalledWith('/visit/details/v-3');
+    await fireEvent.press(screen.getByTestId('fa13-shop-p-9'));
+    expect(router.push).toHaveBeenCalledTimes(1);
+    await fireEvent(screen.getByTestId('fa13-map'), 'layout', { nativeEvent: { layout: { width: 358, height: 380, x: 0, y: 0 } } });
+    await fireEvent.press(screen.getByTestId('marker-v-4'));
+    expect(router.push).toHaveBeenLastCalledWith('/visit/details/v-4');
+  });
 });

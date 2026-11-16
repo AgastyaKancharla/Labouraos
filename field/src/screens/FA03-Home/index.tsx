@@ -12,7 +12,6 @@ import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { LOCATION_ERROR_KEYS } from '@/device/location/useLocation';
-import { isApiError } from '@/api/errors';
 import type { AttendanceToday, NeedsItem, TodayView } from '@/api/endpoints';
 import type { DayKind } from '../_visits/DayWork';
 import { formatDayIst, formatStampIst, formatShiftTime, formatTimeIst } from '@/lib/format';
@@ -23,15 +22,18 @@ import { ChoiceList } from '../_visits/ChoiceList';
 import { formatDateKey } from '../_visits/format';
 import { isLocationError, useAttendanceLogin, useAttendanceToday } from './useHome';
 import { needsTarget } from './needsTarget';
+import { attendanceErrorText, isPickableStatus, PICKABLE_STATUSES, statusLabel, type PickableStatus } from '@/lib/status';
 
-/** The statuses the agent taps to change (redesign, 16 Nov): on visit, travelling, meeting, lunch, break. */
-export const STATUS_CHOICES = ['on_visit', 'travelling', 'team_meeting', 'lunch', 'short_break'] as const;
-const STATUS_ICON: Record<(typeof STATUS_CHOICES)[number], { icon: IconName; accent: Accent }> = {
-  on_visit: { icon: 'store', accent: 'green' },
-  travelling: { icon: 'location', accent: 'royal' },
+/** The statuses the agent taps to change: exactly the ones a person may pick (fix list A2, lib/status). */
+export const STATUS_CHOICES = PICKABLE_STATUSES;
+const STATUS_ICON: Record<PickableStatus, { icon: IconName; accent: Accent }> = {
+  available: { icon: 'check', accent: 'green' },
   team_meeting: { icon: 'users', accent: 'cyan' },
-  lunch: { icon: 'clock', accent: 'gold' },
+  training: { icon: 'document', accent: 'royal' },
+  one_to_one: { icon: 'user', accent: 'navy' },
+  system_problem: { icon: 'wifi-off', accent: 'red' },
   short_break: { icon: 'clock', accent: 'orange' },
+  lunch: { icon: 'clock', accent: 'gold' },
 };
 
 /** Today's numbers: each opens Today's work filtered on what it counts. */
@@ -91,9 +93,7 @@ export default function TodayScreen() {
   const loginErrorMessage = login.error
     ? isLocationError(login.error)
       ? `${t('fa03.loginNeedsLocation')} ${t(LOCATION_ERROR_KEYS[login.error.code])}`
-      : isApiError(login.error) && !login.error.isNetworkError
-        ? login.error.message
-        : t('common.networkError')
+      : attendanceErrorText(login.error, 'today.loginFailed', t)
     : null;
 
   return (
@@ -244,12 +244,21 @@ function AttendanceBar({ day }: { day: AttendanceToday }) {
         </Pressable>
       </View>
       <Button label={t('today.endDay')} variant="secondary" onPress={() => setEnding(true)} testID="attendance-end" />
-      {change.error || end.error ? <Banner tone="error" message={isApiError(change.error ?? end.error) ? (change.error ?? end.error)!.message : t('common.error')} testID="attendance-error" /> : null}
+      {change.error || end.error ? (
+        <Banner
+          tone="error"
+          message={change.error ? attendanceErrorText(change.error, 'today.statusFailed', t)! : attendanceErrorText(end.error, 'today.endDayFailed', t)!}
+          testID="attendance-error"
+        />
+      ) : null}
 
       <Sheet open={picking} onClose={() => setPicking(false)} title={t('today.changeStatus')}>
+        {status && !isPickableStatus(status) ? (
+          <Text variant="muted" testID="status-automatic">{t('today.statusAutomatic', { status: statusLabel(status, t) })}</Text>
+        ) : null}
         <ChoiceList
           choices={STATUS_CHOICES.map((s) => ({ value: s, label: statusLabel(s, t), ...STATUS_ICON[s] }))}
-          value={(STATUS_CHOICES as readonly string[]).includes(status ?? '') ? (status as (typeof STATUS_CHOICES)[number]) : null}
+          value={isPickableStatus(status) ? status : null}
           onChange={(s) => {
             setPicking(false);
             if (s !== status) change.mutate(s);
@@ -284,6 +293,8 @@ function NeedsRow({ item, last }: { item: NeedsItem; last: boolean }) {
             : vacancy && (item.kind === 'vacancy_awaiting_owner' || item.kind === 'vacancy_draft' || item.kind === 'ready_show_candidates')
               ? t(`needs.${item.kind}` as MessageKey, { vacancy })
               : t(`needs.${item.kind}` as MessageKey, { vacancy: '' });
+  // A vacancy's trade is already in the sentence ("Waiting for the owner's code · Cook"): never twice (A8).
+  const extra = item.vacancy && item.subtitle?.trim().toLowerCase() === item.vacancy.trade.trim().toLowerCase() ? null : item.subtitle;
   const dueLabel =
     item.due === 'overdue'
       ? t('needs.overdue')
@@ -297,7 +308,7 @@ function NeedsRow({ item, last }: { item: NeedsItem; last: boolean }) {
   return (
     <ListRow
       title={item.title}
-      subtitle={[what, item.subtitle].filter(Boolean).join(' · ')}
+      subtitle={[what, extra].filter(Boolean).join(' · ')}
       leading={<IconTile icon={look.icon} accent={look.accent} size={34} />}
       trailing={dueLabel ? <StatusChip tone={item.due === 'overdue' ? 'tomato' : item.due === 'today' ? 'amber' : 'neutral'} label={dueLabel} /> : <Icon name="chevron-right" size={16} />}
       onPress={href ? () => router.push(href as never) : undefined}
@@ -319,27 +330,6 @@ function Sheet({ open, onClose, title, children }: { open: boolean; onClose: () 
       </Pressable>
     </Modal>
   );
-}
-
-const STATUS_KEYS: Record<string, MessageKey> = {
-  available: 'status.available',
-  on_call: 'status.on_call',
-  after_call_notes: 'status.after_call_notes',
-  on_visit: 'status.on_visit',
-  travelling: 'status.travelling',
-  team_meeting: 'status.team_meeting',
-  training: 'status.training',
-  one_to_one: 'status.one_to_one',
-  system_problem: 'status.system_problem',
-  short_break: 'status.short_break',
-  lunch: 'status.lunch',
-  idle: 'status.idle',
-};
-
-/** Status label in the agent's language; an unknown status shows as sent by the server. */
-function statusLabel(status: string, t: (key: MessageKey) => string): string {
-  const key = STATUS_KEYS[status];
-  return key ? t(key) : status;
 }
 
 const styles = StyleSheet.create({

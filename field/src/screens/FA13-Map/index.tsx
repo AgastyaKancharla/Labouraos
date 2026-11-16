@@ -44,17 +44,10 @@ export default function MapScreen() {
   const shops = q.data?.shops ?? [];
   const near = [...shops].sort((a, b) => Number(b.status === 'revisit_due') - Number(a.status === 'revisit_due') || (a.distanceMeters ?? 0) - (b.distanceMeters ?? 0)).slice(0, 8);
 
-  /** Where a shop opens, or null when there is nothing the agent may open (another agent's unregistered shop). */
-  function canOpen(s: ShopPoint): boolean {
-    return (s.status === 'revisit_due' && s.canAct !== false) || Boolean(s.businessId);
-  }
-  function open(s: ShopPoint) {
-    if (s.status === 'revisit_due' && s.canAct !== false) {
-      router.push({ pathname: routes.visitStart, params: s.businessId ? { businessId: s.businessId, name: s.name } : { revisitOf: s.visitId ?? '', name: s.name } });
-    } else if (s.businessId) {
-      router.push(pageRoutes.business(s.businessId));
-    }
-  }
+  const open = (s: ShopPoint) => {
+    const href = shopTarget(s);
+    if (href) router.push(href as never);
+  };
 
   return (
     <View style={styles.flex} testID="screen-FA13">
@@ -80,7 +73,7 @@ export default function MapScreen() {
               longitude: s.longitude,
               color: STATUS_COLORS[s.status] ?? colors.soft,
               label: s.name,
-              onPress: canOpen(s) ? () => open(s) : undefined,
+              onPress: shopTarget(s) ? () => open(s) : undefined,
             }))}
             attribution={t('fa13.attribution')}
             height={380}
@@ -111,11 +104,11 @@ export default function MapScreen() {
                 trailing={
                   s.canAct === false ? (
                     <StatusChip tone="neutral" label={t('biz.viewOnlyShort')} />
-                  ) : (
-                    <StatusChip tone={s.status === 'revisit_due' ? 'amber' : 'blue'} label={s.status === 'revisit_due' ? t('fa13.visit') : t('fa13.open')} />
+                  ) : !shopTarget(s) ? undefined : (
+                    <StatusChip tone={isOwnRevisitDue(s) ? 'amber' : 'blue'} label={isOwnRevisitDue(s) ? t('fa13.visit') : t('fa13.open')} />
                   )
                 }
-                onPress={canOpen(s) ? () => open(s) : undefined}
+                onPress={shopTarget(s) ? () => open(s) : undefined}
                 last={i === near.length - 1}
                 testID={`fa13-shop-${s.id}`}
               />
@@ -125,6 +118,26 @@ export default function MapScreen() {
       </Screen>
     </View>
   );
+}
+
+const isOwnRevisitDue = (s: ShopPoint) => s.status === 'revisit_due' && s.canAct !== false;
+
+/**
+ * Where a shop's row and marker open (fix list A4), or null when nothing
+ * opens — then the row shows no "Open":
+ * - his own revisit that is due: start the visit;
+ * - a business: its page (view-only when it is another agent's);
+ * - his own unregistered shop (not interested, come back later not yet
+ *   due…): the details of his latest visit there;
+ * - another agent's unregistered shop: nothing.
+ */
+export function shopTarget(s: ShopPoint): string | { pathname: string; params: Record<string, string> } | null {
+  if (isOwnRevisitDue(s)) {
+    return { pathname: routes.visitStart, params: s.businessId ? { businessId: s.businessId, name: s.name } : { revisitOf: s.visitId ?? '', name: s.name } };
+  }
+  if (s.businessId) return pageRoutes.business(s.businessId);
+  if (s.visitId && s.canAct !== false) return pageRoutes.visitDetails(s.visitId);
+  return null;
 }
 
 function Legend({ color, label }: { color: string; label: string }) {

@@ -1,13 +1,14 @@
 import fs from 'fs';
 import path from 'path';
 import type { ReactNode } from 'react';
-import { Text } from 'react-native';
+import { Pressable, Text } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { Stack } from 'expo-router';
+import { Stack, useNavigation } from 'expo-router';
 import { act, fireEvent, renderRouter, screen, testRouter } from 'expo-router/testing-library';
 import { I18nProvider } from '@/i18n';
 import { createMemoryStore } from '@/lib/storage';
 import { pageRoutes, routes, SEARCH_ROUTES, sellingRoutes, sellingRoutesFor, TAB_ROOTS } from './routes';
+import { goBack, type ParentNavigation } from './useFlow';
 
 /**
  * Laboura Field redesign (16 Nov): five tabs — Today, Visits, Businesses,
@@ -30,7 +31,7 @@ function PlainStack() {
 }
 
 /** Route files: real layouts inside (tabs), plain stacks above it, a labelled stand-in for every screen. */
-function routeTree() {
+function routeTree(overrides: Record<string, unknown> = {}) {
   const tree: Record<string, unknown> = {};
   for (const file of routeFiles(APP_DIR)) {
     const key = file.replace(/\.tsx?$/, '');
@@ -39,7 +40,7 @@ function routeTree() {
       tree[key] = key.includes('(tabs)') ? require(path.join(APP_DIR, file)) : PlainStack;
     } else {
       const Stub = () => <Text testID="screen">{key}</Text>;
-      tree[key] = Stub;
+      tree[key] = overrides[key] ?? Stub;
     }
   }
   return tree;
@@ -53,7 +54,17 @@ function Providers({ children }: { children: ReactNode }) {
   );
 }
 
-const render = (initialUrl: string) => renderRouter(routeTree() as never, { initialUrl, wrapper: Providers });
+const render = (initialUrl: string, overrides: Record<string, unknown> = {}) => renderRouter(routeTree(overrides) as never, { initialUrl, wrapper: Providers });
+
+/** A screen with the header's back arrow (goBack with its navigation, as AppHeader does). */
+function BackArrowScreen({ fallback }: { fallback: string }) {
+  const navigation = useNavigation() as unknown as ParentNavigation;
+  return (
+    <Pressable testID="back" onPress={() => goBack(fallback, navigation)}>
+      <Text>back</Text>
+    </Pressable>
+  );
+}
 
 const activeTab = () =>
   screen
@@ -185,6 +196,30 @@ describe('Laboura Field tabs', () => {
     const b = await render(sellingRoutes.confirmVacancy('vac-1'));
     await testRouter.back();
     expect(b.getPathname()).toBe(routes.businesses);
+  });
+
+  it('the back arrow on a screen opened from a link lands on the tab’s main page on its clean path, never /visits?id=… (A8)', async () => {
+    const details = await render(pageRoutes.visitDetails('v-1'), { '(app)/(tabs)/(visits)/visit/details/[id]': () => <BackArrowScreen fallback={routes.visits} /> });
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('back'));
+    });
+    expect(details.getPathnameWithParams()).toBe(routes.visits);
+    const business = await render(pageRoutes.business('b-1'), { '(app)/(tabs)/businesses/[id]': () => <BackArrowScreen fallback={routes.businesses} /> });
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('back'));
+    });
+    expect(business.getPathnameWithParams()).toBe(routes.businesses);
+  });
+
+  it('the back arrow inside a job still returns to the screen before it, with its own params', async () => {
+    const r = await render(pageRoutes.business('b-1'), { '(app)/(tabs)/businesses/vacancy/[id]': () => <BackArrowScreen fallback={routes.businesses} /> });
+    await act(async () => {
+      testRouter.push(sellingRoutes.confirmVacancy('vac-1'));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('back'));
+    });
+    expect(r.getPathnameWithParams()).toBe(pageRoutes.business('b-1'));
   });
 
   it('tapping another tab returns to its main page: a tab left mid-job is reset', async () => {

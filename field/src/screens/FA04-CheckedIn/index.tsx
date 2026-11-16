@@ -5,19 +5,19 @@ import { useI18n } from '@/i18n';
 import { Banner, Button, Card, ErrorState, HeroCard, IconTile, ListRow, LoadingState, ProgressBar, Screen, Text } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
-import { isApiError } from '@/api/errors';
 import type { AttendanceToday } from '@/api/endpoints';
 import { useAuth } from '@/auth/AuthProvider';
 import { formatCoordinates } from '@/device/location/location';
 import { formatTimeIst } from '@/lib/format';
+import { attendanceErrorText, isPickableStatus, PICKABLE_STATUSES, statusLabel, type PickableStatus } from '@/lib/status';
 import { routes } from '@/navigation/routes';
 import { colors, fonts } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { useAttendanceToday, useFieldHome } from '../FA03-Home/useHome';
 import { SelectField } from '../_visits/SelectField';
 
-/** Statuses a field agent picks here. On visit is set automatically at a shop; Travelling ends it. */
-const PICKABLE = ['travelling', 'on_visit', 'team_meeting', 'training', 'short_break', 'lunch'] as const;
+/** Statuses a field agent picks here (fix list A2): On visit and Travelling are set at check-in / check-out, never picked. */
+const PICKABLE = PICKABLE_STATUSES;
 const FULL_DAY_SECONDS = 8 * 3600;
 
 function hm(seconds: number): string {
@@ -35,20 +35,21 @@ function hm(seconds: number): string {
 export default function CheckedInScreen() {
   const { t } = useI18n();
   const { session } = useAuth();
-  const { attendance, visits } = useEndpoints();
+  const { attendance } = useEndpoints();
   const client = useQueryClient();
   const today = useAttendanceToday();
   const home = useFieldHome();
   const change = useMutation<AttendanceToday, Error, string>({
-    mutationFn: (status) => (status === 'travelling' ? visits.businessCheckOut().then(() => attendance.today()) : attendance.setStatus(status)),
+    mutationFn: (status) => attendance.setStatus(status),
     onSuccess: (data) => client.setQueryData(queryKeys.attendanceToday, data),
   });
 
-  const labels: Record<(typeof PICKABLE)[number], string> = {
-    travelling: t('status.travelling'),
-    on_visit: t('fa04.onVisitAuto'),
+  const labels: Record<PickableStatus, string> = {
+    available: t('status.available'),
     team_meeting: t('status.team_meeting'),
     training: t('status.training'),
+    one_to_one: t('status.one_to_one'),
+    system_problem: t('status.system_problem'),
     short_break: t('fa04.shortBreak'),
     lunch: t('fa04.lunch'),
   };
@@ -76,15 +77,13 @@ export default function CheckedInScreen() {
             <Card stripe accent="gold">
               <SelectField
                 label={t('fa03.myStatus')}
-                value={(PICKABLE as readonly string[]).includes(today.data.status ?? '') ? (today.data.status as (typeof PICKABLE)[number]) : null}
-                placeholder={today.data.status ? t(`status.${today.data.status}` as 'status.available') : t('form.choose')}
-                choices={PICKABLE.map((s) => ({ value: s, label: labels[s], disabled: s === 'on_visit' }))}
-                onChange={(s) => {
-                  if (s !== 'on_visit') change.mutate(s);
-                }}
+                value={isPickableStatus(today.data.status) ? today.data.status : null}
+                placeholder={today.data.status ? statusLabel(today.data.status, t) : t('form.choose')}
+                choices={PICKABLE.map((s) => ({ value: s, label: labels[s] }))}
+                onChange={(s) => change.mutate(s)}
                 testID="fa04-status"
               />
-              {change.error ? <Text variant="small" color={colors.tomato}>{isApiError(change.error) ? change.error.message : t('common.error')}</Text> : null}
+              {change.error ? <Text variant="small" color={colors.tomato} testID="fa04-status-error">{attendanceErrorText(change.error, 'today.statusFailed', t)}</Text> : null}
             </Card>
             <HeroCard eyebrow={t('fa04.production')} emoji="⏱️">
               <Text style={styles.heroValue} testID="fa04-production">

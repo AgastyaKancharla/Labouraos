@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
+import { useAfterSave } from '@/api/refresh';
 import { Banner, Button, Card, Emoji, Screen, Text, TextField } from '@/components';
 import { addDays, Checkbox, ChipPicker, DateField, MobileField, MoneyField, Segmented, SelectField, todayKeyIst } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
@@ -11,6 +12,7 @@ import { useLocation } from '@/device/location/useLocation';
 import { useI18n, type MessageKey } from '@/i18n';
 import { duplicateMessage, readOtpSend } from '@/lib/otp-send';
 import { formatTimeIst } from '@/lib/format';
+import { clearFormDraft, useFormDraft } from '@/lib/formDraft';
 import { pageRoutes } from '@/navigation/routes';
 import { type Accent, accents, colors, fonts } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
@@ -49,10 +51,14 @@ const ERROR_KEYS: Record<FieldError, MessageKey> = {
   whatsapp: 'fa10.err.mobile',
 };
 
-/** The draft lives in memory while the app is open (a dropped call loses nothing; nothing stays on the phone). */
-let draft: JobSeekerForm | null = null;
+/**
+ * The draft lives in memory while the app is open (a dropped call loses
+ * nothing; nothing stays on the phone), under the signed-in agent, and goes
+ * at log out (lib/formDraft).
+ */
+const DRAFT_KEY = 'fa10';
 export function clearSeekerDraft() {
-  draft = null;
+  clearFormDraft(DRAFT_KEY);
 }
 
 /**
@@ -68,9 +74,10 @@ export default function CaptureSeekerScreen() {
   const { selling, legal } = useEndpoints();
   const queue = useOfflineQueue();
   const location = useLocation();
+  const afterSave = useAfterSave();
   const options = useQuery({ queryKey: queryKeys.formOptions, queryFn: () => selling.formOptions(), staleTime: 60 * 60_000 });
   const trades = useQuery({ queryKey: queryKeys.trades, queryFn: () => selling.trades(), staleTime: 10 * 60_000 });
-  const [form, setForm] = useState<JobSeekerForm>(() => draft ?? EMPTY_FORM);
+  const [form, setForm] = useFormDraft<JobSeekerForm>(DRAFT_KEY, EMPTY_FORM);
   const [verified, setVerified] = useState<{ requestId: string; at: number; mobile: string } | null>(null);
   const [duplicate, setDuplicate] = useState<{ code?: string; type?: 'job_seeker' | 'business' | 'referral' | null } | null>(null);
   const [tried, setTried] = useState(false);
@@ -81,9 +88,6 @@ export default function CaptureSeekerScreen() {
     staleTime: 10 * 60_000,
     retry: false,
   });
-  useEffect(() => {
-    draft = form;
-  }, [form]);
   const set = <K extends keyof JobSeekerForm>(key: K, value: JobSeekerForm[K]) => setForm((f) => ({ ...f, [key]: value }));
   const errors = validate(form);
   const err = (key: FieldError) => (tried && errors.includes(key) ? t(ERROR_KEYS[key]) : null);
@@ -105,6 +109,8 @@ export default function CaptureSeekerScreen() {
     },
     onSuccess: (created) => {
       clearSeekerDraft();
+      // My job seekers and Today show the new person at once (fix list A1).
+      afterSave();
       router.replace(pageRoutes.seekerSaved(created.id));
     },
   });

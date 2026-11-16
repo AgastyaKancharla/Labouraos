@@ -34,6 +34,11 @@ describe('translations', () => {
     }
   });
 
+  it('the Job seekers tab label is one short word in Kannada, so it fits one line at 360 px (A8)', () => {
+    expect(kn['tabs.jobSeekersTab']).not.toMatch(/\s/);
+    expect(kn['tabs.jobSeekersTab'].length).toBeLessThanOrEqual(12);
+  });
+
   it('a key with no Hindi falls back to English', () => {
     expect(translate('hi', 'tabs.today')).toBe('Today');
   });

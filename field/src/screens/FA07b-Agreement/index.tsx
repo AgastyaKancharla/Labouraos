@@ -41,7 +41,7 @@ const HIDDEN_KEYS: Record<string, MessageKey> = {
  */
 export default function AgreementScreen() {
   const { t } = useI18n();
-  const params = useLocalSearchParams<{ businessId?: string; visitId?: string; linkFailed?: string }>();
+  const params = useLocalSearchParams<{ businessId?: string; visitId?: string; linkFailed?: string; accountAgent?: string }>();
   const { redesign } = useEndpoints();
   const businessId = params.businessId ?? '';
   const q = useQuery({
@@ -55,6 +55,8 @@ export default function AgreementScreen() {
       <AppHeader title={t('fa07b.title')} />
       <Screen onRefresh={() => void q.refetch()} refreshing={q.isRefetching}>
         <StepHeader step={5} />
+        {/* Straight after a verification visit that made him the account agent (server: becameAccountAgent). */}
+        {params.accountAgent === 'new' ? <Banner tone="ok" message={t('fa06b.accountAgent')} testID="fa07b-account-agent" /> : null}
         {!businessId ? (
           <EmptyState message={t('common.error')} />
         ) : q.isPending ? (
@@ -181,7 +183,8 @@ function Agreement({ status: a, businessId, visitId, linkFailed }: { status: Agr
 
 function resendErrorText(error: unknown, t: (key: MessageKey, params?: Record<string, string | number>) => string): string {
   const code = errorCode(error);
-  const retryAt = (error as { body?: { retryAt?: string } }).body?.retryAt;
+  const body = (error as { body?: { retryAt?: string; details?: { retryAt?: string } } }).body;
+  const retryAt = body?.details?.retryAt ?? body?.retryAt;
   switch (code) {
     case 'AGREEMENT_RESEND_TOO_SOON':
     case 'AGREEMENT_RESEND_LIMIT':

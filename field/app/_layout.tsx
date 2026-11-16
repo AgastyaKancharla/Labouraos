@@ -33,8 +33,10 @@ export default function RootLayout() {
             <OfflineQueueProvider>
               <ActivityTracker>
                 <StatusBar style="light" />
-                <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }} />
-                <TestModeBanner />
+                {/* The test-mode strip takes its own space above the header (fix list A7). */}
+                <TestModeBanner>
+                  <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }} />
+                </TestModeBanner>
               </ActivityTracker>
             </OfflineQueueProvider>
           </AuthProvider>

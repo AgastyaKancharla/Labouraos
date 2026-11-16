@@ -6,7 +6,8 @@ import { OfflineQueue } from '@/device/offline-queue/queue';
 import { createMemoryQueueStore } from '@/device/offline-queue/types';
 import { kiran, renderWithApp, type FetchRoute } from '@/test/render';
 import { todayView } from '@/test/redesign-fixtures';
-import HomeScreen from '.';
+import { translate } from '@/i18n';
+import HomeScreen, { STATUS_CHOICES } from '.';
 
 jest.mock('expo-router', () => require('@/test/expo-router-mock'));
 
@@ -134,7 +135,24 @@ describe('FA03 Today', () => {
     }
   });
 
-  it('the status chip changes the status (on visit, travelling, meeting, lunch, break)', async () => {
+  it('Needs you now never repeats the trade ("Cook · Cook") when the server also sends it as the subtitle (A8)', async () => {
+    const view = todayView();
+    view.needsYou = view.needsYou.map((n) => (n.vacancy ? { ...n, subtitle: n.vacancy.trade } : n));
+    await renderWithApp(<HomeScreen />, { signedInAs: kiran, route: api(loggedIn, (url) => (url.endsWith('/field-work/today') ? { status: 200, body: view } : undefined)) });
+    await waitFor(() => screen.getByTestId('needs-vacancy_draft:vac-1'));
+    expect(screen.getByTestId('needs-vacancy_draft:vac-1')).toHaveTextContent(/Check and send to the owner · Cook × 2$/);
+    expect(screen.getByTestId('needs-vacancy_awaiting_owner:vac-2')).not.toHaveTextContent(/Helper · Helper/);
+    // Other subtitles (the area) still show.
+    expect(screen.getByTestId('needs-agreement_waiting:b-1')).toHaveTextContent(/JP Nagar/);
+  });
+
+  it('dates follow the app language: Kannada month and day names (A8)', async () => {
+    await renderWithApp(<HomeScreen />, { signedInAs: kiran, language: 'kn', route: api(loggedIn, (url) => (url.endsWith('/field-work/today') ? { status: 200, body: todayView() } : undefined)) });
+    await waitFor(() => expect(screen.getByTestId('today-hero')).toHaveTextContent(/ಸೋಮ 16 ನವೆಂ/));
+    expect(screen.getByTestId('today-hero')).not.toHaveTextContent(/Mon 16 Nov/);
+  });
+
+  it('the status chip offers exactly the statuses a person can pick; Travelling shows as the current status only (A2)', async () => {
     const sent: unknown[] = [];
     await renderWithApp(<HomeScreen />, {
       signedInAs: kiran,
@@ -149,10 +167,32 @@ describe('FA03 Today', () => {
     await waitFor(() => screen.getByTestId('attendance-status'));
     expect(screen.getByTestId('attendance-status')).toHaveTextContent(/Travelling/);
     await fireEvent.press(screen.getByTestId('attendance-status'));
-    for (const s of ['on_visit', 'travelling', 'team_meeting', 'lunch', 'short_break']) expect(screen.getByTestId(`status-choice-${s}`)).toBeTruthy();
+    const offered = ['available', 'team_meeting', 'training', 'one_to_one', 'system_problem', 'short_break', 'lunch'];
+    for (const s of offered) expect(screen.getByTestId(`status-choice-${s}`)).toBeTruthy();
+    for (const s of ['on_visit', 'travelling', 'on_call', 'after_call_notes']) expect(screen.queryByTestId(`status-choice-${s}`)).toBeNull();
+    expect(STATUS_CHOICES).toEqual(offered);
+    expect(screen.getByTestId('status-automatic')).toHaveTextContent(/Now: Travelling/);
     await fireEvent.press(screen.getByTestId('status-choice-lunch'));
     await waitFor(() => expect(screen.getByTestId('attendance-status')).toHaveTextContent(/Lunch/));
     expect(sent).toEqual([{ status: 'lunch' }]);
+  });
+
+  it('a refused status shows a translated sentence, never the server\'s English message (A2)', async () => {
+    await renderWithApp(<HomeScreen />, {
+      signedInAs: kiran,
+      language: 'kn',
+      route: api(loggedIn, (url) =>
+        url.endsWith('/attendance/status')
+          ? { status: 400, body: { statusCode: 400, message: 'Status on_visit is set automatically', details: { code: 'STATUS_NOT_PICKABLE' } } }
+          : undefined,
+      ),
+    });
+    await waitFor(() => screen.getByTestId('attendance-status'));
+    await fireEvent.press(screen.getByTestId('attendance-status'));
+    await fireEvent.press(screen.getByTestId('status-choice-training'));
+    await waitFor(() => screen.getByTestId('attendance-error'));
+    expect(screen.getByTestId('attendance-error')).toHaveTextContent(translate('kn', 'today.statusFailed'));
+    expect(screen.getByTestId('attendance-error')).not.toHaveTextContent(/set automatically/);
   });
 
   it('End my day asks first, then logs the day out', async () => {

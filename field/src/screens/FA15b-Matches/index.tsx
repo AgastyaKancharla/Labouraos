@@ -278,7 +278,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    minHeight: 40,
+    minHeight: 44,
     paddingHorizontal: 12,
     borderRadius: radius.md,
     backgroundColor: colors.neutral100,
@@ -286,7 +286,7 @@ const styles = StyleSheet.create({
   chipOn: { backgroundColor: colors.blue100, borderWidth: 1.5, borderColor: colors.blue },
   chipText: { fontFamily: fonts.body700, color: colors.ink, fontSize: 13 },
   chipTextOn: { fontFamily: fonts.body700, color: colors.blue, fontSize: 13 },
-  chipAdd: { minHeight: 40, paddingHorizontal: 12, justifyContent: 'center', borderRadius: radius.md, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.blue },
+  chipAdd: { minHeight: 44, paddingHorizontal: 12, justifyContent: 'center', borderRadius: radius.md, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.blue },
   chipAddText: { fontFamily: fonts.body700, color: colors.blue, fontSize: 13 },
   bar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   card: {

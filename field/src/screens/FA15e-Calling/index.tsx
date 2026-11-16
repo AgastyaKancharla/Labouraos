@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
+import { useAfterSave } from '@/api/refresh';
 import type { CandidateCard } from '@/api/endpoints';
 import { useAuth } from '@/auth/AuthProvider';
 import { Banner, Button, Icon, IconTile, Screen, Text } from '@/components';
@@ -54,6 +55,7 @@ function Calling({ card, vacancyId }: { card: CandidateCard; vacancyId: string }
   const { session } = useAuth();
   const { selling } = useEndpoints();
   const queue = useOfflineQueue();
+  const afterSave = useAfterSave();
   const [callId, setCallId] = useState<string | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -89,6 +91,7 @@ function Calling({ card, vacancyId }: { card: CandidateCard; vacancyId: string }
       return r;
     },
     onSuccess: (r) => {
+      afterSave(['selling']);
       if (answer === 'yes') router.push(sr.owner(r.interviewId));
       else router.back();
     },

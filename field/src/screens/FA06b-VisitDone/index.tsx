@@ -33,7 +33,7 @@ const HIDDEN_KEYS: Record<string, MessageKey> = {
  */
 export default function VisitDoneScreen() {
   const { t } = useI18n();
-  const params = useLocalSearchParams<{ businessId?: string; visitId?: string }>();
+  const params = useLocalSearchParams<{ businessId?: string; visitId?: string; accountAgent?: string }>();
   const { redesign } = useEndpoints();
   const sr = useSellingRoutes();
   const businessId = params.businessId ?? '';
@@ -57,6 +57,8 @@ export default function VisitDoneScreen() {
       <AppHeader title={t('fa06b.title')} subtitle={b.name} />
       <Screen onRefresh={() => void q.refetch()} refreshing={q.isRefetching}>
         <StepHeader step={7} />
+        {/* Only when this verification visit made him the account agent (server: becameAccountAgent). */}
+        {params.accountAgent === 'new' ? <Banner tone="ok" message={t('fa06b.accountAgent')} testID="fa06b-account-agent" /> : null}
         <Banner
           tone={signed ? 'ok' : 'warn'}
           title={signed && b.checklist.agreement.signedByName ? t('fa06b.signedBy', { name: b.checklist.agreement.signedByName }) : signed ? t('fa07b.signed') : t('fa06b.waitingTitle')}
@@ -113,7 +115,6 @@ export default function VisitDoneScreen() {
           <Button label={t('fa06b.showCandidates')} disabled testID="fa06b-show" />
         ) : null}
         {signed ? <Button label={t('fa06b.done')} variant="secondary" onPress={() => finishLater(routes.visits)} testID="fa06b-done" /> : <FinishLaterButton />}
-        <Text variant="muted">{t('fa06b.accountAgent')}</Text>
       </Screen>
     </View>
   );

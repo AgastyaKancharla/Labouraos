@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { setDateLanguage } from '@/lib/format';
 import { secureStorage, type KeyValueStore } from '@/lib/storage';
 import type { MessageKey } from './en';
 import {
@@ -64,6 +65,8 @@ export function I18nProvider({ children, storage = secureStorage, initialLanguag
     [language, setLanguage],
   );
 
+  // Dates follow the app language (Kannada month names): set before the screens below format theirs.
+  setDateLanguage(language);
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 

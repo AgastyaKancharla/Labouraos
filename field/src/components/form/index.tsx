@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useI18n } from '@/i18n';
+import { monthName, weekdayName } from '@/lib/format';
 import { colors, fonts, fontSize, radius, touch } from '@/theme';
 import { Text } from '../Text';
 
@@ -327,15 +328,12 @@ export function ChipPicker({ label, values, choices, onChange, required, error, 
 
 // ------------------------------------------------------------- date & time
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-/** "2026-11-16" → "Mon 16 Nov 2026". */
+/** "2026-11-16" → "Mon 16 Nov 2026", in the app language. */
 export function formatDateKey(key: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
   if (!m) return key;
   const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
-  return `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+  return `${weekdayName(d.getUTCDay())} ${d.getUTCDate()} ${monthName(d.getUTCMonth())} ${d.getUTCFullYear()}`;
 }
 
 /** Today's date key in IST. */
@@ -367,7 +365,7 @@ export function DateField({
   hint?: string;
   testID?: string;
 }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [open, setOpen] = useState(false);
   const start = value || (max && (!min || max < todayKeyIst()) ? max : min && min > todayKeyIst() ? min : todayKeyIst());
   const [cursor, setCursor] = useState(start.slice(0, 7));
@@ -431,16 +429,16 @@ export function DateField({
                 <Text style={styles.calNavText}>‹</Text>
               </Pressable>
               <Pressable accessibilityRole="button" onPress={() => setMode('year')}>
-                <Text variant="bodyStrong">{`${MONTHS[m - 1]} ${y}`}</Text>
+                <Text variant="bodyStrong">{`${monthName(m - 1)} ${y}`}</Text>
               </Pressable>
               <Pressable accessibilityRole="button" accessibilityLabel={t('form.nextMonth')} onPress={() => shift(1)} style={styles.calNav}>
                 <Text style={styles.calNavText}>›</Text>
               </Pressable>
             </View>
             <View style={styles.calGrid}>
-              {WEEKDAYS.map((w) => (
-                <Text key={w} variant="tiny" style={styles.calCell}>
-                  {w.slice(0, 2)}
+              {[0, 1, 2, 3, 4, 5, 6].map((d) => (
+                <Text key={d} variant="tiny" style={styles.calCell}>
+                  {language === 'kn' ? weekdayName(d) : weekdayName(d).slice(0, 2)}
                 </Text>
               ))}
               {days.map((day, i) => {
@@ -590,7 +588,7 @@ const styles = StyleSheet.create({
   dotInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.blue },
   segRow: { flexDirection: 'row', gap: 6 },
   seg: {
-    minHeight: 40,
+    minHeight: 44,
     paddingHorizontal: 16,
     borderRadius: radius.md,
     borderWidth: 1,
@@ -603,11 +601,11 @@ const styles = StyleSheet.create({
   segText: { fontFamily: fonts.body700, color: colors.navy },
   segTextOn: { fontFamily: fonts.body700, color: colors.white },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  chip: { paddingHorizontal: 12, minHeight: 36, justifyContent: 'center', borderRadius: radius.pill, backgroundColor: colors.blue100 },
+  chip: { paddingHorizontal: 12, minHeight: 44, justifyContent: 'center', borderRadius: radius.pill, backgroundColor: colors.blue100 },
   chipText: { color: colors.blue, fontFamily: fonts.body700, fontSize: 12.5 },
   chipAdd: {
     paddingHorizontal: 12,
-    minHeight: 36,
+    minHeight: 44,
     justifyContent: 'center',
     borderRadius: radius.pill,
     borderWidth: 1,

@@ -5,6 +5,7 @@ import { useI18n, type MessageKey } from '@/i18n';
 import { Banner, Button, Card, EmptyState, ErrorState, HeroCard, LoadingState, Screen } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
+import { useAfterSave } from '@/api/refresh';
 import { isApiError } from '@/api/errors';
 import type { ReferralStep } from '@/api/endpoints';
 import { useOfflineQueue } from '@/device/offline-queue';
@@ -35,6 +36,7 @@ export default function ReferralSavedScreen() {
   const id = params.id ?? '';
   const { redesign } = useEndpoints();
   const queue = useOfflineQueue();
+  const afterSave = useAfterSave();
   const header = useQuery({ queryKey: queryKeys.referral(id), queryFn: () => redesign.referral(id), enabled: Boolean(id) });
   const status = useQuery({
     queryKey: queryKeys.referralStatus(id),
@@ -42,7 +44,10 @@ export default function ReferralSavedScreen() {
     enabled: Boolean(id),
     refetchInterval: (q) => (q.state.data?.currentStep === 'complete' ? false : 5000),
   });
-  const resend = useMutation({ mutationFn: () => queue.live(() => redesign.resendReferralLink(id, header.data?.language ?? undefined)) });
+  const resend = useMutation({
+    mutationFn: () => queue.live(() => redesign.resendReferralLink(id, header.data?.language ?? undefined)),
+    onSuccess: () => afterSave(queryKeys.referralStatus(id)),
+  });
   const chip = (s: ReferralStep | undefined): { label: string; tone: 'green' | 'amber' | 'neutral' | 'tomato' } =>
     !s
       ? { label: '—', tone: 'neutral' }

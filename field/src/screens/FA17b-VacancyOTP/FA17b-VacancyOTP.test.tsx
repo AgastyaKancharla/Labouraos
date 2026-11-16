@@ -1,16 +1,20 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { router, segments } from '@/test/expo-router-mock';
 import { kiran, renderWithApp } from '@/test/render';
 import { routeTable } from '@/test/selling-fixtures';
 import { businessPage, pageVacancy, viewOnlyPage } from '@/test/redesign-fixtures';
-import VacancyOtpScreen from '.';
+import VacancyOtpScreen, { VACANCY_POLL_MS } from '.';
 
 jest.mock('expo-router', () => require('@/test/expo-router-mock'));
 
 beforeEach(() => {
   jest.clearAllMocks();
   segments.current = ['(app)', '(tabs)', 'businesses', 'vacancy', '[id]'];
+});
+
+afterEach(() => {
+  jest.useRealTimers();
 });
 
 const raw = (id: string, status: string) => ({ id, code: 'VC', businessId: 'b-1', status, confirmedAt: null, confirmedByName: null });
@@ -88,5 +92,94 @@ describe('FA17b a vacancy and its next step', () => {
     expect(screen.queryByTestId('vacancy-otp-send')).toBeNull();
     expect(screen.queryByTestId('send-link')).toBeNull();
     expect(screen.getByTestId('show-matches')).toBeDisabled();
+  });
+
+  it('waiting: looks again every few seconds, shows the owner\'s confirmation from his link, refreshes the business page, then stops (A3)', async () => {
+    jest.useFakeTimers();
+    (useLocalSearchParams as jest.Mock).mockReturnValue({ id: 'vac-2', otp: 'otp-3', last4: '4321' });
+    let confirmed = false;
+    let reads = 0;
+    const { route } = routeTable({
+      '/vacancies/vac-2': () => {
+        reads += 1;
+        return { status: 200, body: { ...raw('vac-2', confirmed ? 'open' : 'awaiting_confirmation'), confirmedAt: confirmed ? '2026-11-11T07:10:00Z' : null, confirmedByName: confirmed ? 'Manjunath' : null } };
+      },
+      '/field-work/businesses/b-1/page': () => {
+        const page = businessPage();
+        if (confirmed) page.vacancies[1] = { ...page.vacancies[1], status: 'open', nextStep: { kind: 'show_candidates', shown: 0 } };
+        return { status: 200, body: page };
+      },
+    });
+    const { queryClient } = await renderWithApp(<VacancyOtpScreen />, { signedInAs: kiran, route });
+    await waitFor(() => screen.getByTestId('vacancy-otp-sent'));
+    expect(screen.getByTestId('vacancy-watching')).toBeTruthy();
+    const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+    const before = reads;
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(VACANCY_POLL_MS + 100);
+    });
+    expect(reads).toBeGreaterThan(before);
+    expect(screen.queryByTestId('vacancy-confirmed')).toBeNull();
+    // The owner confirms from the SMS link, on his own phone.
+    confirmed = true;
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(VACANCY_POLL_MS + 100);
+    });
+    await waitFor(() => screen.getByTestId('vacancy-confirmed'));
+    expect(screen.getByTestId('vacancy-confirmed')).toHaveTextContent(/Manjunath/);
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['field-work'] });
+    expect(screen.getByTestId('show-matches')).not.toBeDisabled();
+    const afterConfirm = reads;
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(VACANCY_POLL_MS * 3);
+    });
+    expect(reads).toBe(afterConfirm);
+  });
+
+  it('stops looking once the screen is closed (A3)', async () => {
+    jest.useFakeTimers();
+    (useLocalSearchParams as jest.Mock).mockReturnValue({ id: 'vac-2', otp: 'otp-3', last4: '4321' });
+    let reads = 0;
+    const { route } = routeTable({
+      '/vacancies/vac-2': () => {
+        reads += 1;
+        return { status: 200, body: raw('vac-2', 'awaiting_confirmation') };
+      },
+      '/field-work/businesses/b-1/page': businessPage(),
+    });
+    const { unmount } = await renderWithApp(<VacancyOtpScreen />, { signedInAs: kiran, route });
+    await waitFor(() => screen.getByTestId('vacancy-otp-sent'));
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(VACANCY_POLL_MS + 100);
+    });
+    expect(reads).toBeGreaterThan(1);
+    await act(async () => {
+      unmount();
+    });
+    const closedAt = reads;
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(VACANCY_POLL_MS * 3);
+    });
+    expect(reads).toBe(closedAt);
+  });
+
+  it('a draft or a confirmed vacancy is not polled', async () => {
+    jest.useFakeTimers();
+    (useLocalSearchParams as jest.Mock).mockReturnValue({ id: 'vac-1' });
+    let reads = 0;
+    const { route } = routeTable({
+      '/vacancies/vac-1': () => {
+        reads += 1;
+        return { status: 200, body: raw('vac-1', 'draft') };
+      },
+      '/field-work/businesses/b-1/page': businessPage(),
+    });
+    await renderWithApp(<VacancyOtpScreen />, { signedInAs: kiran, route });
+    await waitFor(() => screen.getByTestId('vacancy-draft'));
+    const first = reads;
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(VACANCY_POLL_MS * 3);
+    });
+    expect(reads).toBe(first);
   });
 });

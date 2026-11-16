@@ -1,6 +1,7 @@
+import { useNavigation } from 'expo-router';
 import { TopBar } from '@/components';
 import { useAuth } from '@/auth/AuthProvider';
-import { goBack, useTabRoot } from '@/navigation/useFlow';
+import { goBack, useTabRoot, type ParentNavigation } from '@/navigation/useFlow';
 
 interface Props {
   title: string;
@@ -20,13 +21,14 @@ interface Props {
 export function AppHeader({ title, subtitle, root = false, backTo, onBack }: Props) {
   const { session, logout } = useAuth();
   const tab = useTabRoot();
+  const navigation = useNavigation() as unknown as ParentNavigation | undefined;
   return (
     <TopBar
       title={title}
       subtitle={subtitle}
       personName={session?.staff.name}
       onLogout={() => void logout()}
-      onBack={root ? undefined : (onBack ?? (() => goBack(backTo ?? tab.root)))}
+      onBack={root ? undefined : (onBack ?? (() => goBack(backTo ?? tab.root, navigation)))}
     />
   );
 }

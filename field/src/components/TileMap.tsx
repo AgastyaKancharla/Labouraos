@@ -131,7 +131,8 @@ export function TileMap({ center, me, markers, height = 260, zoom = 16, attribut
 const styles = StyleSheet.create({
   box: { overflow: 'hidden', borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: '#E8EEF8' },
   tile: { position: 'absolute', width: TILE, height: TILE },
-  markerWrap: { position: 'absolute', width: 120, alignItems: 'center' },
+  // At least 44 px high to tap (fix list A8); the dot stays where the shop is.
+  markerWrap: { position: 'absolute', width: 120, minHeight: 44, alignItems: 'center' },
   marker: { width: 18, height: 18, borderRadius: 9, borderWidth: 3, borderColor: colors.white },
   markerLabel: {
     marginTop: 2,

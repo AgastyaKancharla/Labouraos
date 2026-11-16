@@ -43,4 +43,15 @@ describe('FA06b candidates, step 7 of 7', () => {
     await fireEvent.press(screen.getByTestId('finish-later'));
     expect(router.dismissTo).toHaveBeenCalledWith('/visits');
   });
+
+  it('"You are now its account agent" shows only after a verification visit that made him so', async () => {
+    const { route } = routeTable({ '/field-work/businesses/b-1/page': signed() });
+    await renderWithApp(<VisitDoneScreen />, { signedInAs: kiran, route });
+    await waitFor(() => screen.getByTestId('fa06b-banner'));
+    expect(screen.queryByText(/You are now its account agent/)).toBeNull();
+    searchParams.current = { businessId: 'b-1', visitId: 'v-1', accountAgent: 'new' };
+    await renderWithApp(<VisitDoneScreen />, { signedInAs: kiran, route });
+    await waitFor(() => screen.getByTestId('fa06b-account-agent'));
+    expect(screen.getByTestId('fa06b-account-agent')).toHaveTextContent(/You are now its account agent/);
+  });
 });

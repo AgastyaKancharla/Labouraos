@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -16,6 +16,12 @@ import { AppHeader } from '../_shared/AppHeader';
 import { ErrorBanner, formatRupees, Note, QueryView, SHIFT_KEYS, useParam } from '../_selling';
 import { OtpStep } from '../_selling/OtpStep';
 import { roleKey } from '../FA18-CallOwner';
+
+/** While the vacancy waits for the owner, look again this often (he may confirm from the SMS link). */
+export const VACANCY_POLL_MS = 4000;
+
+/** Waiting for the owner: sent to him, not yet confirmed (code or link). */
+const isWaiting = (status: string | null | undefined) => status === 'awaiting_confirmation';
 
 /**
  * FA17b — a vacancy and its one next step (redesign, 16 Nov), so no vacancy
@@ -42,6 +48,10 @@ export default function VacancyOtpScreen() {
       return { page, row: page.vacancies.find((v) => v.id === id) ?? null, status: raw.status, confirmedByName: raw.confirmedByName, confirmedAt: raw.confirmedAt };
     },
     enabled: !!id,
+    // The owner can confirm from the SMS link while this screen is open: look again every few
+    // seconds while it waits (fix list A3). Polling stops once confirmed, and when the screen
+    // closes (no one is watching the query any more).
+    refetchInterval: (q) => (isWaiting(q.state.data?.row?.status ?? q.state.data?.status) ? VACANCY_POLL_MS : false),
   });
   return (
     <View style={styles.flex}>
@@ -99,6 +109,13 @@ function Vacancy({ page, row, id, status, confirmedAt, confirmedByName }: {
       ].filter(Boolean).join(' · ')
     : page.name;
   const confirmed = status === 'open';
+  // Confirmed while this screen was open (code here, or the owner's link): the business page,
+  // Today and Needs you now are out of date (fix list A3).
+  const wasConfirmed = useRef(confirmed);
+  useEffect(() => {
+    if (confirmed && !wasConfirmed.current) void client.invalidateQueries({ queryKey: ['field-work'] });
+    wasConfirmed.current = confirmed;
+  }, [confirmed, client]);
   const draft = status === 'draft' && !submit.isSuccess;
   const step = row?.nextStep;
   const initial: OtpSent | null = sent ?? (otpParam ? { otpRequestId: otpParam, sentToLast4: last4Param || last4, contactName: contact } : null);
@@ -154,6 +171,7 @@ function Vacancy({ page, row, id, status, confirmedAt, confirmedByName }: {
             }}
           />
           <Note>{t('fa17b.notHere')}</Note>
+          {isWaiting(status) ? <Note testID="vacancy-watching">{t('fa17b.watching')}</Note> : null}
           <Button
             label={link.isSuccess ? t('fa17b.linkSent', { last4: link.data.sentToLast4 }) : t('fa17b.sendLink')}
             variant="secondary"

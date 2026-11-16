@@ -79,4 +79,37 @@ describe('FA21 Visit a shop · talking', () => {
     await fireEvent.press(screen.getByTestId('fa21-pitch'));
     expect(router.push).toHaveBeenCalledWith('/visit/pitch');
   });
+
+  it('a visit that already has a result opens its visit details: no timer, no result buttons (A5)', async () => {
+    searchParams.current = { id: 'v-1' };
+    await renderWithApp(<VisitTalkScreen />, {
+      signedInAs: kiran,
+      route: (url) => (url.endsWith('/field-visits/v-1') ? { status: 200, body: { ...sampleVisit, outcome: 'not_interested', endedAt: '2026-11-09T06:20:00.000Z' } } : undefined),
+    });
+    await waitFor(() => screen.getByTestId('redirect'));
+    expect(screen.getByTestId('redirect')).toHaveTextContent('/visit/details/v-1');
+    expect(screen.queryByTestId('fa21-timer')).toBeNull();
+    expect(screen.queryByTestId('fa21-onboard')).toBeNull();
+  });
+
+  it('even with the visit still in memory, a result saved on the server wins (A5)', async () => {
+    draft('v-8');
+    searchParams.current = { id: 'v-8' };
+    await renderWithApp(<VisitTalkScreen />, {
+      signedInAs: kiran,
+      route: (url) => (url.endsWith('/field-visits/v-8') ? { status: 200, body: { ...sampleVisit, id: 'v-8', outcome: 'onboard_now' } } : undefined),
+    });
+    await waitFor(() => screen.getByTestId('redirect'));
+    expect(screen.getByTestId('redirect')).toHaveTextContent('/visit/details/v-8');
+  });
+
+  it('a visit with no result yet stays on the talk step', async () => {
+    searchParams.current = { id: 'v-1' };
+    await renderWithApp(<VisitTalkScreen />, {
+      signedInAs: kiran,
+      route: (url) => (url.endsWith('/field-visits/v-1') ? { status: 200, body: sampleVisit } : undefined),
+    });
+    await waitFor(() => screen.getByTestId('fa21-timer'));
+    expect(screen.queryByTestId('redirect')).toBeNull();
+  });
 });

@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useI18n } from '@/i18n';
 import { Banner, Button, Card, EmptyState, ErrorState, HeroCard, Icon, LoadingState, Screen, Text, TextField } from '@/components';
 import { isApiError } from '@/api/errors';
 import { visitPaths } from '@/api/endpoints';
+import { queryKeys } from '@/api/queryClient';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { formatTimeIst } from '@/lib/format';
 import { useFormDraft } from '@/lib/formDraft';
-import { routes } from '@/navigation/routes';
+import { pageRoutes, routes } from '@/navigation/routes';
 import { colors, fonts } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { ChipChoices } from '../_visits/ChoiceList';
@@ -27,12 +28,16 @@ const MOBILE = /^[6-9]\d{9}$/;
  * went. "Interested — onboard now" closes the timer and leads to the proof
  * selfie (FA22); the other three open the outcome form (FA06c) for the date
  * or reason. Very short visits are flagged to the Team Lead by the server.
+ * A visit that already has a result (an old link, or back from a later step)
+ * opens its visit details instead: no timer and no result buttons again
+ * (fix list A5).
  */
 export default function VisitTalkScreen() {
   const { t } = useI18n();
   const { id } = useLocalSearchParams<{ id?: string }>();
-  const { visit, loading, error } = useVisit(id);
+  const { visit, server, loading, error } = useVisit(id);
   if (!id) return <EmptyState message={t('common.error')} />;
+  if (server?.outcome) return <Redirect href={pageRoutes.visitDetails(id)} />;
   if (loading) return <LoadingState />;
   if (!visit) return <ErrorState error={error} onRetry={() => router.replace(routes.visits)} />;
   return <Talk visit={visit} />;
@@ -98,6 +103,8 @@ function Talk({ visit }: { visit: VisitDraft }) {
       });
       keep(endedAt);
       void client.invalidateQueries({ queryKey: ['field-work'] });
+      // The visit now has its result: back on this step later opens its details (A5).
+      void client.invalidateQueries({ queryKey: queryKeys.visit(visit.id) });
       router.push({ pathname: routes.visitProof, params: { id: visit.id } });
     } catch (e) {
       setProblem(isApiError(e) ? e.message : t('common.error'));
@@ -116,7 +123,7 @@ function Talk({ visit }: { visit: VisitDraft }) {
     <View style={styles.flex} testID="screen-FA21">
       <AppHeader title={t('fa20.title')} />
       <Screen>
-        <StepHeader step={2} />
+        <StepHeader step={2} revisit={Boolean(visit.businessId)} />
         <HeroCard eyebrow={t('fa21.timer')} emoji="⏱️">
           <View style={styles.timerRow}>
             <Text style={styles.started}>{t('fa21.started', { time: formatTimeIst(startedAt) })}</Text>
