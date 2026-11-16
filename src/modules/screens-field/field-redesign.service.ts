@@ -77,6 +77,8 @@ const NEEDS_ORDER: NeedsYouItem['kind'][] = [
   'followup_task',
 ];
 const DUE_ORDER: Record<string, number> = { overdue: 0, today: 1, tomorrow: 2 };
+/** Items with no due date sort after tomorrow's. */
+const NO_DUE_RANK = Object.keys(DUE_ORDER).length;
 
 type BusinessForStep = {
   id: string;
@@ -431,7 +433,7 @@ export class FieldRedesignService {
             Number((a.agreement as { state: string }).state === 'link_expired');
           if (expired) return expired;
         }
-        const due = (DUE_ORDER[a.due ?? ''] ?? 3) - (DUE_ORDER[b.due ?? ''] ?? 3);
+        const due = (DUE_ORDER[a.due ?? ''] ?? NO_DUE_RANK) - (DUE_ORDER[b.due ?? ''] ?? NO_DUE_RANK);
         if (due) return due;
         return (a.at ?? '').localeCompare(b.at ?? '');
       })
