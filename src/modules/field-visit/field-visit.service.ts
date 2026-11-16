@@ -570,7 +570,7 @@ export class FieldVisitService {
     const owners = valid ? await this.otp.isVerified(body.ownerOtpRequestId, business.phone, ownerVisitOtpPurpose(visit.assignmentId)) : false;
     if (!owners) throw new BadRequestException("Wrong code. Ask the owner to read the latest code again.");
     const verifiedOutcome = (await this.wasOnboardedBefore(business.id, id)) ? ALREADY_ONBOARDED : 'onboarded';
-    await this.prisma.$transaction(async (tx) => {
+    const accountAgentSetAt = await this.prisma.$transaction(async (tx) => {
       // B19 (rev 188): a completed verification visit has its result, like every visit.
       await tx.businessVisit.update({
         where: { id },
@@ -585,7 +585,19 @@ export class FieldVisitService {
         data: { status: 'done', visitId: id },
       });
       if (done.count !== 1) throw new ForbiddenException('Only the assigned field agent can complete this visit');
+      // S1 (rev 192): closing the assignment must not lock him out of the next step
+      // (the agreement): with no account agent, the verifying agent becomes it.
+      return this.verification.takeAccountAgentAfterVerification(tx, business.id, staffId);
     });
+    if (accountAgentSetAt) {
+      await this.verification.logAccountAgentSet(business, {
+        actorId: staffId,
+        accountAgentId: staffId,
+        assignedAt: accountAgentSetAt,
+        action: 'business.account_agent_assigned',
+        reason: 'Verification visit completed by this field agent; the business had no account agent',
+      });
+    }
     await this.audit.log({
       actorId: staffId,
       action: 'business.visit_recorded',
@@ -597,8 +609,13 @@ export class FieldVisitService {
       city: business.city,
     });
     await this.verification.advanceToPendingTlCheckIfReady(business.id, staffId);
-    const after = await this.prisma.business.findUniqueOrThrow({ where: { id: business.id }, select: { verificationStatus: true } });
-    return { ...this.present(await this.load(id)), businessVerificationStatus: after.verificationStatus };
+    const after = await this.prisma.business.findUniqueOrThrow({ where: { id: business.id }, select: { verificationStatus: true, accountAgentId: true } });
+    return {
+      ...this.present(await this.load(id)),
+      businessVerificationStatus: after.verificationStatus,
+      isAccountAgent: after.accountAgentId === staffId,
+      becameAccountAgent: Boolean(accountAgentSetAt),
+    };
   }
 
   /**

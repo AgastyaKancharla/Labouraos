@@ -386,4 +386,64 @@ describe('Laboura Field redesign: visit results, change result, details, own-onl
     const visits = await request(app.getHttpServer()).get('/field-work/visits').set(authOf(agent)).expect(200);
     expect(visits.body.doneToday.find((v: { id: string }) => v.id === id)).toMatchObject({ needsOutcome: false, nextStep: 'done' });
   });
+
+  async function completeVerificationVisit(who: typeof agent, businessId: string) {
+    const assignment = await prisma.visitAssignment.create({
+      data: { businessId, purpose: 'verification', assignedStaffId: who.id, status: 'assigned' },
+    });
+    const id = randomUUID();
+    await startVisit(who, { id, assignmentId: assignment.id }).expect(201);
+    await selfie(who, id).expect(201);
+    const sent = await request(app.getHttpServer())
+      .post(`/businesses/${businessId}/visit-assignments/${assignment.id}/owner-otp`)
+      .set(authOf(who))
+      .expect(201);
+    const code = (app.get(OtpService).getProvider() as MockOtpProvider).getCode(sent.body.requestId);
+    return request(app.getHttpServer())
+      .post(`/field-visits/${id}/verify`)
+      .set(authOf(who))
+      .send({ ownerOtpRequestId: sent.body.requestId, ownerOtpCode: code })
+      .expect(201);
+  }
+
+  it('S1 (rev 192): completing a verification visit of a business with no account agent makes the verifying agent its account agent, so the agreement step is his', async () => {
+    clock.at = new Date(START.getTime() + 640 * MIN);
+    const fresh = await makeStaff('field_agent', lead.id);
+    // A phone / app lead: nobody is its account agent and the lead was not created by him.
+    const business = await makeBusiness({ verificationStatus: 'pending_visit', suffix: '6', leadChannel: 'phone' });
+    const verified = await completeVerificationVisit(fresh, business.id);
+    expect(verified.body).toMatchObject({ outcome: 'onboarded', becameAccountAgent: true, isAccountAgent: true });
+
+    const after = await prisma.business.findUniqueOrThrow({ where: { id: business.id } });
+    expect(after.accountAgentId).toBe(fresh.id);
+    expect(after.accountAgentAssignedAt).toBeInstanceOf(Date);
+    // Recorded in the account agent's history (audit log), like every other account-agent change.
+    const audit = await prisma.auditLog.findFirstOrThrow({ where: { actorId: fresh.id, action: 'business.account_agent_assigned', entityCode: business.code } });
+    expect(audit.before).toMatchObject({ accountAgentId: null });
+    expect(audit.after).toMatchObject({ accountAgentId: fresh.id });
+
+    // The assignment is closed, yet the next step (agreement) is his: no 403 NOT_YOUR_BUSINESS.
+    expect(await prisma.visitAssignment.count({ where: { businessId: business.id, status: 'assigned' } })).toBe(0);
+    const agreement = await request(app.getHttpServer()).get(`/field-work/businesses/${business.id}/agreement`).set(authOf(fresh)).expect(200);
+    expect(agreement.body).toMatchObject({ state: 'not_sent', canResend: true });
+    const page = await request(app.getHttpServer()).get(`/field-work/businesses/${business.id}/page`).set(authOf(fresh)).expect(200);
+    expect(page.body).toMatchObject({ canAct: true, isMine: true, accountAgent: { id: fresh.id, isMe: true } });
+    // In My businesses and in Needs you now (agreement waiting).
+    const mine = await request(app.getHttpServer()).get('/field-work/businesses').set(authOf(fresh)).expect(200);
+    expect(mine.body.results.map((b: { id: string }) => b.id)).toContain(business.id);
+    const today = await request(app.getHttpServer()).get('/field-work/today').set(authOf(fresh)).expect(200);
+    expect(today.body.needsYou).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: 'agreement_waiting', target: expect.objectContaining({ id: business.id, step: 'agreement' }) })]),
+    );
+  });
+
+  it('S1: a verification visit never takes a business from its existing account agent', async () => {
+    clock.at = new Date(START.getTime() + 680 * MIN);
+    const fresh = await makeStaff('field_agent', lead.id);
+    const business = await makeBusiness({ accountAgentId: otherAgent.id, verificationStatus: 'pending_visit', suffix: '7', leadChannel: 'phone' });
+    const verified = await completeVerificationVisit(fresh, business.id);
+    expect(verified.body).toMatchObject({ becameAccountAgent: false, isAccountAgent: false });
+    expect((await prisma.business.findUniqueOrThrow({ where: { id: business.id } })).accountAgentId).toBe(otherAgent.id);
+    expect(await prisma.auditLog.count({ where: { actorId: fresh.id, action: 'business.account_agent_assigned' } })).toBe(0);
+  });
 });
