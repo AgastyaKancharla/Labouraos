@@ -19,3 +19,6 @@ CREATE TABLE "BusinessVisitResultChange" (
 CREATE INDEX "BusinessVisitResultChange_visitId_changedAt_idx" ON "BusinessVisitResultChange"("visitId", "changedAt");
 
 ALTER TABLE "BusinessVisitResultChange" ADD CONSTRAINT "BusinessVisitResultChange_visitId_fkey" FOREIGN KEY ("visitId") REFERENCES "BusinessVisit"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- Supabase publishes the public schema: RLS on, no policies (Prisma, the owner, keeps access).
+ALTER TABLE "BusinessVisitResultChange" ENABLE ROW LEVEL SECURITY;
