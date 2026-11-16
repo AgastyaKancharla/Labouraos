@@ -6,7 +6,7 @@ import { getJwtSecret } from '../auth/jwt-secret';
  * from the server's JWT_SECRET, like the customer OTP limiter), so a leaked
  * table cannot be reversed by hashing every 10-digit mobile number. Rows
  * written before this used plain SHA-256; the migration
- * 20261201000000_otp_session_phone_hmac cleared them (test data only, and an
+ * 20261201000100_otp_session_phone_hmac cleared them (test data only, and an
  * OTP session lives 5 minutes).
  */
 let key: Buffer | null = null;

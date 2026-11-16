@@ -688,6 +688,46 @@ describe('Customer app API', () => {
       }
     });
 
+    it('a signed-in account adding an unknown mobile is a new number: above the ceiling it gets 503, step-up to its own phone still works (M2)', async () => {
+      const own = newPhone();
+      const signedIn = await signIn(own);
+      const sub = `google-ceiling-${stamp}-${seq}`;
+      const google = await json(http().post(`${API}/auth/google`))
+        .send({ idToken: googleToken({ sub, email: `c${seq}@example.com`, name: 'Ceiling Test' }), device: { installationId: `g-${sub}`, platform: 'android' } })
+        .expect(200);
+      const saved = process.env.CUSTOMER_OTP_NEW_NUMBER_DAILY_CEILING;
+      process.env.CUSTOMER_OTP_NEW_NUMBER_DAILY_CEILING = '1';
+      try {
+        installation = `ceiling-add-${stamp}-${seq}`;
+        const paused = await auth(http().post(`${API}/auth/phone/send`), google.body.accessToken).send({ phone: newPhone(), humanCheckToken: HUMAN }).expect(503);
+        expect(paused.body.code).toBe('OTP_PAUSED');
+        // A step-up code goes to the account's own verified phone: a known number.
+        installation = `ceiling-step-${stamp}-${seq}`;
+        await json(http().post(`${API}/auth/step-up/send`)).set('Authorization', `Bearer ${signedIn.accessToken}`).send({ purpose: 'delete_account' }).expect(200);
+      } finally {
+        if (saved === undefined) delete process.env.CUSTOMER_OTP_NEW_NUMBER_DAILY_CEILING;
+        else process.env.CUSTOMER_OTP_NEW_NUMBER_DAILY_CEILING = saved;
+      }
+    });
+
+    it('above the daily limit a signed-in account adding an unknown mobile needs the human check (M2)', async () => {
+      const sub = `google-limit-${stamp}-${seq}`;
+      const google = await json(http().post(`${API}/auth/google`))
+        .send({ idToken: googleToken({ sub, email: `l${seq}@example.com`, name: 'Limit Test' }), device: { installationId: `g-${sub}`, platform: 'android' } })
+        .expect(200);
+      await signIn(newPhone());
+      const saved = process.env.CUSTOMER_OTP_DAILY_LIMIT;
+      process.env.CUSTOMER_OTP_DAILY_LIMIT = '1';
+      try {
+        installation = `limit-add-${stamp}-${seq}`;
+        const asked = await auth(http().post(`${API}/auth/phone/send`), google.body.accessToken).send({ phone: newPhone() }).expect(403);
+        expect(asked.body.code).toBe('HUMAN_CHECK_REQUIRED');
+      } finally {
+        if (saved === undefined) delete process.env.CUSTOMER_OTP_DAILY_LIMIT;
+        else process.env.CUSTOMER_OTP_DAILY_LIMIT = saved;
+      }
+    });
+
     describe('per-address limits cannot be bypassed (M1)', () => {
       const decide = (humanCheckPassed: boolean) => ({ existingAccount: false, humanCheckPassed, humanCheckProvider: 'mock' });
       const v6 = (i: number) => `2401:4900:1c2a:5d3e:${((i * 7919) & 0xffff).toString(16)}:${(i * 104729 % 65536).toString(16)}:abcd:${i.toString(16)}`;

@@ -54,6 +54,7 @@ describe('Names and localities may not start like a spreadsheet formula (INF-6)'
     expect(findFormulaStart({ locality: '\uff1d1+1' })?.label).toBe('Locality');
     // Arrays of strings under a name-like key.
     expect(findFormulaStart({ name: ['Ravi', '=HYPERLINK("x")'] })).toEqual({ field: 'name.1', label: 'Name' });
+    expect(findFormulaStart({ ownerName: [['Ravi'], ['Sita', '=1+1']] })).toEqual({ field: 'ownerName.1.1', label: "Owner's name" });
     // Deep bodies are still checked (no 5-level limit any more).
     let deep: Record<string, unknown> = { ownerName: '=x' };
     for (let i = 0; i < 20; i += 1) deep = { nested: deep };

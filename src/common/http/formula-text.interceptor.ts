@@ -83,13 +83,26 @@ export function findFormulaStart(body: unknown, depth = 0, at = ''): { field: st
     if (typeof value === 'string') {
       if (label && startsLikeFormula(value)) return { field: path, label };
     } else if (label && Array.isArray(value)) {
-      // A list of names under a name-like key: each string is a name.
-      const index = value.findIndex((item) => typeof item === 'string' && startsLikeFormula(item));
-      if (index >= 0) return { field: `${path}.${index}`, label };
-      const found = findFormulaStart(value, depth + 1, path);
+      // A list of names under a name-like key, also lists inside lists: every string is a name.
+      const found = findNameInList(value, depth + 1, path, label) ?? findFormulaStart(value, depth + 1, path);
       if (found) return found;
     } else if (value && typeof value === 'object') {
       const found = findFormulaStart(value, depth + 1, path);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/** Strings anywhere inside a list (lists of lists included) that sits under a name-like key. */
+function findNameInList(list: unknown[], depth: number, at: string, label: string): { field: string; label: string } | null {
+  if (depth > MAX_DEPTH) return { field: at, label: 'This request' };
+  for (let i = 0; i < list.length; i += 1) {
+    const item = list[i];
+    const path = `${at}.${i}`;
+    if (typeof item === 'string' && startsLikeFormula(item)) return { field: path, label };
+    if (Array.isArray(item)) {
+      const found = findNameInList(item, depth + 1, path, label);
       if (found) return found;
     }
   }

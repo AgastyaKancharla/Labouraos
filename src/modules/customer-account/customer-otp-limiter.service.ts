@@ -165,8 +165,10 @@ export class CustomerOtpLimiter {
     const otherPhones = this.addressPhonesBeforeCheck();
     return this.prisma.$transaction(async (tx) => {
       // Lock order everywhere: the address, then the phone.
-      if (ipHash) await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`customer-otp-ip:${ipHash}`}))`);
-      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`customer-otp:${phoneHash}`}))`);
+      // Two-key locks: class 1 = address, class 2 = phone, so an address lock and a
+      // phone lock can never collide on the same 32-bit hash.
+      if (ipHash) await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(1, hashtext(${`customer-otp-ip:${ipHash}`}))`);
+      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(2, hashtext(${`customer-otp:${phoneHash}`}))`);
       const wrong = await tx.customerOtpAttempt.findMany({
         where: { kind: 'verify_failed', phoneHash, deviceHash, createdAt: { gt: hourAgo } },
         orderBy: { createdAt: 'asc' },

@@ -133,7 +133,11 @@ export class CustomerSignInService {
       : false;
     // A number that already has an account keeps getting codes above the daily
     // limit; only a number with no account then needs the human check (M2).
-    const existingAccount = accountId !== null || Boolean(await this.prisma.customerAccount.findUnique({ where: { phone }, select: { id: true } }));
+    // Decided from the number alone: being signed in does not make an unknown
+    // number "known" (adding a new mobile to a Google account counts as a new
+    // number); a step-up code goes to the account's own verified phone, which
+    // this lookup finds.
+    const existingAccount = Boolean(await this.prisma.customerAccount.findUnique({ where: { phone }, select: { id: true } }));
     const rowId = await this.limiter.claimSend(caller, now, { existingAccount, humanCheckPassed, humanCheckProvider: this.humanCheck.name });
     let result;
     try {

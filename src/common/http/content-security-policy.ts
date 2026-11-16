@@ -30,7 +30,8 @@ import type { ServerResponse } from 'node:http';
  *
  * CONTENT_SECURITY_POLICY: `enforce` (default) or `report-only` (browsers only
  * report a breach in the console and nothing is blocked: the first thing to
- * try if a screen ever breaks after a change) or `off`.
+ * try if a screen ever breaks after a change) or `off`. It covers only these app
+ * shells: every other API HTML answer always keeps defaultHtmlPolicy (below).
  */
 export const CONTENT_SECURITY_POLICY_SETTING = 'CONTENT_SECURITY_POLICY';
 
