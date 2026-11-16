@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { LegalFooter } from '../screens/public/shared/legal';
-import { NavLink, useLocation } from 'react-router-dom';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { MANAGEMENT_ROLES, ROLE_LABEL } from '../auth/roles';
 import { useT } from '../i18n/I18nProvider';
@@ -73,13 +73,13 @@ function Sidebar({ portal, onNavigate }: { portal: PortalDef; onNavigate?: () =>
 
   return (
     <div className="lb-sidebar">
-      <div className="lb-sidebar__brand">
+      <Link to={portal.root} className="lb-sidebar__brand" title={t('error.goHome')} data-testid="logo-home" onClick={onNavigate}>
         <img src={LOGO_SRC} alt="" width={40} height={40} />
         <div>
           <span className="lb-sidebar__name">LABOURA</span>
           <span className="lb-sidebar__sub">{t(portal.sidebar.subtitle)}</span>
         </div>
-      </div>
+      </Link>
       <div className="swoosh lb-sidebar__swoosh" />
       <nav aria-label={t('common.mainNav')} className="lb-sidebar__nav">
         {portal.sidebar.sections.map((section) => (
@@ -191,8 +191,10 @@ function PortalShell({ portal, children }: { portal: PortalDef; children: ReactN
         >
           <UiIcon name={open ? 'close' : 'menu'} size={20} />
         </button>
-        <img src={LOGO_SRC} alt="" width={28} height={28} />
-        <span className="lb-mobilebar__name">LABOURA</span>
+        <Link to={portal.root} className="lb-mobilebar__home" title={t('error.goHome')} data-testid="logo-home-phone">
+          <img src={LOGO_SRC} alt="" width={28} height={28} />
+          <span className="lb-mobilebar__name">LABOURA</span>
+        </Link>
         <MobileBell portal={portal} />
       </div>
       <aside id="lb-sidebar" className={open ? 'lb-shell__side is-open' : 'lb-shell__side'}>
@@ -221,7 +223,9 @@ function ConsoleShell({ portal, children }: { portal: PortalDef; children: React
       <SkipLink />
       <header className="hdr lb-console__hdr">
         <div className="lb-console__brand">
-          <img src={LOGO_SRC} alt="" width={32} height={32} />
+          <Link to={portal.root} className="lb-console__home" title={t('error.goHome')} data-testid="logo-home">
+            <img src={LOGO_SRC} alt={t('error.goHome')} width={32} height={32} />
+          </Link>
           <div>
             <span className="t">{t('subtitle.callAgent')}</span>
             <span className="s">

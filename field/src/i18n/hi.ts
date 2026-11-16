@@ -18,6 +18,7 @@ export const hi: Messages = {
   ...accessHi,
   'common.appName': 'Laboura Field',
   'common.brand': 'Laboura',
+  'common.logoHome': 'Laboura — होम पर जाएँ',
   'common.fieldAgent': 'फ़ील्ड एजेंट',
   'common.retry': 'फिर से कोशिश करें',
   'common.loading': 'लोड हो रहा है…',
