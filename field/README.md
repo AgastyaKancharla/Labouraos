@@ -14,8 +14,8 @@ field/
   app/                    routes (expo-router). Files here are thin: they export a screen.
     (auth)/login.tsx        → src/screens/FA01-Login
     (auth)/login-code.tsx   → src/screens/FA02-LoginCode
-    (app)/(tabs)/(home)/index.tsx  → src/screens/FA03-Home   (tabs: Home · Visits · Job seekers · Vacancies · Map · Targets)
-    (app)/(tabs)/<tab>/...  every screen whose design shows the tab bar lives in its tab's stack
+    (app)/(tabs)/(today)/index.tsx  → src/screens/FA03-Home   (tabs: Today · Visits · Businesses · Job seekers · Me — redesign, 16 Nov)
+    (app)/(tabs)/<tab>/...  every screen of a job lives in the stack of the tab the job lives in
     (app)/...               other screens (placeholders until built)
   src/
     screens/<FA id>/        one folder per design: index.tsx, hooks, <FA id>.test.tsx
@@ -59,8 +59,10 @@ Build design `FA05-Visits` in `src/screens/FA05-Visits/`:
 - `useVisits.ts` (or similar) — data hooks for this screen.
 - `FA05-Visits.test.tsx` — tests (see below).
 
-Then point the route at it: replace the placeholder in `app/(app)/(tabs)/(visits)/visits.tsx` with
-`export { default } from '@/screens/FA05-Visits';`. New URLs go in `src/navigation/routes.ts` with the design id in a comment. A screen whose design shows the tab bar goes inside the stack of the tab its design marks active — `(tabs)/(home)/`, `(tabs)/(visits)/`, `(tabs)/job-seekers/` or `(tabs)/vacancies/` (the groups in brackets don't change the URL) — and `src/navigation/tabs.test.tsx` checks it. Navigate with `router.push(routes.x)` from `expo-router`.
+Then point the route at it, e.g. `app/(app)/(tabs)/(visits)/visits/index.tsx` with
+`export { default } from '@/screens/FA05-Visits';`. New URLs go in `src/navigation/routes.ts` with the design id in a comment.
+
+**Five tabs (Laboura Field redesign, Master Guide rev 188, 16 Nov).** Each tab is one kind of work and a job never jumps to another tab halfway: every screen of a job sits in the stack of the tab where the job lives — `(tabs)/(today)/` (Today, search, fee calculator), `(tabs)/(visits)/` (the whole visit-and-onboard job: `/visit/start` → talk → proof → `/visit/business` → `/visit/agreement` → `/visit/vacancies` → `/visit/done` and the candidates flow under `/visit/...`; Today's work, Shops near me, visit details), `(tabs)/businesses/` (my businesses, the one business page, vacancies, candidates, interviews, placements under `/businesses/...`), `(tabs)/job-seekers/` (my job seekers, + Job seeker, referral partners) and `(tabs)/me/` (targets, attendance, leave, corrections, payslips). The candidates flow exists in both Businesses and Visits: screens get the right URLs from `useSellingRoutes()` (`src/navigation/useFlow.ts`). `src/navigation/tabs.test.tsx` checks which tab every screen is in. Every inner screen's header has a back arrow (`AppHeader`; `root` on a tab's main page); tapping a tab returns to its main page; forms keep what was typed with `useFormDraft` (`src/lib/formDraft.ts`). Navigate with `router.push(routes.x)` from `expo-router`.
 
 Use the components in `src/components` and the tokens in `src/theme` — never raw hex colours or font names. Everything tappable is at least 48 px tall (`touch.min`). Mobile numbers, money and dates follow the guide's "Forms: rules for every screen" (masked numbers, ₹ boxes, pickers — never typed dates).
 
@@ -99,7 +101,7 @@ if (result.status === 'queued') showToast(t('fa03.waitingToSend')); // sent late
 
 ### 5. Languages
 
-- Every visible word is a key in `src/i18n/en.ts`, named `<design id lower-case>.<thing>` (e.g. `fa05.revisitDue`) or `common.*` / `status.*` / `tabs.*` / `device.*` for shared words. Add the same key to `kn.ts` and `hi.ts` — TypeScript and `i18n.test.tsx` fail otherwise (same keys, same `{slots}`, not left in English).
+- Every visible word is a key in `src/i18n/en.ts`, named `<design id lower-case>.<thing>` (e.g. `fa05.revisitDue`) or `common.*` / `status.*` / `tabs.*` / `device.*` for shared words. Add the same key to `kn.ts` — TypeScript and `i18n.test.tsx` fail otherwise (same keys, same `{slots}`, not left in English). Laboura Field offers Kannada and English for now (redesign, 16 Nov): Hindi is hidden from the switcher, `hi.ts` keeps its words, and keys added since (`redesign.en.ts` / `redesign.kn.ts`) need no Hindi — English shows.
 - In components: `const { t, tn } = useI18n(); t('fa03.lateBy', { minutes: 12 }); tn('queue.photos', count)`.
 - The switcher (ಕನ್ನಡ / हिंदी / EN) is in the header; the choice is remembered on the phone.
 
@@ -120,7 +122,7 @@ if (result.status === 'queued') showToast(t('fa03.waitingToSend')); // sent late
 
 ## My attendance, leave and payslips (FA04e–FA04h)
 
-There is no phone design: these adapt the call agent's CA14e-MyAttendance, CA14f-RequestLeave, CA14h-Correction and CA14g-Payslip, opened from FA04 ("My attendance, leave & payslips"). They live in the Home stack (`app/(app)/(tabs)/(home)/my-attendance/`) and use the call agent's endpoints (`src/api/endpoints/myAttendance.ts`):
+There is no phone design: these adapt the call agent's CA14e-MyAttendance, CA14f-RequestLeave, CA14h-Correction and CA14g-Payslip, opened from FA04 ("My attendance, leave & payslips"). They live in the Me tab (`app/(app)/(tabs)/me/attendance/`, `me/payslips`) and use the call agent's endpoints (`src/api/endpoints/myAttendance.ts`):
 
 - `GET /attendance/month?month=YYYY-MM`, `GET /attendance/leave/balance`, `GET /attendance/requests/mine` — the month, leave left, and each request with where it is.
 - `POST /attendance/leave {kind: casual|emergency, fromDate, toDate, reason}` and `POST /attendance/corrections {date, from, to, status, reason}` — **need signal**: sent with `queue.live(…)`, never queued (both paths are in `LIVE_ONLY_PATTERNS`). The answer says where the request went (Team Lead; Manager when past 3 planned days in a month or for a third correction).
@@ -128,7 +130,7 @@ There is no phone design: these adapt the call agent's CA14e-MyAttendance, CA14f
 
 ## Search (CA16-Search for the phone)
 
-`/search` (in the Home stack, opened from the Home search bar; `?q=` pre-fills it) uses the same `GET /search?q=&type=` as the office screens (`src/api/endpoints/search.ts`). For a field agent the server searches city-wide (AGENTS.md §7) and returns phone numbers as the last 4 digits only. Job seekers open FA10c, businesses FA08, vacancies and placements their business's FA08; referral partners have no field screen. No result offers to register a job seeker (FA10) or a business (the visit flow).
+Search (each tab has its own: `/search`, `/visits/search`, `/businesses/search`, `/job-seekers/search`, `/me/search`; `?q=` pre-fills it, `?type=` picks the kind) uses the same `GET /search?q=&type=` as the office screens (`src/api/endpoints/search.ts`). For a field agent the server searches city-wide (AGENTS.md §7) and returns phone numbers as the last 4 digits only. Job seekers open FA10c, businesses FA08, vacancies and placements their business's FA08, referral partners FA23b. No result offers to register a job seeker (FA10) or a business (the visit flow).
 
 ## Sign-in and the session
 
