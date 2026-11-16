@@ -19,7 +19,7 @@ export default function TabsLayout() {
     { name: '(today)', label: t('tabs.today'), icon: 'home' },
     { name: '(visits)', label: t('tabs.visits'), icon: 'store' },
     { name: 'businesses', label: t('tabs.businesses'), icon: 'briefcase' },
-    { name: 'job-seekers', label: t('tabs.jobSeekers'), icon: 'users' },
+    { name: 'job-seekers', label: t('tabs.jobSeekersTab'), icon: 'users' },
     { name: 'me', label: t('tabs.me'), icon: 'user' },
   ] satisfies (TabItem & { name: TabName })[];
   return (

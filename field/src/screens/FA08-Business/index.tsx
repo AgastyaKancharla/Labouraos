@@ -118,13 +118,13 @@ function Page({ b }: { b: BusinessPage }) {
 
       <Checklist b={b} />
 
-      <Card title={t('fa08.openVacancies')} icon="briefcase" accent="orange" testID="fa08-vacancies">
+      <Card title={t('biz.vacancies')} icon="briefcase" accent="orange" testID="fa08-vacancies">
         {b.vacancies.length === 0 ? <EmptyState compact emoji="🧑‍🍳" message={t('biz.noVacancies')} /> : null}
         {b.vacancies.map((v, i) => (
           <VacancyStep key={v.id} vacancy={v} businessId={b.id} sr={sr} canAct={b.canAct} last={i === b.vacancies.length - 1} />
         ))}
         {b.actions.addVacancy ? (
-          <Button label={t('fa03.addVacancy')} variant="secondary" icon={<Icon name="plus" color={colors.blue} />} onPress={() => router.push(sr.addVacancy(b.id))} testID="fa08-vacancy" />
+          <Button label={t('fa03.addVacancy')} variant="secondary" onPress={() => router.push(sr.addVacancy(b.id))} testID="fa08-vacancy" />
         ) : null}
       </Card>
 

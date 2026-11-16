@@ -45,7 +45,7 @@ export default function VacancyOtpScreen() {
   });
   return (
     <View style={styles.flex}>
-      <AppHeader title={t('fa17b.header')} subtitle={t('fa17b.subtitle')} />
+      <AppHeader title={t('fa17b.header')} />
       <Screen testID="screen-FA17b">
         <QueryView query={vacancy}>
           {({ page, row, status, confirmedAt, confirmedByName }) => (

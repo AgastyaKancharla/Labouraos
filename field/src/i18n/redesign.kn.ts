@@ -9,6 +9,7 @@ export const redesignKn: Record<keyof typeof redesignEn, string> = {
   'tabs.today': 'ಇಂದು',
   'tabs.businesses': 'ವ್ಯಾಪಾರಗಳು',
   'tabs.me': 'ನಾನು',
+  'tabs.jobSeekersTab': 'ಉದ್ಯೋಗ ಆಕಾಂಕ್ಷಿಗಳು',
   'common.back': 'ಹಿಂದೆ',
   'common.searchEveryone': 'ಹೆಸರು, ಮೊಬೈಲ್ ಅಥವಾ ID ಮೂಲಕ ಎಲ್ಲರನ್ನೂ ಹುಡುಕಿ',
 
@@ -63,6 +64,7 @@ export const redesignKn: Record<keyof typeof redesignEn, string> = {
   'work.yesterday': 'ನಿನ್ನೆ',
   'work.pickDay': 'ಅಥವಾ ದಿನ ಆಯ್ಕೆಮಾಡಿ',
   'work.all': 'ಎಲ್ಲಾ',
+  'work.onboarded': 'ಸೇರಿಸಲಾಗಿದೆ',
   'work.empty': 'ಆ ದಿನ ಏನೂ ದಾಖಲಾಗಿಲ್ಲ.',
   'work.emptyToday': 'ಇಂದು ಇನ್ನೂ ಏನೂ ಇಲ್ಲ. ಅಂಗಡಿಗೆ ಭೇಟಿ ನೀಡಿ ಆರಂಭಿಸಿ.',
   'work.seeAll': 'ಎಲ್ಲಾ {count} ನೋಡಿ',
@@ -198,6 +200,7 @@ export const redesignKn: Record<keyof typeof redesignEn, string> = {
   'biz.viewOnlyShort': 'ನೋಡಲು ಮಾತ್ರ',
   'biz.viewOnlyBody': 'ಈ ವ್ಯಾಪಾರ ಬೇರೆ ಏಜೆಂಟ್‌ರದ್ದು. ನೀವು ನೋಡಬಹುದು, ಆದರೆ ಅದರ ಖಾತೆ ಏಜೆಂಟ್ ಮಾತ್ರ ಕೆಲಸ ಮಾಡುತ್ತಾರೆ.',
   'biz.checklist': 'ಸೇರ್ಪಡೆ',
+  'biz.vacancies': 'ಖಾಲಿ ಹುದ್ದೆಗಳು',
   'biz.check.registered': 'ನೋಂದಾಯಿಸಲಾಗಿದೆ',
   'biz.check.phone': 'ಮಾಲೀಕರ ಫೋನ್ ದೃಢಪಟ್ಟಿದೆ',
   'biz.check.agreement': 'ಒಪ್ಪಂದ',

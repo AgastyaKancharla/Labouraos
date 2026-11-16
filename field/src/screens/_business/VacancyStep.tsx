@@ -13,6 +13,7 @@ import { formatTimeIst } from '@/lib/format';
 import type { SellingRoutes } from '@/navigation/routes';
 import { colors, radius } from '@/theme';
 import { formatRupees, SHIFT_KEYS } from '../_selling';
+import { formatDateKey } from '../_visits/format';
 
 const MISSING_KEYS: Record<string, MessageKey> = {
   tradeSkill: 'vac.missing.trade',
@@ -75,7 +76,7 @@ export function VacancyStep({ vacancy: v, businessId, sr, canAct, last }: {
         <IconTile icon="briefcase" accent={v.status === 'open' ? 'royal' : v.status === 'draft' ? 'navy' : 'gold'} size={34} />
         <View style={styles.flex}>
           <Text variant="bodyStrong">{vacancyLine(v, t)}</Text>
-          <Text variant="muted">{[v.code, v.startDate ? t('vac.from', { date: v.startDate }) : null].filter(Boolean).join(' · ')}</Text>
+          <Text variant="muted">{[v.code, v.startDate ? t('vac.from', { date: formatDateKey(v.startDate.slice(0, 10)) }) : null].filter(Boolean).join(' · ')}</Text>
         </View>
         <StatusChip tone={tone} label={t(statusKey)} />
       </View>

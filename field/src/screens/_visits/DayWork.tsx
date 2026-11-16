@@ -13,6 +13,19 @@ import { type Accent } from '@/theme';
 import { ChipChoices } from './ChoiceList';
 import { outcomeKey } from './labels';
 
+/**
+ * What Today's work is filtered on: one row type, or "onboarded" — the
+ * Onboarded number on Today counts businesses registered from a visit and
+ * visits marked onboarded (docs/api/field-redesign.md §1).
+ */
+export type DayKind = DayItemType | 'onboarded';
+
+export function matchesKind(item: DayItem, kind: DayKind | null | undefined): boolean {
+  if (!kind) return true;
+  if (kind === 'onboarded') return item.type === 'business_registered' || (item.type === 'visit' && item.status === 'onboarded');
+  return item.type === kind;
+}
+
 /** How far back Today's work goes (server rule, DATE_TOO_OLD). */
 export const DAY_WORK_MAX_DAYS_BACK = 90;
 
@@ -104,7 +117,7 @@ export function useDayWork(date: string) {
  */
 export function DayWork({ date, kind, limit, onMore, testID = 'day-work' }: {
   date: string;
-  kind?: DayItemType | null;
+  kind?: DayKind | null;
   /** Show at most this many rows, then "See all". */
   limit?: number;
   onMore?: () => void;
@@ -114,7 +127,7 @@ export function DayWork({ date, kind, limit, onMore, testID = 'day-work' }: {
   const q = useDayWork(date);
   if (q.isPending) return <LoadingState compact />;
   if (q.isError) return <ErrorState compact error={q.error} onRetry={() => void q.refetch()} />;
-  const items = kind ? q.data.items.filter((i) => i.type === kind) : q.data.items;
+  const items = q.data.items.filter((i) => matchesKind(i, kind));
   const shown = limit ? items.slice(0, limit) : items;
   return (
     <View testID={testID}>
@@ -144,17 +157,18 @@ export function DayWork({ date, kind, limit, onMore, testID = 'day-work' }: {
 }
 
 /** The type filter: All and each type that has something that day. */
-export function DayKindFilter({ counts, kind, onKind }: { counts: Record<DayItemType, number> | undefined; kind: DayItemType | null; onKind: (k: DayItemType | null) => void }) {
+export function DayKindFilter({ counts, kind, onKind }: { counts: Record<DayItemType, number> | undefined; kind: DayKind | null; onKind: (k: DayKind | null) => void }) {
   const { t } = useI18n();
   const types = DAY_TYPES.filter((ty) => (counts?.[ty] ?? 0) > 0 || ty === kind);
   return (
     <ChipChoices
       choices={[
         { value: 'all', label: t('work.all') },
+        ...(kind === 'onboarded' ? [{ value: 'onboarded', label: t('work.onboarded') }] : []),
         ...types.map((ty) => ({ value: ty, label: `${t(`work.type.${ty}` as MessageKey)} · ${counts?.[ty] ?? 0}` })),
       ]}
       value={kind ?? 'all'}
-      onChange={(v) => onKind(v === 'all' ? null : (v as DayItemType))}
+      onChange={(v) => onKind(v === 'all' ? null : (v as DayKind))}
       testID="work-kind"
     />
   );

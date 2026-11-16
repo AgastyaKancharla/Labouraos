@@ -179,6 +179,8 @@ export interface PageVacancy {
   startDate: string | null;
   status: string;
   confirmedAt: string | null;
+  /** The salary is below the legal minimum for the trade (the agent tells the owner). */
+  belowLegalMinimum?: boolean;
   contactName: string | null;
   contactPhoneLast4: string | null;
   nextStep: VacancyNextStep;

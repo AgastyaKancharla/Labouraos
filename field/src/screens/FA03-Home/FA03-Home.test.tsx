@@ -98,12 +98,12 @@ describe('FA03 Today', () => {
     await renderWithApp(<HomeScreen />, { signedInAs: kiran, route: api(loggedIn, (url) => (url.endsWith('/field-work/today') ? { status: 200, body: todayView() } : undefined)) });
     await waitFor(() => expect(screen.getByTestId('stat-shopsVisited')).toHaveTextContent(/^4shops visited$/));
     expect(screen.getByTestId('stat-onboarded')).toHaveTextContent(/^1onboarded$/);
-    expect(screen.getByTestId('stat-vacanciesConfirmed')).toHaveTextContent(/^2Vacancies confirmed$/);
+    expect(screen.getByTestId('stat-vacanciesConfirmed')).toHaveTextContent(/^2vacancies confirmed$/);
     expect(screen.getByTestId('stat-candidatesShown')).toHaveTextContent(/^6shown$/);
-    expect(screen.getByTestId('stat-interviewsBooked')).toHaveTextContent(/^1Interviews0 attended$/);
+    expect(screen.getByTestId('stat-interviewsBooked')).toHaveTextContent(/^1interviews0 attended$/);
     expect(screen.getByTestId('targets-bar')).toHaveTextContent(/3 \/ 10/);
     await fireEvent.press(screen.getByTestId('stat-onboarded'));
-    expect(router.push).toHaveBeenLastCalledWith('/visits/work?date=2026-11-16&kind=business_registered');
+    expect(router.push).toHaveBeenLastCalledWith('/visits/work?date=2026-11-16&kind=onboarded');
     await fireEvent.press(screen.getByTestId('stat-shopsVisited'));
     expect(router.push).toHaveBeenLastCalledWith('/visits/work?date=2026-11-16&kind=visit');
     await fireEvent.press(screen.getByTestId('stat-vacanciesConfirmed'));

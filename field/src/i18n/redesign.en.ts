@@ -10,6 +10,8 @@ export const redesignEn = {
   'tabs.today': 'Today',
   'tabs.businesses': 'Businesses',
   'tabs.me': 'Me',
+  /** The tab bar's label: five tabs share 360 px, so the Kannada words may break in two lines. */
+  'tabs.jobSeekersTab': 'Job seekers',
   'common.back': 'Back',
   'common.searchEveryone': 'Search everyone by name, mobile or ID',
 
@@ -26,8 +28,8 @@ export const redesignEn = {
 
   // Today
   'today.title': 'Today',
-  'today.vacanciesConfirmed': 'Vacancies confirmed',
-  'today.interviews': 'Interviews',
+  'today.vacanciesConfirmed': 'vacancies confirmed',
+  'today.interviews': 'interviews',
   'today.attended': '{count} attended',
   'today.addReferral': '+ Referral partner',
   'today.needsYou': 'Needs you now',
@@ -64,6 +66,7 @@ export const redesignEn = {
   'work.yesterday': 'Yesterday',
   'work.pickDay': 'Or pick a day',
   'work.all': 'All',
+  'work.onboarded': 'Onboarded',
   'work.empty': 'Nothing recorded that day.',
   'work.emptyToday': 'Nothing yet today. Visit a shop to start.',
   'work.seeAll': 'See all {count}',
@@ -199,6 +202,7 @@ export const redesignEn = {
   'biz.viewOnlyShort': 'View only',
   'biz.viewOnlyBody': 'This business belongs to another agent. You can see it, but only its account agent acts on it.',
   'biz.checklist': 'Onboarding',
+  'biz.vacancies': 'Vacancies',
   'biz.check.registered': 'Registered',
   'biz.check.phone': 'Owner’s phone confirmed',
   'biz.check.agreement': 'Agreement',

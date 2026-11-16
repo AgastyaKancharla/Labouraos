@@ -4,10 +4,9 @@ import { useLocalSearchParams } from 'expo-router';
 import { useI18n } from '@/i18n';
 import { Card, Screen } from '@/components';
 import { todayKeyIst } from '@/components/form';
-import type { DayItemType } from '@/api/endpoints';
 import { colors } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
-import { DAY_TYPES, DayKindFilter, DaySwitcher, DayWork, useDayWork } from '../_visits/DayWork';
+import { DAY_TYPES, DayKindFilter, DaySwitcher, DayWork, useDayWork, type DayKind } from '../_visits/DayWork';
 
 /**
  * FA05b — Today's work, the full list (redesign, 16 Nov), in the Visits tab:
@@ -18,7 +17,7 @@ export default function TodaysWorkScreen() {
   const { t } = useI18n();
   const params = useLocalSearchParams<{ date?: string; kind?: string }>();
   const [date, setDate] = useState(params.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date) ? params.date : todayKeyIst());
-  const [kind, setKind] = useState<DayItemType | null>(DAY_TYPES.includes(params.kind as DayItemType) ? (params.kind as DayItemType) : null);
+  const [kind, setKind] = useState<DayKind | null>(params.kind === 'onboarded' || (DAY_TYPES as string[]).includes(params.kind ?? '') ? (params.kind as DayKind) : null);
   const q = useDayWork(date);
   return (
     <View style={styles.flex} testID="screen-FA05b">

@@ -13,7 +13,8 @@ import { queryKeys } from '@/api/queryClient';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { LOCATION_ERROR_KEYS } from '@/device/location/useLocation';
 import { isApiError } from '@/api/errors';
-import type { AttendanceToday, DayItemType, NeedsItem, TodayView } from '@/api/endpoints';
+import type { AttendanceToday, NeedsItem, TodayView } from '@/api/endpoints';
+import type { DayKind } from '../_visits/DayWork';
 import { formatDayIst, formatStampIst, formatShiftTime, formatTimeIst } from '@/lib/format';
 import { pageRoutes, routes, sellingRoutes } from '@/navigation/routes';
 import { type Accent, colors, fonts, fontSize, radius, touch } from '@/theme';
@@ -34,9 +35,9 @@ const STATUS_ICON: Record<(typeof STATUS_CHOICES)[number], { icon: IconName; acc
 };
 
 /** Today's numbers: each opens Today's work filtered on what it counts. */
-const NUMBERS: { key: keyof TodayView['numbers']; label: MessageKey; accent: Accent; kind: DayItemType }[] = [
+const NUMBERS: { key: keyof TodayView['numbers']; label: MessageKey; accent: Accent; kind: DayKind }[] = [
   { key: 'shopsVisited', label: 'fa03.shopsVisited', accent: 'royal', kind: 'visit' },
-  { key: 'onboarded', label: 'fa03.onboarded', accent: 'green', kind: 'business_registered' },
+  { key: 'onboarded', label: 'fa03.onboarded', accent: 'green', kind: 'onboarded' },
   { key: 'vacanciesConfirmed', label: 'today.vacanciesConfirmed', accent: 'gold', kind: 'vacancy_confirmed' },
   { key: 'candidatesShown', label: 'fa03.shown', accent: 'cyan', kind: 'candidates_shown' },
   { key: 'interviewsBooked', label: 'today.interviews', accent: 'orange', kind: 'interview_booked' },
