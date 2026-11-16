@@ -85,7 +85,11 @@ export function isMoneyKey(key: string): boolean {
   return MONEY_KEY_SUFFIXES.some((suffix) => lower.endsWith(suffix));
 }
 
-const RUPEE_TEXT = /₹\s?\d[\d,]*(?:\.\d+)?/g;
+/**
+ * Rupee amounts in free text: "₹500", "₹ 1,500.50", and (security L7) "Rs 500",
+ * "Rs. 500", "Rs.500", "INR 500", "rupees 500", "500 rupees", "500 Rs" — any case.
+ */
+const RUPEE_TEXT = /(?:₹|\b(?:rs\.?|inr|rupees?)(?=\s?\d))\s?\d[\d,]*(?:\.\d+)?|\b\d[\d,]*(?:\.\d+)?\s?(?:rupees?|rs)\b/gi;
 export const HIDDEN_AMOUNT_TEXT = '₹ (hidden)';
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
