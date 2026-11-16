@@ -223,7 +223,9 @@ export class SiteRoutingMiddleware implements NestMiddleware {
 
   private sendField(res: Response, file: Exclude<FieldAppFile, { kind: 'missing' }>, scope: '/' | '/field/'): void {
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Referrer-Policy', 'same-origin');
+    // Rev 188: OpenStreetMap's tile servers need a Referer from web pages. Only the origin is
+    // sent to another site (never the path, which could carry a link); same-site gets the full one.
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     if (file.kind === 'index') {
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('X-Frame-Options', 'DENY');

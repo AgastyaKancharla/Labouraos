@@ -3,6 +3,12 @@ export const VISIT_OUTCOMES = ['onboarded', 'interested_later', 'not_interested'
 export type VisitOutcome = (typeof VISIT_OUTCOMES)[number];
 
 /**
+ * Rev 189: a business counts as onboarded only once. A later "onboard now" at a business that
+ * was already onboarded is recorded with this result: never counted, never a failed visit.
+ */
+export const ALREADY_ONBOARDED = 'already_onboarded';
+
+/**
  * FA21 "Interested — onboard now": the talk is over and the agent steps out
  * for the proof selfie. The outcome becomes `onboarded` when the business is
  * registered from this visit.
@@ -20,6 +26,11 @@ export const NOT_INTERESTED_REASONS = [
 
 /** FA21 "Who did you speak to?" */
 export const SPOKE_TO = ['owner', 'manager', 'staff', 'no_one'] as const;
+
+/** "Change result" (rev 188) moves between these only; an onboarded visit never changes. */
+export const CHANGE_RESULT_OUTCOMES = ['interested_later', 'not_interested', 'owner_not_there'] as const;
+/** The reason for a change, kept in the visit history. */
+export const CHANGE_RESULT_REASON_MIN_LENGTH = 10;
 
 /** Outcomes that bring the agent back on a date (Home and Map show them then). */
 export const REVISIT_OUTCOMES: readonly string[] = ['interested_later', 'owner_not_there'];

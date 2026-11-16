@@ -3,11 +3,14 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpStatus,
   Inject,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { codedError } from '../../common/http/coded-error';
+import { agentViewerFor, fieldAgentCanAct } from '../business/business-agent-view';
 import { BusinessVisit, Prisma } from '@prisma/client';
 import { createHash } from 'crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -20,8 +23,11 @@ import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { ReviewFlagKind } from '../review-flag/review-flag.constants';
 import { AttendanceService } from '../attendance/attendance.service';
 import { BusinessVerificationService } from '../business/business-verification.service';
-import { BUSINESS_PHOTO_STORAGE, BusinessPhotoStorage } from '../business/storefront-photo.storage';
+import { BUSINESS_PHOTO_LINK_TTL_SECONDS, BUSINESS_PHOTO_STORAGE, BusinessPhotoStorage } from '../business/storefront-photo.storage';
 import {
+  ALREADY_ONBOARDED,
+  CHANGE_RESULT_OUTCOMES,
+  CHANGE_RESULT_REASON_MIN_LENGTH,
   CLOCK_SKEW_MS,
   LIVE_WINDOW_MS,
   MAX_PHOTO_BYTES,
@@ -55,6 +61,40 @@ export interface OutcomeBody {
   revisitOn?: string;
   note?: string;
   endedAt?: string;
+}
+
+export interface ChangeResultBody {
+  outcome?: string;
+  reason?: string;
+  revisitOn?: string;
+  outcomeReason?: string;
+  note?: string;
+}
+
+/**
+ * Where an unfinished visit picks up (Laboura Field redesign, rev 188):
+ * - record_result: the talk is not finished (no result yet);
+ * - take_selfie: "onboard now" chosen, the selfie with the board is missing;
+ * - continue_business_form: selfie done, no business registered yet (B8: resume);
+ * - mark_onboarded: selfie done at a business already registered (B9: no second registration);
+ * - verify: a verification visit waiting for the owner's code;
+ * - done: the visit has its result.
+ */
+export type VisitNextStep = 'record_result' | 'take_selfie' | 'continue_business_form' | 'mark_onboarded' | 'verify' | 'done';
+
+export function visitNextStep(visit: {
+  outcome: string | null;
+  purpose: string | null;
+  endedAt: Date | null;
+  selfieHash: string | null;
+  businessId: string | null;
+  ownerOtpRequestId: string | null;
+}): VisitNextStep {
+  if (visit.outcome) return 'done';
+  if (isVerificationVisitPurpose(visit.purpose)) return visit.ownerOtpRequestId ? 'done' : 'verify';
+  if (visit.selfieHash) return visit.businessId ? 'mark_onboarded' : 'continue_business_form';
+  if (visit.endedAt) return 'take_selfie';
+  return 'record_result';
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -119,6 +159,10 @@ export class FieldVisitService {
     if (fields.revisitOfVisitId?.trim()) {
       const earlier = await this.prisma.businessVisit.findUnique({ where: { id: fields.revisitOfVisitId.trim() } });
       if (!earlier) throw new NotFoundException('The earlier visit was not found');
+      // Rev 188: a field agent acts only on his own work; another agent's visit is view-only.
+      if (earlier.staffId !== staffId) {
+        throw codedError(HttpStatus.FORBIDDEN, 'NOT_YOUR_VISIT', "This shop was visited by another field agent. Start a new visit instead.");
+      }
       if (earlier.businessId) businessId = earlier.businessId;
       else {
         revisitOfVisitId = earlier.id;
@@ -139,6 +183,10 @@ export class FieldVisitService {
     }
     const business = businessId ? await this.prisma.business.findUnique({ where: { id: businessId } }) : null;
     if (businessId && !business) throw new NotFoundException('Business not found');
+    // Rev 188: another agent's business is view-only (an assigned visit is his to do).
+    if (business && !assignmentId && business.accountAgentId && business.accountAgentId !== staffId) {
+      throw codedError(HttpStatus.FORBIDDEN, 'NOT_YOUR_BUSINESS', "This business belongs to another field agent. You can view it but not record visits.");
+    }
 
     const geofenceFlag = this.outsideGeofence(business, reading);
     const startedAt = reading.at;
@@ -214,11 +262,44 @@ export class FieldVisitService {
     const visit = await this.ownVisit(staffId, id);
     const choice = (body.outcome ?? '').trim();
     const onboardNow = choice === ONBOARD_NOW;
-    if (!onboardNow && !(VISIT_OUTCOMES as readonly string[]).includes(choice)) {
+    if (visit.outcome) {
+      // B3 (rev 188): a result is never overwritten from this screen, so a stale screen cannot
+      // replace "onboarded". The same answer sent again is a harmless repeat.
+      const sameAgain = (choice === visit.outcome || (choice === 'onboarded' && visit.outcome === ALREADY_ONBOARDED)) &&
+        (body.revisitOn?.trim() || null) === keyFromDate(visit.revisitOn) &&
+        (choice !== 'not_interested' || (body.reason?.trim() || null) === visit.outcomeReason);
+      if (sameAgain) return this.present(visit);
+      throw codedError(HttpStatus.CONFLICT, 'VISIT_RESULT_ALREADY_SET', 'This visit already has a result. Use Change result to change it.', {
+        currentOutcome: visit.outcome,
+      });
+    }
+    if (!onboardNow && choice !== ALREADY_ONBOARDED && !(VISIT_OUTCOMES as readonly string[]).includes(choice)) {
       throw new BadRequestException('Pick how the visit went: onboarded, interested — come back later, not interested or owner not there');
     }
-    if (choice === 'onboarded' && !visit.businessId) {
-      throw new BadRequestException('Onboarded needs the business registered from this visit');
+    // Rev 189: a business counts as onboarded once. A later "onboard now" at a business that was
+    // already onboarded is recorded as already_onboarded (never counted, never the no-onboarding flag).
+    let recorded = choice;
+    if (choice === 'onboarded' || choice === ALREADY_ONBOARDED) {
+      if (!visit.businessId) {
+        throw codedError(HttpStatus.BAD_REQUEST, 'BUSINESS_NOT_REGISTERED', 'Onboarded needs the business registered from this visit (fill in the business form)');
+      }
+      // B9: a revisit to a business already registered is marked onboarded without a second
+      // registration, after the same selfie at the shop as a new onboarding.
+      if (!isVerificationVisitPurpose(visit.purpose) && !visit.selfieHash) {
+        throw codedError(HttpStatus.BAD_REQUEST, 'SELFIE_REQUIRED', 'Take the selfie with the shop board first');
+      }
+      const owned = await this.prisma.business.findUniqueOrThrow({
+        where: { id: visit.businessId },
+        select: { id: true, accountAgentId: true, leadCreatedByStaffId: true, verificationStatus: true },
+      });
+      if (!fieldAgentCanAct(owned, await agentViewerFor(this.prisma, staffId, 'field_agent'))) {
+        throw codedError(HttpStatus.FORBIDDEN, 'NOT_YOUR_BUSINESS', 'This business belongs to another field agent');
+      }
+      const before = await this.wasOnboardedBefore(visit.businessId, id);
+      if (choice === ALREADY_ONBOARDED && !before) {
+        throw codedError(HttpStatus.BAD_REQUEST, 'BUSINESS_NOT_ONBOARDED', 'This business was never onboarded: mark the visit onboarded instead');
+      }
+      if (before) recorded = ALREADY_ONBOARDED;
     }
     const shopName = body.shopName?.trim() || visit.shopName;
     if (!visit.businessId && !shopName) throw new BadRequestException('The shop name is required');
@@ -257,7 +338,7 @@ export class FieldVisitService {
       ...(contactPhone ? { contactPhone } : {}),
       ...(onboardNow
         ? {}
-        : { outcome: choice, outcomeReason: reason, revisitOn, note, outcomeRecordedAt: now }),
+        : { outcome: recorded, outcomeReason: reason, revisitOn, note, outcomeRecordedAt: now }),
     };
     await this.prisma.businessVisit.update({ where: { id }, data });
     await this.audit.log({
@@ -268,7 +349,7 @@ export class FieldVisitService {
       before: { outcome: visit.outcome, outcomeReason: visit.outcomeReason, revisitOn: keyFromDate(visit.revisitOn) },
       after: onboardNow
         ? { endedAt: endedAt.toISOString(), durationSeconds }
-        : { outcome: choice, outcomeReason: reason, revisitOn: keyFromDate(revisitOn), durationSeconds },
+        : { outcome: recorded, outcomeReason: reason, revisitOn: keyFromDate(revisitOn), durationSeconds },
       changedFields: ['outcome', 'outcomeReason', 'revisitOn', 'note', 'spokeTo', 'contactPhone', 'endedAt'],
       reason: visit.outcome ? 'Visit outcome changed' : 'Visit outcome recorded',
     });
@@ -279,8 +360,138 @@ export class FieldVisitService {
     if (!visit.endedAt && isShortVisit(durationSeconds, policy.visitShortMinutes)) {
       await this.raise('visit_short', visit, { durationSeconds, shortMinutes: policy.visitShortMinutes });
     }
-    if (!onboardNow) await this.checkNoOnboarding(staffId, now, policy);
+    if (!onboardNow && recorded !== ALREADY_ONBOARDED) await this.checkNoOnboarding(staffId, now, policy);
+    if ((recorded === 'onboarded' || recorded === ALREADY_ONBOARDED) && visit.businessId) {
+      await this.verification.advanceToPendingTlCheckIfReady(visit.businessId, staffId);
+    }
     return this.present(await this.load(id));
+  }
+
+  // ------------------------------------------------------- change result
+
+  /**
+   * "Change result" on the visit details page (rev 188): needs a reason, is kept in
+   * history (who, when, from, to, why) and is never allowed once the visit is onboarded.
+   */
+  async changeResult(staffId: string, id: string, body: ChangeResultBody) {
+    const now = this.clock.now();
+    const visit = await this.ownVisit(staffId, id);
+    if (!visit.outcome) {
+      throw codedError(HttpStatus.CONFLICT, 'VISIT_HAS_NO_RESULT', 'This visit has no result yet: record how it went first');
+    }
+    if (visit.outcome === 'onboarded' || visit.outcome === ALREADY_ONBOARDED) {
+      throw codedError(HttpStatus.CONFLICT, 'VISIT_ONBOARDED_LOCKED', 'An onboarded visit cannot be changed');
+    }
+    const outcome = (body.outcome ?? '').trim();
+    if (!(CHANGE_RESULT_OUTCOMES as readonly string[]).includes(outcome)) {
+      throw codedError(HttpStatus.BAD_REQUEST, 'OUTCOME_INVALID', 'Pick the new result: interested — come back later, not interested or owner not there');
+    }
+    const reason = (body.reason ?? '').trim();
+    if (reason.length < CHANGE_RESULT_REASON_MIN_LENGTH) {
+      throw codedError(HttpStatus.BAD_REQUEST, 'CHANGE_REASON_REQUIRED', `Say why the result changes (at least ${CHANGE_RESULT_REASON_MIN_LENGTH} characters)`, {
+        minLength: CHANGE_RESULT_REASON_MIN_LENGTH,
+      });
+    }
+    let outcomeReason: string | null = null;
+    if (outcome === 'not_interested') {
+      outcomeReason = (body.outcomeReason ?? '').trim();
+      if (!(NOT_INTERESTED_REASONS as readonly string[]).includes(outcomeReason)) {
+        throw codedError(HttpStatus.BAD_REQUEST, 'NOT_INTERESTED_REASON_REQUIRED', 'Say why they are not interested');
+      }
+    }
+    let revisitOn: Date | null = null;
+    if (REVISIT_OUTCOMES.includes(outcome)) {
+      const key = (body.revisitOn ?? '').trim();
+      if (!DATE_KEY.test(key) || Number.isNaN(dateFromKey(key).getTime()) || keyFromDate(dateFromKey(key)) !== key) {
+        throw codedError(HttpStatus.BAD_REQUEST, 'REVISIT_DATE_REQUIRED', 'Pick the date to come back');
+      }
+      if (key < istDateKey(now)) throw codedError(HttpStatus.BAD_REQUEST, 'REVISIT_DATE_PAST', 'The come-back date cannot be in the past');
+      revisitOn = dateFromKey(key);
+    }
+    if (outcome === visit.outcome && keyFromDate(revisitOn) === keyFromDate(visit.revisitOn) && outcomeReason === visit.outcomeReason) {
+      throw codedError(HttpStatus.BAD_REQUEST, 'RESULT_UNCHANGED', 'The new result is the same as the current one');
+    }
+    const note = body.note?.trim() ? body.note.trim().slice(0, 1000) : visit.note;
+    await this.prisma.$transaction(async (tx) => {
+      // Only the result that was checked above (a change or onboarding since then wins).
+      const changed = await tx.businessVisit.updateMany({
+        where: { id, staffId, outcome: visit.outcome, outcomeRecordedAt: visit.outcomeRecordedAt },
+        data: { outcome, outcomeReason, revisitOn, note },
+      });
+      if (changed.count !== 1) {
+        throw codedError(HttpStatus.CONFLICT, 'VISIT_RESULT_CHANGED', 'The result changed meanwhile. Open the visit again.');
+      }
+      await tx.businessVisitResultChange.create({
+        data: {
+          visitId: id,
+          changedByStaffId: staffId,
+          fromOutcome: visit.outcome,
+          fromOutcomeReason: visit.outcomeReason,
+          fromRevisitOn: visit.revisitOn,
+          toOutcome: outcome,
+          toOutcomeReason: outcomeReason,
+          toRevisitOn: revisitOn,
+          reason: reason.slice(0, 500),
+          changedAt: now,
+        },
+      });
+    });
+    await this.audit.log({
+      actorId: staffId,
+      action: 'field_visit.result_changed',
+      entityType: 'business_visit',
+      entityCode: id,
+      before: { outcome: visit.outcome, outcomeReason: visit.outcomeReason, revisitOn: keyFromDate(visit.revisitOn) },
+      after: { outcome, outcomeReason, revisitOn: keyFromDate(revisitOn) },
+      changedFields: ['outcome', 'outcomeReason', 'revisitOn', 'note'],
+      reason: 'Visit result changed by the field agent (reason kept in the visit history)',
+    });
+    return this.details(staffId, id);
+  }
+
+  /**
+   * The visit details page (rev 188): board photo and selfie as short-lived links,
+   * time at the shop, result, note, come-back date and the result's history.
+   */
+  async details(staffId: string, id: string) {
+    await this.ownVisit(staffId, id);
+    const visit = await this.load(id);
+    const [changes, business] = await Promise.all([
+      this.prisma.businessVisitResultChange.findMany({ where: { visitId: id }, orderBy: { changedAt: 'asc' } }),
+      visit.businessId
+        ? this.prisma.business.findUnique({ where: { id: visit.businessId }, select: { verificationStatus: true } })
+        : Promise.resolve(null),
+    ]);
+    const staffIds = [...new Set(changes.map((c) => c.changedByStaffId))];
+    const staff = staffIds.length
+      ? await this.prisma.staff.findMany({ where: { id: { in: staffIds } }, select: { id: true, name: true } })
+      : [];
+    const names = new Map(staff.map((s) => [s.id, s.name]));
+    const link = async (path: string | null) => {
+      if (!path || !this.storage.signedUrl) return null;
+      return this.storage.signedUrl(path, BUSINESS_PHOTO_LINK_TTL_SECONDS).catch(() => null);
+    };
+    const [boardUrl, selfieUrl] = await Promise.all([link(visit.boardPhotoPath), link(visit.selfieUrl)]);
+    const presented = this.present(visit);
+    return {
+      ...presented,
+      business: presented.business ? { ...presented.business, verificationStatus: business?.verificationStatus ?? null } : null,
+      boardPhoto: boardUrl ? { url: boardUrl, takenAt: (visit.boardPhotoTakenAt ?? visit.startedAt ?? visit.visitedAt).toISOString() } : null,
+      selfie: selfieUrl
+        ? { url: selfieUrl, takenAt: visit.proofAt?.toISOString() ?? null, distanceMeters: visit.proofDistanceMeters }
+        : null,
+      resultHistory: changes.map((c) => ({
+        at: c.changedAt.toISOString(),
+        byName: names.get(c.changedByStaffId) ?? null,
+        byMe: c.changedByStaffId === staffId,
+        from: { outcome: c.fromOutcome, outcomeReason: c.fromOutcomeReason, revisitOn: keyFromDate(c.fromRevisitOn) },
+        to: { outcome: c.toOutcome, outcomeReason: c.toOutcomeReason, revisitOn: keyFromDate(c.toRevisitOn) },
+        reason: c.reason,
+      })),
+      canChangeResult: Boolean(visit.outcome) && visit.outcome !== 'onboarded' && visit.outcome !== ALREADY_ONBOARDED,
+      // Rev 189: "onboard now" at this business is recorded as already_onboarded (it counts once).
+      businessAlreadyOnboarded: visit.businessId ? await this.wasOnboardedBefore(visit.businessId, id) : false,
+    };
   }
 
   // ------------------------------------------------------ 4. proof outside
@@ -358,14 +569,35 @@ export class FieldVisitService {
     // The code sent for this visit's assignment (sendOwnerOtp), not one from another flow.
     const owners = valid ? await this.otp.isVerified(body.ownerOtpRequestId, business.phone, ownerVisitOtpPurpose(visit.assignmentId)) : false;
     if (!owners) throw new BadRequestException("Wrong code. Ask the owner to read the latest code again.");
-    await this.prisma.$transaction(async (tx) => {
-      await tx.businessVisit.update({ where: { id }, data: { ownerOtpRequestId: body.ownerOtpRequestId } });
+    const verifiedOutcome = (await this.wasOnboardedBefore(business.id, id)) ? ALREADY_ONBOARDED : 'onboarded';
+    const accountAgentSetAt = await this.prisma.$transaction(async (tx) => {
+      // B19 (rev 188): a completed verification visit has its result, like every visit.
+      await tx.businessVisit.update({
+        where: { id },
+        data: {
+          ownerOtpRequestId: body.ownerOtpRequestId,
+          outcome: visit.outcome ?? verifiedOutcome,
+          outcomeRecordedAt: visit.outcomeRecordedAt ?? this.clock.now(),
+        },
+      });
       const done = await tx.visitAssignment.updateMany({
         where: { id: visit.assignmentId!, assignedStaffId: staffId, status: 'assigned' },
         data: { status: 'done', visitId: id },
       });
       if (done.count !== 1) throw new ForbiddenException('Only the assigned field agent can complete this visit');
+      // S1 (rev 192): closing the assignment must not lock him out of the next step
+      // (the agreement): with no account agent, the verifying agent becomes it.
+      return this.verification.takeAccountAgentAfterVerification(tx, business.id, staffId);
     });
+    if (accountAgentSetAt) {
+      await this.verification.logAccountAgentSet(business, {
+        actorId: staffId,
+        accountAgentId: staffId,
+        assignedAt: accountAgentSetAt,
+        action: 'business.account_agent_assigned',
+        reason: 'Verification visit completed by this field agent; the business had no account agent',
+      });
+    }
     await this.audit.log({
       actorId: staffId,
       action: 'business.visit_recorded',
@@ -377,8 +609,13 @@ export class FieldVisitService {
       city: business.city,
     });
     await this.verification.advanceToPendingTlCheckIfReady(business.id, staffId);
-    const after = await this.prisma.business.findUniqueOrThrow({ where: { id: business.id }, select: { verificationStatus: true } });
-    return { ...this.present(await this.load(id)), businessVerificationStatus: after.verificationStatus };
+    const after = await this.prisma.business.findUniqueOrThrow({ where: { id: business.id }, select: { verificationStatus: true, accountAgentId: true } });
+    return {
+      ...this.present(await this.load(id)),
+      businessVerificationStatus: after.verificationStatus,
+      isAccountAgent: after.accountAgentId === staffId,
+      becameAccountAgent: Boolean(accountAgentSetAt),
+    };
   }
 
   /**
@@ -491,11 +728,29 @@ export class FieldVisitService {
   }
 
   async get(staffId: string, id: string) {
-    await this.ownVisit(staffId, id);
-    return this.present(await this.load(id));
+    return this.details(staffId, id);
   }
 
   // ---------------------------------------------------------------- helpers
+
+  /**
+   * Rev 189: was this business onboarded before this visit? Registered from a shop visit,
+   * onboarded in person or through its verification, or another visit marked onboarded.
+   */
+  async wasOnboardedBefore(businessId: string, exceptVisitId: string): Promise<boolean> {
+    const business = await this.prisma.business.findUnique({
+      where: { id: businessId },
+      select: { leadChannel: true, inPersonOnboardedAt: true, verificationStatus: true },
+    });
+    if (!business) return false;
+    if (business.leadChannel === 'field_visit' || business.inPersonOnboardedAt) return true;
+    if (['pending_tl_check', 'verified'].includes(business.verificationStatus ?? '')) return true;
+    const visit = await this.prisma.businessVisit.findFirst({
+      where: { businessId, id: { not: exceptVisitId }, outcome: { in: ['onboarded', ALREADY_ONBOARDED] } },
+      select: { id: true },
+    });
+    return Boolean(visit);
+  }
 
   private presentArrival(interview: { id: string; code: string; candidateArrivedAt: Date | null; candidateArrivedDistanceMeters: number | null }) {
     return {
@@ -544,7 +799,9 @@ export class FieldVisitService {
       outcomeReason: visit.outcomeReason,
       revisitOn: keyFromDate(visit.revisitOn),
       note: visit.note,
+      outcomeRecordedAt: visit.outcomeRecordedAt?.toISOString() ?? null,
       ownerOtpDone: Boolean(visit.ownerOtpRequestId),
+      nextStep: visitNextStep(visit),
     };
   }
 
@@ -647,7 +904,8 @@ export class FieldVisitService {
     });
     if (open) return;
     const rows = await this.prisma.businessVisit.findMany({
-      where: { staffId, outcome: { not: null }, visitedAt: { gte: since } },
+      // Rev 189: a visit to a business already onboarded is neither a failed visit nor an onboarding.
+      where: { staffId, outcome: { not: null, notIn: [ALREADY_ONBOARDED] }, visitedAt: { gte: since } },
       select: { outcome: true },
     });
     const outcomes = rows.map((r) => r.outcome as string);

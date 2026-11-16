@@ -7,7 +7,8 @@ import { AuditService } from '../../common/audit/audit.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { publicPageOtpPurpose } from '../../common/otp/public-page-otp';
 import { PublicLinkStoreService } from '../../common/public-link-store.service';
-import { publicLink } from '../../common/public-link';
+import { PublicOtpLimiter } from '../../common/public-otp-limiter.service';
+import { publicPageLink } from '../../common/public-pages';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { MessagingService } from '../message/messaging.service';
 import { PricingService } from '../pricing/pricing.service';
@@ -59,6 +60,7 @@ export class VacancyConfirmationService {
     private readonly publicLinks: PublicLinkStoreService,
     private readonly messagingService: MessagingService,
     private readonly pricingService: PricingService,
+    private readonly otpLimiter: PublicOtpLimiter,
     @Optional() private readonly customerNotifications?: CustomerNotificationHooks,
   ) {}
 
@@ -91,6 +93,9 @@ export class VacancyConfirmationService {
     const check = await this.checkLegalMinimum(tradeSkill, salaryMinPaise, salaryPeriod);
     if (check.below && ownerTold !== true) {
       throw new BadRequestException({
+        statusCode: 400,
+        error: 'Bad Request',
+        code: 'MINIMUM_WAGE_TICK_REQUIRED',
         message: 'The salary is below the legal minimum wage. Tell the owner and tick ownerToldMinimumWage to save.',
         legalMinimumPaise: check.legalMinimumPaise,
         monthlySalaryFromPaise: check.monthlySalaryFromPaise,
@@ -272,7 +277,8 @@ export class VacancyConfirmationService {
       relatedType: 'vacancy',
       relatedId: vacancy.id,
       recipientPhone: contact.phone,
-      variables: { link: publicLink(`/vacancy-confirm/${token}`), ...this.detailsFor(vacancy) },
+      // Rev 192 fix S3: the owner's phone page (P07-VacancyConfirm), like the agreement link.
+      variables: { link: publicPageLink('vacancyConfirm', token), ...this.detailsFor(vacancy) },
     });
     await this.auditService.log({
       actorId: actor.id,
@@ -294,7 +300,11 @@ export class VacancyConfirmationService {
     return link;
   }
 
-  /** What the contact person sees when they open the link: the vacancy details only, never personal data. */
+  /**
+   * What the contact person sees when they open the link: the vacancy details only, never personal data.
+   * The phone page (P07-VacancyConfirm) shows role, how many people, salary range, shift, start date and
+   * the business name, in the language the link was sent in.
+   */
   async linkDetails(token: string) {
     const link = await this.requireLink(token);
     const vacancy = await this.loadForConfirmation(link.subjectId);
@@ -302,13 +312,22 @@ export class VacancyConfirmationService {
       vacancyCode: vacancy.code,
       status: vacancy.status,
       sentToLast4: last4(link.phone!),
+      maskedPhone: `******${last4(link.phone!)}`,
       expiresAt: link.expiresAt,
+      preferredLanguage: link.language ?? null,
+      roleTitle: vacancy.roleTitle ?? null,
+      headcountCount: vacancy.headcount,
+      salaryMinPaise: vacancy.salaryMinPaise ?? null,
+      salaryMaxPaise: vacancy.salaryMaxPaise ?? null,
       ...this.detailsFor(vacancy),
     };
   }
 
   async sendLinkOtp(token: string, otpRequestId?: string) {
     const link = await this.requireLink(token);
+    // Every public "Send code" costs an SMS: limited per link and per phone on the server,
+    // like the agreement page (rev 192 fix S3).
+    await this.otpLimiter.claimSend(this.publicLinks.hashToken(token), link.phone!);
     // AC-3: a code bound to this link (a staff-sent vacancy_confirm code is for the
     // agent's own "code on call" route and never confirms on the owner's page).
     const purpose = publicPageOtpPurpose(token);
@@ -317,6 +336,9 @@ export class VacancyConfirmationService {
       : await this.otpService.getProvider().sendOtp(link.phone!, { purpose });
     return {
       otpRequestId: result.requestId,
+      // The phone page's code box reads these two (same answer as the agreement page's send-otp).
+      requestId: result.requestId,
+      phone: `******${last4(link.phone!)}`,
       sentToLast4: last4(link.phone!),
       resendAvailableAt: result.resendAvailableAt,
       resendsLeft: result.resendsLeft,

@@ -1,5 +1,5 @@
 import { OwnTeam } from '../../common/rbac/own-team';
-import { agentSeesFullBusiness, agentViewerFor } from '../business/business-agent-view';
+import { agentSeesFullBusiness, agentViewerFor, fieldAgentCanAct } from '../business/business-agent-view';
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { BusinessVisit, Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -7,6 +7,8 @@ import { calculateHaversineDistanceMeters } from '../../common/geo/geo.util';
 import { getCalendarPartsInTimezone, getPeriodBoundaries } from '../../common/time/period-boundary';
 import { PricingService } from '../pricing/pricing.service';
 import { REVISIT_OUTCOMES } from '../field-visit/field-visit.constants';
+import { visitNextStep } from '../field-visit/field-visit.service';
+import { firstOnboardingsBy } from './field-redesign.service';
 import { DAY_MS, FieldVisitClock, istDateKey, istDayStart, keyFromDate } from '../field-visit/field-visit-clock';
 
 /** Map statuses (FA13 legend): onboarded, revisit due, interested, not interested; plus lead. */
@@ -34,6 +36,8 @@ export interface ShopPoint {
   revisitOn: string | null;
   lastVisitAt: string | null;
   isMine: boolean;
+  /** Rev 188: the agent may act here (own business, or his own visit to an unregistered shop). */
+  canAct: boolean;
   distanceMeters?: number;
 }
 
@@ -53,6 +57,7 @@ export class ScreensFieldService {
 
   // ------------------------------------------------------------- FA03 Home
 
+  /** @deprecated Laboura Field redesign (rev 188): use GET /field-work/today. Kept until the app switches. */
   async home(actor: Actor) {
     const now = this.clock.now();
     const staffId = actor.sub;
@@ -61,16 +66,13 @@ export class ScreensFieldService {
     const todayKey = istDateKey(now);
     const tomorrowKey = istDateKey(new Date(now.getTime() + DAY_MS));
 
-    const [shopsVisited, onboardedRows, vacanciesAdded, candidatesShown, interviewsBooked] = await Promise.all([
+    const [shopsVisited, firsts, vacanciesAdded, candidatesShown, interviewsBooked] = await Promise.all([
       // "A visit counts towards shops visited only with the photo and GPS."
       this.prisma.businessVisit.count({
         where: { staffId, visitedAt: today, OR: [{ boardPhotoHash: { not: null } }, { selfieHash: { not: null } }] },
       }),
-      this.prisma.businessVisit.findMany({
-        where: { staffId, outcome: 'onboarded', outcomeRecordedAt: today, businessId: { not: null } },
-        select: { businessId: true },
-        distinct: ['businessId'],
-      }),
+      // B3/B24 (rev 188) and rev 189: each business once, on the day it was first onboarded.
+      firstOnboardingsBy(this.prisma, staffId, today),
       this.prisma.vacancy.count({ where: { capturedByStaffId: staffId, createdAt: today, status: { not: 'draft' } } }),
       this.prisma.candidateIntroduction.count({ where: { shownByStaffId: staffId, shownAt: today } }),
       this.prisma.interview.count({ where: { proposedByStaffId: staffId, createdAt: today } }),
@@ -199,7 +201,7 @@ export class ScreensFieldService {
       now: now.toISOString(),
       today: {
         shopsVisited,
-        onboarded: onboardedRows.length,
+        onboarded: firsts.size,
         vacanciesAdded,
         candidatesShown,
         interviewsBooked,
@@ -229,11 +231,17 @@ export class ScreensFieldService {
     const interviews = interviewIds.length
       ? await this.prisma.interview.findMany({
           where: { id: { in: interviewIds } },
-          select: { id: true, slotStartsAt: true, candidateArrivedAt: true, jobSeeker: { select: { name: true } } },
+          select: { id: true, slotStartsAt: true, candidateArrivedAt: true, result: true, jobSeeker: { select: { name: true } } },
         })
       : [];
     const byInterview = new Map(interviews.map((i) => [i.id, i]));
-    const planned = assignments.map((a) => {
+    // Rev 192 fix S4: an interview whose attendance is recorded ("candidate arrived" or
+    // "didn't come") is done, not planned; it shows in Today's work as interview_attended.
+    const attendanceRecorded = (interviewId: string | null) => {
+      const interview = interviewId ? byInterview.get(interviewId) : undefined;
+      return Boolean(interview && (interview.candidateArrivedAt || interview.result === 'candidate_no_show'));
+    };
+    const planned = assignments.filter((a) => !(a.relatedType === 'interview' && attendanceRecorded(a.relatedId))).map((a) => {
       const interview = a.relatedId ? byInterview.get(a.relatedId) : undefined;
       return {
         assignmentId: a.id,
@@ -278,6 +286,7 @@ export class ScreensFieldService {
         outcome: v.outcome,
         needsOutcome: !v.outcome,
         needsProof: !v.outcome && Boolean(v.endedAt) && !v.selfieHash && v.purpose === 'shop_visit',
+        nextStep: visitNextStep(v),
       })),
     };
   }
@@ -297,6 +306,7 @@ export class ScreensFieldService {
     const box = { gte: latitude - dLat, lte: latitude + dLat };
     const boxLng = { gte: longitude - dLng, lte: longitude + dLng };
     const todayKey = istDateKey(now);
+    const viewer = await agentViewerFor(this.prisma, actor.sub, actor.role);
 
     const businesses = await this.prisma.business.findMany({
       where: { anonymisedAt: null, latitude: box, longitude: boxLng },
@@ -330,6 +340,7 @@ export class ScreensFieldService {
         revisitOn: last ? keyFromDate(last.revisitOn) : null,
         lastVisitAt: last ? last.visitedAt.toISOString() : null,
         isMine: b.accountAgentId === actor.sub || b.leadCreatedByStaffId === actor.sub,
+        canAct: fieldAgentCanAct(b, viewer),
       };
     });
     const prospects = await this.prospectTips({ latitude: box, longitude: boxLng });
@@ -347,6 +358,7 @@ export class ScreensFieldService {
         revisitOn: keyFromDate(v.revisitOn),
         lastVisitAt: v.visitedAt.toISOString(),
         isMine: v.staffId === actor.sub,
+        canAct: v.staffId === actor.sub,
       });
     }
     for (const p of points) p.distanceMeters = Math.round(calculateHaversineDistanceMeters(latitude, longitude, p.latitude, p.longitude));
@@ -363,6 +375,7 @@ export class ScreensFieldService {
 
   // ---------------------------------------------------------- FA08 Business
 
+  /** @deprecated Laboura Field redesign (rev 188): use GET /field-work/businesses/:ref/page. Kept until the app switches. */
   async business(actor: Actor, ref: string) {
     const business = await this.prisma.business.findFirst({
       where: { OR: [{ id: ref }, { code: ref }], anonymisedAt: null },
@@ -530,7 +543,7 @@ function dueBy(visit: BusinessVisit, todayKey: string): boolean {
 
 function statusFromVisit(visit: BusinessVisit | undefined, todayKey: string): ShopStatus {
   if (!visit || !visit.outcome) return 'lead';
-  if (visit.outcome === 'onboarded') return 'onboarded';
+  if (visit.outcome === 'onboarded' || visit.outcome === 'already_onboarded') return 'onboarded';
   if (visit.outcome === 'not_interested') return 'not_interested';
   if (REVISIT_OUTCOMES.includes(visit.outcome)) return dueBy(visit, todayKey) ? 'revisit_due' : 'interested';
   return 'lead';

@@ -153,6 +153,8 @@ describe('Security AC-3: public-page codes are the person’s own, bound to the 
   });
 
   it('signing the business agreement uses the owner’s code up', async () => {
+    // Rev 192 S2: every agreement link shares one per-business limit; earlier links in this suite are aged out of it.
+    await prisma.publicLink.updateMany({ where: { purpose: 'business_agreement', subjectId: ids.business }, data: { createdAt: new Date(Date.now() - 25 * 3600 * 1000) } });
     const business = await prisma.business.findUniqueOrThrow({ where: { id: ids.business } });
     const { token } = await withIssuedLinkToken(app, () => request(server()).post(`/businesses/${ids.business}/agreement-links`).set(auth()).send({ language: 'en' }).expect(201));
     const sent = await request(server()).post('/consent/send-otp').send({ token }).expect(201);

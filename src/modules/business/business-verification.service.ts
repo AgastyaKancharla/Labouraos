@@ -765,17 +765,48 @@ export class BusinessVerificationService {
       where: { id: businessId },
       data: { accountAgentId, accountAgentAssignedAt: assignedAt },
     });
+    await this.logAccountAgentSet(business, { actorId, accountAgentId, assignedAt, action: 'business.account_agent_reassigned' });
+    return updated;
+  }
+
+  /**
+   * Field redesign fix S1 (Master Guide rev 192, "Fixes after the end-to-end check"):
+   * when a verification visit completes and the business has no account agent, the
+   * field agent who verified it becomes its account agent (the screen tells him so).
+   * Set only while nobody holds it (never takes a business from another agent); the
+   * Team Lead's approval later keeps him (it defaults to the verifying agent). Run
+   * inside the visit's own transaction; call {@link logAccountAgentSet} after it.
+   * Returns the assignment time when it was set, else null.
+   */
+  async takeAccountAgentAfterVerification(
+    tx: Prisma.TransactionClient,
+    businessId: string,
+    staffId: string,
+  ): Promise<Date | null> {
+    const assignedAt = this.clock.now();
+    const set = await tx.business.updateMany({
+      where: { id: businessId, accountAgentId: null },
+      data: { accountAgentId: staffId, accountAgentAssignedAt: assignedAt },
+    });
+    return set.count === 1 ? assignedAt : null;
+  }
+
+  /** The audit row (the account agent's history) for every change of a business's account agent. */
+  async logAccountAgentSet(
+    business: { code: string; city: string; accountAgentId: string | null },
+    change: { actorId: string; accountAgentId: string; assignedAt: Date; action: string; reason?: string },
+  ) {
     await this.auditService.log({
-      actorId,
-      action: 'business.account_agent_reassigned',
+      actorId: change.actorId,
+      action: change.action,
       entityType: 'business',
       entityCode: business.code,
       before: { accountAgentId: business.accountAgentId },
-      after: { accountAgentId, accountAgentAssignedAt: assignedAt.toISOString() },
+      after: { accountAgentId: change.accountAgentId, accountAgentAssignedAt: change.assignedAt.toISOString() },
       changedFields: ['accountAgentId', 'accountAgentAssignedAt'],
+      ...(change.reason ? { reason: change.reason } : {}),
       city: business.city,
     });
-    return updated;
   }
 
   private async suggestFieldAgent(business: {

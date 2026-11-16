@@ -5,7 +5,9 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  HttpStatus,
 } from '@nestjs/common';
+import { codedError } from '../../common/http/coded-error';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
@@ -501,11 +503,12 @@ export class VacancyService {
       include: { business: true },
     });
     if (!vacancy) throw new NotFoundException(`Vacancy '${vacancyRef}' not found`);
+    // Laboura Field (rev 188) switches on these codes; the messages stay as they were.
     if (vacancy.status !== 'draft') {
-      throw new BadRequestException(`Only a draft vacancy can be completed (this one is ${vacancy.status})`);
+      throw codedError(HttpStatus.BAD_REQUEST, 'NOT_A_DRAFT', `Only a draft vacancy can be completed (this one is ${vacancy.status})`, { status: vacancy.status });
     }
     if (staff.role === 'field_agent' && vacancy.business.accountAgentId !== staff.id && vacancy.capturedByStaffId !== staff.id) {
-      throw new ForbiddenException('Field agents may only complete vacancies for their account businesses');
+      throw codedError(HttpStatus.FORBIDDEN, 'NOT_YOUR_BUSINESS', 'Field agents may only complete vacancies for their account businesses');
     }
     const missing = [
       ['tradeSkill', vacancy.tradeSkill?.trim()],
@@ -515,7 +518,7 @@ export class VacancyService {
       ['startDate', vacancy.startDate],
     ].filter(([, value]) => value === null || value === undefined || value === '').map(([field]) => field);
     if (missing.length) {
-      throw new BadRequestException(`The draft is missing: ${missing.join(', ')}`);
+      throw codedError(HttpStatus.BAD_REQUEST, 'DRAFT_INCOMPLETE', `The draft is missing: ${missing.join(', ')}`, { missing });
     }
     const legalMinimum = await this.confirmationService.legalMinimumFields(
       vacancy.tradeSkill,
@@ -529,7 +532,7 @@ export class VacancyService {
         where: { id: vacancy.id, status: 'draft', updatedAt: vacancy.updatedAt },
         data: { ...legalMinimum, status: 'awaiting_confirmation' },
       });
-      if (changed.count !== 1) throw new BadRequestException('This draft was already completed or changed. Open it again.');
+      if (changed.count !== 1) throw codedError(HttpStatus.BAD_REQUEST, 'DRAFT_CHANGED', 'This draft was already completed or changed. Open it again.');
       await recordStatusChange(tx, {
         subjectType: 'vacancy',
         subjectId: vacancy.id,
