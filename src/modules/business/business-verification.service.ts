@@ -21,6 +21,7 @@ import { BusinessClock } from './business-clock';
 import { testModeFields } from '../../common/otp/otp-test-mode';
 import { CustomerNotificationHooks } from '../customer-notification/customer-notification-hooks.service';
 import { VERIFICATION_VISIT_PURPOSES } from './business.constants';
+import { ownerVisitOtpPurpose } from '../../common/otp/bound-otp-purposes';
 
 // business_signup: a business that signed up in the customer app (proposal 4.2).
 const VISIT_PURPOSES = ['verification', 'revisit', 'interview_attendance', 'follow_up', 'business_signup'] as const;
@@ -312,7 +313,8 @@ export class BusinessVerificationService {
       include: { business: { select: { phone: true } } },
     });
     if (!assignment) throw new ForbiddenException('Only the assigned field agent may request owner presence OTP');
-    const result = await this.otpService.sendOtp(assignment.business.phone);
+    // Bound to this visit: the check (field visit or visit form) asks for the same purpose.
+    const result = await this.otpService.sendBoundOtp(assignment.business.phone, ownerVisitOtpPurpose(assignment.id), staffId);
     const digits = assignment.business.phone.replace(/\D/g, '');
     return { success: true, requestId: result.requestId, phone: `******${digits.slice(-4)}`, ...testModeFields(result) };
   }

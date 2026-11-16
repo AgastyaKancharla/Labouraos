@@ -47,6 +47,7 @@ import { AnonymisationService } from '../../common/anonymisation/anonymisation.s
 import { AgentViewer, agentViewerFor, businessForViewer } from './business-agent-view';
 import { areaAutoFillMaxMeters, areaRequiredError, DEFAULT_AREA_AUTO_FILL_MAX_METERS } from './area-auto-fill';
 import { recordFullNumberSearch } from '../../common/phone/full-number-search';
+import { ownerVisitOtpPurpose } from '../../common/otp/bound-otp-purposes';
 
 /**
  * The only columns PATCH /businesses/:id writes (security AC-1). Not here, on
@@ -979,7 +980,7 @@ export class BusinessService {
       }
       const otpValid = await this.otpService.verifyOtp(dto.ownerOtpRequestId, dto.ownerOtpCode);
       const otpBelongsToOwner = otpValid
-        ? await this.otpService.isVerified(dto.ownerOtpRequestId, business.phone)
+        ? await this.otpService.isVerified(dto.ownerOtpRequestId, business.phone, ownerVisitOtpPurpose(assignment.id))
         : false;
       if (!otpBelongsToOwner) {
         throw new BadRequestException('Valid owner presence OTP is required for a verification visit');

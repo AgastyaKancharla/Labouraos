@@ -35,6 +35,7 @@ import {
 } from './field-visit.constants';
 import { dateFromKey, DAY_MS, FieldVisitClock, istDateKey, keyFromDate } from './field-visit-clock';
 import { gpsSuspicions, isShortVisit, noOnboardingPattern, Reading, travelCheck } from './visit-fraud';
+import { ownerVisitOtpPurpose } from '../../common/otp/bound-otp-purposes';
 
 export interface UploadedPhoto {
   buffer: Buffer;
@@ -354,7 +355,8 @@ export class FieldVisitService {
     if (!body.ownerOtpRequestId || !body.ownerOtpCode) throw new BadRequestException("Enter the owner's code");
     const business = await this.prisma.business.findUniqueOrThrow({ where: { id: visit.businessId } });
     const valid = await this.otp.verifyOtp(body.ownerOtpRequestId, body.ownerOtpCode);
-    const owners = valid ? await this.otp.isVerified(body.ownerOtpRequestId, business.phone) : false;
+    // The code sent for this visit's assignment (sendOwnerOtp), not one from another flow.
+    const owners = valid ? await this.otp.isVerified(body.ownerOtpRequestId, business.phone, ownerVisitOtpPurpose(visit.assignmentId)) : false;
     if (!owners) throw new BadRequestException("Wrong code. Ask the owner to read the latest code again.");
     await this.prisma.$transaction(async (tx) => {
       await tx.businessVisit.update({ where: { id }, data: { ownerOtpRequestId: body.ownerOtpRequestId } });

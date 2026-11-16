@@ -11,7 +11,6 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { OtpService } from '../../common/otp/otp.service';
-import { OtpSendResult } from '../../common/otp/otp.interface';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { getCalendarPartsInTimezone, localCalendarToUtc } from '../../common/time/period-boundary';
 import { formatINR } from '../../common/money/money';
@@ -30,6 +29,7 @@ import { isUnconfirmedVacancyStatus } from '../vacancy/vacancy-confirmation.serv
 import { businessAccessMessage, businessCandidateAccess } from '../business/business-candidate-access';
 import { FieldVisitService } from '../field-visit/field-visit.service';
 import { testModeFields } from '../../common/otp/otp-test-mode';
+import { interviewResultOtpPurpose } from '../../common/otp/bound-otp-purposes';
 
 export interface SellingActor {
   id: string;
@@ -376,7 +376,8 @@ export class FieldSellingService {
     this.assertAwaitingDecision(interview);
     const decision = this.validateDecision(body, this.clock.now());
     const contact = this.contactOf({ branch: interview.vacancy.branch, business: interview.business });
-    const result = await this.otp.sendOtp(contact.phone, 'interview_result', actor.id, actor.role, body.otpRequestId) as OtpSendResult;
+    // Bound to this interview: recordDecision checks the same purpose.
+    const result = await this.otp.sendBoundOtp(contact.phone, interviewResultOtpPurpose(interview.id), actor.id, body.otpRequestId);
     if (!body.otpRequestId) {
       await this.messaging.send({
         channel: 'sms',
@@ -422,7 +423,7 @@ export class FieldSellingService {
     if (!body.otpRequestId || !body.code) throw new BadRequestException('Type the code the owner reads out');
     const contact = this.contactOf({ branch: interview.vacancy.branch, business: interview.business });
     const verified = await this.otp.verifyOtp(body.otpRequestId, body.code, actor.id);
-    if (!verified || !(await this.otp.consumeVerified(body.otpRequestId, normaliseIndianMobile(contact.phone)))) {
+    if (!verified || !(await this.otp.consumeVerified(body.otpRequestId, normaliseIndianMobile(contact.phone), interviewResultOtpPurpose(interview.id)))) {
       throw new BadRequestException('That code is not right for the owner\'s phone. Check it, or resend.');
     }
     const result = await this.interviews.applyOwnerResult(interview.id, {
