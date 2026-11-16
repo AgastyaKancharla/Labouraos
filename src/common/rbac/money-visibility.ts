@@ -85,11 +85,23 @@ export function isMoneyKey(key: string): boolean {
   return MONEY_KEY_SUFFIXES.some((suffix) => lower.endsWith(suffix));
 }
 
+/** "lakh", "crore", "k" … after a number: part of the amount, hidden with it. */
+const AMOUNT_SCALE = String.raw`(?:\s?(?:lakhs?|lacs?|crores?|cr|k|thousand)\b)?`;
+const AMOUNT_NUMBER = String.raw`\d[\d,]*(?:\.\d+)?`;
 /**
- * Rupee amounts in free text: "₹500", "₹ 1,500.50", and (security L7) "Rs 500",
- * "Rs. 500", "Rs.500", "INR 500", "rupees 500", "500 rupees", "500 Rs" — any case.
+ * Rupee amounts in free text, any case: "₹500", "₹ 1,500.50", and (security L7)
+ * "Rs 500", "Rs. 500", "Rs.500", "rs: 500", "Rs-500", "INR 500", "रु 500",
+ * "rupees 500", "500 rupees", "500 Rs", "500 INR", "500/-", and with a scale
+ * ("₹ 5 lakh", "Rs 2 crore") the whole amount. A bare number is left alone.
  */
-const RUPEE_TEXT = /(?:₹|\b(?:rs\.?|inr|rupees?)(?=\s?\d))\s?\d[\d,]*(?:\.\d+)?|\b\d[\d,]*(?:\.\d+)?\s?(?:rupees?|rs)\b/gi;
+const RUPEE_TEXT = new RegExp(
+  [
+    String.raw`(?:₹|रु|\b(?:rs|inr|rupees?)(?![a-z]))(?=[\s:.\-]*\d)[\s:.\-]*${AMOUNT_NUMBER}${AMOUNT_SCALE}(?:\s?\/-)?`,
+    String.raw`\b${AMOUNT_NUMBER}${AMOUNT_SCALE}\s?(?:rupees?|rs|inr)\b\.?`,
+    String.raw`\b${AMOUNT_NUMBER}\s?\/-`,
+  ].join('|'),
+  'gi',
+);
 export const HIDDEN_AMOUNT_TEXT = '₹ (hidden)';
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

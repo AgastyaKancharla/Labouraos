@@ -35,6 +35,16 @@ describe('Security AC-4: money is stripped from audit rows except for the CEO an
     expect(plain.reason).toBe('Worked 500 hours; called rs-team; INR is the currency');
   });
 
+  it('L7 residue: "500 INR", "500/-", "rs: 500", "Rs-500", "रु 500" and scaled amounts are hidden whole; bare numbers are not', () => {
+    const forms = ['500 INR', '500/-', '1,500 /-', 'rs: 500', 'Rs-500', 'Rs - 500', 'रु 500', 'रु500', '₹ 5 lakh', '₹5 lakhs', 'Rs 2 crore', 'Rs.1.5 cr', 'INR 20k', '5 lakh rupees', 'Rs 500/-'];
+    for (const form of forms) {
+      const out = auditRowForViewer({ before: null, after: null, reason: `Refund of ${form} approved` }, 'team_lead');
+      expect(out.reason).toBe('Refund of ₹ (hidden) approved');
+    }
+    const plain = auditRowForViewer({ before: null, after: null, reason: 'Call 3 of 5 on 12-11-2026; 2 lakh people; ticket 500' }, 'team_lead');
+    expect(plain.reason).toBe('Call 3 of 5 on 12-11-2026; 2 lakh people; ticket 500');
+  });
+
   describe('over HTTP', () => {
     let app: INestApplication;
     let prisma: PrismaService;
