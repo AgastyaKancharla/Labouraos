@@ -301,6 +301,19 @@
     font-weight: 800;
     letter-spacing: 0.02em;
   }
+  .lb-mobilebar__bell {
+    margin-left: auto;
+  }
+  .lb-mobilebar .lb-bell__btn {
+    width: 40px;
+    height: 40px;
+    border-color: rgba(255, 255, 255, 0.35);
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+  }
+  .lb-mobilebar .lb-bell__panel {
+    color: var(--text);
+  }
   .lb-mobilebar__menu {
     display: inline-flex;
     align-items: center;
@@ -726,7 +739,7 @@
   font-weight: 700;
 }
 
-/* Home notifications block and the bell's "Done today" heading */
+/* The bell's "Done today" heading */
 .lb-homenotes__done {
   padding: 10px 8px 2px;
   font-size: 11px;
@@ -734,9 +747,6 @@
   color: var(--text-faint);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-}
-.lb-homenotes .lb-bell__item:first-child {
-  border-top: none;
 }
 
 /* ---------- cards, stats ---------- */
