@@ -6,7 +6,8 @@ import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { PiiMaskingInterceptor } from '../../common/rbac/pii-masking.interceptor';
-import { parseRange } from '../ceo-portal/ceo-common';
+import { cleanOption, cleanSearch, parseOptionalRange, parsePage, parseRange } from '../ceo-portal/ceo-common';
+import { ManagerListQuery, ManagerRecordsService } from './manager-records.service';
 import { ManagerPlanService } from './manager-plan.service';
 import { ManagerPeopleService } from './manager-people.service';
 import { ManagerOpsService } from './manager-ops.service';
@@ -34,6 +35,7 @@ export class ScreensManagerController {
     private readonly ops: ManagerOpsService,
     private readonly targets: ManagerTargetsService,
     private readonly photos: StaffPhotoService,
+    private readonly records: ManagerRecordsService,
   ) {}
 
   private actor(req: AuthedRequest) {
@@ -215,5 +217,92 @@ export class ScreensManagerController {
   @RequireRoles('manager')
   escalateFlag(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: { note?: string }) {
     return this.ops.escalateFlag(this.actor(req), id, body ?? {});
+  }
+
+  // Pipeline lists and profiles (the CEO pages, scoped to the tree, no money) -----
+
+  private listQuery(q: Q): ManagerListQuery {
+    return {
+      range: parseOptionalRange(q.fromDate, q.toDate),
+      page: parsePage(q.page, q.pageSize),
+      search: cleanSearch(q.search),
+      status: cleanOption(q.status),
+      trade: cleanOption(q.trade),
+      kyc: cleanOption(q.kyc),
+      sort: cleanOption(q.sort),
+      agent: cleanOption(q.agent),
+      area: cleanOption(q.area),
+      type: cleanOption(q.type),
+      age: cleanOption(q.age),
+      stage: cleanOption(q.stage),
+      checks: cleanOption(q.checks),
+    };
+  }
+
+  @Get('job-seekers')
+  @RequireRoles('manager')
+  jobSeekers(@Req() req: AuthedRequest, @Query() q: Q) {
+    return this.records.jobSeekers(req.user.sub, this.listQuery(q));
+  }
+
+  @Get('job-seekers/:id')
+  @RequireRoles('manager')
+  jobSeeker(@Req() req: AuthedRequest, @Param('id') id: string) {
+    return this.records.jobSeeker(req.user.sub, id);
+  }
+
+  @Get('businesses')
+  @RequireRoles('manager')
+  businessList(@Req() req: AuthedRequest, @Query() q: Q) {
+    return this.records.businessList(req.user.sub, this.listQuery(q));
+  }
+
+  @Get('businesses/:id')
+  @RequireRoles('manager')
+  business(@Req() req: AuthedRequest, @Param('id') id: string) {
+    return this.records.business(req.user.sub, id);
+  }
+
+  @Get('vacancies')
+  @RequireRoles('manager')
+  vacancies(@Req() req: AuthedRequest, @Query() q: Q) {
+    return this.records.vacancies(req.user.sub, this.listQuery(q));
+  }
+
+  @Get('vacancies/:id')
+  @RequireRoles('manager')
+  vacancy(@Req() req: AuthedRequest, @Param('id') id: string) {
+    return this.records.vacancy(req.user.sub, id);
+  }
+
+  @Get('interviews')
+  @RequireRoles('manager')
+  interviews(@Req() req: AuthedRequest, @Query() q: Q) {
+    const now = new Date();
+    return this.records.interviews(req.user.sub, parseRange(q.fromDate, q.toDate, now), now);
+  }
+
+  @Get('placements')
+  @RequireRoles('manager')
+  placementList(@Req() req: AuthedRequest, @Query() q: Q) {
+    return this.records.placementList(req.user.sub, this.listQuery(q));
+  }
+
+  @Get('placements/:id')
+  @RequireRoles('manager')
+  placement(@Req() req: AuthedRequest, @Param('id') id: string) {
+    return this.records.placement(req.user.sub, id);
+  }
+
+  @Get('referrals')
+  @RequireRoles('manager')
+  referrals(@Req() req: AuthedRequest, @Query() q: Q) {
+    return this.records.referrals(req.user.sub, this.listQuery(q));
+  }
+
+  @Get('referrals/:id')
+  @RequireRoles('manager')
+  partner(@Req() req: AuthedRequest, @Param('id') id: string) {
+    return this.records.partner(req.user.sub, id);
   }
 }

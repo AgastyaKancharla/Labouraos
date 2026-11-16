@@ -30,6 +30,10 @@ export interface ListQuery {
   trade?: string;
   age?: string;
   outcome?: string;
+  /** Manager portal: only these businesses (record-scope.ts). The CEO passes none. */
+  businessScope?: Prisma.BusinessWhereInput;
+  /** Manager portal: only these vacancies (record-scope.ts). The CEO passes none. */
+  vacancyScope?: Prisma.VacancyWhereInput;
 }
 
 const LIVE_PLACEMENT = ['awaiting_payment', 'confirmed', 'active', 'dropped_out', 'replaced', 'completed', 'guarantee_ended'];
@@ -53,6 +57,7 @@ export class CeoBusinessesService {
 
   async listBusinesses(q: ListQuery, now: Date = new Date()) {
     const and: Prisma.BusinessWhereInput[] = [{ anonymisedAt: null }];
+    if (q.businessScope) and.push(q.businessScope);
     const created = dateFilter(q.range);
     if (created) and.push({ createdAt: created });
     if (q.search) {
@@ -73,6 +78,11 @@ export class CeoBusinessesService {
     if (q.status === 'no_documents') and.push({ documentsStatus: 'no_documents' });
     if (q.status === 'paused') and.push({ pausedAt: { not: null } });
     if (q.status === 'rejected') and.push({ verificationStatus: 'rejected' });
+    // The "Signed this month" tile's rows: first agreement signed this month (same rule as the tile).
+    if (q.status === 'signed_this_month') {
+      const monthStart = istStartOfMonth(now);
+      and.push({ agreements: { some: { signedAt: { gte: monthStart } }, none: { signedAt: { lt: monthStart } } } });
+    }
     if (q.agent) and.push({ accountAgentId: q.agent });
     if (q.area) and.push({ locality: { equals: q.area, mode: 'insensitive' } });
     if (q.type) and.push({ businessType: q.type });
@@ -131,7 +141,7 @@ export class CeoBusinessesService {
 
     // Tiles and side panels describe the whole book of businesses, not the filtered page.
     const all = await this.prisma.business.findMany({
-      where: { anonymisedAt: null },
+      where: q.businessScope ? { anonymisedAt: null, AND: [q.businessScope] } : { anonymisedAt: null },
       select: {
         id: true,
         businessType: true,
@@ -147,7 +157,9 @@ export class CeoBusinessesService {
     });
     const active = all.filter((b) => b.verificationStatus === 'verified' && !b.pausedAt);
     const monthStart = istStartOfMonth(now);
-    const openFlags = await this.prisma.reviewFlag.count({ where: { subjectType: 'business', status: 'open' } });
+    const openFlags = await this.prisma.reviewFlag.count({
+      where: { subjectType: 'business', status: 'open', ...(q.businessScope ? { subjectId: { in: all.map((b) => b.id) } } : {}) },
+    });
     const repeat = all.filter((b) => b.placements.length > 1).length;
     const withPlacements = all.filter((b) => b.placements.length > 0).length;
     const revisitBefore = new Date(now.getTime() - 30 * DAY_MS + 7 * DAY_MS);
@@ -463,6 +475,8 @@ export class CeoBusinessesService {
 
   async listVacancies(q: ListQuery, now: Date = new Date()) {
     const and: Prisma.VacancyWhereInput[] = [];
+    if (q.vacancyScope) and.push(q.vacancyScope);
+    const scoped = (where: Prisma.VacancyWhereInput): Prisma.VacancyWhereInput => (q.vacancyScope ? { AND: [where, q.vacancyScope] } : where);
     const created = dateFilter(q.range);
     if (created) and.push({ createdAt: created });
     if (q.search) {
@@ -473,6 +487,9 @@ export class CeoBusinessesService {
     if (status === 'filled') and.push({ status: 'filled' });
     if (status === 'closed') and.push({ status: 'cancelled' });
     if (status === 'draft') and.push({ status: { notIn: ['open', 'filled', 'cancelled'] } });
+    // The tiles' own rows (clicking a tile sets its filter; same rules as the tiles).
+    if (status === 'replacement') and.push({ status: 'open', replacementForPlacementId: { not: null } });
+    if (status === 'below_minimum') and.push({ status: 'open', belowLegalMinimum: true });
     if (q.trade) and.push({ tradeSkill: { equals: q.trade, mode: 'insensitive' } });
     if (q.area) and.push({ OR: [{ locality: { equals: q.area, mode: 'insensitive' } }, { business: { locality: { equals: q.area, mode: 'insensitive' } } }] });
     if (q.age === 'over_15') and.push({ createdAt: { lte: new Date(now.getTime() - 15 * DAY_MS) } });
@@ -515,15 +532,15 @@ export class CeoBusinessesService {
 
     const [open, filledInMonth, closedInMonth, below] = await Promise.all([
       this.prisma.vacancy.findMany({
-        where: { status: 'open' },
+        where: scoped({ status: 'open' }),
         select: { tradeSkill: true, headcount: true, createdAt: true, replacementForPlacementId: true, salaryMaxPaise: true, businessId: true, locality: true },
       }),
       this.prisma.placement.findMany({
-        where: { selectedAt: { gte: istStartOfMonth(now) }, status: { in: LIVE_PLACEMENT } },
+        where: { selectedAt: { gte: istStartOfMonth(now) }, status: { in: LIVE_PLACEMENT }, ...(q.vacancyScope ? { vacancy: q.vacancyScope } : {}) },
         select: { selectedAt: true, vacancy: { select: { createdAt: true, tradeSkill: true } } },
       }),
-      this.prisma.vacancy.count({ where: { status: 'cancelled', updatedAt: { gte: istStartOfMonth(now) } } }),
-      this.prisma.vacancy.count({ where: { status: 'open', belowLegalMinimum: true } }),
+      this.prisma.vacancy.count({ where: scoped({ status: 'cancelled', updatedAt: { gte: istStartOfMonth(now) } }) }),
+      this.prisma.vacancy.count({ where: scoped({ status: 'open', belowLegalMinimum: true }) }),
     ]);
     const fillDays = filledInMonth.map((p) => daysSince(p.vacancy.createdAt, p.selectedAt as Date));
     const byTrade = new Map<string, number[]>();
@@ -654,7 +671,8 @@ export class CeoBusinessesService {
 
   // ---------------------------------------------------------------- interviews
 
-  async interviews(range: DateRange, now: Date = new Date()) {
+  async interviews(range: DateRange, now: Date = new Date(), scope?: Prisma.InterviewWhereInput) {
+    const scoped = (where: Prisma.InterviewWhereInput): Prisma.InterviewWhereInput => (scope ? { AND: [where, scope] } : where);
     const include = {
       jobSeeker: { select: { id: true, code: true, name: true } },
       business: { select: { id: true, code: true, name: true, ownerName: true } },
@@ -662,31 +680,31 @@ export class CeoBusinessesService {
     } satisfies Prisma.InterviewInclude;
     const [inRange, resultsPending, mismatches, awaiting, noShowsWeek] = await Promise.all([
       this.prisma.interview.findMany({
-        where: { slotStartsAt: { gte: range.from, lte: range.to }, status: { not: 'cancelled' } },
+        where: scoped({ slotStartsAt: { gte: range.from, lte: range.to }, status: { not: 'cancelled' } }),
         orderBy: { slotStartsAt: 'asc' },
         take: 2000,
         include,
       }),
       this.prisma.interview.findMany({
-        where: { result: null, status: { in: ['confirmed', 'completed', 'no_result'] }, slotEndsAt: { lte: now } },
+        where: scoped({ result: null, status: { in: ['confirmed', 'completed', 'no_result'] }, slotEndsAt: { lte: now } }),
         orderBy: { resultDueAt: 'asc' },
         take: 200,
         include,
       }),
       this.prisma.interview.findMany({
-        where: { result: 'not_selected', candidateCheckAnswer: 'offered_yes' },
+        where: scoped({ result: 'not_selected', candidateCheckAnswer: 'offered_yes' }),
         orderBy: { candidateCheckAt: 'desc' },
         take: 200,
         include,
       }),
-      this.prisma.interview.findMany({ where: { status: 'offered', replyDueAt: { gte: now } }, orderBy: { replyDueAt: 'asc' }, take: 200, include }),
-      this.prisma.interview.count({ where: { status: 'no_show', slotStartsAt: { gte: new Date(now.getTime() - 7 * DAY_MS), lte: now } } }),
+      this.prisma.interview.findMany({ where: scoped({ status: 'offered', replyDueAt: { gte: now } }), orderBy: { replyDueAt: 'asc' }, take: 200, include }),
+      this.prisma.interview.count({ where: scoped({ status: 'no_show', slotStartsAt: { gte: new Date(now.getTime() - 7 * DAY_MS), lte: now } }) }),
     ]);
     const agentIds = inRange.filter((i) => i.agentAttendanceRequired).map((i) => i.proposedByStaffId);
     const names = await this.staffNames(agentIds);
     const todayStart = new Date(now.getTime() - ((now.getTime() + 5.5 * 3600 * 1000) % DAY_MS));
     const todayEnd = new Date(todayStart.getTime() + DAY_MS - 1);
-    const todays = await this.prisma.interview.count({ where: { slotStartsAt: { gte: todayStart, lte: todayEnd }, status: { not: 'cancelled' } } });
+    const todays = await this.prisma.interview.count({ where: scoped({ slotStartsAt: { gte: todayStart, lte: todayEnd }, status: { not: 'cancelled' } }) });
     const dueToday = resultsPending.filter((i) => i.resultDueAt >= now && i.resultDueAt <= todayEnd).length;
     const map = (i: (typeof inRange)[number]) => ({
       id: i.id,

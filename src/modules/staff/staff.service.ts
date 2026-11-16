@@ -1641,7 +1641,9 @@ export class StaffService {
     }
 
     const isSelf = actor.sub === target.id;
-    const isManagement = actor.role === 'ceo' || actor.role === 'manager';
+    // A Manager acts only inside their own reporting tree (AGENTS.md §7); the CEO for anyone.
+    const isManagement =
+      actor.role === 'ceo' || (actor.role === 'manager' && !isSelf && (await this.reportingScope.personIsUnder(actor.sub, target.id)));
     const isTheirLead = actor.role === 'team_lead' && (await new OwnTeam(this.prisma).includes(actor.sub, target.id));
     if (!isSelf && !isManagement && !isTheirLead) {
       throw new ForbiddenException(

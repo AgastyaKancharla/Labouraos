@@ -10,7 +10,7 @@ import { TopBar } from '../../../components/TopBar';
 import { api } from '../../../lib/api/client';
 import { formatDateIST } from '../../../lib/format/date';
 import { formatINR } from '../../../lib/format/money';
-import { useScreenPath } from '../../../portals/PortalContext';
+import { useRecordsPortal } from '../_kit/records';
 import { ActionButton } from '../_kit/actions';
 import { Kv, Timeline, humanize } from '../_kit/kit';
 import { VACANCY_STATUS } from '../_kit/labels';
@@ -61,8 +61,8 @@ const CANDIDATE: Record<string, { label: string; tone: 'good' | 'info' | 'muted'
 
 export default function VacancyDetail() {
   const { id = '' } = useParams();
-  const to = useScreenPath();
-  const query = useQuery({ queryKey: ['ceo', 'vacancy', id], queryFn: () => api.get<Detail>(`/ceo/vacancies/${id}`) });
+  const { api: base, to } = useRecordsPortal();
+  const query = useQuery({ queryKey: [base, 'vacancy', id], queryFn: () => api.get<Detail>(`${base}/vacancies/${id}`) });
   const d = query.data;
   const back = { to: to('C-Vacancies'), label: 'Vacancies' };
   if (query.isPending)

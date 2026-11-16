@@ -7,7 +7,7 @@ import { StatGrid, StatTile } from '../../../components/StatTile';
 import { StatusPill } from '../../../components/Badge';
 import { TopBar } from '../../../components/TopBar';
 import { formatINR } from '../../../lib/format/money';
-import { useScreenPath } from '../../../portals/PortalContext';
+import { homeBack, useRecordsPortal } from '../_kit/records';
 import { DateFilter, FilterPanel, OpenLink, PagedTable, SearchField, SelectFilter, dateOrDash, humanize, rangeQuery, useCeoList, useDebounced, type ListPeriod } from '../_kit/kit';
 import { BUSINESS_STATUS } from '../_kit/labels';
 import { BusinessTabs } from '../_kit/tabs';
@@ -46,7 +46,7 @@ interface Summary {
 }
 
 export default function BusinessesList() {
-  const to = useScreenPath();
+  const { api: base, ceo, link, to } = useRecordsPortal();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
@@ -55,10 +55,13 @@ export default function BusinessesList() {
   const [type, setType] = useState('');
   const [period, setPeriod] = useState<ListPeriod>(null);
   const q = useDebounced(search);
-  const list = useCeoList<Row, Extra, Summary>('/ceo/businesses', { search: q, status, agent, area, type, ...rangeQuery(period) });
+  const list = useCeoList<Row, Extra, Summary>(`${base}/businesses`, { search: q, status, agent, area, type, ...rangeQuery(period) });
   const d = list.query.data;
   const s = d?.summary;
   const loading = list.query.isPending;
+  /** A tile sets the Status filter to its own rows (click it again to show all). */
+  const tile = (value: string) => () => setStatus((current) => (current === value ? '' : value));
+  const flagsScreen = link('C-Audit-Flags') ?? link('MG-Flags');
 
   const appLabels = useAppLabels('business', (list.query.data?.rows ?? []).map((r) => r.id));
   const columns: Column<Row>[] = [
@@ -91,7 +94,8 @@ export default function BusinessesList() {
     },
     { key: 'vac', header: 'Open vacancies', cell: (r) => (r.openVacancies ? `${r.openVacancies}${r.openPositions > r.openVacancies ? ` · ${r.openPositions} positions` : ''}` : '0'), csv: (r) => r.openVacancies },
     { key: 'pl', header: 'Placements', cell: (r) => r.placements, csv: (r) => r.placements, hideOnPhone: true },
-    { key: 'fees', header: 'Fees paid', cell: (r) => formatINR(r.feesPaidPaise), csv: (r) => r.feesPaidPaise / 100, align: 'right' },
+    // Money: the CEO only (a Manager's answer has no fee figures).
+    ...(ceo ? [{ key: 'fees', header: 'Fees paid', cell: (r: Row) => formatINR(r.feesPaidPaise), csv: (r: Row) => r.feesPaidPaise / 100, align: 'right' as const }] : []),
     { key: 'visit', header: 'Last visit', cell: (r) => dateOrDash(r.lastVisitAt), csv: (r) => r.lastVisitAt, hideOnPhone: true },
     {
       key: 'flags',
@@ -104,14 +108,18 @@ export default function BusinessesList() {
 
   return (
     <div className="lb-page">
-      <TopBar back={{ to: to('Main'), label: 'Command Center' }} title="Businesses" subtitle="Every business, its account agent, what it has paid and anything that needs a look." />
-      <BusinessTabs />
+      <TopBar
+        back={homeBack(link)}
+        title="Businesses"
+        subtitle={ceo ? 'Every business, its account agent, what it has paid and anything that needs a look.' : 'Your teams’ businesses, their account agents and anything that needs a look.'}
+      />
+      {ceo && <BusinessTabs />}
       <StatGrid>
-        <StatTile label="Active businesses" value={s?.active ?? '—'} tone="royal" loading={loading} />
-        <StatTile label="Signed this month" value={s?.signedThisMonth ?? '—'} tone="good" loading={loading} />
-        <StatTile label="No documents" value={s?.noDocuments ?? '—'} tone="gold" loading={loading} />
+        <StatTile label="Active businesses" value={s?.active ?? '—'} tone="royal" loading={loading} onClick={tile('verified')} active={status === 'verified'} />
+        <StatTile label="Signed this month" value={s?.signedThisMonth ?? '—'} tone="good" loading={loading} onClick={tile('signed_this_month')} active={status === 'signed_this_month'} />
+        <StatTile label="No documents" value={s?.noDocuments ?? '—'} tone="gold" loading={loading} onClick={tile('no_documents')} active={status === 'no_documents'} />
         <StatTile label="Hired more than once" value={s?.hiredMoreThanOnce ?? '—'} tone="cyan" loading={loading} />
-        <StatTile label="Bypass or pattern flags" value={s?.flags ?? '—'} tone="red" loading={loading} />
+        <StatTile label="Bypass or pattern flags" value={s?.flags ?? '—'} tone="red" loading={loading} to={flagsScreen ?? undefined} />
         <StatTile label="Revisits due this week" value={s?.revisitsDueThisWeek ?? '—'} tone="orange" loading={loading} />
       </StatGrid>
       <FilterPanel>
@@ -123,6 +131,7 @@ export default function BusinessesList() {
           options={[
             { value: '', label: 'All' },
             { value: 'verified', label: 'Verified' },
+            { value: 'signed_this_month', label: 'Signed this month' },
             { value: 'tl_review', label: 'TL review' },
             { value: 'lead', label: 'Lead · visit needed' },
             { value: 'no_documents', label: 'No documents' },

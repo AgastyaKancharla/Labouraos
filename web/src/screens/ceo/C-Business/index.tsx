@@ -13,7 +13,8 @@ import { api } from '../../../lib/api/client';
 import { formatDateIST } from '../../../lib/format/date';
 import { formatINR } from '../../../lib/format/money';
 import { formatMobile } from '../../../lib/format/phone';
-import { useScreenPath } from '../../../portals/PortalContext';
+import type { ReactNode } from 'react';
+import { useRecordsPortal } from '../_kit/records';
 import { ActionButton } from '../_kit/actions';
 import { Kv, Timeline, dateOrDash, humanize } from '../_kit/kit';
 import { BUSINESS_STATUS, VACANCY_STATUS } from '../_kit/labels';
@@ -46,8 +47,9 @@ interface Detail {
   suspension?: { since: string | null; until: string | null; permanent: boolean; reason: string | null } | null;
   noDocuments: boolean;
   createdAt: string;
-  tiles: { openVacancies: number; openPositions: number; candidatesShown: number; noBypassMonths: number; interviews: number; placements: number; feesPaidPaise: number; replacementsUsed: number };
-  agreement: { signedAt: string; signedName: string; signedRole: string | null; version: string; feePercent: number; gstPercent: number; noBypassMonths: number; noBypassPenaltyPercent: number } | null;
+  /** Money fields (fees, fee terms) are the CEO's only: a Manager's answer leaves them out. */
+  tiles: { openVacancies: number; openPositions: number; candidatesShown: number; noBypassMonths: number; interviews: number; placements: number; feesPaidPaise?: number; replacementsUsed: number };
+  agreement: { signedAt: string; signedName: string; signedRole: string | null; version: string; feePercent?: number; gstPercent?: number; noBypassMonths: number; noBypassPenaltyPercent?: number } | null;
   callRecordingConsent: boolean | null;
   vacancies: { id: string; code: string; role: string; headcount: number; salaryMinPaise: number | null; salaryMaxPaise: number | null; belowLegalMinimum: boolean; confirmed: boolean; confirmationMethod: string | null; openDays: number; status: string; interviews: number }[];
   introductions: { at: string; jobSeeker: { id: string; code: string; name: string }; shownBy: string; channel: string; outcome: string }[];
@@ -72,9 +74,9 @@ function outcomeLabel(o: string): { label: string; tone: 'good' | 'info' | 'mute
 
 export default function BusinessDetail() {
   const { id = '' } = useParams();
-  const to = useScreenPath();
+  const { api: base, ceo, to } = useRecordsPortal();
   const toast = useToast();
-  const query = useQuery({ queryKey: ['ceo', 'business', id], queryFn: () => api.get<Detail>(`/ceo/businesses/${id}`) });
+  const query = useQuery({ queryKey: [base, 'business', id], queryFn: () => api.get<Detail>(`${base}/businesses/${id}`) });
   const agents = useQuery({
     queryKey: ['staff', 'field-agents'],
     queryFn: async () => {
@@ -126,7 +128,11 @@ export default function BusinessDetail() {
         back={back}
         title={`${d.name} · ${d.code}`}
         titleBadge={<AppSignupBadgeFor type="business" id={d.id} />}
-        subtitle={`${statusLabel}${d.accountAgent?.name ? ` · ${d.accountAgent.name}'s account` : ''} · ${d.tiles.placements} placements and ${formatINR(d.tiles.feesPaidPaise)} paid since ${formatDateIST(d.createdAt)}.`}
+        subtitle={
+          ceo
+            ? `${statusLabel}${d.accountAgent?.name ? ` · ${d.accountAgent.name}'s account` : ''} · ${d.tiles.placements} placements and ${formatINR(d.tiles.feesPaidPaise ?? 0)} paid since ${formatDateIST(d.createdAt)}.`
+            : `${statusLabel}${d.accountAgent?.name ? ` · ${d.accountAgent.name}'s account` : ''} · ${d.tiles.placements} placements since ${formatDateIST(d.createdAt)}.`
+        }
         actions={
           <div className="ceo-actions">
             <ActionButton
@@ -170,7 +176,7 @@ export default function BusinessDetail() {
         <StatTile label={`Candidates shown (${d.tiles.noBypassMonths}-month no-bypass)`} value={d.tiles.candidatesShown} tone="cyan" />
         <StatTile label="Interviews" value={d.tiles.interviews} tone="royal" />
         <StatTile label="Placements" value={d.tiles.placements} tone="navy" />
-        <StatTile label="Fees paid + GST" value={formatINR(d.tiles.feesPaidPaise)} tone="good" />
+        {ceo && <StatTile label="Fees paid + GST" value={formatINR(d.tiles.feesPaidPaise ?? 0)} tone="good" />}
         <StatTile label="Replacements used" value={d.tiles.replacementsUsed} tone="orange" />
       </StatGrid>
       <div className="two-col">
@@ -194,15 +200,25 @@ export default function BusinessDetail() {
             <Kv
               rows={[
                 ['Signed', <StatusPill tone="good">{`${formatDateIST(d.agreement.signedAt)} · by ${d.agreement.signedName}, OTP`}</StatusPill>],
-                ['Version', `${d.agreement.version} · fee ${d.agreement.feePercent}% + GST · no-bypass ${d.agreement.noBypassMonths} months + ${d.agreement.noBypassPenaltyPercent}%`],
+                [
+                  'Version',
+                  ceo
+                    ? `${d.agreement.version} · fee ${d.agreement.feePercent}% + GST · no-bypass ${d.agreement.noBypassMonths} months + ${d.agreement.noBypassPenaltyPercent}%`
+                    : `${d.agreement.version} · no-bypass ${d.agreement.noBypassMonths} months`,
+                ],
                 ['Call-recording consent', d.callRecordingConsent ? <StatusPill tone="good">Given</StatusPill> : <StatusPill tone="warn">Not recorded</StatusPill>],
                 ['Employer clause', 'Pays at least legal minimum wage, PF/ESI'],
-                [
-                  'Copy',
-                  <Button size="compact" onClick={() => void openAgreement()}>
-                    Download PDF
-                  </Button>,
-                ],
+                // The signed copy carries the fee terms: the CEO only.
+                ...(ceo
+                  ? ([
+                      [
+                        'Copy',
+                        <Button size="compact" onClick={() => void openAgreement()}>
+                          Download PDF
+                        </Button>,
+                      ],
+                    ] as [string, ReactNode][])
+                  : []),
               ]}
             />
           ) : (
@@ -309,7 +325,7 @@ export default function BusinessDetail() {
           {d.visits.length === 0 && <p className="ceo-sub">No visits recorded.</p>}
         </Card>
       </div>
-      <BypassChargesCard businessId={d.id} />
+      {ceo && <BypassChargesCard businessId={d.id} />}
       {d.history.length > 0 && (
         <Card title="History">
           <Timeline events={d.history.map((h) => ({ at: h.at, text: `${BUSINESS_STATUS[h.status]?.label ?? humanize(h.status)}${h.by ? ` · ${h.by}` : ''}`, aside: h.reason ? humanize(h.reason) : null }))} />

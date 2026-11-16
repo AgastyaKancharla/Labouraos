@@ -38,12 +38,15 @@ describe('Business invoice copy by signed link', () => {
   });
 
   it('signs the placement id, so the id alone or another placement token opens nothing', () => {
-    const token = invoiceToken('pl-1');
+    // One fixed time for the token and the link: the expiry is in seconds, so two
+    // separate clock reads across a second boundary gave two different tokens (flaky in CI).
+    const now = new Date();
+    const token = invoiceToken('pl-1', now);
     expect(isValidInvoiceToken('pl-1', token)).toBe(true);
     expect(isValidInvoiceToken('pl-2', token)).toBe(false);
     expect(isValidInvoiceToken('pl-1', undefined)).toBe(false);
     expect(isValidInvoiceToken('pl-1', 'x')).toBe(false);
-    expect(invoiceLink('pl-1')).toBe(`https://app.laboura.in/placements/pl-1/invoice/copy?token=${token}`);
+    expect(invoiceLink('pl-1', now)).toBe(`https://app.laboura.in/placements/pl-1/invoice/copy?token=${token}`);
   });
 
   it('opens the invoice for a valid token (JSON for API clients, printable page for a browser) and refuses others', async () => {

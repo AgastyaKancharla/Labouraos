@@ -23,7 +23,11 @@ export interface OtpSendResult {
   requestId?: string;
   resendAvailableAt?: string;
   resendsLeft?: number;
+  /** The number already belongs to a record (the server's one-phone-one-record rule); type and code only when visible. */
   alreadyRegistered?: boolean;
+  type?: 'job_seeker' | 'business' | 'referral';
+  code?: string;
+  /** Older name of `code`, still accepted when reading (lib/otp-send.ts). */
   existingCode?: string;
 }
 

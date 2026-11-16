@@ -11,7 +11,7 @@ import { api } from '../../../lib/api/client';
 import { ApiError } from '../../../lib/api/errors';
 import { formatDateTimeIST, istDateKey } from '../../../lib/format/date';
 import { useT } from '../../../i18n/I18nProvider';
-import { NewTempPasswordButton, ResetSignInButton, TempPasswordModal, type TempPasswordResult } from '../../shared/staffAccess';
+import { NewTempPasswordButton, SetCallingPhoneButton, ResetSignInButton, TempPasswordModal, type TempPasswordResult } from '../../shared/staffAccess';
 import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { ActionButton } from '../../ceo/_kit/actions';
@@ -146,6 +146,7 @@ export default function StaffAndAccess() {
         )}
         {/* Rev 174–175: "New temporary password" replaces the invite and reset links; a Manager can do it for people below Manager in their teams. */}
         <NewTempPasswordButton id={r.id} name={r.name} />
+        <SetCallingPhoneButton id={r.id} name={r.name} />
         {r.state !== 'invite_pending' && <ResetSignInButton id={r.id} name={r.name} />}
         {isAgent && leads.length > 1 && (
           <ActionButton

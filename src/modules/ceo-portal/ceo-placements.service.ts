@@ -11,6 +11,8 @@ export interface PlacementListQuery {
   search?: string;
   stage?: string;
   trade?: string;
+  /** Manager portal: only these placements (record-scope.ts). The CEO passes none. */
+  scope?: Prisma.PlacementWhereInput;
 }
 
 /** Placement stages as the CEO list names them. */
@@ -46,12 +48,17 @@ export class CeoPlacementsService {
   async list(q: PlacementListQuery, now: Date = new Date()) {
     const policy = await this.pricing.current();
     const and: Prisma.PlacementWhereInput[] = [];
+    if (q.scope) and.push(q.scope);
+    const scoped = (where: Prisma.PlacementWhereInput): Prisma.PlacementWhereInput => (q.scope ? { AND: [where, q.scope] } : where);
     const joined = dateFilter(q.range);
     if (joined) and.push({ OR: [{ joinedDate: joined }, { joinedDate: null, createdAt: joined }] });
     if (q.search) {
       and.push({ OR: [{ code: contains(q.search) }, { jobSeeker: { name: contains(q.search) } }, { jobSeeker: { code: contains(q.search) } }, { business: { name: contains(q.search) } }] });
     }
     if (q.stage && STAGE_WHERE[q.stage]) and.push(STAGE_WHERE[q.stage]);
+    // The tiles' own rows (clicking a tile sets its filter; same rules as the tiles).
+    if (q.stage === 'joined_this_month') and.push({ joinedDate: { gte: istStartOfMonth(now), lte: now } });
+    if (q.stage === 'clock_paused') and.push({ status: 'dropped_out', guaranteeEndedReason: 'two_rejections' });
     if (q.trade) and.push({ vacancy: { tradeSkill: { equals: q.trade, mode: 'insensitive' } } });
     const where: Prisma.PlacementWhereInput = and.length ? { AND: and } : {};
     const [total, placements] = await Promise.all([
@@ -91,16 +98,16 @@ export class CeoPlacementsService {
     const monthStart = istStartOfMonth(now);
     const windowStart = new Date(now.getTime() - policy.replacementWindowDays * DAY_MS);
     const [working, joinedThisMonth, inSearch, paused, cleared, reachedDay60, stillWorking60, claimsMonth, freeReplacements, refundsAfterSearch] = await Promise.all([
-      this.prisma.placement.count({ where: STAGE_WHERE.working }),
-      this.prisma.placement.count({ where: { joinedDate: { gte: monthStart, lte: now } } }),
-      this.prisma.placement.findMany({ where: { status: 'dropped_out', guaranteeEndedReason: null }, select: { placementFee: true, dropoutReportedAt: true } }),
-      this.prisma.placement.count({ where: { status: 'dropped_out', guaranteeEndedReason: 'two_rejections' } }),
-      this.prisma.placement.count({ where: { status: 'completed' } }),
-      this.prisma.placement.count({ where: { replacementNumber: 0, joinedDate: { lte: windowStart } } }),
-      this.prisma.placement.count({ where: { replacementNumber: 0, joinedDate: { lte: windowStart }, status: 'completed' } }),
-      this.prisma.replacementClaim.findMany({ where: { reportedAt: { gte: monthStart, lte: now } }, select: { reason: true } }),
-      this.prisma.placement.count({ where: { replacementNumber: { gt: 0 }, createdAt: { gte: monthStart, lte: now } } }),
-      this.prisma.payment.count({ where: { type: 'refund', placementId: { not: null }, createdAt: { gte: monthStart, lte: now }, status: { notIn: ['failed', 'rejected', 'reversed'] } } }),
+      this.prisma.placement.count({ where: scoped(STAGE_WHERE.working) }),
+      this.prisma.placement.count({ where: scoped({ joinedDate: { gte: monthStart, lte: now } }) }),
+      this.prisma.placement.findMany({ where: scoped({ status: 'dropped_out', guaranteeEndedReason: null }), select: { placementFee: true, dropoutReportedAt: true } }),
+      this.prisma.placement.count({ where: scoped({ status: 'dropped_out', guaranteeEndedReason: 'two_rejections' }) }),
+      this.prisma.placement.count({ where: scoped({ status: 'completed' }) }),
+      this.prisma.placement.count({ where: scoped({ replacementNumber: 0, joinedDate: { lte: windowStart } }) }),
+      this.prisma.placement.count({ where: scoped({ replacementNumber: 0, joinedDate: { lte: windowStart }, status: 'completed' }) }),
+      this.prisma.replacementClaim.findMany({ where: { reportedAt: { gte: monthStart, lte: now }, ...(q.scope ? { placement: q.scope } : {}) }, select: { reason: true } }),
+      this.prisma.placement.count({ where: scoped({ replacementNumber: { gt: 0 }, createdAt: { gte: monthStart, lte: now } }) }),
+      this.prisma.payment.count({ where: { type: 'refund', placementId: { not: null }, createdAt: { gte: monthStart, lte: now }, status: { notIn: ['failed', 'rejected', 'reversed'] }, ...(q.scope ? { placement: q.scope } : {}) } }),
     ]);
     const searchWithin3 = inSearch.filter((p) => p.dropoutReportedAt && daysLeft(p.dropoutReportedAt, policy.replacementSearchDays, now) <= 3).length;
     const trades = await this.prisma.vacancy.findMany({ where: { placements: { some: {} } }, distinct: ['tradeSkill'], select: { tradeSkill: true } });

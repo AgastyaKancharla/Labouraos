@@ -14,6 +14,7 @@ import { ApiError } from '../../../lib/api/errors';
 import { formatDateIST, formatDateTimeIST, formatTimeIST } from '../../../lib/format/date';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { ActionButton } from '../../ceo/_kit/actions';
+import { SetCallingPhoneButton } from '../../shared/staffAccess';
 import { hm, ms, roleLabel } from '../../ceo/_kit/format';
 import { firstName, useTeam, type Brief, type PaceRow } from '../_kit/api';
 import { Verdict } from '../_kit/targets';
@@ -61,7 +62,7 @@ export default function TeamLeadAgent() {
   const metricOptions = a.targets.map((t) => ({ value: t.metric, label: t.label }));
   return (
     <div className="lb-page">
-      <TopBar showSearch={false} back={{ to: to('T-Agents'), label: 'Agents' }} title={`${a.staff.name} · ${roleLabel(a.staff.role).toLowerCase()}`} titleBadge={<StaffAvatar name={a.staff.name} photoUrl={a.staff.photoUrl} size="md" />} subtitle="One agent: targets, attendance, call quality and coaching. Phone numbers stay hidden." />
+      <TopBar showSearch={false} back={{ to: to('T-Agents'), label: 'Agents' }} title={`${a.staff.name} · ${roleLabel(a.staff.role).toLowerCase()}`} titleBadge={<StaffAvatar name={a.staff.name} photoUrl={a.staff.photoUrl} size="md" />} subtitle="One agent: targets, attendance, call quality and coaching. Phone numbers stay hidden." actions={<SetCallingPhoneButton id={a.staff.id} name={a.staff.name} />} />
       <StatGrid>
         <StatTile label={a.main.label} value={a.main.target === null ? a.main.done : `${a.main.done} of ${a.main.target}`} tone="royal" />
         <StatTile label="At this speed by month end" value={a.main.projection} tone={a.main.verdict?.startsWith('Short') ? 'red' : 'good'} />

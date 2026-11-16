@@ -83,6 +83,19 @@ export const managerScreens: readonly ScreenDef[] = [
   { id: 'C-Att-Person', path: 'attendance/person/:staffId', title: 'screen.C-Att-Person' },
   { id: 'MG-Targets', path: 'targets', title: 'screen.MG-Targets' },
   { id: 'MG-Pipeline', path: 'pipeline', title: 'screen.MG-Pipeline' },
+  // The CEO's pipeline lists and profiles, reused (src/screens/ceo, useRecordsPortal): the API keeps
+  // them to the Manager's own reporting tree, masks phone numbers and leaves out every rupee.
+  { id: 'JobSeekers', path: 'job-seekers', title: 'screen.JobSeekers' },
+  { id: 'C-JobSeeker', path: 'job-seekers/:id', title: 'screen.C-JobSeeker' },
+  { id: 'C-Referrals', path: 'referrals', title: 'screen.C-Referrals' },
+  { id: 'C-Partner', path: 'referrals/:id', title: 'screen.C-Partner' },
+  { id: 'C-Businesses', path: 'businesses', title: 'screen.C-Businesses' },
+  { id: 'C-Business', path: 'businesses/:id', title: 'screen.C-Business' },
+  { id: 'C-Vacancies', path: 'vacancies', title: 'screen.C-Vacancies' },
+  { id: 'C-Vacancy', path: 'vacancies/:id', title: 'screen.C-Vacancy' },
+  { id: 'C-Interviews', path: 'interviews', title: 'screen.C-Interviews' },
+  { id: 'C-Placements', path: 'placements', title: 'screen.C-Placements' },
+  { id: 'C-Placement', path: 'placements/:id', title: 'screen.C-Placement' },
   // Customer app (proposal 4.4): app sign-ups as counts (no names, no money).
   { id: 'MG-AppSignups', path: 'app-signups', title: 'screen.MG-AppSignups' },
   { id: 'MG-CallCenter', path: 'call-center', title: 'screen.MG-CallCenter' },

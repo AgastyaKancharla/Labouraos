@@ -10,7 +10,8 @@ import { api } from '../../../lib/api/client';
 import { formatDateIST } from '../../../lib/format/date';
 import { formatINR } from '../../../lib/format/money';
 import { formatMobile } from '../../../lib/format/phone';
-import { useScreenPath } from '../../../portals/PortalContext';
+import type { ReactNode } from 'react';
+import { useRecordsPortal } from '../_kit/records';
 import { ActionButton } from '../_kit/actions';
 import { useAuth } from '../../../auth/AuthProvider';
 import { BanButton, LegalAcceptanceCard } from '../_kit/legal';
@@ -32,16 +33,17 @@ interface Detail {
   registeredBy: string | null;
   terms: { granted: boolean; at: string | null } | null;
   identity: { status: string; method: string; nameMatches: boolean | null } | null;
-  payoutAccount: { method: string; masked: string; status: string; nameMatches: boolean | null; activeFrom: string; cooling: boolean } | null;
-  counts: { referred: number; registered: number; joined: number; earnedPaise: number; duePaise: number; payoutPaise: number };
-  payouts: { id: string; code: string; at: string; placement: { id: string; code: string; name: string } | null; amountPaise: number; status: string; paidAt: string | null }[];
+  /** Money (payout account, earnings, payouts) is the CEO's only: a Manager's answer leaves it out. */
+  payoutAccount?: { method: string; masked: string; status: string; nameMatches: boolean | null; activeFrom: string; cooling: boolean } | null;
+  counts: { referred: number; registered: number; joined: number; earnedPaise?: number; duePaise?: number; payoutPaise?: number };
+  payouts?: { id: string; code: string; at: string; placement: { id: string; code: string; name: string } | null; amountPaise: number; status: string; paidAt: string | null }[];
   referred: { id: string; code: string; name: string; status: string; guaranteeDay: number | null; placement: { id: string; code: string; joinedDate: string | null } | null }[];
 }
 
 export default function PartnerDetail() {
   const { id = '' } = useParams();
-  const to = useScreenPath();
-  const query = useQuery({ queryKey: ['ceo', 'partner', id], queryFn: () => api.get<Detail>(`/ceo/referrals/${id}`) });
+  const { api: base, ceo, to } = useRecordsPortal();
+  const query = useQuery({ queryKey: [base, 'partner', id], queryFn: () => api.get<Detail>(`${base}/referrals/${id}`) });
   const d = query.data;
   const role = useAuth().session?.staff.role;
   const back = { to: to('C-Referrals'), label: 'Referrals' };
@@ -59,14 +61,20 @@ export default function PartnerDetail() {
         <ErrorState error={query.error} onRetry={() => void query.refetch()} />
       </div>
     );
-  const owed = d.payouts.filter((p) => p.status === 'pending');
+  // A Manager's answer has no payouts or payout account (no money for Managers).
+  const payouts = d.payouts ?? [];
+  const owed = payouts.filter((p) => p.status === 'pending');
   const c = d.counts;
   return (
     <div className="lb-page">
       <TopBar icon="referrals" iconTone="orange"
         back={back}
         title={`${d.name} · ${d.code}`}
-        subtitle={`${c.referred} referred · ${c.registered} registered · ${c.joined} joined · ${formatINR(c.earnedPaise)} earned · ${formatINR(c.duePaise)} due.`}
+        subtitle={
+          ceo
+            ? `${c.referred} referred · ${c.registered} registered · ${c.joined} joined · ${formatINR(c.earnedPaise ?? 0)} earned · ${formatINR(c.duePaise ?? 0)} due.`
+            : `${c.referred} referred · ${c.registered} registered · ${c.joined} joined.`
+        }
         titleBadge={
           <>
             {d.paused ? <StatusPill tone="danger">Paused</StatusPill> : null}
@@ -96,17 +104,19 @@ export default function PartnerDetail() {
               success={`${d.name} is paused`}
             />
           )}
-          <ActionButton
-            label="Release due payouts"
-            variant="primary"
-            title={`Approve ${owed.length} payout${owed.length === 1 ? '' : 's'}`}
-            description={`${formatINR(owed.reduce((s, p) => s + p.amountPaise, 0))} to ${d.name}. Finance pays them today (after any 48-hour wait for changed UPI details) and records the UTR.`}
-            disabled={owed.length === 0}
-            run={async () => {
-              for (const p of owed) await api.post(`/payments/${p.id}/approve`);
-            }}
-            success="Payouts approved — Finance pays them today"
-          />
+          {ceo && (
+            <ActionButton
+              label="Release due payouts"
+              variant="primary"
+              title={`Approve ${owed.length} payout${owed.length === 1 ? '' : 's'}`}
+              description={`${formatINR(owed.reduce((s, p) => s + p.amountPaise, 0))} to ${d.name}. Finance pays them today (after any 48-hour wait for changed UPI details) and records the UTR.`}
+              disabled={owed.length === 0}
+              run={async () => {
+                for (const p of owed) await api.post(`/payments/${p.id}/approve`);
+              }}
+              success="Payouts approved — Finance pays them today"
+            />
+          )}
           </>
         }
       />
@@ -135,7 +145,7 @@ export default function PartnerDetail() {
                   <StatusPill tone="muted">Not done</StatusPill>
                 ),
               ],
-              [
+              ...(ceo ? ([[
                 'UPI',
                 d.payoutAccount ? (
                   <StatusPill tone={d.payoutAccount.status === 'verified' && d.payoutAccount.nameMatches !== false ? 'good' : 'warn'}>
@@ -144,11 +154,11 @@ export default function PartnerDetail() {
                 ) : (
                   <StatusPill tone="muted">Not given yet</StatusPill>
                 ),
-              ],
+              ]] as [string, ReactNode][]) : []),
             ]}
           />
         </Card>
-        <Card icon="payouts" tone="good" title="Payouts" flush>
+        {ceo && <Card icon="payouts" tone="good" title="Payouts" flush>
           <div className="scrollx">
             <table>
               <caption className="sr-only">Payouts</caption>
@@ -161,7 +171,7 @@ export default function PartnerDetail() {
                 </tr>
               </thead>
               <tbody>
-                {d.payouts.map((p) => (
+                {payouts.map((p) => (
                   <tr key={p.id}>
                     <td>{formatDateIST(p.at)}</td>
                     <td>{p.placement ? <Link to={to('C-Placement', { id: p.placement.id })}>{`${p.placement.code} · ${p.placement.name} joined`}</Link> : '—'}</td>
@@ -171,17 +181,17 @@ export default function PartnerDetail() {
                     </td>
                   </tr>
                 ))}
-                {d.payouts.length === 0 && (
+                {payouts.length === 0 && (
                   <tr>
                     <td colSpan={4} className="ceo-sub">
-                      No payouts yet — {formatINR(c.payoutPaise)} is queued when a referred person joins.
+                      No payouts yet — {formatINR(c.payoutPaise ?? 0)} is queued when a referred person joins.
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
-        </Card>
+        </Card>}
       </div>
       <Card icon="jobSeekers" tone="cyan" title={`People ${d.name.split(' ')[0]} referred (${d.referred.length})`} flush>
         <div className="scrollx">
@@ -199,7 +209,9 @@ export default function PartnerDetail() {
               {d.referred.map((j) => (
                 <tr key={j.id}>
                   <td className="code">{j.code}</td>
-                  <td>{j.name}</td>
+                  <td>
+                    <Link to={to('C-JobSeeker', { id: j.id })}>{j.name}</Link>
+                  </td>
                   <td>
                     {j.placement?.joinedDate ? (
                       <StatusPill tone="good">{`Joined ${formatDateIST(j.placement.joinedDate)}`}</StatusPill>
