@@ -6,7 +6,7 @@ import { RBAC_MATRIX, Role } from '../rbac/rbac.types';
 import { mobileLookupValues, phoneLast4, requireIndianMobile } from '../phone/indian-mobile';
 import { OTP_PROVIDER, OtpProvider, OtpSendOptions, OtpSendResult } from './otp.interface';
 import { publicPageOtpPurpose } from './public-page-otp';
-import { assertFullNumberSearchAllowed, recordFullNumberSearch } from '../phone/full-number-search';
+import { lookupAsFullNumberSearch } from '../phone/full-number-search';
 
 export const OTP_PURPOSES = [
   'job_seeker',
@@ -62,10 +62,13 @@ export class OtpService {
       // number is ours, so it counts as a full-number search (audited, 30 an
       // hour). At the limit every fresh send is refused, so a number that is ours
       // and one that is not get the same answer.
-      await assertFullNumberSearchAllowed(this.prisma, staffId);
-      const duplicate = await this.findDuplicate(phone);
+      // L1-R1: the limit check, the lookup and the record run under one per-staff lock, so a
+      // burst of parallel sends cannot tell a number that is ours from one that is not.
+      const duplicate = await lookupAsFullNumberSearch(
+        this.prisma, this.auditService, { id: staffId, role: actorRole }, 'otp_send', phone,
+        (client) => this.findDuplicate(phone, client),
+      );
       if (duplicate) {
-        await recordFullNumberSearch(this.prisma, this.auditService, { id: staffId, role: actorRole }, 'otp_send', phone);
         const visible = await this.canSeeRecord(duplicate, staffId, actorRole);
         const response = visible
           ? { alreadyRegistered: true as const, type: duplicate.type, code: duplicate.code }
@@ -198,16 +201,19 @@ export class OtpService {
     return this.provider;
   }
 
-  private async findDuplicate(phone: string) {
+  private async findDuplicate(
+    phone: string,
+    client: Pick<PrismaService, 'jobSeeker' | 'business' | 'businessBranch' | 'referral'> = this.prisma,
+  ) {
     const variants = mobileLookupValues(phone);
-    const seeker = await this.prisma.jobSeeker.findFirst({
+    const seeker = await client.jobSeeker.findFirst({
       where: { phone: { in: variants } },
       select: { id: true, code: true, registeredByStaffId: true },
     });
     if (seeker) {
       return { ...seeker, type: 'job_seeker', resource: 'job_seeker' as const, ownerStaffIds: [seeker.registeredByStaffId], teamOwnerIds: [seeker.registeredByStaffId] };
     }
-    const business = await this.prisma.business.findFirst({
+    const business = await client.business.findFirst({
       where: { OR: [
         { phone: { in: variants } },
         { additionalContactPhone: { in: variants } },
@@ -223,7 +229,7 @@ export class OtpService {
         teamOwnerIds: businessOwners(business),
       };
     }
-    const branch = await this.prisma.businessBranch.findFirst({
+    const branch = await client.businessBranch.findFirst({
       where: { contactPersonPhone: { in: variants } },
       select: { business: { select: { id: true, code: true, accountAgentId: true, leadCreatedByStaffId: true } } },
     });
@@ -236,7 +242,7 @@ export class OtpService {
         teamOwnerIds: businessOwners(branch.business),
       };
     }
-    const referral = await this.prisma.referral.findFirst({
+    const referral = await client.referral.findFirst({
       where: { phone: { in: variants } },
       select: { id: true, code: true },
     });

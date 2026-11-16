@@ -6,6 +6,7 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { verifiedOtpFor } from '../../test-support/verified-otp';
+import { OtpService } from '../otp/otp.service';
 import { FULL_NUMBER_SEARCH_ACTION, FULL_NUMBER_SEARCHES_PER_HOUR, recordFullNumberSearch } from './full-number-search';
 
 /**
@@ -39,7 +40,7 @@ describe('Security L1/L2: "Already registered" answers count as full-number sear
     app = moduleRef.createNestApplication();
     await app.init();
     prisma = app.get(PrismaService);
-    for (let i = 0; i < 4; i += 1) {
+    for (let i = 0; i < 5; i += 1) {
       const s = await prisma.staff.create({ data: { code: `L1M-${suffix}-${i}`, name: `L1 Manager ${i}`, email: `l1_${suffix}_${i}@laboura.local`, passwordHash: 'h', role: 'manager', city: 'Bengaluru' } });
       staff.push({ id: s.id, token: await app.get(JwtService).signAsync({ sub: s.id, role: 'manager', email: s.email, code: s.code }) });
     }
@@ -106,5 +107,37 @@ describe('Security L1/L2: "Already registered" answers count as full-number sear
     expect(refused).toHaveLength(5);
     for (const r of refused) expect(r.reason.getStatus?.()).toBe(429);
     expect(await searches(m.id)).toBe(FULL_NUMBER_SEARCHES_PER_HOUR);
+  });
+
+  it('L1-R1: sends that start while a hit is being looked up wait for it, so once the limit is reached a miss is refused like a hit', async () => {
+    const m = staff[4];
+    await useUp(m.id, FULL_NUMBER_SEARCHES_PER_HOUR - 1);
+    const otp = app.get(OtpService);
+    const target = otp as unknown as { findDuplicate: (phone: string, client?: unknown) => Promise<unknown> };
+    const real = target.findDuplicate.bind(otp);
+    let releaseHit: () => void = () => undefined;
+    const hitGate = new Promise<void>((resolve) => { releaseHit = resolve; });
+    let hitStarted: () => void = () => undefined;
+    const hitLookupStarted = new Promise<void>((resolve) => { hitStarted = resolve; });
+    const spy = jest.spyOn(target, 'findDuplicate').mockImplementation(async (phone: string, client?: unknown) => {
+      if (phone === phones.seeker) {
+        hitStarted();
+        await hitGate;
+      }
+      return real(phone, client);
+    });
+    try {
+      const hit = otp.sendOtp(phones.seeker, 'job_seeker', m.id, 'manager');
+      await hitLookupStarted;
+      // Misses sent while the hit is still being looked up (the last search of the hour).
+      const misses = [1, 2, 3].map((i) => otp.sendOtp(`+9191${d}10${i}`, 'job_seeker', m.id, 'manager').then(() => 201, (e: { getStatus?: () => number }) => e.getStatus?.() ?? 500));
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      releaseHit();
+      await expect(hit).resolves.toMatchObject({ alreadyRegistered: true });
+      expect(await Promise.all(misses)).toEqual([429, 429, 429]);
+      expect(await searches(m.id)).toBe(FULL_NUMBER_SEARCHES_PER_HOUR);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

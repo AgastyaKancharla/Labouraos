@@ -74,3 +74,44 @@ export async function recordFullNumberSearch(
     );
   });
 }
+
+/**
+ * Security L1-R1: a lookup whose answer reveals whether a full number is ours
+ * ("Already registered"). Under the per-staff lock: refused with 429 at the
+ * limit (hit or not), then the lookup, then (only when it finds a record) the
+ * audit row, in the same transaction. Parallel requests are serialised, so a
+ * burst cannot slip lookups past the limit and read hits from misses.
+ * `lookup` gets the transaction and must read through it.
+ */
+export async function lookupAsFullNumberSearch<T>(
+  prisma: PrismaService,
+  audit: AuditService,
+  actor: { id: string; role?: string },
+  screen: string,
+  phone: string,
+  lookup: (client: Prisma.TransactionClient) => Promise<T | null>,
+  now: Date = new Date(),
+): Promise<T | null> {
+  const prepared = await audit.prepare();
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`full-number-search:${actor.id}`}))`);
+    if ((await recentCount(tx, actor.id, now)) >= FULL_NUMBER_SEARCHES_PER_HOUR) throw tooMany();
+    const found = await lookup(tx);
+    if (found) {
+      await audit.log(
+        {
+          actorId: actor.id,
+          action: FULL_NUMBER_SEARCH_ACTION,
+          entityType: 'search',
+          entityCode: screen,
+          after: { phoneLast4: phoneLast4(phone), screen, role: actor.role ?? null },
+          changedFields: [],
+          city: 'Bengaluru',
+        },
+        tx,
+        prepared,
+      );
+    }
+    return found;
+  });
+}
