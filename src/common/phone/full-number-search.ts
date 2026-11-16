@@ -53,6 +53,9 @@ export async function recordFullNumberSearch(
   phone: string,
   now: Date = new Date(),
 ): Promise<void> {
+  // The audit code and device read through the pool: worked out before the transaction, so
+  // requests waiting on the lock never hold a connection while needing another.
+  const prepared = await audit.prepare();
   await prisma.$transaction(async (tx) => {
     await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`full-number-search:${actor.id}`}))`);
     if ((await recentCount(tx, actor.id, now)) >= FULL_NUMBER_SEARCHES_PER_HOUR) throw tooMany();
@@ -67,6 +70,7 @@ export async function recordFullNumberSearch(
         city: 'Bengaluru',
       },
       tx,
+      prepared,
     );
   });
 }

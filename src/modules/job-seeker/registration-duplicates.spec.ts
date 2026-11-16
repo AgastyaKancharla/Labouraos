@@ -2,6 +2,13 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import { JobSeekerService } from './job-seeker.service';
 import { ReferralService } from '../referral/referral.service';
 import { CreateJobSeekerDto } from './dto/create-job-seeker.dto';
+import { recordFullNumberSearch } from '../../common/phone/full-number-search';
+
+// Security L1: the 409 is also counted as a full-number search (covered in security-l1-l2-full-number.spec.ts).
+jest.mock('../../common/phone/full-number-search', () => ({
+  ...jest.requireActual('../../common/phone/full-number-search'),
+  recordFullNumberSearch: jest.fn().mockResolvedValue(undefined),
+}));
 
 /**
  * Guide (Forms): "a number already registered shows 'Already registered —
@@ -62,6 +69,7 @@ describe('Duplicate registrations name the existing record', () => {
       message: expect.stringContaining('Already registered — open it'),
     });
     expect(otp.consumeVerified).not.toHaveBeenCalled();
+    expect(recordFullNumberSearch).toHaveBeenCalledWith(expect.anything(), expect.anything(), { id: 'staff-1' }, 'job_seeker_create', '+919845012345');
   });
 
   it('answers a second referral partner with the same number with existingReferralCode', async () => {
