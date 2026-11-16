@@ -231,11 +231,17 @@ export class ScreensFieldService {
     const interviews = interviewIds.length
       ? await this.prisma.interview.findMany({
           where: { id: { in: interviewIds } },
-          select: { id: true, slotStartsAt: true, candidateArrivedAt: true, jobSeeker: { select: { name: true } } },
+          select: { id: true, slotStartsAt: true, candidateArrivedAt: true, result: true, jobSeeker: { select: { name: true } } },
         })
       : [];
     const byInterview = new Map(interviews.map((i) => [i.id, i]));
-    const planned = assignments.map((a) => {
+    // Rev 192 fix S4: an interview whose attendance is recorded ("candidate arrived" or
+    // "didn't come") is done, not planned; it shows in Today's work as interview_attended.
+    const attendanceRecorded = (interviewId: string | null) => {
+      const interview = interviewId ? byInterview.get(interviewId) : undefined;
+      return Boolean(interview && (interview.candidateArrivedAt || interview.result === 'candidate_no_show'));
+    };
+    const planned = assignments.filter((a) => !(a.relatedType === 'interview' && attendanceRecorded(a.relatedId))).map((a) => {
       const interview = a.relatedId ? byInterview.get(a.relatedId) : undefined;
       return {
         assignmentId: a.id,

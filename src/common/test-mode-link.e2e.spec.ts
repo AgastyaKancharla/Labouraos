@@ -167,6 +167,8 @@ describe('Test-mode links on the routes that send a link by SMS', () => {
     });
 
     it.each(cases)('%s: the agreement and payout-details answers carry no link', async (_name, env) => {
+      // Rev 192 S2: every agreement link shares one per-business limit; earlier links in this suite are aged out of it.
+      await prisma.publicLink.updateMany({ where: { purpose: 'business_agreement', subjectId: ids.business }, data: { createdAt: new Date(Date.now() - 25 * 3600 * 1000) } });
       const agreement = await withEnv(env, () => request(server()).post(`/businesses/${ids.business}/agreement-links`).set(asCeo()).send({ language: 'en' }).expect(201));
       expect(agreement.body.token).toBeUndefined();
       expect(agreement.body.testModeLink).toBeUndefined();

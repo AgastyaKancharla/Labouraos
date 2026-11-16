@@ -228,6 +228,7 @@ describe('Laboura Field redesign: Today, Today\'s work, businesses, agreement, j
     await prisma.target.deleteMany({ where: { staffId: { in: staffIds } } });
     await prisma.businessVisit.deleteMany({ where: { staffId: { in: staffIds } } });
     await prisma.businessAgreement.deleteMany({ where: { businessId: { in: businessIds } } });
+    await prisma.visitAssignment.deleteMany({ where: { businessId: { in: businessIds } } });
     await prisma.messageLog.deleteMany({ where: { subjectId: { in: businessIds } } });
     await prisma.business.deleteMany({ where: { id: { in: businessIds } } });
     await prisma.auditLog.deleteMany({ where: { actorId: { in: staffIds } } });
@@ -436,11 +437,29 @@ describe('Laboura Field redesign: Today, Today\'s work, businesses, agreement, j
     expect(await prisma.publicLink.count({ where: { subjectId: other.id, revokedAt: null } })).toBe(0);
     await post(agent, `/field-work/businesses/${other.id}/agreement-link`).expect(201);
 
-    // The office route still issues links and now says whether the SMS went.
+    // S2 (rev 192): the office route (the business form's first link) shares the same counter:
+    // a link was just sent from Resend, so it is refused too.
+    const tooSoon = await post(agent, `/businesses/${other.id}/agreement-links`, { language: 'en' }).expect(429);
+    expect(tooSoon.body).toMatchObject({ code: 'AGREEMENT_RESEND_TOO_SOON', retryAt: expect.any(String) });
+    // A minute later it issues the link and says whether the SMS went.
+    await prisma.publicLink.updateMany({ where: { subjectId: other.id }, data: { createdAt: new Date(Date.now() - 2 * MIN) } });
     const office = await post(agent, `/businesses/${other.id}/agreement-links`, { language: 'en' }).expect(201);
     expect(office.body).toMatchObject({ success: true, smsSent: true });
     expect(office.body.token).toBeUndefined();
     expect(office.body.linkId).toBeUndefined();
+    // ...and it counts: Resend right after is refused.
+    expect((await post(agent, `/field-work/businesses/${other.id}/agreement-link`).expect(429)).body.code).toBe('AGREEMENT_RESEND_TOO_SOON');
+    // Five links in 24 hours, whichever route sent them: the office route is refused as well.
+    await prisma.publicLink.updateMany({ where: { subjectId: other.id }, data: { createdAt: new Date(Date.now() - 2 * MIN) } });
+    for (let h = 2; h <= 4; h += 1) await makeLink(other.id, 'business_agreement', new Date(Date.now() - h * HOUR), new Date(Date.now() + HOUR));
+    expect((await post(agent, `/businesses/${other.id}/agreement-links`, { language: 'en' }).expect(429)).body.code).toBe('AGREEMENT_RESEND_LIMIT');
+    // A failed SMS on the office route is withdrawn too, so it never uses up the limit.
+    const third = await makeBusiness(agent, { name: 'Office SMS Fail Shop', createdAt: new Date() });
+    const officeSpy = jest.spyOn(messaging, 'send').mockResolvedValueOnce({ status: 'failed' } as Awaited<ReturnType<MessagingService['send']>>);
+    expect((await post(agent, `/businesses/${third.id}/agreement-links`, { language: 'en' }).expect(201)).body).toMatchObject({ smsSent: false });
+    officeSpy.mockRestore();
+    expect(await prisma.publicLink.count({ where: { subjectId: third.id, revokedAt: null } })).toBe(0);
+    await post(agent, `/businesses/${third.id}/agreement-links`, { language: 'en' }).expect(201);
 
     // Signed (current version): no resend.
     await signAgreement(shop.id, '1.1');
@@ -504,5 +523,41 @@ describe('Laboura Field redesign: Today, Today\'s work, businesses, agreement, j
       replacementWindowDays: expect.any(Number), noBypassMonths: expect.any(Number), noBypassPenaltyPercent: expect.any(Number),
       jobSeekerGuaranteeDays: expect.any(Number),
     });
+  });
+  it('S4 (rev 192): a planned interview leaves Planned today once its attendance is recorded (arrived or didn\'t come)', async () => {
+    const shop = await makeBusiness(agent, { name: 'Interview Day Hotel' });
+    const vacancy = await makeVacancy(shop.id, agent);
+    const plan = async (seekerName: string) => {
+      const seeker = await makeSeeker(agent, { name: seekerName });
+      const interview = await makeInterview(vacancy.id, shop.id, seeker.id, agent);
+      const assignment = await prisma.visitAssignment.create({
+        data: { businessId: shop.id, purpose: 'interview_attendance', relatedType: 'interview', relatedId: interview.id, assignedStaffId: agent.id, status: 'assigned' },
+      });
+      return { interview, assignment };
+    };
+    const waiting = await plan('Waiting Kumar');
+    const arrives = await plan('Arrives Kumar');
+    const noShow = await plan('Absent Kumar');
+    const plannedIds = async () =>
+      ((await get(agent, '/field-work/visits').expect(200)).body.planned as Array<{ assignmentId: string }>).map((p) => p.assignmentId);
+    expect(await plannedIds()).toEqual(expect.arrayContaining([waiting.assignment.id, arrives.assignment.id, noShow.assignment.id]));
+
+    // "Candidate arrived" saved; "didn't come" saved.
+    await prisma.interview.update({ where: { id: arrives.interview.id }, data: { candidateArrivedAt: NOON, candidateArrivedByStaffId: agent.id } });
+    await prisma.interview.update({
+      where: { id: noShow.interview.id },
+      data: { status: 'no_show', result: 'candidate_no_show', resultRecordedAt: NOON, resultRecordedByStaffId: agent.id },
+    });
+    const after = await plannedIds();
+    expect(after).toContain(waiting.assignment.id);
+    expect(after).not.toContain(arrives.assignment.id);
+    expect(after).not.toContain(noShow.assignment.id);
+    // Both now show as done in Today's work.
+    const day = (await get(agent, '/field-work/day').expect(200)).body;
+    const attended = (day.items as Array<{ type: string; id: string; status: string }>).filter((i) => i.type === 'interview_attended');
+    expect(attended).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: `interview_attended:${arrives.interview.id}`, status: 'arrived' }),
+      expect.objectContaining({ id: `interview_attended:${noShow.interview.id}`, status: 'no_show' }),
+    ]));
   });
 });

@@ -1,9 +1,11 @@
 import {
   BadRequestException,
+  HttpStatus,
   Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { codedError } from '../../common/http/coded-error';
 import { createHash } from 'crypto';
 import { PublicLinkPurpose } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -29,6 +31,31 @@ import { BusinessVerificationService } from '../business/business-verification.s
 import { publicPageLink, PublicPage } from '../../common/public-pages';
 import { PublicOtpLimiter } from '../../common/public-otp-limiter.service';
 import { testModeFields } from '../../common/otp/otp-test-mode';
+
+/**
+ * Agreement links sent to a business owner by SMS (rev 188; rev 192 fix S2): at most one a
+ * minute and five in 24 hours per business, on every path that sends one (the business form's
+ * first link, the office, "Resend agreement link" in Laboura Field). One counter: the
+ * business's live (not withdrawn) agreement links created in the last 24 hours.
+ */
+export const AGREEMENT_LINK_MIN_GAP_MS = 60 * 1000;
+export const AGREEMENT_LINK_MAX_PER_DAY = 5;
+export const AGREEMENT_LINK_WINDOW_MS = 24 * 3600 * 1000;
+
+export type AgreementLinkWindow = { allowedNow: boolean; retryAt: Date | null; limit: 'gap' | 'day' | null };
+
+/** Whether another agreement link may be sent now, from the links of the last 24 hours (newest first). */
+export function agreementLinkWindow(recentLinks: Date[], now: Date): AgreementLinkWindow {
+  const latest = recentLinks[0];
+  if (latest && now.getTime() - latest.getTime() < AGREEMENT_LINK_MIN_GAP_MS) {
+    return { allowedNow: false, retryAt: new Date(latest.getTime() + AGREEMENT_LINK_MIN_GAP_MS), limit: 'gap' };
+  }
+  if (recentLinks.length >= AGREEMENT_LINK_MAX_PER_DAY) {
+    const oldest = recentLinks[AGREEMENT_LINK_MAX_PER_DAY - 1];
+    return { allowedNow: false, retryAt: new Date(oldest.getTime() + AGREEMENT_LINK_WINDOW_MS), limit: 'day' };
+  }
+  return { allowedNow: true, retryAt: null, limit: null };
+}
 
 interface ConsentLinkTokenBase {
   token: string;
@@ -311,6 +338,8 @@ export class ConsentLinkService {
     const termsHtml = rendered.html;
     const termsHash = rendered.hash;
     const now = this.clock.now();
+    const sendsSms = options.sms !== false;
+    if (sendsSms) await this.assertAgreementLinkAllowed(business.id, now);
     const expiresAt = new Date(now.getTime() + this.ttlMs);
     const { token, id: linkId } = await this.publicLinks.create({
       purpose: 'business_agreement', subjectType: 'business', subjectId: business.id,
@@ -327,14 +356,50 @@ export class ConsentLinkService {
     });
 
     // Rev 188: the answer says whether the SMS went, so no screen has to swallow a failure.
-    const sms = options.sms === false ? null : await this.messagingService.send({
+    const sms = !sendsSms ? null : await this.messagingService.send({
       channel: 'sms',
       template: 'agreement_link',
       subjectType: 'business',
       subjectId: business.id,
       variables: { token, link: publicPageLink('businessAgreement', token) },
     });
-    return { success: true, token, expiresAt, linkId, smsSent: sms ? sms.status === 'sent' : null };
+    const smsSent = sms ? sms.status === 'sent' : null;
+    if (smsSent === false) {
+      // Nothing reached the owner (staff never get the token): the link is withdrawn, so it
+      // never counts towards the limit and the previous link stays the live one.
+      await this.prisma.publicLink.updateMany({ where: { id: linkId, usedAt: null }, data: { revokedAt: now } });
+    }
+    return { success: true, token, expiresAt, linkId, smsSent };
+  }
+
+  /** The business's agreement links that count towards the limit (newest first). */
+  async recentAgreementLinks(businessId: string, now: Date): Promise<Date[]> {
+    const rows = await this.prisma.publicLink.findMany({
+      where: {
+        purpose: 'business_agreement',
+        subjectType: 'business',
+        subjectId: businessId,
+        revokedAt: null,
+        createdAt: { gt: new Date(now.getTime() - AGREEMENT_LINK_WINDOW_MS) },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    });
+    return rows.map((r) => r.createdAt);
+  }
+
+  /** Rev 192 fix S2: the shared per-business limit, checked before any agreement link is sent by SMS. */
+  async assertAgreementLinkAllowed(businessId: string, now: Date = this.clock.now()): Promise<void> {
+    const window = agreementLinkWindow(await this.recentAgreementLinks(businessId, now), now);
+    if (window.allowedNow) return;
+    throw codedError(
+      HttpStatus.TOO_MANY_REQUESTS,
+      window.limit === 'gap' ? 'AGREEMENT_RESEND_TOO_SOON' : 'AGREEMENT_RESEND_LIMIT',
+      window.limit === 'gap'
+        ? 'A link was just sent. Wait a minute before sending another.'
+        : `At most ${AGREEMENT_LINK_MAX_PER_DAY} agreement links a day for one business.`,
+      { retryAt: window.retryAt?.toISOString() ?? null },
+    );
   }
 
   async createReferralTermsLink(referralId: string, staffId: string | null, language: string = 'en', options: { sms?: boolean; issuedTo?: string; revokeOthers?: boolean } = {}) {

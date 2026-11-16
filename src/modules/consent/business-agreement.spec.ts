@@ -229,6 +229,8 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
   });
 
   it('refuses an OTP from any phone other than the business owner and exposes no staff signing route', async () => {
+    // Rev 192 S2: every agreement link shares one per-business limit; earlier links in this suite are aged out of it.
+    await prisma.publicLink.updateMany({ where: { purpose: 'business_agreement', subjectId: businessId }, data: { createdAt: new Date(clock.now().getTime() - 25 * 3600 * 1000) } });
     const { token: linkToken } = await withIssuedLinkToken(app, () => request(app.getHttpServer())
       .post(`/businesses/${businessId}/agreement-links`)
       .set('Authorization', `Bearer ${agentToken}`)
@@ -257,6 +259,8 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
   });
 
   it('refuses an expired agreement link', async () => {
+    // Rev 192 S2: every agreement link shares one per-business limit; earlier links in this suite are aged out of it.
+    await prisma.publicLink.updateMany({ where: { purpose: 'business_agreement', subjectId: businessId }, data: { createdAt: new Date(clock.now().getTime() - 25 * 3600 * 1000) } });
     const service = app.get(ConsentLinkService);
     service.setTtlMs(1);
     const { token: linkToken } = await withIssuedLinkToken(app, () => request(app.getHttpServer())

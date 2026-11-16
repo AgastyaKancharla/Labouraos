@@ -9,7 +9,13 @@ import { AgentViewer, agentViewerFor, fieldAgentCanAct } from '../business/busin
 import { businessCandidateAccess, isBusinessSuspended } from '../business/business-candidate-access';
 import { isVerificationVisitPurpose } from '../business/business.constants';
 import { AttendanceService } from '../attendance/attendance.service';
-import { ConsentLinkService } from '../consent/consent-link.service';
+import {
+  AGREEMENT_LINK_MAX_PER_DAY,
+  AGREEMENT_LINK_MIN_GAP_MS,
+  agreementLinkWindow,
+  AgreementLinkWindow,
+  ConsentLinkService,
+} from '../consent/consent-link.service';
 import { LEGAL_DOCUMENT_VERSIONS } from '../legal/legal-documents';
 import { FieldAgentMetricsService } from '../target/field-agent-metrics.service';
 import { VacancyConfirmationService } from '../vacancy/vacancy-confirmation.service';
@@ -19,9 +25,9 @@ import { visitNextStep } from '../field-visit/field-visit.service';
 
 type Actor = { sub: string; role: string };
 
-/** Rev 188 agreement resend: one link a minute and five a day per business. */
-export const AGREEMENT_RESEND_MIN_GAP_MS = 60 * 1000;
-export const AGREEMENT_RESEND_MAX_PER_DAY = 5;
+/** Rev 188 agreement resend: one link a minute and five a day per business (the shared counter, S2). */
+export const AGREEMENT_RESEND_MIN_GAP_MS = AGREEMENT_LINK_MIN_GAP_MS;
+export const AGREEMENT_RESEND_MAX_PER_DAY = AGREEMENT_LINK_MAX_PER_DAY;
 /** Today's work: how far back the date picker may go. */
 export const DAY_MAX_DAYS_BACK = 90;
 /** Needs you now: unfinished visits from this many days back. */
@@ -986,23 +992,12 @@ export class FieldRedesignService {
         signedAt: agreement.signedAt?.toISOString() ?? null,
       });
     }
-    const resend = this.resendWindow(agreement, now);
-    if (!resend.allowedNow) {
-      throw codedError(
-        HttpStatus.TOO_MANY_REQUESTS,
-        resend.limit === 'gap' ? 'AGREEMENT_RESEND_TOO_SOON' : 'AGREEMENT_RESEND_LIMIT',
-        resend.limit === 'gap'
-          ? 'A link was just sent. Wait a minute before sending another.'
-          : `At most ${AGREEMENT_RESEND_MAX_PER_DAY} agreement links a day for one business.`,
-        { retryAt: resend.retryAt?.toISOString() ?? null },
-      );
-    }
     const requested = (body?.language ?? '').trim();
     const language = requested || (['kn', 'en', 'hi'].includes(business.contactLanguage ?? '') ? business.contactLanguage! : 'en');
+    // The one-a-minute / five-a-day limit is checked inside createAgreementLink (shared by
+    // every path that sends a link, S2); a link whose SMS failed is withdrawn there.
     const issued = await this.consentLinks.createAgreementLink(business.id, actor.sub, language);
     if (issued.smsSent === false) {
-      // Nothing reached the owner: this link is withdrawn (it never counts towards the limit).
-      await this.prisma.publicLink.updateMany({ where: { id: issued.linkId, usedAt: null }, data: { revokedAt: now } });
       throw codedError(HttpStatus.BAD_GATEWAY, 'AGREEMENT_SMS_FAILED', 'The SMS could not be sent. Try again in a moment.');
     }
     await this.audit.log({
@@ -1027,16 +1022,8 @@ export class FieldRedesignService {
     return agreement.state === 'signed' && agreement.signedVersion === LEGAL_DOCUMENT_VERSIONS.business_agreement;
   }
 
-  private resendWindow(agreement: AgreementInfo, now: Date): { allowedNow: boolean; retryAt: Date | null; limit: 'gap' | 'day' | null } {
-    const latest = agreement.recentLinks[0];
-    if (latest && now.getTime() - latest.getTime() < AGREEMENT_RESEND_MIN_GAP_MS) {
-      return { allowedNow: false, retryAt: new Date(latest.getTime() + AGREEMENT_RESEND_MIN_GAP_MS), limit: 'gap' };
-    }
-    if (agreement.recentLinks.length >= AGREEMENT_RESEND_MAX_PER_DAY) {
-      const oldest = agreement.recentLinks[AGREEMENT_RESEND_MAX_PER_DAY - 1];
-      return { allowedNow: false, retryAt: new Date(oldest.getTime() + DAY_MS), limit: 'day' };
-    }
-    return { allowedNow: true, retryAt: null, limit: null };
+  private resendWindow(agreement: AgreementInfo, now: Date): AgreementLinkWindow {
+    return agreementLinkWindow(agreement.recentLinks, now);
   }
 
   /** The signed agreement (latest) and the latest live link for each business. */
