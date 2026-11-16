@@ -6,6 +6,7 @@ import { usePortalNotifications, type NotificationItem } from '../portals/notifi
 import { usePortal } from '../portals/PortalContext';
 import { useFamily } from './family';
 import { NotificationBell } from './NotificationBell';
+import { usePhoneLayout } from '../lib/usePhoneLayout';
 import { PeriodPicker } from './PeriodPicker';
 import { SearchBox } from './SearchBox';
 import { StatusMenu } from '../attendance/StatusMenu';
@@ -61,6 +62,8 @@ export function TopBar({
   const portalNotifications = usePortalNotifications(portal.key);
   const bell = notifications ?? portalNotifications;
   const notificationsScreen = portal.screens.find((s) => s.path === 'notifications');
+  // On a phone the bell sits in the blue LABOURA bar instead (decided 16 Nov).
+  const phone = usePhoneLayout();
 
   useEffect(() => {
     document.title = `${title} · ${t('app.name')}`;
@@ -87,7 +90,7 @@ export function TopBar({
           {showSearch && <SearchBox />}
           {/* Team Lead, Manager and Finance: the attendance status menu (renders nothing elsewhere). */}
           {family === 'portal' && <StatusMenu tone="onLight" />}
-          {family === 'portal' && (
+          {family === 'portal' && !phone && (
             <NotificationBell
               items={bell.items}
               count={bell.count}

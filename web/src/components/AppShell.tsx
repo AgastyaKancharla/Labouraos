@@ -10,6 +10,9 @@ import { useNow } from '../lib/useNow';
 import { useNavBadgeCounts } from '../portals/badges';
 import { screenPath, type PortalDef } from '../portals';
 import { PortalContext } from '../portals/PortalContext';
+import { usePortalNotifications } from '../portals/notifications';
+import { NotificationBell } from './NotificationBell';
+import { usePhoneLayout } from '../lib/usePhoneLayout';
 import { NavBadge } from './Badge';
 import { FamilyContext } from './family';
 import { NavIcon, UiIcon } from './Icon';
@@ -127,6 +130,33 @@ function Sidebar({ portal, onNavigate }: { portal: PortalDef; onNavigate?: () =>
   );
 }
 
+/**
+ * The bell in the blue phone bar (decided 16 Nov): on a phone the page heading
+ * scrolls away, so the bell with its red count also sits here and stays
+ * visible. Same list and "See all notifications" as the top-bar bell; only
+ * one of the two is on the page at a time (usePhoneLayout).
+ */
+function MobileBell({ portal }: { portal: PortalDef }) {
+  const phone = usePhoneLayout();
+  if (!phone) return null;
+  return <MobileBellInner portal={portal} />;
+}
+
+function MobileBellInner({ portal }: { portal: PortalDef }) {
+  const bell = usePortalNotifications(portal.key);
+  const notificationsScreen = portal.screens.find((s) => s.path === 'notifications');
+  return (
+    <div className="lb-mobilebar__bell">
+      <NotificationBell
+        items={bell.items}
+        count={bell.count}
+        onOpen={bell.onOpen}
+        allPath={notificationsScreen ? `${portal.root}/${notificationsScreen.path}` : undefined}
+      />
+    </div>
+  );
+}
+
 function PortalShell({ portal, children }: { portal: PortalDef; children: ReactNode }) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -163,6 +193,7 @@ function PortalShell({ portal, children }: { portal: PortalDef; children: ReactN
         </button>
         <img src={LOGO_SRC} alt="" width={28} height={28} />
         <span className="lb-mobilebar__name">LABOURA</span>
+        <MobileBell portal={portal} />
       </div>
       <aside id="lb-sidebar" className={open ? 'lb-shell__side is-open' : 'lb-shell__side'}>
         <Sidebar portal={portal} onNavigate={() => setOpen(false)} />

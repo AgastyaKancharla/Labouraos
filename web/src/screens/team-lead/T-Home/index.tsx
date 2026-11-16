@@ -6,7 +6,6 @@ import { ErrorState } from '../../../components/ErrorState';
 import { StatusPill } from '../../../components/Badge';
 import { SkeletonCard } from '../../../components/Skeleton';
 import { StatGrid, StatTile } from '../../../components/StatTile';
-import { HomeNotifications } from '../../../components/HomeNotifications';
 import { TopBar } from '../../../components/TopBar';
 import { useAuth } from '../../../auth/AuthProvider';
 import { api } from '../../../lib/api/client';
@@ -102,7 +101,6 @@ export default function TeamLeadHome() {
           </>
         }
       />
-      <HomeNotifications />
 
       {targets.error ? (
         <ErrorState error={targets.error} onRetry={() => void targets.refetch()} />

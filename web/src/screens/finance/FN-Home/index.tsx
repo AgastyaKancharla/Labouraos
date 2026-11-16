@@ -7,7 +7,6 @@ import { DataTable, type Column } from '../../../components/DataTable';
 import { ErrorState } from '../../../components/ErrorState';
 import { SkeletonCard } from '../../../components/Skeleton';
 import { StatGrid, StatTile } from '../../../components/StatTile';
-import { HomeNotifications } from '../../../components/HomeNotifications';
 import { TopBar } from '../../../components/TopBar';
 import { useT } from '../../../i18n/I18nProvider';
 import { api } from '../../../lib/api/client';
@@ -124,7 +123,6 @@ export default function MoneyToday() {
           ) : null
         }
       />
-      <HomeNotifications />
       {query.isError ? (
         <ErrorState error={query.error} onRetry={() => void query.refetch()} />
       ) : (

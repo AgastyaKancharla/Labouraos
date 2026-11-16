@@ -138,6 +138,14 @@ describe('CEO Command Center (Main.dc.html)', () => {
     expect(screen.queryByText(/No-bypass charges/)).not.toBeInTheDocument();
   });
 
+  it('shows no notifications card on the page (they live only in the bell, decided 16 Nov)', async () => {
+    mockApi(ccRoutes());
+    renderCC();
+    expect(await screen.findByTestId('cc-net')).toBeInTheDocument();
+    expect(screen.queryByTestId('home-notifications')).toBeNull();
+    expect(screen.queryByText('See all notifications →')).toBeNull();
+  });
+
   it('shows skeletons while loading', () => {
     mockApi(ccRoutes({ 'GET /ceo/command-center/money': () => new Promise(() => {}) }));
     renderCC();
