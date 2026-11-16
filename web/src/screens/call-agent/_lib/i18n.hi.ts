@@ -411,5 +411,13 @@ export const callAgentHi: Record<keyof typeof callAgentEn, string> = {
   'ca.pop.incoming': 'आने वाली कॉल · {name}',
   'ca.pop.unknown': 'आने वाली कॉल · नया नंबर',
   'ca.pop.open': 'खोलें',
+  'ca.routing.title': "आपका कॉलिंग फ़ोन",
+  'ca.routing.notSet': "अभी सेट नहीं: कॉलिंग सिस्टम आपको रिंग नहीं कर सकता, इसलिए कॉल नहीं हो सकती। जिस मोबाइल पर आप कॉल लेते हैं, वह डालें।",
+  'ca.routing.set': "सेट है। कॉलिंग सिस्टम पहले इस फ़ोन पर, फिर व्यक्ति को रिंग करता है।",
+  'ca.routing.label': "मोबाइल नंबर (10 अंक)",
+  'ca.routing.save': "कॉलिंग फ़ोन सेव करें",
+  'ca.routing.change': "बदलें",
+  'ca.routing.saved': "कॉलिंग फ़ोन सेव हो गया",
+  'ca.routing.invalid': "6–9 से शुरू होने वाले 10 अंक डालें।",
   ...signupHi,
 };

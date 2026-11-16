@@ -88,6 +88,8 @@ export interface HomeData {
   inCallingHours: boolean;
   attendanceStatus: string | null;
   canCall: boolean;
+  /** The phone the calling system rings is set (Home → "Your calling phone"). Older answers leave it out. */
+  callRoutingPhoneSet?: boolean;
   callNext: { key: string; name: string; subjectType: SubjectType; subjectId: string } | null;
   today: {
     callsAnswered: number;

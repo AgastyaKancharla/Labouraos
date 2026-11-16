@@ -640,12 +640,13 @@ export class CallWorkService {
   async home(user: JwtPayload) {
     const staffId = user.sub;
     const { ctx, items, stuck } = await this.queue(staffId);
-    const [numbers, team, today, month, done] = await Promise.all([
+    const [numbers, team, today, month, done, me] = await Promise.all([
       this.todaysNumbers([staffId], ctx),
       this.teamAverages(staffId, ctx),
       this.attendance.today(staffId),
       this.monthTargets(user),
       this.doneToday(staffId, ctx),
+      this.prisma.staff.findUnique({ where: { id: staffId }, select: { callRoutingPhone: true } }),
     ]);
     const policy = await this.pricing.current();
     const mine = numbers.get(staffId) ?? emptyNumbers();
@@ -657,6 +658,8 @@ export class CallWorkService {
       inCallingHours: ctx.inCallingHours,
       attendanceStatus: today.status,
       canCall: ctx.inCallingHours && available,
+      // Whether the phone the calling system rings is set (never the number itself): Home shows "Your calling phone".
+      callRoutingPhoneSet: Boolean(me?.callRoutingPhone),
       callNext: next ? { key: next.key, name: next.name, subjectType: next.subjectType, subjectId: next.subjectId } : null,
       today: {
         callsAnswered: mine.callsAnswered,

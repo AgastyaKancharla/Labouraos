@@ -407,5 +407,13 @@ export const callAgentEn = {
   'ca.pop.incoming': 'Incoming call · {name}',
   'ca.pop.unknown': 'Incoming call · new number',
   'ca.pop.open': 'Open',
+  'ca.routing.title': "Your calling phone",
+  'ca.routing.notSet': "Not set yet: the calling system cannot ring you, so calls cannot be placed. Enter the mobile you take calls on.",
+  'ca.routing.set': "Set. The calling system rings this phone first, then the person.",
+  'ca.routing.label': "Mobile number (10 digits)",
+  'ca.routing.save': "Save calling phone",
+  'ca.routing.change': "Change",
+  'ca.routing.saved': "Calling phone saved",
+  'ca.routing.invalid': "Enter 10 digits starting with 6–9.",
   ...signupEn,
 } as const;

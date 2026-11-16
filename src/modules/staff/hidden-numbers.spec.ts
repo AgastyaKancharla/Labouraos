@@ -297,6 +297,24 @@ describe('Phase 11 Task 3: hidden numbers', () => {
     expect(managerSet.status).toBe(200);
     expect(managerSet.body).toEqual({ set: true });
 
+    // A Manager sets it only inside their own reporting tree (AGENTS.md §7); the CEO for anyone.
+    const otherManager = await makeStaff('manager');
+    const otherManagerSet = await request(app.getHttpServer())
+      .put(`/staff/${callAgent.id}/call-routing-phone`)
+      .set('Authorization', `Bearer ${tokenFor(otherManager)}`)
+      .send({ phone: ROUTING_PHONE });
+    expect(otherManagerSet.status).toBe(403);
+    const ownManagerSet = await request(app.getHttpServer())
+      .put(`/staff/${otherManager.id}/call-routing-phone`)
+      .set('Authorization', `Bearer ${tokenFor(otherManager)}`)
+      .send({ phone: '+919800066655' });
+    expect(ownManagerSet.status).toBe(200);
+    const ceoSet = await request(app.getHttpServer())
+      .put(`/staff/${outsider.id}/call-routing-phone`)
+      .set('Authorization', `Bearer ${tokenFor(ceo)}`)
+      .send({ phone: '+919800077766' });
+    expect(ceoSet.status).toBe(200);
+
     const audit = await prisma.auditLog.findFirst({
       where: { action: 'staff.call_routing_phone_set', entityCode: callAgent.code },
     });

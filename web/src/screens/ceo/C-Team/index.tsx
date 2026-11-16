@@ -16,7 +16,7 @@ import { useScreenPath } from '../../../portals/PortalContext';
 import { formatDateIST } from '../../../lib/format/date';
 import { FormAction } from '../../finance/_kit/kit';
 import { ActionButton } from '../_kit/actions';
-import { NewTempPasswordButton, ReactivateButton, ResetSignInButton, TempPasswordModal, type TempPasswordResult } from '../../shared/staffAccess';
+import { NewTempPasswordButton, SetCallingPhoneButton, ReactivateButton, ResetSignInButton, TempPasswordModal, type TempPasswordResult } from '../../shared/staffAccess';
 import { useT } from '../../../i18n/I18nProvider';
 import { roleLabel } from '../_kit/format';
 import { TeamTabs } from '../_kit/tabs';
@@ -217,6 +217,7 @@ export default function Team() {
             <SpokenLanguagesButton key={(languages.byId.get(r.id) ?? []).join(',')} id={r.id} name={r.name} current={languages.byId.get(r.id) ?? []} options={languages.options} />
           )}
           {r.state !== 'deactivated' && <NewTempPasswordButton id={r.id} name={r.name} />}
+          {r.state !== 'deactivated' && <SetCallingPhoneButton id={r.id} name={r.name} />}
           {(r.state === 'active' || r.state === 'locked') && <ResetSignInButton id={r.id} name={r.name} />}
           {r.state === 'active' && r.role !== 'ceo' && !r.photoRetakeRequested && (
             <ActionButton
