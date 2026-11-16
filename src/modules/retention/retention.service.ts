@@ -397,7 +397,7 @@ export class RetentionService {
       summary.jobRunsDeleted = await this.prisma.jobRun.count({ where });
       return;
     }
-    const deleted = await this.prisma.jobRun.deleteMany({ where });
+    const deleted = await this.prisma.jobRun.deleteMany({ where: { createdAt: { lt: cutoff }, id: { notIn: latest.map((row) => row.id) } } });
     summary.jobRunsDeleted = deleted.count;
   }
 

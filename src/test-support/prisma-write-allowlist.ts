@@ -244,4 +244,20 @@ export const PRISMA_WRITE_ALLOWLIST: Record<string, string> = {
     "legal-minimum fields from VacancyConfirmationService and server status values",
   "modules/vacancy/vacancy.service.ts :: submitForConfirmation :: vacancy.updateMany :: data-spread":
     "legal-minimum fields from VacancyConfirmationService and server status values",
+
+  // ---- M4-R1: raw SQL built from strings, and a delegate held in a variable ----
+  'common/id/id.service.ts :: ensureSequenceExists :: $executeRawUnsafe :: raw-unsafe':
+    'M4-R1: sequence name from getSequenceName(), which keeps only [a-z0-9_] of an entity prefix; no request value reaches it.',
+  'common/id/id.service.ts :: syncSequenceUp :: $executeRawUnsafe :: raw-unsafe':
+    'M4-R1: table, column and prefix come from the fixed sequence mapping in this file and the sanitised sequence name; no request value.',
+  'common/id/id.service.ts :: generateCode :: $queryRawUnsafe :: raw-unsafe':
+    'M4-R1: nextval() on the sanitised sequence name (only [a-z0-9_]); Postgres cannot bind an identifier as a parameter.',
+  'common/id/id.service.ts :: generateCode :: $queryRawUnsafe :: raw-unsafe #2':
+    'M4-R1: the same nextval() retry after creating the sequence; sanitised name only.',
+  'common/observability/system-status.controller.ts :: buildReport :: $queryRawUnsafe :: raw-unsafe':
+    "M4-R1: the constant 'SELECT 1' health probe; no value is put into it.",
+  'health/health.service.ts :: checkDatabase :: $queryRawUnsafe :: raw-unsafe':
+    "M4-R1: the constant 'SELECT 1' health probe; no value is put into it.",
+  'modules/area/area.service.ts :: renameRecords :: delegate.updateMany :: delegate-in-variable':
+    'M4-R1: loops the fixed LOCALITY_TABLES list; data is written out in place ({ locality: toName }) and the where is the fixed locality match. Benign.',
 };

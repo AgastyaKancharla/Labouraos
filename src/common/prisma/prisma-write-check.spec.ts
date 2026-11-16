@@ -62,5 +62,28 @@ describe('Security M4: every Prisma write writes its data out in place, or is on
     // Not a Prisma model: ignored (e.g. a hash, a public link store).
     expect(check('hash.update(dto); this.publicLinks.create({ data: dto });')).toEqual([]);
   });
+
+  it('M4-R1: flags computed keys, relation writes from variables, indirect delegates, *AndReturn, raw unsafe SQL and a non-literal deleteMany where', () => {
+    const check = (code: string) => findPrismaWriteIssues(`async function f(this: any, dto: any, body: any, tx: any, model: any, rows: any) { ${code} }`, 'x.ts').map((i) => i.problem);
+    expect(check('await tx.staff.update({ where: { id: 1 }, data: { [dto.field]: dto.value } });')).toEqual(['data-computed-key']);
+    expect(check('await tx.business.update({ where: { id: 1 }, data: { branches: { create: dto.branches } } });')).toEqual(['data-relation-not-literal']);
+    expect(check('await tx.business.update({ where: { id: 1 }, data: { branches: { createMany: { data: rows } } } });')).toEqual(['data-relation-not-literal']);
+    expect(check('await tx.business.update({ where: { id: 1 }, data: { owner: { connect: dto.owner } } });')).toEqual(['data-relation-not-literal']);
+    expect(check('await tx.business.update({ where: { id: 1 }, data: { owner: { connect: { id: dto.ownerId } }, branches: { create: [{ name: "a" }] } } });')).toEqual([]);
+    expect(check("await tx['payment'].create({ data: { amount: 1 } });")).toEqual(['delegate-element-access']);
+    expect(check('await (tx as any)[model].update({ where: { id: 1 }, data: { x: 1 } });')).toEqual(['delegate-element-access']);
+    expect(check('const d = tx.payment; await d.create({ data: { amount: 1 } });')).toEqual(['delegate-in-variable']);
+    expect(check('const { payment } = tx; await payment.update({ where: { id: 1 }, data: { amount: 1 } });')).toEqual(['delegate-in-variable']);
+    expect(check('await tx.payment.create.call(tx.payment, { data: { amount: 1 } });')).toEqual(['write-via-call']);
+    expect(check('await tx.payment.createManyAndReturn({ data: rows });')).toEqual(['data-not-literal']);
+    expect(check('await tx.payment.updateManyAndReturn({ where: {}, data: dto });')).toEqual(['data-not-literal']);
+    expect(check('await tx.$executeRawUnsafe(`DELETE FROM x WHERE id = ${dto.id}`);')).toEqual(['raw-unsafe']);
+    expect(check('await tx.$queryRawUnsafe(dto.sql);')).toEqual(['raw-unsafe']);
+    expect(check('await tx.jobRun.deleteMany({ where: dto });')).toEqual(['where-not-literal']);
+    expect(check('await tx.jobRun.deleteMany(body);')).toEqual(['args-not-literal']);
+    expect(check('await tx.jobRun.deleteMany({ where: { id: dto.id } });')).toEqual([]);
+    // A loaded row's relation is not a delegate unless a write is called on it.
+    expect(check('const business = dto.business; return business.name;')).toEqual([]);
+  });
 });
 
