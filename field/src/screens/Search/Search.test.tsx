@@ -43,7 +43,7 @@ describe('Search (CA16 for the field app)', () => {
     await fireEvent.press(screen.getByTestId('search-row-BZ-00207'));
     await fireEvent.press(screen.getByTestId('search-row-VC-00412'));
     await fireEvent.press(screen.getByTestId('search-row-RF-00019'));
-    expect((router.push as jest.Mock).mock.calls.map((c) => c[0])).toEqual(['/job-seeker/js-1', '/business/b-1', '/business/BZ-00220']);
+    expect((router.push as jest.Mock).mock.calls.map((c) => c[0])).toEqual(['/job-seekers/js-1', '/businesses/b-1', '/businesses/BZ-00220', '/job-seekers/referral-partner/r-1']);
   });
 
   it('narrows to one kind with the chips', async () => {

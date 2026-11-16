@@ -60,4 +60,23 @@ describe('FA21 Visit a shop · talking', () => {
     await fireEvent.press(screen.getByTestId('fa21-owner-not-there'));
     expect(router.push).toHaveBeenCalledWith({ pathname: '/visit/outcome', params: { id: 'v-1', outcome: 'owner_not_there' } });
   });
+
+  it('what was typed survives going back to this step', async () => {
+    draft('t-9');
+    searchParams.current = { id: 't-9' };
+    const first = await renderWithApp(<VisitTalkScreen />, { signedInAs: kiran });
+    await fireEvent.changeText(screen.getByTestId('fa21-shop-name'), 'Hotel Udupi Grand');
+    await first.unmount();
+    await renderWithApp(<VisitTalkScreen />, { signedInAs: kiran });
+    expect(screen.getByTestId('fa21-shop-name').props.value).toBe('Hotel Udupi Grand');
+    expect(screen.getByTestId('step-counter')).toHaveTextContent('Step 2 of 7 · talking to the owner');
+  });
+
+  it('the pitch during a visit opens inside the Visits tab', async () => {
+    draft('t-10');
+    searchParams.current = { id: 't-10' };
+    await renderWithApp(<VisitTalkScreen />, { signedInAs: kiran });
+    await fireEvent.press(screen.getByTestId('fa21-pitch'));
+    expect(router.push).toHaveBeenCalledWith('/visit/pitch');
+  });
 });

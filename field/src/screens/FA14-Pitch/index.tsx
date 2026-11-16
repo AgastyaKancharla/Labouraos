@@ -5,6 +5,7 @@ import { Button, Card, LoadingState, Screen, Text } from '@/components';
 import { MoneyField, Segmented } from '@/components/form';
 import { useI18n } from '@/i18n';
 import { routes } from '@/navigation/routes';
+import { useCurrentTab } from '@/navigation/useFlow';
 import { type Accent, accents, colors, fonts } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { ErrorBanner, feeBreakdown, formatRupees, KeyValue, useSellingSettings } from '../_selling';
@@ -19,6 +20,8 @@ import { pitchLines, SCRIPT_LANGUAGES, type ScriptLanguage } from '../_selling/s
 export default function PitchScreen() {
   const { t, language } = useI18n();
   const settings = useSellingSettings();
+  // Opened during a visit (Visits tab): back to the talk, never a second visit.
+  const inVisit = useCurrentTab() === '(visits)';
   const [lang, setLang] = useState<ScriptLanguage>(language);
   const [salary, setSalary] = useState<number | null>(null);
   const s = settings.data;
@@ -52,7 +55,11 @@ export default function PitchScreen() {
             <KeyValue label={t('fa14.total')} last trailing={<Text style={styles.total} testID="total">{fee ? formatRupees(fee.total) : '—'}</Text>} />
           </View>
         </Card>
-        <Button label={t('fa14.register')} onPress={() => router.push(routes.visitStart)} testID="register-business" />
+        {inVisit ? (
+          <Button label={t('fa14.backToVisit')} onPress={() => router.back()} testID="back-to-visit" />
+        ) : (
+          <Button label={t('fa14.register')} onPress={() => router.push(routes.visitStart)} testID="register-business" />
+        )}
       </Screen>
     </View>
   );

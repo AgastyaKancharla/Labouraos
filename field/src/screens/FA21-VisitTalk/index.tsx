@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { useI18n } from '@/i18n';
 import { Banner, Button, Card, EmptyState, ErrorState, HeroCard, Icon, LoadingState, Screen, Text, TextField } from '@/components';
 import { isApiError } from '@/api/errors';
 import { visitPaths } from '@/api/endpoints';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { formatTimeIst } from '@/lib/format';
+import { useFormDraft } from '@/lib/formDraft';
 import { routes } from '@/navigation/routes';
 import { colors, fonts } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
@@ -39,10 +41,18 @@ export default function VisitTalkScreen() {
 function Talk({ visit }: { visit: VisitDraft }) {
   const { t } = useI18n();
   const queue = useOfflineQueue();
+  const client = useQueryClient();
   const [now, setNow] = useState(() => Date.now());
-  const [shopName, setShopName] = useState(visit.businessName ?? visit.shopName ?? '');
-  const [spokeTo, setSpokeTo] = useState<string | null>(visit.spokeTo || null);
-  const [mobile, setMobile] = useState('');
+  // What was typed survives going back to this step (redesign: the back arrow never loses it).
+  const [fields, setFields] = useFormDraft(`fa21:${visit.id}`, () => ({
+    shopName: visit.businessName ?? visit.shopName ?? '',
+    spokeTo: (visit.spokeTo || null) as string | null,
+    mobile: visit.contactPhone ?? '',
+  }));
+  const { shopName, spokeTo, mobile } = fields;
+  const setShopName = (v: string) => setFields((f) => ({ ...f, shopName: v }));
+  const setSpokeTo = (v: string | null) => setFields((f) => ({ ...f, spokeTo: v }));
+  const setMobile = (v: string) => setFields((f) => ({ ...f, mobile: v }));
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -87,6 +97,7 @@ function Talk({ visit }: { visit: VisitDraft }) {
         json: { outcome: 'onboard_now', shopName: shopName.trim(), spokeTo, ...(mobile ? { contactPhone: mobile } : {}), endedAt },
       });
       keep(endedAt);
+      void client.invalidateQueries({ queryKey: ['field-work'] });
       router.push({ pathname: routes.visitProof, params: { id: visit.id } });
     } catch (e) {
       setProblem(isApiError(e) ? e.message : t('common.error'));
@@ -105,7 +116,7 @@ function Talk({ visit }: { visit: VisitDraft }) {
     <View style={styles.flex} testID="screen-FA21">
       <AppHeader title={t('fa20.title')} />
       <Screen>
-        <StepHeader step={2} label={t('fa21.step')} />
+        <StepHeader step={2} />
         <HeroCard eyebrow={t('fa21.timer')} emoji="⏱️">
           <View style={styles.timerRow}>
             <Text style={styles.started}>{t('fa21.started', { time: formatTimeIst(startedAt) })}</Text>
@@ -144,7 +155,7 @@ function Talk({ visit }: { visit: VisitDraft }) {
         <Button label={t('fa21.comeBack')} variant="secondary" icon={<Icon name="calendar" color={colors.cyan} />} onPress={() => other('interested_later')} testID="fa21-come-back" />
         <Button label={t('fa21.notInterested')} variant="secondary" icon={<Icon name="x-circle" color={colors.crit} />} onPress={() => other('not_interested')} testID="fa21-not-interested" />
         <Button label={t('fa21.ownerNotThere')} variant="secondary" icon={<Icon name="clock" color={colors.amber} />} onPress={() => other('owner_not_there')} testID="fa21-owner-not-there" />
-        <Button label={t('fa21.openPitch')} variant="secondary" icon={<Icon name="chat" color={colors.navy} />} onPress={() => router.push(routes.feeCalculator)} testID="fa21-pitch" />
+        <Button label={t('fa21.openPitch')} variant="secondary" icon={<Icon name="chat" color={colors.navy} />} onPress={() => router.push(routes.visitPitch)} testID="fa21-pitch" />
       </Screen>
     </View>
   );

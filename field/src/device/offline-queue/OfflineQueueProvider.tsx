@@ -33,6 +33,12 @@ interface QueueValue {
   /** Run a live step (OTP, call, payment); throws NeedsSignalError without signal. */
   live: <T>(step: () => Promise<T>) => Promise<T>;
   flush: () => Promise<void>;
+  /**
+   * Sends what is waiting now, then says whether anything whose path contains
+   * `pathPart` is still on the phone (e.g. a visit's photos before the
+   * business form is saved: the server needs both photos first).
+   */
+  flushAndCheck: (pathPart: string) => Promise<boolean>;
   retry: (id: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
 }
@@ -88,6 +94,10 @@ export function OfflineQueueProvider({ children, queue: injected }: { children: 
       },
       live: (step) => runLive(online, step),
       flush,
+      flushAndCheck: async (pathPart) => {
+        await flush().catch(() => undefined);
+        return queue.list().some((i) => i.staffId === staffId && i.request.path.includes(pathPart));
+      },
       retry: (id) => (staffId ? queue.retry(id, staffId) : Promise.resolve()),
       remove: (id) => queue.remove(id),
     };

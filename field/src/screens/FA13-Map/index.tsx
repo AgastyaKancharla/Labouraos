@@ -9,19 +9,22 @@ import { queryKeys } from '@/api/queryClient';
 import type { ShopPoint } from '@/api/endpoints';
 import { useLocation } from '@/device/location/useLocation';
 import { formatCoordinates } from '@/device/location/location';
-import { routes } from '@/navigation/routes';
+import { pageRoutes, routes } from '@/navigation/routes';
 import { colors, shadow } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { formatDistance } from '../_visits/format';
 import { STATUS_COLORS, statusKey } from '../_visits/labels';
 
 /**
- * FA13 — Map: where the agent is right now (blue dot with accuracy), every
+ * FA13 — Shops near me, inside the Visits tab (redesign, 16 Nov; the Map tab
+ * is gone): where the agent is right now (blue dot with accuracy), every
  * business and visited shop around him coloured by status (onboarded,
  * revisit due, interested, not interested), and "Near you" with revisits due
- * first. Everyone sees every business, so two agents never onboard the same
- * shop. Location is read when the map opens (an event the agent starts),
- * never in the background. Map tiles: OpenStreetMap.
+ * first. Markers and rows open the shop: a revisit due of his own starts the
+ * visit, a business opens its page (view-only when it is another agent's).
+ * Everyone sees every business, so two agents never onboard the same shop.
+ * Location is read when the screen opens (an event the agent starts), never
+ * in the background. Map tiles: OpenStreetMap, sent with the site address.
  */
 export default function MapScreen() {
   const { t } = useI18n();
@@ -41,17 +44,21 @@ export default function MapScreen() {
   const shops = q.data?.shops ?? [];
   const near = [...shops].sort((a, b) => Number(b.status === 'revisit_due') - Number(a.status === 'revisit_due') || (a.distanceMeters ?? 0) - (b.distanceMeters ?? 0)).slice(0, 8);
 
+  /** Where a shop opens, or null when there is nothing the agent may open (another agent's unregistered shop). */
+  function canOpen(s: ShopPoint): boolean {
+    return (s.status === 'revisit_due' && s.canAct !== false) || Boolean(s.businessId);
+  }
   function open(s: ShopPoint) {
-    if (s.status === 'revisit_due') {
+    if (s.status === 'revisit_due' && s.canAct !== false) {
       router.push({ pathname: routes.visitStart, params: s.businessId ? { businessId: s.businessId, name: s.name } : { revisitOf: s.visitId ?? '', name: s.name } });
     } else if (s.businessId) {
-      router.push(`${routes.business}/${s.businessId}`);
+      router.push(pageRoutes.business(s.businessId));
     }
   }
 
   return (
     <View style={styles.flex} testID="screen-FA13">
-      <AppHeader title={t('fa13.title')} />
+      <AppHeader title={t('fa13.nearMe')} />
       <Screen onRefresh={() => void read()} refreshing={location.loading}>
         <Card compact>
           <View style={styles.row}>
@@ -67,7 +74,14 @@ export default function MapScreen() {
           <TileMap
             center={fix}
             me={{ latitude: fix.latitude, longitude: fix.longitude, accuracy: fix.accuracy }}
-            markers={shops.map((s) => ({ key: s.id, latitude: s.latitude, longitude: s.longitude, color: STATUS_COLORS[s.status] ?? colors.soft, label: s.name }))}
+            markers={shops.map((s) => ({
+              key: s.id,
+              latitude: s.latitude,
+              longitude: s.longitude,
+              color: STATUS_COLORS[s.status] ?? colors.soft,
+              label: s.name,
+              onPress: canOpen(s) ? () => open(s) : undefined,
+            }))}
             attribution={t('fa13.attribution')}
             height={380}
             zoom={15}
@@ -94,8 +108,14 @@ export default function MapScreen() {
                 title={s.name}
                 subtitle={[t(statusKey(s.status)), formatDistance(s.distanceMeters)].join(' · ')}
                 leading={<View style={[styles.pin, { backgroundColor: STATUS_COLORS[s.status] ?? colors.soft }]} />}
-                trailing={<StatusChip tone={s.status === 'revisit_due' ? 'amber' : 'blue'} label={s.status === 'revisit_due' ? t('fa13.visit') : t('fa13.open')} />}
-                onPress={() => open(s)}
+                trailing={
+                  s.canAct === false ? (
+                    <StatusChip tone="neutral" label={t('biz.viewOnlyShort')} />
+                  ) : (
+                    <StatusChip tone={s.status === 'revisit_due' ? 'amber' : 'blue'} label={s.status === 'revisit_due' ? t('fa13.visit') : t('fa13.open')} />
+                  )
+                }
+                onPress={canOpen(s) ? () => open(s) : undefined}
                 last={i === near.length - 1}
                 testID={`fa13-shop-${s.id}`}
               />

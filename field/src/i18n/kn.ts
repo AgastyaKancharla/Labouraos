@@ -4,6 +4,7 @@ import { attendanceKn } from './attendance.kn';
 import { searchKn } from './search.kn';
 import { staffPhotoKn } from './staffPhoto.kn';
 import { accessKn } from './access.kn';
+import { redesignKn } from './redesign.kn';
 
 /**
  * Kannada. Same keys as en.ts (TypeScript refuses a missing or extra key).
@@ -16,6 +17,7 @@ export const kn: Messages = {
   ...searchKn,
   ...staffPhotoKn,
   ...accessKn,
+  ...redesignKn,
   'common.appName': 'Laboura Field',
   'common.brand': 'Laboura',
   'common.logoHome': 'Laboura — ಮುಖಪುಟಕ್ಕೆ ಹೋಗಿ',

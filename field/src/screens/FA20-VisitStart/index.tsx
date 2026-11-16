@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useI18n } from '@/i18n';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Banner, Button, Card, Icon, IconTile, Screen, StatusChip, Text } from '@/components';
@@ -38,6 +38,7 @@ export default function VisitStartScreen() {
   const params = useLocalSearchParams<{ businessId?: string; revisitOf?: string; name?: string }>();
   const { fieldWork } = useEndpoints();
   const queue = useOfflineQueue();
+  const client = useQueryClient();
   const location = useLocation();
   const { read } = location;
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -86,6 +87,7 @@ export default function VisitStartScreen() {
         proofDistance: null,
         proofAt: null,
       });
+      void client.invalidateQueries({ queryKey: ['field-work'] });
       router.replace({ pathname: routes.visitTalk, params: { id } });
     } catch (e) {
       setError(isApiError(e) ? e.message : t('common.error'));
@@ -98,7 +100,7 @@ export default function VisitStartScreen() {
     <View style={styles.flex} testID="screen-FA20">
       <AppHeader title={t('fa20.title')} />
       <Screen>
-        <StepHeader step={1} label={t('fa20.step')} />
+        <StepHeader step={1} />
         {!queue.online ? <Banner tone="info" icon="wifi-off" message={t('common.offline')} /> : null}
         <Card title={t('fa20.photoTitle')} icon="camera" accent="royal">
           <View style={styles.gps} testID="fa20-gps">
@@ -137,12 +139,17 @@ export default function VisitStartScreen() {
             message={t('fa20.nearbyHint')}
             testID="fa20-nearby"
             action={
-              <Button
-                label={sameShop?.id === suggestion.id ? t('fa20.isThatShop') : t('fa20.markThatShop')}
-                variant={sameShop?.id === suggestion.id ? 'success' : 'secondary'}
-                onPress={() => setSameShop(sameShop?.id === suggestion.id ? null : suggestion)}
-                testID="fa20-same-shop"
-              />
+              // Another agent's shop is view-only: the visit cannot be recorded as its revisit (server: NOT_YOUR_VISIT / NOT_YOUR_BUSINESS).
+              suggestion.canAct === false ? (
+                <Text variant="small" testID="fa20-not-yours">{t('fa20.notYours')}</Text>
+              ) : (
+                <Button
+                  label={sameShop?.id === suggestion.id ? t('fa20.isThatShop') : t('fa20.markThatShop')}
+                  variant={sameShop?.id === suggestion.id ? 'success' : 'secondary'}
+                  onPress={() => setSameShop(sameShop?.id === suggestion.id ? null : suggestion)}
+                  testID="fa20-same-shop"
+                />
+              )
             }
           />
         ) : null}

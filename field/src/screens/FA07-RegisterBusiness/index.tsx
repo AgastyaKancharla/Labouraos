@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useI18n, type MessageKey } from '@/i18n';
 import { Banner, Button, Card, CodeInput, Emoji, LoadingState, Screen, StatusChip, Text, TextField } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
@@ -15,13 +15,16 @@ import { locationProvider } from '@/device/location/provider';
 import { formatTimeIst } from '@/lib/format';
 import { DEFAULT_AREA_AUTO_FILL_MAX_METERS, distanceText, nearestArea } from '@/lib/nearestArea';
 import { routes } from '@/navigation/routes';
+import { useFormDraft } from '@/lib/formDraft';
+import { inShortText } from '@/api/endpoints/legal';
 import { type Accent, accents, colors, fonts, radius, touch } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { SelectField } from '../_visits/SelectField';
 import { DatePicker } from '../_visits/DatePicker';
 import { useVisit } from '../_visits/useVisit';
-import type { VisitDraft } from '../_visits/visitDraft';
-import { BUSINESS_SCRIPT, SCRIPT_LANGUAGE_LABELS, type ScriptLanguage } from './script';
+import { updateDraft, type VisitDraft } from '../_visits/visitDraft';
+import { StepHeader } from '../_visits/StepHeader';
+import { SCRIPT_LANGUAGE_LABELS, type ScriptLanguage } from './script';
 import { businessBody, formErrors, type FormState, type MobileState, type StaffRow } from './form';
 
 const ROLES = ['owner', 'manager', 'hr', 'supervisor', 'other'] as const;
@@ -55,20 +58,43 @@ function rupees(text: string): string {
  * laid out for a phone, opened from a shop visit after the proof selfie
  * (FA22). The live storefront photo and GPS come from the visit; the map pin
  * starts at the shop. The contact person's mobile is checked by OTP (needs
- * signal), each staff-needed row becomes a draft vacancy, and after saving
- * the agreement link goes to the contact person, who agrees on his own phone.
+ * signal), each staff-needed row (optional) becomes a draft vacancy, and
+ * after saving the agreement link goes to the contact person, who agrees on
+ * his own phone (the agreement step, FA07b). Step 4 of 7 in the Visits tab.
+ * Saving marks the visit Onboarded on the server. What was typed survives
+ * going back. A visit whose business is already registered goes straight on
+ * to the agreement step instead of opening a blank form.
  */
 export default function RegisterBusinessScreen() {
   const { visitId } = useLocalSearchParams<{ visitId?: string }>();
-  const { visit, loading } = useVisit(visitId);
+  const { visit, server, loading } = useVisit(visitId);
+  const { t } = useI18n();
   if (visitId && loading) return <LoadingState />;
+  const registered = server?.business?.id ?? visit?.businessId ?? null;
+  if (visitId && registered) {
+    return (
+      <View style={styles.flex} testID="screen-FA07">
+        <AppHeader title={t('fa07.header')} />
+        <Screen>
+          <StepHeader step={4} />
+          <Banner tone="ok" title={t('fa07.registeredFromVisit', { name: server?.business?.name ?? visit?.businessName ?? '' })} testID="fa07-already" />
+          <Button
+            label={t('fa07.toAgreement')}
+            onPress={() => router.replace({ pathname: routes.visitAgreement, params: { businessId: registered, visitId } })}
+            testID="fa07-to-agreement"
+          />
+        </Screen>
+      </View>
+    );
+  }
   return <RegisterForm visitId={visitId ?? null} visit={visit} />;
 }
 
 function RegisterForm({ visitId, visit }: { visitId: string | null; visit: VisitDraft | null }) {
   const { t } = useI18n();
-  const { registration, visits } = useEndpoints();
+  const { registration, visits, legal } = useEndpoints();
   const queue = useOfflineQueue();
+  const client = useQueryClient();
   const options = useQuery({ queryKey: queryKeys.registrationOptions, queryFn: () => registration.options(), staleTime: 3_600_000 });
   const trades = useQuery({ queryKey: queryKeys.trades, queryFn: () => registration.trades(), staleTime: 600_000 });
   const [openedAt] = useState(() => Date.now());
@@ -77,7 +103,7 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
     const timer = setInterval(() => setNow(Date.now()), 5000);
     return () => clearInterval(timer);
   }, []);
-  const [form, setForm] = useState<FormState>(() => ({
+  const [form, setForm, clearForm] = useFormDraft<FormState>(`fa07:${visitId ?? 'new'}`, () => ({
     contactName: '',
     contactRole: '',
     mobile: emptyMobile(),
@@ -108,7 +134,8 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
     licenceNumber: '',
     pan: '',
     noDocuments: false,
-    staff: [emptyRow()],
+    // Staff needed is optional (redesign, 16 Nov): a business can be onboarded with no vacancy.
+    staff: [],
   }));
   const [showErrors, setShowErrors] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -221,9 +248,26 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
     setProblem(null);
     setBusy('save');
     try {
+      // The server needs the board photo and the selfie first: send what is waiting before saving.
+      if (visitId && (await queue.flushAndCheck(visitId))) {
+        setProblem(t('fa07.photosWaiting'));
+        return;
+      }
       const created = await queue.live(() => registration.createBusiness(businessBody(form, visitId)));
-      await visits.sendAgreementLink(created.id, form.language).catch(() => undefined);
-      router.replace({ pathname: routes.visitDone, params: { businessId: created.id, ...(visitId ? { visitId } : {}) } });
+      clearForm();
+      // The visit now belongs to this business and is Onboarded: the phone's copy must say so too.
+      if (visitId) updateDraft(visitId, { businessId: created.id, businessName: created.name });
+      void client.invalidateQueries({ queryKey: ['field-work'] });
+      void client.invalidateQueries({ queryKey: ['field-visits'] });
+      void client.invalidateQueries({ queryKey: ['selling'] });
+      const linkSent = await visits
+        .sendAgreementLink(created.id, form.language)
+        .then((r) => r?.smsSent !== false)
+        .catch(() => false);
+      router.replace({
+        pathname: routes.visitAgreement,
+        params: { businessId: created.id, ...(visitId ? { visitId } : {}), ...(linkSent ? {} : { linkFailed: '1' }) },
+      });
     } catch (e) {
       explain(e);
     } finally {
@@ -284,11 +328,20 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
   }
 
   const tradeChoices = [...tradeList.map((tr) => ({ value: tr.name, label: tr.name })), { value: OTHER_TRADE, label: t('fa07.otherTrade') }];
+  // "Explain Laboura": the business agreement's "In short" from the server, in the owner's
+  // language, with every number filled from Settings (never a number written in the app).
+  const scriptLang = (form.language || 'kn') as ScriptLanguage;
+  const inShort = useQuery({
+    queryKey: ['legal-document', 'business_agreement', scriptLang],
+    queryFn: () => legal.document('business_agreement', scriptLang),
+    staleTime: 3_600_000,
+  });
 
   return (
     <View style={styles.flex} testID="screen-FA07">
       <AppHeader title={t('fa07.header')} />
       <Screen>
+        {visitId ? <StepHeader step={4} /> : null}
         <View style={styles.titleRow}>
           <Text variant="h1" style={styles.flex1}>{t('fa07.title')}</Text>
           <Emoji symbol="🏪" size={28} />
@@ -397,6 +450,7 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
 
         <Card style={styles.gapCard} stripe accent={SECTION_ACCENTS[4]}>
           <Section n={5} title={t('fa07.s5')} />
+          <Text variant="muted" testID="fa07-staff-optional">{t('fa07.staffOptional')}</Text>
           {form.staff.map((row, i) => {
             const trade = findTrade(row);
             const min = Number(row.salaryMin.replace(/\D/g, '')) * 100;
@@ -428,7 +482,7 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
                     <Toggle label={t('fa07.ownerTold')} value={row.ownerTold} onChange={(v) => update({ ownerTold: v })} error={err(`staffLegal${i}`)} />
                   </>
                 ) : null}
-                {form.staff.length > 1 ? <Button label={t('fa07.remove')} variant="danger" onPress={() => set({ staff: form.staff.filter((_, j) => j !== i) })} /> : null}
+                <Button label={t('fa07.remove')} variant="danger" onPress={() => set({ staff: form.staff.filter((_, j) => j !== i) })} testID={`fa07-staff-${i}-remove`} />
               </View>
             );
           })}
@@ -437,12 +491,16 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
 
         <Card style={styles.gapCard} stripe accent={SECTION_ACCENTS[5]}>
           <Section n={6} title={t('fa07.s6')} />
-          {(['kn', 'hi', 'en'] as ScriptLanguage[]).map((lang) => (
-            <View key={lang} style={styles.script}>
-              <Text variant="label">{SCRIPT_LANGUAGE_LABELS[lang]}</Text>
-              <Text>{BUSINESS_SCRIPT[lang]}</Text>
-            </View>
-          ))}
+          <View style={styles.script} testID="fa07-script">
+            <Text variant="label">{SCRIPT_LANGUAGE_LABELS[scriptLang]}</Text>
+            {inShort.data ? (
+              <Text>{inShortText(inShort.data)}</Text>
+            ) : inShort.isError ? (
+              <Button label={t('common.retry')} variant="secondary" onPress={() => void inShort.refetch()} />
+            ) : (
+              <LoadingState compact />
+            )}
+          </View>
           <Text variant="muted">{t('fa07.ownerAgrees')}</Text>
         </Card>
 

@@ -1,52 +1,89 @@
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
-import { useI18n } from '@/i18n';
-import { Banner, Button, Card, EmptyState, ErrorState, HeroCard, HeroPill, Icon, IconTile, ListRow, LoadingState, ProgressBar, Screen, SearchBar, StatGrid, StatTile, StatusChip, Text } from '@/components';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useI18n, type MessageKey } from '@/i18n';
+import {
+  Banner, Button, Card, EmptyState, ErrorState, HeroCard, HeroPill, Icon, IconTile, ListRow, LoadingState, ProgressBar, Screen, SearchBar,
+  StatGrid, StatTile, StatusChip, Text, type IconName,
+} from '@/components';
 import { useAuth } from '@/auth/AuthProvider';
+import { useEndpoints } from '@/api/ApiProvider';
+import { queryKeys } from '@/api/queryClient';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { LOCATION_ERROR_KEYS } from '@/device/location/useLocation';
 import { isApiError } from '@/api/errors';
+import type { AttendanceToday, DayItemType, NeedsItem, TodayView } from '@/api/endpoints';
 import { formatDayIst, formatStampIst, formatShiftTime, formatTimeIst } from '@/lib/format';
-import { routes, sellingRoutes } from '@/navigation/routes';
-import { colors, fonts, fontSize } from '@/theme';
+import { pageRoutes, routes, sellingRoutes } from '@/navigation/routes';
+import { type Accent, colors, fonts, fontSize, radius, touch } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
-import { isLocationError, placementsProgress, useAttendanceLogin, useAttendanceToday, useFieldHome, useTargetDashboard } from './useHome';
-import type { HomeAlert, HomeTodo } from '@/api/endpoints';
+import { ChoiceList } from '../_visits/ChoiceList';
 import { formatDateKey } from '../_visits/format';
-import { checkInTarget } from './todoTarget';
+import { isLocationError, useAttendanceLogin, useAttendanceToday } from './useHome';
+import { needsTarget } from './needsTarget';
+
+/** The statuses the agent taps to change (redesign, 16 Nov): on visit, travelling, meeting, lunch, break. */
+export const STATUS_CHOICES = ['on_visit', 'travelling', 'team_meeting', 'lunch', 'short_break'] as const;
+const STATUS_ICON: Record<(typeof STATUS_CHOICES)[number], { icon: IconName; accent: Accent }> = {
+  on_visit: { icon: 'store', accent: 'green' },
+  travelling: { icon: 'location', accent: 'royal' },
+  team_meeting: { icon: 'users', accent: 'cyan' },
+  lunch: { icon: 'clock', accent: 'gold' },
+  short_break: { icon: 'clock', accent: 'orange' },
+};
+
+/** Today's numbers: each opens Today's work filtered on what it counts. */
+const NUMBERS: { key: keyof TodayView['numbers']; label: MessageKey; accent: Accent; kind: DayItemType }[] = [
+  { key: 'shopsVisited', label: 'fa03.shopsVisited', accent: 'royal', kind: 'visit' },
+  { key: 'onboarded', label: 'fa03.onboarded', accent: 'green', kind: 'business_registered' },
+  { key: 'vacanciesConfirmed', label: 'today.vacanciesConfirmed', accent: 'gold', kind: 'vacancy_confirmed' },
+  { key: 'candidatesShown', label: 'fa03.shown', accent: 'cyan', kind: 'candidates_shown' },
+  { key: 'interviewsBooked', label: 'today.interviews', accent: 'orange', kind: 'interview_booked' },
+];
+
+const NEEDS_LOOK: Record<NeedsItem['kind'], { icon: IconName; accent: Accent }> = {
+  interview_today: { icon: 'calendar', accent: 'royal' },
+  visit_unfinished: { icon: 'camera', accent: 'gold' },
+  agreement_waiting: { icon: 'document', accent: 'orange' },
+  vacancy_awaiting_owner: { icon: 'briefcase', accent: 'gold' },
+  vacancy_draft: { icon: 'briefcase', accent: 'navy' },
+  ready_show_candidates: { icon: 'users', accent: 'green' },
+  joining_due: { icon: 'briefcase', accent: 'green' },
+  revisit_due: { icon: 'store', accent: 'gold' },
+  followup_task: { icon: 'phone', accent: 'royal' },
+};
 
 /**
- * FA03 — Home. Login and status, search, today's numbers, the four quick
- * buttons, alerts (with the "waiting to send" row), to-dos and placements
- * this month.
+ * FA03 — Today, the first tab (redesign, 16 Nov): the attendance bar (login
+ * time, on time or late, the current status — tap to change — and End my
+ * day); today's numbers, each opening Today's work; a small targets bar; the
+ * quick buttons; and Needs you now: one list of everything waiting on the
+ * agent, each opening the exact step of its job.
  *
- * Data: attendance (GET /attendance/today, POST /attendance/login with GPS,
- * then the check-in point), today's five numbers, alerts and to-dos
- * (GET /field-work/home), placements this month (GET /targets/dashboard),
- * and the offline queue's "waiting to send" row.
+ * Data: GET /attendance/today (+ login with GPS, status, logout),
+ * GET /field-work/today (numbers, targets, Needs you now), and the offline
+ * queue's "waiting to send" row.
  */
-export default function HomeScreen() {
+export default function TodayScreen() {
   const { t, tn } = useI18n();
   const { session, resetNotice, dismissResetNotice } = useAuth();
-  const today = useAttendanceToday();
-  const targets = useTargetDashboard();
-  const home = useFieldHome();
+  const { redesign } = useEndpoints();
+  const attendance = useAttendanceToday();
+  const today = useQuery<TodayView>({ queryKey: queryKeys.today, queryFn: () => redesign.today(), enabled: session?.staff.role === 'field_agent' });
   const login = useAttendanceLogin();
   const queue = useOfflineQueue();
 
   const [openedAt] = useState(() => Date.now());
   const name = session?.staff.name ?? '';
-  const subtitle = `${name} · ${formatDayIst(today.data?.clocks.now ?? openedAt)}`;
-  const progress = placementsProgress(targets.data);
+  const now = today.data?.now ?? attendance.data?.clocks.now ?? openedAt;
+  const numbers = today.data?.numbers;
   const placeholder = t('common.placeholderValue');
-  const n = (value: number | undefined) => (value === undefined ? placeholder : String(value));
-  const counts = home.data?.today;
+  const targets = today.data?.targets ?? null;
 
   function refresh() {
+    void attendance.refetch();
     void today.refetch();
-    void targets.refetch();
-    void home.refetch();
     void queue.flush();
   }
 
@@ -60,7 +97,7 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.flex}>
-      <AppHeader title={t('fa03.headerTitle')} subtitle={subtitle} />
+      <AppHeader title={t('today.title')} subtitle={`${name} · ${formatDayIst(now)}`} root />
       <Screen onRefresh={refresh} refreshing={today.isRefetching} testID="screen-FA03">
         {!queue.online ? <Banner tone="info" icon="wifi-off" message={t('common.offline')} testID="offline-banner" /> : null}
         {/* Once, after a password reset (rev 174–175): if it was not them, they tell their Team Lead at once. */}
@@ -73,19 +110,18 @@ export default function HomeScreen() {
           />
         ) : null}
 
-        {/* Attendance: Login button, or logged-in time and status */}
-        {today.isPending ? (
+        {attendance.isPending ? (
           <LoadingState compact />
-        ) : today.isError ? (
-          <ErrorState error={today.error} onRetry={() => void today.refetch()} compact />
-        ) : !today.data.loginAt ? (
+        ) : attendance.isError ? (
+          <ErrorState error={attendance.error} onRetry={() => void attendance.refetch()} compact />
+        ) : !attendance.data.loginAt ? (
           <Banner
             tone="warn"
             icon="clock"
             title={t('fa03.notLoggedIn')}
             message={t('fa03.shift', {
-              start: formatShiftTime(today.data.clocks.shiftStart),
-              end: formatShiftTime(today.data.clocks.shiftEnd),
+              start: formatShiftTime(attendance.data.clocks.shiftStart),
+              end: formatShiftTime(attendance.data.clocks.shiftEnd),
             })}
             testID="attendance-not-logged-in"
             action={
@@ -98,89 +134,53 @@ export default function HomeScreen() {
               />
             }
           />
-        ) : today.data.logoutAt ? (
-          <Banner tone="info" icon="clock" title={t('fa03.dayEndedAt', { time: formatTimeIst(today.data.logoutAt) })} testID="attendance-ended" />
+        ) : attendance.data.logoutAt ? (
+          <Banner tone="info" icon="clock" title={t('fa03.dayEndedAt', { time: formatTimeIst(attendance.data.logoutAt) })} testID="attendance-ended" />
         ) : (
-          <Banner
-            tone="ok"
-            title={`${t('fa03.loggedInAt', { time: formatTimeIst(today.data.loginAt) })} · ${
-              today.data.lateMinutes > 0 ? t('fa03.lateBy', { minutes: today.data.lateMinutes }) : t('fa03.onTime')
-            }`}
-            testID="attendance-logged-in"
-            action={
-              today.data.status ? (
-                <StatusChip label={statusLabel(today.data.status, t)} tone="green" dot />
-              ) : undefined
-            }
-          />
+          <AttendanceBar day={attendance.data} />
         )}
         {loginErrorMessage ? <Banner tone="error" message={loginErrorMessage} testID="attendance-login-error" /> : null}
 
         <SearchBar onPress={() => router.push(routes.search)} />
 
-        {/* The agent's day: a blue hero with today's five numbers as mixed-colour tiles and the month's placements. */}
-        <HeroCard eyebrow={t('fa03.today')} corner={<HeroPill label={formatDayIst(today.data?.clocks.now ?? openedAt)} />} testID="today-hero">
+        <HeroCard eyebrow={t('fa03.today')} corner={<HeroPill label={formatDayIst(now)} />} testID="today-hero">
           <StatGrid>
-            <StatTile accent="royal" value={n(counts?.shopsVisited)} label={t('fa03.shopsVisited')} testID="stat-shops" />
-            <StatTile accent="green" value={n(counts?.onboarded)} label={t('fa03.onboarded')} testID="stat-onboarded" />
-            <StatTile accent="gold" value={n(counts?.vacanciesAdded)} label={t('fa03.vacancies')} testID="stat-vacancies" />
-            <StatTile accent="cyan" value={n(counts?.candidatesShown)} label={t('fa03.shown')} testID="stat-shown" />
-            <StatTile accent="orange" value={n(counts?.interviewsBooked)} label={t('fa03.interviews')} testID="stat-interviews" />
+            {NUMBERS.map((n) => (
+              <StatTile
+                key={n.key}
+                accent={n.accent}
+                value={numbers ? String(numbers[n.key]) : placeholder}
+                label={t(n.label)}
+                detail={n.key === 'interviewsBooked' && numbers ? t('today.attended', { count: numbers.interviewsAttended }) : undefined}
+                onPress={() => router.push(pageRoutes.todaysWork(today.data?.date, n.kind))}
+                testID={`stat-${n.key}`}
+              />
+            ))}
           </StatGrid>
-          {progress ? (
-            <View testID="placements-card" style={styles.placements}>
-              <View style={styles.placementsHead}>
+          {targets ? (
+            <View testID="targets-bar" style={styles.targets}>
+              <View style={styles.targetsHead}>
                 <IconTile icon="trophy" accent="gold" size={30} />
                 <Text style={styles.onBlueLabel}>{t('fa03.placementsThisMonth')}</Text>
+                <Text style={styles.onBlueStrong}>
+                  {targets.placementsTarget !== null ? `${targets.placementsClosed} / ${targets.placementsTarget}` : `${targets.placementsClosed} · ${t('fa03.noTarget')}`}
+                </Text>
               </View>
-              <View style={styles.statRow}>
-                <Text style={styles.bigOnBlue}>{progress.achieved}</Text>
-                <Text style={styles.onBlueSoft}>{progress.target !== null ? ` / ${progress.target}` : ` · ${t('fa03.noTarget')}`}</Text>
-              </View>
-              <ProgressBar value={progress.ratio} color={colors.gold} onBlue />
+              <ProgressBar value={targets.placementsTarget ? targets.placementsClosed / targets.placementsTarget : 0} color={colors.gold} onBlue />
             </View>
           ) : null}
         </HeroCard>
-        {home.isError ? <ErrorState error={home.error} onRetry={() => void home.refetch()} compact /> : null}
+        {today.isError ? <ErrorState error={today.error} onRetry={() => void today.refetch()} compact /> : null}
 
         <View style={styles.grid}>
-          <Button
-            label={t('fa03.visitShop')}
-            icon={<Icon name="camera" color={colors.white} />}
-            style={styles.cell}
-            onPress={() => router.push(routes.visitStart)}
-            testID="quick-visit"
-          />
-          <Button
-            label={t('fa03.addJobSeeker')}
-            variant="secondary"
-            icon={<Icon name="user-plus" color={colors.cyan} />}
-            style={styles.cell}
-            onPress={() => router.push(routes.jobSeekerNew)}
-            testID="quick-job-seeker"
-          />
-          <Button
-            label={t('fa03.addVacancy')}
-            variant="secondary"
-            icon={<Icon name="briefcase" color={colors.crit} />}
-            style={styles.cell}
-            onPress={() => router.push(routes.vacancyNew)}
-            testID="quick-vacancy"
-          />
-          <Button
-            label={t('fa03.feeCalculator')}
-            variant="secondary"
-            icon={<Icon name="rupee" color={colors.amber} />}
-            style={styles.cell}
-            onPress={() => router.push(routes.feeCalculator)}
-            testID="quick-fee"
-          />
+          <Button label={t('fa03.visitShop')} icon={<Icon name="camera" color={colors.white} />} style={styles.full} onPress={() => router.push(routes.visitStart)} testID="quick-visit" />
+          <Button label={t('fa03.addJobSeeker')} variant="secondary" icon={<Icon name="user-plus" color={colors.cyan} />} style={styles.cell} onPress={() => router.push(routes.jobSeekerNew)} testID="quick-job-seeker" />
+          <Button label={t('fa03.addVacancy')} variant="secondary" icon={<Icon name="briefcase" color={colors.crit} />} style={styles.cell} onPress={() => router.push(sellingRoutes.addVacancy())} testID="quick-vacancy" />
+          <Button label={t('today.addReferral')} variant="secondary" icon={<Icon name="users" color={colors.greenText} />} style={styles.cell} onPress={() => router.push(routes.referralNew)} testID="quick-referral" />
+          <Button label={t('fa03.feeCalculator')} variant="secondary" icon={<Icon name="rupee" color={colors.amber} />} style={styles.cell} onPress={() => router.push(routes.feeCalculator)} testID="quick-fee" />
         </View>
 
-        <Card title={t('fa03.alerts')} icon="bell" accent="orange">
-          {(home.data?.alerts ?? []).map((alert, i) => (
-            <AlertRow key={`${alert.kind}-${alert.business.id}-${i}`} alert={alert} last={i === (home.data?.alerts.length ?? 0) - 1 && queue.summary.total === 0} />
-          ))}
+        <Card title={t('today.needsYou')} icon="bell" accent="orange" testID="needs-you">
           {queue.summary.total > 0 ? (
             <ListRow
               title={queue.summary.failed > 0 ? t('fa03.waitingToSendFailed') : t('fa03.waitingToSend')}
@@ -188,119 +188,139 @@ export default function HomeScreen() {
               trailing={
                 <StatusChip
                   tone={queue.summary.failed > 0 ? 'tomato' : 'amber'}
-                  label={
-                    queue.summary.sending
-                      ? t('queue.sending')
-                      : queue.summary.photos > 0
-                        ? tn('queue.photos', queue.summary.photos)
-                        : tn('queue.items', queue.summary.forms)
-                  }
+                  label={queue.summary.sending ? t('queue.sending') : queue.summary.photos > 0 ? tn('queue.photos', queue.summary.photos) : tn('queue.items', queue.summary.forms)}
                 />
               }
               onPress={() => void queue.flush()}
-              last
+              last={(today.data?.needsYou.length ?? 0) === 0}
               testID="queue-row"
             />
-          ) : (home.data?.alerts.length ?? 0) === 0 ? (
-            <EmptyState compact emoji="🌤️" message={t('fa03.noAlerts')} />
           ) : null}
-        </Card>
-
-        <Card title={t('fa03.todo')} icon="clipboard" accent="cyan" testID="todo-card">
-          {(home.data?.todos ?? []).length === 0 ? <EmptyState compact emoji="✅" message={t('fa03.noTodos')} /> : null}
-          {(home.data?.todos ?? []).map((todo, i) => (
-            <TodoRow key={`${todo.kind}-${i}`} todo={todo} last={i === (home.data?.todos.length ?? 0) - 1} />
+          {today.isPending ? <LoadingState compact /> : null}
+          {today.data && today.data.needsYou.length === 0 && queue.summary.total === 0 ? <EmptyState compact emoji="✅" message={t('today.nothing')} /> : null}
+          {(today.data?.needsYou ?? []).map((item, i, all) => (
+            <NeedsRow key={item.id} item={item} last={i === all.length - 1} />
           ))}
         </Card>
-
       </Screen>
     </View>
   );
 }
 
-function AlertRow({ alert, last }: { alert: HomeAlert; last: boolean }) {
+/** Logged in at …, on time or late, the status chip (tap to change) and End my day. */
+function AttendanceBar({ day }: { day: AttendanceToday }) {
   const { t } = useI18n();
-  if (alert.kind === 'agreement_signed') {
-    return (
-      <ListRow
-        title={t('fa03.alertSigned', { name: alert.business.name })}
-        leading={<IconTile icon="check-circle" accent="green" size={34} />}
-        trailing={alert.canShowCandidates ? <StatusChip tone="green" label={t('fa03.showCandidates')} /> : <StatusChip tone="green" label={t('fa03.signed')} />}
-        onPress={() =>
-          alert.canShowCandidates
-            ? router.push(sellingRoutes.matches(alert.business.id))
-            : router.push(`${routes.business}/${alert.business.id}`)
-        }
-        last={last}
-        testID={`alert-signed-${alert.business.id}`}
-      />
-    );
-  }
-  const resultKey = alert.result === 'selected' ? 'result.selected' : alert.result === 'no_show' ? 'result.no_show' : 'result.not_selected';
+  const { attendance } = useEndpoints();
+  const client = useQueryClient();
+  const [picking, setPicking] = useState(false);
+  const [ending, setEnding] = useState(false);
+  const after = (data: AttendanceToday) => {
+    client.setQueryData(queryKeys.attendanceToday, data);
+    void client.invalidateQueries({ queryKey: ['field-work'] });
+  };
+  const change = useMutation<AttendanceToday, Error, string>({ mutationFn: (status) => attendance.setStatus(status), onSuccess: after });
+  const end = useMutation<AttendanceToday, Error>({ mutationFn: () => attendance.logout(), onSuccess: (d) => (after(d), setEnding(false)) });
+  const status = day.status;
+  return (
+    <View style={styles.bar} testID="attendance-logged-in">
+      <View style={styles.barTop}>
+        <IconTile icon="clock" accent="green" size={34} />
+        <View style={styles.flex1}>
+          <Text variant="bodyStrong">{t('fa03.loggedInAt', { time: formatTimeIst(day.loginAt!) })}</Text>
+          <Text variant="small" color={day.lateMinutes > 0 ? colors.tomato : colors.greenText}>
+            {day.lateMinutes > 0 ? t('fa03.lateBy', { minutes: day.lateMinutes }) : t('fa03.onTime')}
+          </Text>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('today.changeStatus')}
+          onPress={() => setPicking(true)}
+          style={styles.statusTap}
+          testID="attendance-status"
+        >
+          <StatusChip label={status ? statusLabel(status, t) : t('today.pickStatus')} tone="green" dot />
+          <Icon name="chevron-right" size={14} color={colors.greenText} />
+        </Pressable>
+      </View>
+      <Button label={t('today.endDay')} variant="secondary" onPress={() => setEnding(true)} testID="attendance-end" />
+      {change.error || end.error ? <Banner tone="error" message={isApiError(change.error ?? end.error) ? (change.error ?? end.error)!.message : t('common.error')} testID="attendance-error" /> : null}
+
+      <Sheet open={picking} onClose={() => setPicking(false)} title={t('today.changeStatus')}>
+        <ChoiceList
+          choices={STATUS_CHOICES.map((s) => ({ value: s, label: statusLabel(s, t), ...STATUS_ICON[s] }))}
+          value={(STATUS_CHOICES as readonly string[]).includes(status ?? '') ? (status as (typeof STATUS_CHOICES)[number]) : null}
+          onChange={(s) => {
+            setPicking(false);
+            if (s !== status) change.mutate(s);
+          }}
+          testID="status-choice"
+        />
+      </Sheet>
+      <Sheet open={ending} onClose={() => setEnding(false)} title={t('today.endDayTitle')}>
+        <Text variant="muted">{t('today.endDayBody')}</Text>
+        <Button label={t('today.endDay')} variant="danger" loading={end.isPending} onPress={() => end.mutate()} testID="attendance-end-confirm" />
+        <Button label={t('common.cancel')} variant="secondary" onPress={() => setEnding(false)} />
+      </Sheet>
+    </View>
+  );
+}
+
+/** One item of Needs you now: what it is (in the agent's language), when, and where it opens. */
+function NeedsRow({ item, last }: { item: NeedsItem; last: boolean }) {
+  const { t } = useI18n();
+  const look = NEEDS_LOOK[item.kind] ?? { icon: 'bell', accent: 'navy' };
+  const href = needsTarget(item);
+  const vacancy = item.vacancy ? (item.vacancy.headcount > 1 ? `${item.vacancy.trade} × ${item.vacancy.headcount}` : item.vacancy.trade) : null;
+  const what =
+    item.kind === 'interview_today' && item.interview
+      ? t('needs.interview_today', { time: formatTimeIst(item.interview.startsAt), name: item.interview.candidateName })
+      : item.kind === 'visit_unfinished'
+        ? t(`needs.visit.${item.target.step ?? 'record_result'}` as MessageKey)
+        : item.kind === 'agreement_waiting'
+          ? t(item.agreement?.state === 'link_expired' ? 'needs.agreement_expired' : item.agreement?.state === 'not_sent' ? 'needs.agreement_not_sent' : 'needs.agreement_waiting')
+          : item.kind === 'joining_due' && item.placement
+            ? t('needs.joining_due', { name: item.placement.candidateFirstName })
+            : vacancy && (item.kind === 'vacancy_awaiting_owner' || item.kind === 'vacancy_draft' || item.kind === 'ready_show_candidates')
+              ? t(`needs.${item.kind}` as MessageKey, { vacancy })
+              : t(`needs.${item.kind}` as MessageKey, { vacancy: '' });
+  const dueLabel =
+    item.due === 'overdue'
+      ? t('needs.overdue')
+      : item.due === 'today'
+        ? t('date.today')
+        : item.due === 'tomorrow'
+          ? t('date.tomorrow')
+          : item.kind === 'revisit_due' && item.revisitOn
+            ? formatDateKey(item.revisitOn)
+            : null;
   return (
     <ListRow
-      title={t('fa03.alertResult', { name: alert.business.name })}
-      leading={<IconTile icon={alert.result === 'selected' ? 'star' : 'user'} accent={alert.result === 'selected' ? 'royal' : 'navy'} size={34} />}
-      trailing={<StatusChip tone={alert.result === 'selected' ? 'blue' : 'neutral'} label={t(resultKey)} />}
-      onPress={() => router.push(`${routes.business}/${alert.business.id}`)}
+      title={item.title}
+      subtitle={[what, item.subtitle].filter(Boolean).join(' · ')}
+      leading={<IconTile icon={look.icon} accent={look.accent} size={34} />}
+      trailing={dueLabel ? <StatusChip tone={item.due === 'overdue' ? 'tomato' : item.due === 'today' ? 'amber' : 'neutral'} label={dueLabel} /> : <Icon name="chevron-right" size={16} />}
+      onPress={href ? () => router.push(href as never) : undefined}
       last={last}
-      testID={`alert-result-${alert.interviewId}`}
+      testID={`needs-${item.id}`}
     />
   );
 }
 
-function TodoRow({ todo, last }: { todo: HomeTodo; last: boolean }) {
-  const { t } = useI18n();
-  const whenLabel = todo.when === 'today' ? t('date.today') : todo.when === 'tomorrow' ? t('date.tomorrow') : t('fa03.overdue', { date: formatDateKey(todo.due) });
-  const chip = <StatusChip tone={todo.when === 'overdue' ? 'tomato' : todo.when === 'today' ? 'amber' : 'neutral'} label={whenLabel} />;
-  if (todo.kind === 'revisit') {
-    return (
-      <ListRow
-        title={t('fa03.todoRevisit', { name: todo.name })}
-        subtitle={todo.outcome === 'owner_not_there' ? t('fa03.todoOwnerAway') : t('fa03.todoComeBack')}
-        leading={<IconTile icon="store" accent="gold" size={34} />}
-        trailing={chip}
-        onPress={() =>
-          router.push({ pathname: routes.visitStart, params: todo.businessId ? { businessId: todo.businessId, name: todo.name } : { revisitOf: todo.visitId, name: todo.name } })
-        }
-        last={last}
-        testID={`todo-revisit-${todo.visitId}`}
-      />
-    );
-  }
-  if (todo.kind === 'joining') {
-    return (
-      <ListRow
-        title={t('fa03.todoJoining', { candidate: todo.candidateFirstName, name: todo.name })}
-        leading={<IconTile icon="briefcase" accent="green" size={34} />}
-        trailing={chip}
-        onPress={() => router.push(sellingRoutes.joining(todo.placementId))}
-        last={last}
-        testID={`todo-joining-${todo.placementId}`}
-      />
-    );
-  }
-  const title =
-    todo.taskKind === 'placement_check_in_day_7'
-      ? t('fa03.todoDay7', { name: todo.name })
-      : todo.taskKind === 'placement_check_in_day_30'
-        ? t('fa03.todoDay30', { name: todo.name })
-        : t('fa03.todoFollowUp', { name: todo.name });
-  const target = checkInTarget(todo);
+/** A bottom sheet with a title. */
+function Sheet({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode }) {
   return (
-    <ListRow
-      title={title}
-      leading={<IconTile icon="phone" accent="royal" size={34} />}
-      trailing={chip}
-      onPress={target ? () => router.push(target) : undefined}
-      last={last}
-      testID={`todo-check-${todo.taskId}`}
-    />
+    <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.backdrop} onPress={onClose}>
+        <Pressable style={styles.sheet} onPress={() => undefined}>
+          <Text variant="h2">{title}</Text>
+          {children}
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
-
-const STATUS_KEYS = {
+const STATUS_KEYS: Record<string, MessageKey> = {
   available: 'status.available',
   on_call: 'status.on_call',
   after_call_notes: 'status.after_call_notes',
@@ -313,22 +333,27 @@ const STATUS_KEYS = {
   short_break: 'status.short_break',
   lunch: 'status.lunch',
   idle: 'status.idle',
-} as const;
+};
 
 /** Status label in the agent's language; an unknown status shows as sent by the server. */
-function statusLabel(status: string, t: (key: (typeof STATUS_KEYS)[keyof typeof STATUS_KEYS]) => string): string {
-  const key = STATUS_KEYS[status as keyof typeof STATUS_KEYS];
+function statusLabel(status: string, t: (key: MessageKey) => string): string {
+  const key = STATUS_KEYS[status];
   return key ? t(key) : status;
 }
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
+  flex1: { flex: 1 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   cell: { flexBasis: '48%', flexGrow: 1 },
-  placements: { gap: 8, paddingTop: 4 },
-  placementsHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  full: { flexBasis: '100%' },
+  targets: { gap: 8, paddingTop: 4 },
+  targetsHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   onBlueLabel: { fontFamily: fonts.body700, fontSize: fontSize.label, letterSpacing: 0.6, textTransform: 'uppercase', color: colors.onBlueSoft, flex: 1 },
-  statRow: { flexDirection: 'row', alignItems: 'baseline' },
-  bigOnBlue: { fontFamily: fonts.display700, fontSize: 30, lineHeight: 36, color: colors.white, fontVariant: ['tabular-nums'] },
-  onBlueSoft: { fontFamily: fonts.body600, fontSize: fontSize.body, color: colors.onBlueSoft },
+  onBlueStrong: { fontFamily: fonts.display700, fontSize: 18, color: colors.white, fontVariant: ['tabular-nums'] },
+  bar: { gap: 10, padding: 12, borderRadius: radius.card, backgroundColor: colors.green100, borderLeftWidth: 4, borderLeftColor: colors.green },
+  barTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  statusTap: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: touch.min, paddingLeft: 6 },
+  backdrop: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },
+  sheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.card, borderTopRightRadius: radius.card, padding: 16, paddingBottom: 32, gap: 12 },
 });

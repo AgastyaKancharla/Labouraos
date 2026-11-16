@@ -46,7 +46,7 @@ describe('FA10 Register a job seeker', () => {
     await fireEvent.press(screen.getByTestId('mobile-otp-send'));
     await waitFor(() => screen.getByTestId('already-registered'));
     await fireEvent.press(screen.getByText('Open it'));
-    expect(router.push).toHaveBeenCalledWith('/job-seeker/JS-01042');
+    expect(router.push).toHaveBeenCalledWith('/job-seekers/JS-01042');
   });
 
   it('maps the form onto POST /job-seekers in paise (the call agent\'s payload)', () => {

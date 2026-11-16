@@ -10,7 +10,7 @@ import { Banner, Button, Card, HeroCard, Screen, StatusChip, Text } from '@/comp
 import { DateField, MoneyField, todayKeyIst } from '@/components/form';
 import { useI18n } from '@/i18n';
 import { formatDayIst, formatTimeIst } from '@/lib/format';
-import { sellingRoutes } from '@/navigation/routes';
+import { useSellingRoutes } from '@/navigation/useFlow';
 import { colors, fonts } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { feeBreakdown, formatRupees, KeyValue, Note, QueryView, useParam, useSellingSettings } from '../_selling';
@@ -38,6 +38,7 @@ export default function SelectedScreen() {
 }
 
 function Selected({ interview: i }: { interview: InterviewView }) {
+  const sr = useSellingRoutes();
   const { t } = useI18n();
   const { session } = useAuth();
   const { selling } = useEndpoints();
@@ -109,7 +110,7 @@ function Selected({ interview: i }: { interview: InterviewView }) {
       </Card>
       {confirmed ? (
         <>
-          <Button label={t('fa15s.ownerPaid')} onPress={() => router.push(sellingRoutes.paid(i.placement!.id))} testID="owner-paid" />
+          <Button label={t('fa15s.ownerPaid')} onPress={() => router.push(sr.paid(i.placement!.id))} testID="owner-paid" />
           <Note>{t('fa15s.notPaid', { name: i.candidate.firstName })}</Note>
         </>
       ) : null}

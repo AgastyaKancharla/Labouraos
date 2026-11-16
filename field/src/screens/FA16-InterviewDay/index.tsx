@@ -12,7 +12,7 @@ import { distanceMeters } from '@/device/location/location';
 import { useLocation } from '@/device/location/useLocation';
 import { useI18n } from '@/i18n';
 import { formatDayIst, formatTimeIst } from '@/lib/format';
-import { sellingRoutes } from '@/navigation/routes';
+import { useSellingRoutes } from '@/navigation/useFlow';
 import { colors } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { ErrorBanner, KeyValue, Note, QueryView, StepRow, useParam, useNow, useSellingSettings, UserFacingError } from '../_selling';
@@ -41,6 +41,7 @@ export default function InterviewDayScreen() {
 }
 
 function Day({ interview: i }: { interview: InterviewView }) {
+  const sr = useSellingRoutes();
   const { t } = useI18n();
   const { selling } = useEndpoints();
   const queue = useOfflineQueue();
@@ -128,7 +129,7 @@ function Day({ interview: i }: { interview: InterviewView }) {
         />
       </Card>
       <Note>{t('fa16.noShowRule')}</Note>
-      <Button label={t('fa16.showNext')} variant="secondary" onPress={() => router.push(sellingRoutes.matches(i.business.id, i.vacancy.id))} testID="show-next" />
+      <Button label={t('fa16.showNext')} variant="secondary" onPress={() => router.push(sr.matches(i.business.id, i.vacancy.id))} testID="show-next" />
     </>
   );
 }

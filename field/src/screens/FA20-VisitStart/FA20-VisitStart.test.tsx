@@ -81,4 +81,12 @@ describe('FA20 Visit a shop · photo', () => {
     expect(screen.getByTestId('fa20-error')).toHaveTextContent(/already used/);
     expect(router.replace).not.toHaveBeenCalled();
   });
+
+  it('another agent’s shop nearby is view-only: it cannot be taken as this visit’s revisit', async () => {
+    const theirs = { ...nearby, shops: nearby.shops.map((sh: Record<string, unknown>) => ({ ...sh, isMine: false, canAct: false })) };
+    await renderWithApp(<VisitStartScreen />, { signedInAs: kiran, route: (url) => (url.includes('/field-work/map') ? { status: 200, body: theirs } : undefined) });
+    await waitFor(() => screen.getByTestId('fa20-nearby'));
+    expect(screen.queryByTestId('fa20-same-shop')).toBeNull();
+    expect(screen.getByTestId('fa20-not-yours')).toHaveTextContent('Another agent’s shop: view only.');
+  });
 });

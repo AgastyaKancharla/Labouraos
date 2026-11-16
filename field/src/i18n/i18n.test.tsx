@@ -3,6 +3,7 @@ import { Text } from 'react-native';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { createMemoryStore } from '@/lib/storage';
 import { en } from './en';
+import { redesignEn } from './redesign.en';
 import { hi } from './hi';
 import { I18nProvider, useI18n } from './I18nProvider';
 import { kn } from './kn';
@@ -10,16 +11,31 @@ import { LANGUAGE_STORAGE_KEY, LANGUAGES, translate, translatePlural } from './t
 
 const placeholders = (s: string) => (s.match(/\{\w+\}/g) ?? []).sort();
 
+/** Keys added by the redesign (16 Nov): Laboura Field requires English and Kannada; Hindi is optional (hidden, English shows). */
+const REDESIGN_KEYS = new Set(Object.keys(redesignEn));
+
 describe('translations', () => {
-  it.each([
-    ['kn', kn],
-    ['hi', hi],
-  ])('%s has exactly the English keys, none empty, with the same {slots}', (_code, messages) => {
-    expect(Object.keys(messages).sort()).toEqual(Object.keys(en).sort());
+  it('kn has exactly the English keys, none empty, with the same {slots}', () => {
+    expect(Object.keys(kn).sort()).toEqual(Object.keys(en).sort());
     for (const key of Object.keys(en) as (keyof typeof en)[]) {
-      expect(messages[key].trim()).not.toBe('');
-      expect(placeholders(messages[key])).toEqual(placeholders(en[key]));
+      expect(kn[key].trim()).not.toBe('');
+      expect(placeholders(kn[key])).toEqual(placeholders(en[key]));
     }
+  });
+
+  it('hi keeps every key it had (the redesign keys are optional), none empty, with the same {slots}', () => {
+    const hiMessages = hi as Record<string, string | undefined>;
+    const required = Object.keys(en).filter((k) => !REDESIGN_KEYS.has(k));
+    expect(required.filter((k) => !(k in hiMessages))).toEqual([]);
+    expect(Object.keys(hiMessages).filter((k) => !(k in en))).toEqual([]);
+    for (const key of Object.keys(hiMessages) as (keyof typeof en)[]) {
+      expect(hiMessages[key]!.trim()).not.toBe('');
+      expect(placeholders(hiMessages[key]!)).toEqual(placeholders(en[key]));
+    }
+  });
+
+  it('a key with no Hindi falls back to English', () => {
+    expect(translate('hi', 'tabs.today')).toBe('Today');
   });
 
   // Kannada, English and Hindi stay everywhere they are offered (owner decision,
@@ -41,10 +57,11 @@ describe('translations', () => {
 
   it('never leaves a Kannada or Hindi string as a copy of the English one', () => {
     const copies: string[] = [];
+    const hiMessages = hi as Record<string, string | undefined>;
     for (const key of Object.keys(en) as (keyof typeof en)[]) {
       if (SAME_AS_ENGLISH_ALLOWED.has(key) || hasNoWords(en[key])) continue;
       if (kn[key] === en[key]) copies.push(`kn ${key}`);
-      if (hi[key] === en[key]) copies.push(`hi ${key}`);
+      if (hiMessages[key] === en[key]) copies.push(`hi ${key}`);
     }
     expect(copies).toEqual([]);
   });
@@ -64,8 +81,8 @@ describe('translations', () => {
     expect(translate('kn', 'tabs.home')).toBe('ಮುಖಪುಟ');
   });
 
-  it('offers ಕನ್ನಡ / हिंदी / EN in that order', () => {
-    expect(LANGUAGES.map((l) => l.label)).toEqual(['ಕನ್ನಡ', 'हिंदी', 'EN']);
+  it('offers ಕನ್ನಡ / EN in that order (Hindi hidden in Laboura Field for now)', () => {
+    expect(LANGUAGES.map((l) => l.label)).toEqual(['ಕನ್ನಡ', 'EN']);
   });
 });
 
@@ -91,13 +108,28 @@ describe('language switcher', () => {
   });
 
   it('starts in the saved language', async () => {
-    const storage = createMemoryStore({ [LANGUAGE_STORAGE_KEY]: 'hi' });
+    const storage = createMemoryStore({ [LANGUAGE_STORAGE_KEY]: 'kn' });
     await render(
       <I18nProvider storage={storage}>
         <Probe />
       </I18nProvider>,
     );
-    await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('होम'));
+    await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('ಮುಖಪುಟ'));
+  });
+
+  it('a phone that had Hindi saved opens in English (Hindi is hidden), and the switcher has no Hindi', async () => {
+    const storage = createMemoryStore({ [LANGUAGE_STORAGE_KEY]: 'hi' });
+    await render(
+      <I18nProvider storage={storage}>
+        <LanguageSwitcher />
+        <Probe />
+      </I18nProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('Home'));
+    await fireEvent.press(screen.getByTestId('language-switcher'));
+    expect(screen.queryByTestId('language-hi')).toBeNull();
+    expect(screen.getByTestId('language-kn')).toBeTruthy();
+    expect(screen.getByTestId('language-en')).toBeTruthy();
   });
 
   it('ignores a corrupt saved value', async () => {

@@ -1,41 +1,46 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
-import { router, searchParams } from '@/test/expo-router-mock';
+import { router, searchParams, segments } from '@/test/expo-router-mock';
 import { kiran, renderWithApp } from '@/test/render';
+import { routeTable } from '@/test/selling-fixtures';
+import { businessPage } from '@/test/redesign-fixtures';
 import VisitDoneScreen from '.';
 
 jest.mock('expo-router', () => require('@/test/expo-router-mock'));
 
-const base = {
-  id: 'b-1', code: 'BZ-00310', name: 'Annapoorna Mess', businessType: null, locality: null, latitude: null, longitude: null, verificationStatus: 'pending_tl_check',
-  documentsStatus: null, paused: false, inPersonOnboardedAt: '2026-11-09T06:18:00Z', canShowCandidates: true, isMine: true,
-  agreement: { signedAt: '2026-11-09T06:18:00Z', signedName: 'Shankar Rao' }, contact: null, branches: [],
-  vacancies: [{ id: 'v1', code: 'VC-1', trade: 'Cook', headcount: 2, status: 'draft', salaryMinPaise: null, salaryMaxPaise: null, salaryPeriod: null, otpConfirmed: false }],
-  stats: { candidatesShown: 0, interviews: 0, placements: 0, inGuarantee: 0 }, visits: [],
-};
+const signed = () =>
+  businessPage({ checklist: { ...businessPage().checklist, agreement: { state: 'signed', signedAt: '2026-11-16T06:18:00Z', signedByName: 'Manjunath' } } });
 
-describe('FA06b Visit complete', () => {
-  it('signed in person: candidates can be shown now; the Team Lead reviews later today', async () => {
-    searchParams.current = { businessId: 'b-1', visitId: 'v-1' };
-    await renderWithApp(<VisitDoneScreen />, { signedInAs: kiran, route: (url) => (url.endsWith('/field-work/businesses/b-1') ? { status: 200, body: base } : undefined) });
+beforeEach(() => {
+  jest.clearAllMocks();
+  searchParams.current = { businessId: 'b-1', visitId: 'v-1' };
+  segments.current = ['(app)', '(tabs)', '(visits)', 'visit', 'done'];
+});
+
+describe('FA06b candidates, step 7 of 7', () => {
+  it('signed: shows candidates for each confirmed vacancy inside the Visits tab; never asks "How did the visit go?" again', async () => {
+    const { route } = routeTable({ '/field-work/businesses/b-1/page': signed() });
+    await renderWithApp(<VisitDoneScreen />, { signedInAs: kiran, route });
     await waitFor(() => screen.getByTestId('fa06b-banner'));
-    expect(screen.getByTestId('fa06b-banner')).toHaveTextContent(/agreement signed by Shankar Rao/);
-    expect(screen.getByTestId('fa06b-agreement')).toHaveTextContent(/Signed 11:48 AM/);
-    expect(screen.getByText('Cook × 2')).toBeTruthy();
-    expect(screen.getByText('Later today')).toBeTruthy();
-    await fireEvent.press(screen.getByTestId('fa06b-show'));
-    expect(router.push).toHaveBeenCalledWith('/job-seekers/b-1');
-    await fireEvent.press(screen.getByTestId('fa06b-outcome'));
-    expect(router.push).toHaveBeenCalledWith({ pathname: '/visit/outcome', params: { id: 'v-1' } });
+    expect(screen.getByTestId('step-counter')).toHaveTextContent('Step 7 of 7 · candidates');
+    expect(screen.getByTestId('fa06b-banner')).toHaveTextContent(/Manjunath/);
+    expect(screen.queryByTestId('fa06b-outcome')).toBeNull();
+    expect(screen.queryByText(/Record visit outcome/)).toBeNull();
+    await fireEvent.press(screen.getByTestId('fa06b-show-vac-3'));
+    expect(router.push).toHaveBeenCalledWith('/visit/candidates/b-1?vacancyId=vac-3');
+    await fireEvent.press(screen.getByTestId('fa06b-done'));
+    expect(router.dismissTo).toHaveBeenCalledWith('/visits');
   });
 
-  it('not signed yet: candidates stay hidden', async () => {
-    searchParams.current = { businessId: 'b-1' };
-    await renderWithApp(<VisitDoneScreen />, {
-      signedInAs: kiran,
-      route: (url) => (url.endsWith('/field-work/businesses/b-1') ? { status: 200, body: { ...base, agreement: null, canShowCandidates: false, verificationStatus: 'lead', inPersonOnboardedAt: null } } : undefined),
-    });
-    await waitFor(() => screen.getByTestId('fa06b-banner'));
-    expect(screen.getByTestId('fa06b-banner')).toHaveTextContent(/waiting for the agreement/);
-    expect(screen.getByTestId('fa06b-show').props.accessibilityState.disabled).toBe(true);
+  it('not signed yet: says why candidates are hidden, opens the agreement step, and offers Finish later', async () => {
+    const page = businessPage({ status: { ...businessPage().status, canShowCandidates: false, candidatesHiddenReason: 'agreement_not_signed' } });
+    const { route } = routeTable({ '/field-work/businesses/b-1/page': page });
+    await renderWithApp(<VisitDoneScreen />, { signedInAs: kiran, route });
+    await waitFor(() => screen.getByTestId('fa06b-hidden'));
+    expect(screen.getByTestId('fa06b-hidden')).toHaveTextContent(/once the owner signs/);
+    expect(screen.getByTestId('fa06b-show-vac-3')).toBeDisabled();
+    await fireEvent.press(screen.getByTestId('fa06b-agreement'));
+    expect(router.push).toHaveBeenCalledWith({ pathname: '/visit/agreement', params: { businessId: 'b-1', visitId: 'v-1' } });
+    await fireEvent.press(screen.getByTestId('finish-later'));
+    expect(router.dismissTo).toHaveBeenCalledWith('/visits');
   });
 });

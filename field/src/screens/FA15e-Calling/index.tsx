@@ -11,7 +11,7 @@ import { RadioGroup, SelectField } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useI18n } from '@/i18n';
 import { formatCountdown } from '@/lib/format';
-import { sellingRoutes } from '@/navigation/routes';
+import { useSellingRoutes } from '@/navigation/useFlow';
 import { colors, fonts, radius } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { ErrorBanner, formatRupees, Note, QueryView, Script, SHIFT_KEYS, useParam } from '../_selling';
@@ -49,6 +49,7 @@ export default function CallingScreen() {
 }
 
 function Calling({ card, vacancyId }: { card: CandidateCard; vacancyId: string }) {
+  const sr = useSellingRoutes();
   const { t } = useI18n();
   const { session } = useAuth();
   const { selling } = useEndpoints();
@@ -88,7 +89,7 @@ function Calling({ card, vacancyId }: { card: CandidateCard; vacancyId: string }
       return r;
     },
     onSuccess: (r) => {
-      if (answer === 'yes') router.push(sellingRoutes.owner(r.interviewId));
+      if (answer === 'yes') router.push(sr.owner(r.interviewId));
       else router.back();
     },
   });
@@ -162,7 +163,7 @@ function Calling({ card, vacancyId }: { card: CandidateCard; vacancyId: string }
               <Button
                 label={t('fa15e.bookLater')}
                 style={styles.flex1}
-                onPress={() => router.push(sellingRoutes.book(vacancyId, card.jobSeekerId))}
+                onPress={() => router.push(sr.book(vacancyId, card.jobSeekerId))}
                 testID="book-later"
               />
             </View>
@@ -171,7 +172,7 @@ function Calling({ card, vacancyId }: { card: CandidateCard; vacancyId: string }
       )}
       <ErrorBanner error={place.error ?? save.error} />
       <Note>{t('fa15e.rules')}</Note>
-      <Button label={t('fa15e.ownerBusy')} variant="secondary" onPress={() => router.push(sellingRoutes.book(vacancyId, card.jobSeekerId))} testID="owner-busy" />
+      <Button label={t('fa15e.ownerBusy')} variant="secondary" onPress={() => router.push(sr.book(vacancyId, card.jobSeekerId))} testID="owner-busy" />
       <Button label={t('fa15e.endCall')} variant="danger" onPress={() => router.back()} testID="end-call" />
     </>
   );

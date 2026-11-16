@@ -7,7 +7,7 @@ import type { PlacementView } from '@/api/endpoints';
 import { Banner, Button, Card, Screen } from '@/components';
 import { useI18n } from '@/i18n';
 import { formatDayIst, formatTimeIst } from '@/lib/format';
-import { routes, sellingRoutes } from '@/navigation/routes';
+import { useSellingRoutes } from '@/navigation/useFlow';
 import { colors } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { formatRupees, QueryView, StepRow, useParam } from '../_selling';
@@ -45,6 +45,7 @@ export default function PaidScreen() {
 }
 
 function Paid({ placement: p }: { placement: PlacementView }) {
+  const sr = useSellingRoutes();
   const { t } = useI18n();
   const paid = isPaid(p);
   const next = p.nextVacancies[0];
@@ -73,11 +74,11 @@ function Paid({ placement: p }: { placement: PlacementView }) {
           <Button
             label={t('fa15q.nextRole', { trade: next.trade })}
             style={styles.flex1}
-            onPress={() => router.replace(sellingRoutes.matches(p.business.id, next.id))}
+            onPress={() => router.replace(sr.matches(p.business.id, next.id))}
             testID="next-role"
           />
         ) : null}
-        <Button label={t('tabs.home')} variant="secondary" style={styles.flex1} onPress={() => router.replace(routes.home)} testID="home" />
+        <Button label={t('selling.backToBusiness')} variant="secondary" style={styles.flex1} onPress={() => router.replace(sr.business(p.business.id))} testID="home" />
       </View>
     </>
   );

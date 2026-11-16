@@ -1,7 +1,11 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { router, searchParams } from '@/test/expo-router-mock';
 import { kiran, renderWithApp } from '@/test/render';
-import { saveDraft } from '../_visits/visitDraft';
+import { clearAllFormDrafts } from '@/lib/formDraft';
+import { OfflineQueue } from '@/device/offline-queue/queue';
+import { createMemoryQueueStore } from '@/device/offline-queue/types';
+import { networkError } from '@/api/errors';
+import { getDraft, saveDraft } from '../_visits/visitDraft';
 import { businessBody, formErrors, type FormState } from './form';
 import RegisterBusinessScreen from '.';
 import { nearestArea } from '@/lib/nearestArea';
@@ -9,6 +13,36 @@ import { nearestArea } from '@/lib/nearestArea';
 jest.mock('expo-router', () => require('@/test/expo-router-mock'));
 
 const trades = [{ id: 't1', name: 'Cook', salaryMinPaise: 1800000, salaryMaxPaise: 3000000, minimumWageLevel: 'skilled', legalMinimumPaise: 2340000 }];
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  clearAllFormDrafts();
+});
+
+/** Fills every required field of the form (contact with OTP, business, address). */
+async function fillRequired() {
+    await fireEvent.changeText(screen.getByTestId('fa07-contact-name'), 'Shankar Rao');
+    await fireEvent.press(screen.getByTestId('fa07-role'));
+    await fireEvent.press(screen.getByTestId('fa07-role-owner'));
+    await fireEvent.changeText(screen.getByTestId('fa07-mobile'), '9900054321');
+    await fireEvent.press(screen.getByTestId('fa07-mobile-send'));
+    await waitFor(() => screen.getByTestId('fa07-mobile-verify'));
+    await fireEvent.changeText(screen.getByTestId('fa07-mobile-code'), '123456');
+    await fireEvent.press(screen.getByTestId('fa07-mobile-verify'));
+    await waitFor(() => screen.getByText(/Checked by OTP at/));
+    await fireEvent.press(screen.getByTestId('fa07-language'));
+    await fireEvent.press(screen.getByTestId('fa07-language-kn'));
+    await fireEvent.press(screen.getByTestId('fa07-type'));
+    await fireEvent.press(screen.getByTestId('fa07-type-restaurant_hotel'));
+    await fireEvent.press(screen.getByTestId('fa07-employees'));
+    await fireEvent.press(screen.getByTestId('fa07-employees-1-5'));
+    await fireEvent.changeText(screen.getByLabelText('Shop / building number *'), 'No. 14');
+    await fireEvent.changeText(screen.getByLabelText('Street *'), '16th Main Road');
+    await fireEvent.changeText(screen.getByLabelText('Landmark *'), 'Opposite BTM water tank');
+    await fireEvent.press(screen.getByTestId('fa07-area'));
+    await waitFor(() => screen.getByTestId('fa07-area-BTM Layout 2nd Stage'));
+    await fireEvent.press(screen.getByTestId('fa07-area-BTM Layout 2nd Stage'));
+}
 
 describe('FA07 Register a business', () => {
   it('starts from the visit (board name, map pin), checks the mobile by OTP, warns below the minimum wage, and registers from the visit', async () => {
@@ -39,27 +73,11 @@ describe('FA07 Register a business', () => {
     expect(screen.getByTestId('fa07-problem')).toHaveTextContent(/required fields/);
     expect(posted).toHaveLength(0);
 
-    await fireEvent.changeText(screen.getByTestId('fa07-contact-name'), 'Shankar Rao');
-    await fireEvent.press(screen.getByTestId('fa07-role'));
-    await fireEvent.press(screen.getByTestId('fa07-role-owner'));
-    await fireEvent.changeText(screen.getByTestId('fa07-mobile'), '9900054321');
-    await fireEvent.press(screen.getByTestId('fa07-mobile-send'));
-    await waitFor(() => screen.getByTestId('fa07-mobile-verify'));
-    await fireEvent.changeText(screen.getByTestId('fa07-mobile-code'), '123456');
-    await fireEvent.press(screen.getByTestId('fa07-mobile-verify'));
-    await waitFor(() => screen.getByText(/Checked by OTP at/));
-    await fireEvent.press(screen.getByTestId('fa07-language'));
-    await fireEvent.press(screen.getByTestId('fa07-language-kn'));
-    await fireEvent.press(screen.getByTestId('fa07-type'));
-    await fireEvent.press(screen.getByTestId('fa07-type-restaurant_hotel'));
-    await fireEvent.press(screen.getByTestId('fa07-employees'));
-    await fireEvent.press(screen.getByTestId('fa07-employees-1-5'));
-    await fireEvent.changeText(screen.getByLabelText('Shop / building number *'), 'No. 14');
-    await fireEvent.changeText(screen.getByLabelText('Street *'), '16th Main Road');
-    await fireEvent.changeText(screen.getByLabelText('Landmark *'), 'Opposite BTM water tank');
-    await fireEvent.press(screen.getByTestId('fa07-area'));
-    await waitFor(() => screen.getByTestId('fa07-area-BTM Layout 2nd Stage'));
-    await fireEvent.press(screen.getByTestId('fa07-area-BTM Layout 2nd Stage'));
+    await fillRequired();
+    // Staff needed is optional: no row until the agent adds one.
+    expect(screen.queryByTestId('fa07-staff-0')).toBeNull();
+    expect(screen.getByTestId('fa07-staff-optional')).toHaveTextContent(/Optional/);
+    await fireEvent.press(screen.getByTestId('fa07-add-role'));
     await fireEvent.press(screen.getByTestId('fa07-staff-0-trade'));
     await waitFor(() => screen.getByTestId('fa07-staff-0-trade-Cook'));
     await fireEvent.press(screen.getByTestId('fa07-staff-0-trade-Cook'));
@@ -79,7 +97,66 @@ describe('FA07 Register a business', () => {
       latitude: 12.9116, longitude: 77.6101, fieldVisitId: 'v-7',
       staffNeededRows: [{ trade: 'Cook', headcount: 1, salaryMinPaise: 1600000, salaryMaxPaise: 1600000, shift: 'day' }],
     });
-    await waitFor(() => expect(router.replace).toHaveBeenCalledWith({ pathname: '/visit/done', params: { businessId: 'b-new', visitId: 'v-7' } }));
+    // Next: the agreement step, in the Visits tab; the phone's copy of the visit now knows its business.
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith({ pathname: '/visit/agreement', params: { businessId: 'b-new', visitId: 'v-7' } }));
+    expect(getDraft('v-7')).toMatchObject({ businessId: 'b-new', businessName: 'Annapoorna Mess' });
+    expect(screen.getByTestId('step-counter')).toHaveTextContent('Step 4 of 7 · business form');
+  });
+
+  it('what was typed survives going back and opening the form again', async () => {
+    saveDraft({
+      id: 'v-9', startedAt: '2026-11-09T06:00:00Z', latitude: 12.9116, longitude: 77.6101, accuracy: 8, shopName: 'Sri Sai Stores', businessId: null,
+      businessName: null, spokeTo: 'owner', contactPhone: '', endedAt: '2026-11-09T06:14:00Z', proofDistance: 6, proofAt: null,
+    });
+    searchParams.current = { visitId: 'v-9' };
+    const route = (url: string) => (url.endsWith('/trades') ? { status: 200, body: trades } : undefined);
+    const first = await renderWithApp(<RegisterBusinessScreen />, { signedInAs: kiran, route });
+    await fireEvent.changeText(screen.getByTestId('fa07-contact-name'), 'Manjunath');
+    await first.unmount();
+    await renderWithApp(<RegisterBusinessScreen />, { signedInAs: kiran, route });
+    expect(screen.getByTestId('fa07-contact-name').props.value).toBe('Manjunath');
+  });
+
+  it('will not save while the visit’s photos are still waiting to send', async () => {
+    saveDraft({
+      id: 'v-10', startedAt: '2026-11-09T06:00:00Z', latitude: 12.9116, longitude: 77.6101, accuracy: 8, shopName: 'Sri Sai Stores', businessId: null,
+      businessName: null, spokeTo: 'owner', contactPhone: '', endedAt: '2026-11-09T06:14:00Z', proofDistance: 6, proofAt: null,
+    });
+    searchParams.current = { visitId: 'v-10' };
+    const queue = new OfflineQueue({ store: createMemoryQueueStore(), send: async () => Promise.reject(networkError()) });
+    await queue.submit('fa-1', 'Visit selfie', { method: 'POST', path: '/field-visits/v-10/proof', json: {} });
+    const posted: unknown[] = [];
+    await renderWithApp(<RegisterBusinessScreen />, {
+      signedInAs: kiran,
+      queue,
+      route: (url, init) => {
+        if (url.endsWith('/screens/call-registration/options')) return { status: 200, body: { city: 'Bengaluru', areas: [{ name: 'BTM Layout 2nd Stage', pincode: '560076', latitude: 12.91, longitude: 77.61 }] } };
+        if (url.endsWith('/trades')) return { status: 200, body: trades };
+        if (url.endsWith('/otp/send')) return { status: 201, body: { success: true, requestId: 'otp-9' } };
+        if (url.endsWith('/otp/verify')) return { status: 201, body: { verified: true } };
+        if (url.endsWith('/businesses') && init.method === 'POST') posted.push(init.body);
+        return undefined;
+      },
+    });
+    await fillRequired();
+    await fireEvent.press(screen.getByTestId('fa07-save'));
+    await waitFor(() => expect(screen.getByTestId('fa07-problem')).toHaveTextContent(/still waiting to send/));
+    expect(posted).toHaveLength(0);
+  });
+
+  it('a visit whose business is already registered goes on to the agreement instead of a blank form (resume an interrupted onboarding)', async () => {
+    searchParams.current = { visitId: 'v-11' };
+    await renderWithApp(<RegisterBusinessScreen />, {
+      signedInAs: kiran,
+      route: (url) =>
+        url.endsWith('/field-visits/v-11')
+          ? { status: 200, body: { id: 'v-11', business: { id: 'b-4', code: 'BZ-4', name: 'Green Leaf Café' }, shopName: 'Green Leaf Café', startedAt: '2026-11-09T06:00:00Z', latitude: 1, longitude: 1, accuracyMeters: 5 } }
+          : undefined,
+    });
+    await waitFor(() => screen.getByTestId('fa07-already'));
+    expect(screen.queryByTestId('fa07-save')).toBeNull();
+    await fireEvent.press(screen.getByTestId('fa07-to-agreement'));
+    expect(router.replace).toHaveBeenCalledWith({ pathname: '/visit/agreement', params: { businessId: 'b-4', visitId: 'v-11' } });
   });
 
   describe('area from the shop\'s GPS within 1 km (decided 14 Nov)', () => {

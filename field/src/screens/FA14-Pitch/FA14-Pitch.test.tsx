@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
+import { router, segments } from '@/test/expo-router-mock';
 import { kiran, renderWithApp } from '@/test/render';
 import { routeTable, settings } from '@/test/selling-fixtures';
 import PitchScreen from '.';
@@ -27,5 +28,16 @@ describe('FA14 Pitch and fee calculator', () => {
     expect(screen.getByTestId('pitch')).toHaveTextContent(/हम आपको जाँचे हुए कर्मचारी भेजते हैं/);
     await fireEvent.press(screen.getByTestId('pitch-language-kn'));
     expect(screen.getByTestId('pitch')).toHaveTextContent(/ಪರಿಶೀಲಿಸಿದ ಸಿಬ್ಬಂದಿ/);
+  });
+
+  it('opened during a visit, it goes back to the visit instead of starting a second one', async () => {
+    segments.current = ['(app)', '(tabs)', '(visits)', 'visit', 'pitch'];
+    const { route } = routeTable({ '/screens/field-selling/settings': settings });
+    await renderWithApp(<PitchScreen />, { signedInAs: kiran, route });
+    expect(screen.queryByTestId('register-business')).toBeNull();
+    await fireEvent.press(screen.getByTestId('back-to-visit'));
+    expect(router.back).toHaveBeenCalled();
+    expect(router.push).not.toHaveBeenCalled();
+    segments.current = [];
   });
 });

@@ -58,6 +58,16 @@ export const queryKeys = {
   myRequests: ['attendance', 'requests', 'mine'] as const,
   myPayslips: ['payroll', 'my-payslips'] as const,
   myPayslip: (month: string) => ['payroll', 'my-payslips', month] as const,
+  // Laboura Field redesign (docs/api/field-redesign.md). Under 'field-work' so one
+  // invalidation of ['field-work'] after any step refreshes Today, Visits and the business pages.
+  today: ['field-work', 'today'] as const,
+  day: (date: string) => ['field-work', 'day', date] as const,
+  myBusinesses: (q: string) => ['field-work', 'my-businesses', q] as const,
+  businessPage: (ref: string) => ['field-work', 'business-page', ref] as const,
+  agreement: (ref: string) => ['field-work', 'agreement', ref] as const,
+  myJobSeekers: (q: string) => ['field-work', 'my-job-seekers', q] as const,
+  referral: (id: string) => ['referrals', id] as const,
+  referralStatus: (id: string) => ['referrals', id, 'status'] as const,
   // Search (CA16-Search for the field app)
   search: (q: string, type: string) => ['search', q, type] as const,
 };

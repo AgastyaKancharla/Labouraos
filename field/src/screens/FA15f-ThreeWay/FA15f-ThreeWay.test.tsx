@@ -28,7 +28,7 @@ describe('FA15f Owner on the phone', () => {
     await waitFor(() => screen.getByTestId('not-selected-otp-sent'));
     expect(screen.getByText(/We sent an OTP to Shankar \(\*\*\*\*\*\*3310\)/)).toBeTruthy();
     await fireEvent.changeText(screen.getByTestId('not-selected-otp-code'), '714026');
-    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/job-seekers/biz-1?vacancyId=vac-1'));
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/businesses/candidates/biz-1?vacancyId=vac-1'));
     expect(calls).toContainEqual({ method: 'POST', path: '/field-selling/interviews/iv-1/owner-otp', body: { decision: 'not_selected', reason: 'experience' } });
     expect(calls).toContainEqual({
       method: 'POST', path: '/field-selling/interviews/iv-1/decision',
@@ -42,9 +42,9 @@ describe('FA15f Owner on the phone', () => {
     await waitFor(() => screen.getByTestId('decision-selected'));
     await fireEvent.press(screen.getByTestId('decision-selected'));
     await fireEvent.press(screen.getByTestId('go-selected'));
-    expect(router.push).toHaveBeenCalledWith('/job-seekers/interview/iv-1/selected');
+    expect(router.push).toHaveBeenCalledWith('/businesses/interview/iv-1/selected');
     await fireEvent.press(screen.getByTestId('decision-meet'));
     await fireEvent.press(screen.getByTestId('go-meet'));
-    expect(router.push).toHaveBeenCalledWith('/job-seekers/book?vacancyId=vac-1&jobSeekerId=js-1&from=iv-1');
+    expect(router.push).toHaveBeenCalledWith('/businesses/book?vacancyId=vac-1&jobSeekerId=js-1&from=iv-1');
   });
 });

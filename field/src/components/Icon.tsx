@@ -7,6 +7,7 @@ export type IconName =
   | 'camera'
   | 'plus'
   | 'chevron-right'
+  | 'chevron-left'
   | 'wifi-off'
   | 'location'
   | 'home'
@@ -64,6 +65,7 @@ const DRAW: Record<IconName, Draw> = {
   ),
   plus: (c) => <Path d="M12 5v14M5 12h14" {...c} />,
   'chevron-right': (c) => <Path d="m9 6 6 6-6 6" {...c} />,
+  'chevron-left': (c) => <Path d="m15 6-6 6 6 6" {...c} />,
   'wifi-off': (c) => (
     <>
       <Path d="M3 3l18 18" {...c} />

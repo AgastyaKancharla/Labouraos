@@ -1,4 +1,4 @@
-import type { Messages } from './en';
+import type { HindiMessages } from './en';
 import { sellingHi } from './selling.hi';
 import { attendanceHi } from './attendance.hi';
 import { searchHi } from './search.hi';
@@ -10,7 +10,7 @@ import { accessHi } from './access.hi';
  * Staff codes, IDs (JS-, BZ-…) and brand names stay in English letters.
  * To be checked by a native speaker before launch.
  */
-export const hi: Messages = {
+export const hi: HindiMessages = {
   ...sellingHi,
   ...attendanceHi,
   ...searchHi,

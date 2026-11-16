@@ -28,7 +28,7 @@ describe('FA15g Book interview', () => {
     await fireEvent.press(screen.getByTestId('time'));
     await fireEvent.press(screen.getByTestId('time-option-20:00'));
     await fireEvent.press(screen.getByTestId('book'));
-    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/job-seekers/interview/iv-7/booked'));
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/businesses/interview/iv-7/booked'));
     expect(calls).toContainEqual({
       method: 'POST', path: '/field-selling/interviews',
       body: { date: today, time: '20:00', type: 'at_shop', agentWillAttend: true, vacancyId: 'vac-1', jobSeekerId: 'js-1' },
@@ -51,7 +51,7 @@ describe('FA15g Book interview', () => {
     await fireEvent.press(screen.getByTestId('date'));
     await fireEvent.press(screen.getByTestId(`date-day-${todayKeyIst()}`));
     await fireEvent.press(screen.getByTestId('book'));
-    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/job-seekers/interview/iv-8/booked'));
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/businesses/interview/iv-8/booked'));
     expect(calls).toContainEqual({ method: 'POST', path: '/field-selling/interviews/iv-1/meet', body: { date: todayKeyIst(), time: '10:30', type: 'walk_in', agentWillAttend: false } });
   });
 });

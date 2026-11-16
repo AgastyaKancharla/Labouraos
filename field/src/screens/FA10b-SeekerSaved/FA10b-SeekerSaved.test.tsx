@@ -20,7 +20,7 @@ describe('FA10b Saved — send the link', () => {
     expect(screen.getByTestId('step-payment')).toHaveTextContent(/4 · ₹499 paymentNot sent yet/);
     expect(screen.queryByTestId('other-payer')).toBeNull();
     await fireEvent.press(screen.getByTestId('send-link'));
-    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/job-seeker/js-uuid'));
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/job-seekers/js-uuid'));
     expect(calls).toContainEqual({ method: 'POST', path: '/consent/links', body: { jobSeekerId: 'js-uuid' } });
   });
 

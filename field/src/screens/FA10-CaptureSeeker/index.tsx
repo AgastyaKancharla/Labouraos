@@ -11,7 +11,7 @@ import { useLocation } from '@/device/location/useLocation';
 import { useI18n, type MessageKey } from '@/i18n';
 import { duplicateMessage, readOtpSend } from '@/lib/otp-send';
 import { formatTimeIst } from '@/lib/format';
-import { sellingRoutes } from '@/navigation/routes';
+import { pageRoutes } from '@/navigation/routes';
 import { type Accent, accents, colors, fonts } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { ErrorBanner, formatRupees, Script, UserFacingError } from '../_selling';
@@ -105,7 +105,7 @@ export default function CaptureSeekerScreen() {
     },
     onSuccess: (created) => {
       clearSeekerDraft();
-      router.replace(sellingRoutes.seekerSaved(created.id));
+      router.replace(pageRoutes.seekerSaved(created.id));
     },
   });
 
@@ -165,7 +165,7 @@ export default function CaptureSeekerScreen() {
                     : t('fa10.alreadyHidden')
               }
               // "Open it" opens a job seeker's progress; a business or partner number has no such page here.
-              action={duplicate.code && (!duplicate.type || duplicate.type === 'job_seeker') ? <Button label={t('fa10.openIt')} variant="secondary" onPress={() => router.push(sellingRoutes.seekerProgress(duplicate.code!))} /> : undefined}
+              action={duplicate.code && (!duplicate.type || duplicate.type === 'job_seeker') ? <Button label={t('fa10.openIt')} variant="secondary" onPress={() => router.push(pageRoutes.seekerProgress(duplicate.code!))} /> : undefined}
               testID="already-registered"
             />
           ) : mobileOk ? (

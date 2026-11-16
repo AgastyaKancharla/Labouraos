@@ -10,7 +10,8 @@ import { MobileField, SelectField } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useI18n, type MessageKey } from '@/i18n';
 import { formatTimeIst } from '@/lib/format';
-import { routes, sellingRoutes } from '@/navigation/routes';
+import { pageRoutes, routes } from '@/navigation/routes';
+import { finishLater } from '@/navigation/useFlow';
 import { colors, fonts } from '@/theme';
 import { ErrorBanner, Note, QueryView, useNow } from './index';
 import { AadhaarQrScan } from './AadhaarQrScan';
@@ -73,7 +74,7 @@ function Panel({ status: s, variant, refetch }: { status: JobSeekerStatus; varia
     mutationFn: () => queue.live(() => selling.sendRegistrationLink(s.id)),
     onSuccess: () => {
       refetch();
-      if (variant === 'saved') router.replace(sellingRoutes.seekerProgress(s.id));
+      if (variant === 'saved') router.replace(pageRoutes.seekerProgress(s.id));
     },
   });
   const other = useMutation({
@@ -197,7 +198,7 @@ function Panel({ status: s, variant, refetch }: { status: JobSeekerStatus; varia
       ) : null}
       <ErrorBanner error={send.error ?? other.error} />
       <Note>{linkLive ? t('fa10c.note') : t('fa10b.note')}</Note>
-      <Button label={t('fa10b.home')} variant="secondary" onPress={() => router.replace(routes.home)} testID="home" />
+      <Button label={t('jobSeekers.backToList')} variant="secondary" onPress={() => finishLater(routes.jobSeekers)} testID="home" />
     </>
   );
 }

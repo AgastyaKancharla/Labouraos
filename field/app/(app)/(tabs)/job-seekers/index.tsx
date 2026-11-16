@@ -1,1 +1,1 @@
-export { default } from '@/screens/FA15-JobSeekers';
+export { default } from '@/screens/FA10d-MyJobSeekers';

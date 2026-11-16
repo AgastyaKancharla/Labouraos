@@ -11,6 +11,7 @@ import { myAttendanceApi } from './endpoints/myAttendance';
 import { searchApi } from './endpoints/search';
 import { staffPhotoApi } from './endpoints/staffPhoto';
 import { legalApi } from './endpoints/legal';
+import { redesignApi } from './endpoints/redesign';
 import { api as appApi } from './index';
 
 const ApiContext = createContext<ApiClient>(appApi);
@@ -43,7 +44,8 @@ export function useEndpoints() {
       search: searchApi(api),
       staffPhoto: staffPhotoApi(api),
       legal: legalApi(api),
-        }),
+      redesign: redesignApi(api),
+    }),
     [api],
   );
 }

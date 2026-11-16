@@ -34,7 +34,8 @@ describe('FA22 Visit a shop · proof', () => {
     expect(sent[0]).toMatchObject({ path: '/field-visits/p-1/proof', files: [{ field: 'photo', name: 'selfie.jpg' }] });
     expect(screen.getByTestId('fa22-distance')).toHaveTextContent(/Same spot · 6 m/);
     await fireEvent.press(screen.getByTestId('fa22-continue'));
-    expect(router.push).toHaveBeenCalledWith({ pathname: '/business/new', params: { visitId: 'p-1' } });
+    expect(router.push).toHaveBeenCalledWith({ pathname: '/visit/business', params: { visitId: 'p-1' } });
+    expect(screen.getByTestId('step-counter')).toHaveTextContent('Step 3 of 7 · selfie with the board');
   });
 
   it('a selfie away from the shop is not sent', async () => {
@@ -47,5 +48,21 @@ describe('FA22 Visit a shop · proof', () => {
     expect(screen.getByTestId('fa22-problem')).toHaveTextContent(/Go back to the shop/);
     expect(send).not.toHaveBeenCalled();
     expect(screen.getByTestId('fa22-continue').props.accessibilityState.disabled).toBe(true);
+  });
+
+  it('a revisit of a shop already in Laboura skips the business form and goes to its agreement', async () => {
+    saveDraft({
+      id: 'p-2', startedAt: '2026-11-09T05:58:00.000Z', latitude: 12.9116, longitude: 77.6101, accuracy: 8, shopName: 'Annapoorna Mess',
+      businessId: 'b-1', businessName: 'Annapoorna Mess', spokeTo: 'owner', contactPhone: '', endedAt: '2026-11-09T06:12:00.000Z', proofDistance: null, proofAt: null,
+    });
+    searchParams.current = { id: 'p-2' };
+    const queue = new OfflineQueue({ store: createMemoryQueueStore(), send: async () => ({}) });
+    await renderWithApp(<VisitProofScreen />, { signedInAs: kiran, queue });
+    setFakeStamp({ latitude: 12.91165 });
+    await fireEvent.press(screen.getByTestId('fa22-take-selfie'));
+    await fireEvent.press(screen.getByTestId('fake-camera-front'));
+    await waitFor(() => expect(screen.getByTestId('fa22-continue').props.accessibilityState.disabled).toBe(false));
+    await fireEvent.press(screen.getByTestId('fa22-continue'));
+    expect(router.push).toHaveBeenCalledWith({ pathname: '/visit/agreement', params: { businessId: 'b-1', visitId: 'p-2' } });
   });
 });

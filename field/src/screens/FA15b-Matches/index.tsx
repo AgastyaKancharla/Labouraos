@@ -9,7 +9,7 @@ import { Banner, Button, Card, Emoji, ErrorState, LoadingState, Screen, StatusCh
 import { Segmented } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useI18n } from '@/i18n';
-import { sellingRoutes } from '@/navigation/routes';
+import { useSellingRoutes } from '@/navigation/useFlow';
 import { type Accent, accents, colors, fonts, radius, shadow } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { Avatar, BusinessHeader, formatRangeK, formatRupees, Note, QueryView, useParam } from '../_selling';
@@ -42,6 +42,7 @@ export default function MatchesScreen({ initialView }: { initialView?: 'list' | 
 }
 
 function Matches({ business, initialView }: { business: BusinessDetail; initialView: 'list' | 'map' }) {
+  const sr = useSellingRoutes();
   const { t } = useI18n();
   const { selling } = useEndpoints();
   const queue = useOfflineQueue();
@@ -87,10 +88,10 @@ function Matches({ business, initialView }: { business: BusinessDetail; initialV
   const first = data && data.total > 0 ? (page - 1) * data.pageSize + 1 : 0;
   const last = data ? Math.min(page * data.pageSize, data.total) : 0;
   const callTarget = data?.matches.find((m) => m.liked) ?? data?.matches[0];
-  const openCard = (m: MatchCard) => router.push(sellingRoutes.candidate(m.jobSeekerId, vacancyId));
+  const openCard = (m: MatchCard) => router.push(sr.candidate(m.jobSeekerId, vacancyId));
   const next = () => {
     if (!data) return;
-    if (page >= pageCount) router.push(sellingRoutes.noMore(vacancyId, business.id));
+    if (page >= pageCount) router.push(sr.noMore(vacancyId, business.id));
     else setPage(page + 1);
   };
 
@@ -107,7 +108,7 @@ function Matches({ business, initialView }: { business: BusinessDetail; initialV
               accessibilityRole="tab"
               accessibilityState={{ selected: on }}
               onPress={() => {
-                if (v.status !== 'open') router.push(sellingRoutes.confirmVacancy(v.id));
+                if (v.status !== 'open') router.push(sr.confirmVacancy(v.id));
                 else {
                   setVacancyId(v.id);
                   setPage(1);
@@ -121,7 +122,7 @@ function Matches({ business, initialView }: { business: BusinessDetail; initialV
             </Pressable>
           );
         })}
-        <Pressable accessibilityRole="button" onPress={() => router.push(sellingRoutes.addVacancy(business.id))} style={styles.chipAdd} testID="add-vacancy">
+        <Pressable accessibilityRole="button" onPress={() => router.push(sr.addVacancy(business.id))} style={styles.chipAdd} testID="add-vacancy">
           <Text style={styles.chipAddText}>{t('fa15b.addVacancy')}</Text>
         </Pressable>
       </View>
@@ -149,7 +150,7 @@ function Matches({ business, initialView }: { business: BusinessDetail; initialV
             <Emoji symbol="🔍" size={32} />
             <Text variant="h2">{t('fa15b.noneYet')}</Text>
             <Text variant="muted">{t('fa15b.noneYetBody')}</Text>
-            <Button label={t('fa15b.whyNone')} variant="secondary" onPress={() => router.push(sellingRoutes.noMore(vacancyId, business.id))} testID="why-none" />
+            <Button label={t('fa15b.whyNone')} variant="secondary" onPress={() => router.push(sr.noMore(vacancyId, business.id))} testID="why-none" />
           </Card>
         ) : data ? (
           <>
@@ -204,7 +205,7 @@ function Matches({ business, initialView }: { business: BusinessDetail; initialV
                 <Button
                   label={t('fa15b.call', { name: callTarget.card.firstName })}
                   style={styles.action}
-                  onPress={() => router.push(sellingRoutes.call(vacancyId, callTarget.jobSeekerId))}
+                  onPress={() => router.push(sr.call(vacancyId, callTarget.jobSeekerId))}
                   testID="call-candidate"
                 />
               ) : null}

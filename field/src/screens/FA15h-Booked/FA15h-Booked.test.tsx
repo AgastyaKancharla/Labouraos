@@ -21,6 +21,6 @@ describe('FA15h Interview booked', () => {
     await waitFor(() => screen.getByText('Owner records the result by 8:00 PM (OTP)'));
     expect(screen.getByText('Selected → owner pays fee + GST within 24 hours')).toBeTruthy();
     await fireEvent.press(screen.getByTestId('book-another'));
-    expect(router.replace).toHaveBeenCalledWith('/job-seekers/biz-1?vacancyId=vac-1');
+    expect(router.replace).toHaveBeenCalledWith('/businesses/candidates/biz-1?vacancyId=vac-1');
   });
 });

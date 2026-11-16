@@ -7,17 +7,18 @@ import { Text } from './Text';
 interface Props {
   onPress: () => void;
   placeholder?: string;
+  testID?: string;
 }
 
 /**
  * The search bar at the top of every screen (guide: "Search on every
  * screen"). On Home it is a button that opens the search screen.
  */
-export function SearchBar({ onPress, placeholder }: Props) {
+export function SearchBar({ onPress, placeholder, testID = 'search-bar' }: Props) {
   const { t } = useI18n();
   const label = placeholder ?? t('common.search');
   return (
-    <Pressable accessibilityRole="search" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.bar, pressed && styles.pressed]}>
+    <Pressable accessibilityRole="search" accessibilityLabel={label} onPress={onPress} testID={testID} style={({ pressed }) => [styles.bar, pressed && styles.pressed]}>
       <Icon name="search" size={15} />
       <Text variant="small" color={colors.soft}>
         {label}

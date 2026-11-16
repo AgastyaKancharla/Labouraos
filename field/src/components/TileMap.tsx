@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Image, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { TileImage } from './TileImage';
 import { colors, fonts } from '@/theme';
 import { Text } from './Text';
 
@@ -9,6 +10,8 @@ export interface MapMarker {
   longitude: number;
   color: string;
   label?: string;
+  /** Tapping the marker opens the shop (Shops near me). */
+  onPress?: () => void;
 }
 
 interface Props {
@@ -34,8 +37,9 @@ function project(lat: number, lng: number, zoom: number) {
 
 /**
  * A small OpenStreetMap map (the guide: a free map service, not Google)
- * drawn from standard map tiles, with coloured shop markers and the agent's
- * blue dot. No map package needed, so it works the same in the phone app
+ * drawn from standard map tiles, with coloured shop markers (tappable when
+ * given `onPress`) and the agent's blue dot. Tile requests carry the site's
+ * address (TileImage). No map package needed, so it works the same in the phone app
  * and the installed web app.
  */
 export function TileMap({ center, me, markers, height = 260, zoom = 16, attribution, testID }: Props) {
@@ -62,25 +66,41 @@ export function TileMap({ center, me, markers, height = 260, zoom = 16, attribut
       accessibilityRole="image"
     >
       {tiles.map((t) => (
-        <Image
+        <TileImage
           key={`${t.x}-${t.y}`}
-          source={{ uri: `https://tile.openstreetmap.org/${zoom}/${t.x}/${t.y}.png` }}
+          uri={`https://tile.openstreetmap.org/${zoom}/${t.x}/${t.y}.png`}
           style={[styles.tile, { left: t.x * TILE - left, top: t.y * TILE - top }]}
-          accessibilityIgnoresInvertColors
         />
       ))}
       {width > 0
         ? markers.map((m) => {
             const p = place(m.latitude, m.longitude);
             if (p.left < -20 || p.top < -20 || p.left > width + 20 || p.top > height + 20) return null;
-            return (
-              <View key={m.key} style={[styles.markerWrap, { left: p.left - 60, top: p.top - 9 }]} pointerEvents="none">
+            const body = (
+              <>
                 <View style={[styles.marker, { backgroundColor: m.color }]} />
                 {m.label ? (
                   <Text style={styles.markerLabel} numberOfLines={1}>
                     {m.label}
                   </Text>
                 ) : null}
+              </>
+            );
+            return m.onPress ? (
+              <Pressable
+                key={m.key}
+                accessibilityRole="button"
+                accessibilityLabel={m.label}
+                onPress={m.onPress}
+                hitSlop={13}
+                style={[styles.markerWrap, { left: p.left - 60, top: p.top - 9 }]}
+                testID={`marker-${m.key}`}
+              >
+                {body}
+              </Pressable>
+            ) : (
+              <View key={m.key} style={[styles.markerWrap, { left: p.left - 60, top: p.top - 9 }]} pointerEvents="none">
+                {body}
               </View>
             );
           })

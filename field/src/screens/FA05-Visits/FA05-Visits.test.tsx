@@ -1,6 +1,8 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { router } from '@/test/expo-router-mock';
 import { kiran, renderWithApp } from '@/test/render';
+import { dayView } from '@/test/redesign-fixtures';
+import { todayKeyIst, addDays } from '@/components/form';
 import VisitsScreen from '.';
 
 jest.mock('expo-router', () => require('@/test/expo-router-mock'));
@@ -23,24 +25,53 @@ const visits = {
 
 beforeEach(() => jest.clearAllMocks());
 
-describe('FA05 My visits', () => {
-  it('lists planned visits, revisits due and every visit done today with its proof, time and outcome', async () => {
-    await renderWithApp(<VisitsScreen />, { signedInAs: kiran, route: (url) => (url.endsWith('/field-work/visits') ? { status: 200, body: visits } : undefined) });
+const days: string[] = [];
+const route = (url: string) => {
+  if (url.endsWith('/field-work/visits')) return { status: 200, body: visits };
+  if (url.includes('/field-work/day')) {
+    const date = new URL(url).searchParams.get('date') ?? todayKeyIst();
+    days.push(date);
+    return { status: 200, body: dayView(date, { isToday: date === todayKeyIst() }) };
+  }
+  return undefined;
+};
+
+describe('FA05 Visits', () => {
+  it('Visit a shop, planned today (interviews open the interview-day screen), revisits due, Today’s work and Shops near me', async () => {
+    await renderWithApp(<VisitsScreen />, { signedInAs: kiran, route });
     await waitFor(() => screen.getByTestId('fa05-planned-a-1'));
     expect(screen.getByTestId('fa05-planned-a-1')).toHaveTextContent(/Annapoorna Mess.*Verification/);
     expect(screen.getByTestId('fa05-planned-a-2')).toHaveTextContent(/Sri Sai Hotel.*Ramesh G\..*Attend interview/);
     expect(screen.getByTestId('fa05-revisit-v-9')).toHaveTextContent(/Lakshmi Tiffins.*Owner said: “after Deepavali we’ll need 2 cooks”.*Come back today/);
-    expect(screen.getByTestId('fa05-done-d-1')).toHaveTextContent(/Hotel Kamat.*9:50 AM · 6 min · 📷.*Not interested/);
-    expect(screen.getByTestId('fa05-done-d-2')).toHaveTextContent(/22 min · 📷 \+ selfie.*Onboarded/);
-    expect(screen.getByTestId('fa05-done-d-3')).toHaveTextContent(/Record outcome/);
-    await fireEvent.press(screen.getByTestId('fa05-done-d-3'));
-    expect(router.push).toHaveBeenCalledWith({ pathname: '/visit/outcome', params: { id: 'd-3' } });
+    // An interview to attend opens the interview-day screen (candidate arrived), inside the Visits tab.
+    await fireEvent.press(screen.getByTestId('fa05-planned-a-2'));
+    expect(router.push).toHaveBeenCalledWith('/visit/interview/i-1/day');
     await fireEvent.press(screen.getByTestId('fa05-planned-a-1'));
     expect(router.push).toHaveBeenCalledWith({ pathname: '/visit/verify', params: { businessId: 'b-1', assignmentId: 'a-1' } });
     await fireEvent.press(screen.getByTestId('fa05-revisit-v-9'));
     expect(router.push).toHaveBeenCalledWith({ pathname: '/visit/start', params: { revisitOf: 'v-9', name: 'Lakshmi Tiffins' } });
     await fireEvent.press(screen.getByTestId('fa05-visit-shop'));
     expect(router.push).toHaveBeenCalledWith('/visit/start');
+    await fireEvent.press(screen.getByTestId('fa05-near-me'));
+    expect(router.push).toHaveBeenCalledWith('/visits/near');
+    await fireEvent.press(screen.getByTestId('search-bar'));
+    expect(router.push).toHaveBeenCalledWith('/visits/search');
+  });
+
+  it('Today’s work: every visit with its result and what was registered; Yesterday switches the day; rows open their page', async () => {
+    days.length = 0;
+    await renderWithApp(<VisitsScreen />, { signedInAs: kiran, route });
+    await waitFor(() => screen.getByTestId('work-visit:v-1'));
+    expect(days).toEqual([todayKeyIst()]);
+    expect(screen.getByTestId('work-visit:v-1')).toHaveTextContent(/Sri Sai Bakery.*Visit.*Onboarded/);
+    expect(screen.getByTestId('work-visit:v-3')).toHaveTextContent(/Sagar Stores.*Not finished/);
+    expect(screen.getByTestId('work-business:b-1')).toHaveTextContent(/Business onboarded/);
+    await fireEvent.press(screen.getByTestId('work-visit:v-3'));
+    expect(router.push).toHaveBeenCalledWith('/visit/details/v-3');
+    await fireEvent.press(screen.getByTestId('work-js:js-1'));
+    expect(router.push).toHaveBeenCalledWith('/job-seekers/js-1');
+    await fireEvent.press(screen.getByTestId('fa05-day-yesterday'));
+    await waitFor(() => expect(days).toContain(addDays(todayKeyIst(), -1)));
   });
 
   it('shows a business that signed up in the app as a sign-up visit with the time the owner picked, opening the verification steps', async () => {
