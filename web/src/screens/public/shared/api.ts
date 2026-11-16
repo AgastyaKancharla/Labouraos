@@ -422,3 +422,39 @@ export const agreementApi = {
       PUBLIC,
     ),
 };
+
+// ---- Vacancy confirmation by the owner (VacancyConfirmController; rev 192 fix S3) ----
+
+export interface VacancyConfirmDetails {
+  vacancyCode: string;
+  /** awaiting_confirmation: the page asks to confirm; open: already confirmed; anything else: no longer waiting. */
+  status: string;
+  maskedPhone: string;
+  sentToLast4: string;
+  expiresAt: string;
+  preferredLanguage: string | null;
+  business: string;
+  /** The trade (Cook, Electrician…); roleTitle when the owner named the job. */
+  trade: string;
+  roleTitle: string | null;
+  headcountCount: number;
+  salaryMinPaise: number | null;
+  salaryMaxPaise: number | null;
+  salaryPeriod: string;
+  shift: string;
+  /** YYYY-MM-DD, or empty. */
+  startDate: string;
+}
+
+export interface VacancyConfirmed {
+  vacancyCode: string;
+  status: string;
+  confirmedAt: string;
+}
+
+export const vacancyConfirmApi = {
+  details: (token: string) => api.get<VacancyConfirmDetails>(`/vacancy-confirm/${enc(token)}`, PUBLIC),
+  sendOtp: (token: string) => api.post<OtpSent>(`/vacancy-confirm/${enc(token)}/send-otp`, {}, PUBLIC),
+  confirm: (token: string, otpRequestId: string, code: string) =>
+    api.post<VacancyConfirmed>(`/vacancy-confirm/${enc(token)}`, { otpRequestId, code }, PUBLIC),
+};

@@ -28,6 +28,8 @@ export const PUBLIC_PAGE_PATHS = {
   offerCheck: 'did-they-offer',
   /** P-Partner…: a referral partner's one link that resumes (terms and recording consent → selfie → ID check → UPI). */
   referralRegistration: 'partner',
+  /** P07-VacancyConfirm: the owner (or branch contact) confirms a vacancy by OTP (rev 192 fix S3). */
+  vacancyConfirm: 'vacancy-confirm',
 } as const;
 
 export type PublicPage = keyof typeof PUBLIC_PAGE_PATHS;

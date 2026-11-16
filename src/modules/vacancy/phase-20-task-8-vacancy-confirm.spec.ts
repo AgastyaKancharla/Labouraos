@@ -145,14 +145,35 @@ describe('Phase 20 Task 8: every vacancy confirmed by OTP, and the minimum-wage 
       expect(call?.[0].recipientPhone).toBe(businessPhone);
       const token = (call![0].variables!.link as string).split('/vacancy-confirm/')[1];
 
+      // Rev 192 S3: the SMS opens the owner's phone page, like the agreement link; a browser opening
+      // the older address is sent there too (links already sent keep working).
+      expect(call![0].variables!.link as string).toContain(`/p/vacancy-confirm/${token}`);
+      const browser = await request(server()).get(`/vacancy-confirm/${token}`).set('Accept', 'text/html,application/xhtml+xml').expect(302);
+      expect(browser.headers.location).toMatch(new RegExp(`/p/vacancy-confirm/${token}$`));
+
       const details = await request(server()).get(`/vacancy-confirm/${token}`).expect(200);
       expect(details.body).toMatchObject({ status: 'awaiting_confirmation', trade: 'Electrician', headcount: '2', business: 'Task 8 Bakery' });
+      // What the page shows: role, how many, salary range, shift, start date, business; masked phone only.
+      expect(details.body).toMatchObject({
+        headcountCount: 2, maskedPhone: `******${businessPhone.slice(-4)}`, salaryMinPaise: expect.any(Number), expiresAt: expect.any(String),
+      });
+      expect(details.body).toHaveProperty('roleTitle');
+      expect(details.body).toHaveProperty('preferredLanguage');
       expect(JSON.stringify(details.body)).not.toContain(businessPhone);
 
       const sent = await request(server()).post(`/vacancy-confirm/${token}/send-otp`).send({}).expect(201);
+      expect(sent.body).toMatchObject({ requestId: sent.body.otpRequestId, phone: `******${businessPhone.slice(-4)}` });
+      // "Send code" is rate-limited on the server, per link and per phone (as on the agreement page).
+      const again = await request(server()).post(`/vacancy-confirm/${token}/send-otp`).send({}).expect(429);
+      expect(again.body.retryAfterSeconds).toBeGreaterThan(0);
       const ok = await request(server()).post(`/vacancy-confirm/${token}`)
         .send({ otpRequestId: sent.body.otpRequestId, code: code(sent.body.otpRequestId) }).expect(201);
-      expect(ok.body).toMatchObject({ status: 'open', confirmationMethod: 'sms_link', confirmationRecordedByStaffId: null });
+      expect(ok.body).toMatchObject({ status: 'open', confirmationMethod: 'sms_link', confirmedByName: 'Ganesh' });
+      // Public answer (rev 192 S3): never the business record or staff ids.
+      expect(ok.body.business).toBeUndefined();
+      expect(ok.body.capturedByStaffId).toBeUndefined();
+      expect(JSON.stringify(ok.body)).not.toContain(businessPhone);
+      expect((await prisma.vacancy.findUniqueOrThrow({ where: { code: ok.body.vacancyCode } })).confirmationRecordedByStaffId).toBeNull();
 
       // The link is spent.
       await request(server()).get(`/vacancy-confirm/${token}`).expect(400);
