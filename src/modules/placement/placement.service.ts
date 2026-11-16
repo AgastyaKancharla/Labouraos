@@ -187,9 +187,10 @@ export class PlacementService {
         reason: reason ?? 'Agreed salary changed before payment',
         city: updated.city,
       });
-      // The owner gets the request again with the new amount (the pay page already shows it).
+      // The owner gets the request again with the new amount (the pay page already shows it), on the
+      // same number as when it was made: the branch contact for a branch vacancy (M1-R3).
       if (recomputed.paymentId) {
-        await this.upiCollectionService.resendRequest(recomputed.paymentId).catch(() => undefined);
+        await this.resendPaymentLink(updated.id).catch(() => undefined);
       }
     }
 
@@ -226,12 +227,23 @@ export class PlacementService {
       if (placement.rootPlacementId && placement.rootPlacementId !== placement.id) {
         throw new ConflictException("A replacement's fee is the salary difference in its chain: cancel it and record the new salary instead");
       }
-      const pending = await tx.payment.findMany({
+      const pendingIds = await tx.payment.findMany({
         where: { placementId, type: 'placement_fee', status: 'pending' },
-        select: { id: true, gatewayReference: true, payerUtrHint: true, amount: true, expectedAmountPaise: true },
+        select: { id: true },
+        orderBy: { createdAt: 'asc' },
       });
+      // M1-R2: lock each pending request, then read it again: a card start or a UTR hint that
+      // landed before the lock is seen.
+      const pending: { id: string; gatewayReference: string | null; payerUtrHint: string | null; amount: number; expectedAmountPaise: number | null; status: string }[] = [];
+      for (const { id } of pendingIds) {
+        await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Payment" WHERE "id" = ${id} FOR UPDATE`);
+        const fresh = await tx.payment.findUniqueOrThrow({
+          where: { id },
+          select: { id: true, gatewayReference: true, payerUtrHint: true, amount: true, expectedAmountPaise: true, status: true },
+        });
+        if (fresh.status === 'pending') pending.push(fresh);
+      }
       for (const payment of pending) {
-        await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Payment" WHERE "id" = ${payment.id} FOR UPDATE`);
         if (payment.gatewayReference || payment.payerUtrHint) {
           throw new ConflictException('The owner has started paying the old amount (card or UPI reference): wait for the bank before changing the salary');
         }

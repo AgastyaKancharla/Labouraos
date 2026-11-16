@@ -7,6 +7,8 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { UpiCollectionService } from '../payment/upi-collection.service';
 import { payPageTokenFor } from '../payment/pay-page-token';
+import { PaymentService } from '../payment/payment.service';
+import { MessagingService } from '../message/messaging.service';
 
 /**
  * Security follow-up M1 (proved): the agent who created an unpaid placement
@@ -21,7 +23,7 @@ describe('Security M1: a placement’s agreed salary is CEO only and the unpaid 
   const suffix = Date.now().toString().slice(-7);
   const digits = suffix.slice(-5);
   const tokens = { ceo: '', agent: '' };
-  const ids = { staff: [] as string[], business: '', vacancy: '', seekers: [] as string[], placements: [] as string[], payments: [] as string[] };
+  const ids = { staff: [] as string[], business: '', vacancy: '', branch: '', branchVacancy: '', seekers: [] as string[], placements: [] as string[], payments: [] as string[] };
 
   const patch = (token: string, id: string, body: object) =>
     request(app.getHttpServer()).patch(`/placements/${id}`).set('Authorization', `Bearer ${token}`).send(body);
@@ -67,6 +69,11 @@ describe('Security M1: a placement’s agreed salary is CEO only and the unpaid 
     ids.business = business.id;
     const vacancy = await prisma.vacancy.create({ data: { code: `VC-M1-${suffix}`, businessId: business.id, tradeSkill: 'Cook', city: 'Bengaluru' } });
     ids.vacancy = vacancy.id;
+    const branch = await prisma.businessBranch.create({
+      data: { businessId: business.id, name: 'M1 Branch', contactPersonName: 'Branch Boss', contactPersonRole: 'manager', contactPersonPhone: `+9194${digits}220` },
+    });
+    ids.branch = branch.id;
+    ids.branchVacancy = (await prisma.vacancy.create({ data: { code: `VC-M1B-${suffix}`, businessId: business.id, branchId: branch.id, tradeSkill: 'Cook', city: 'Bengaluru' } })).id;
   });
 
   afterAll(async () => {
@@ -74,7 +81,10 @@ describe('Security M1: a placement’s agreed salary is CEO only and the unpaid 
       await prisma.statusHistory.deleteMany({ where: { subjectId: { in: ids.payments } } }).catch(() => undefined);
       await prisma.payment.deleteMany({ where: { id: { in: ids.payments } } }).catch(() => undefined);
       await prisma.placement.deleteMany({ where: { id: { in: ids.placements } } }).catch(() => undefined);
-      await prisma.vacancy.deleteMany({ where: { id: ids.vacancy } }).catch(() => undefined);
+      await prisma.reviewFlag.deleteMany({ where: { subjectId: { in: ids.payments } } }).catch(() => undefined);
+      await prisma.messageLog.deleteMany({ where: { subjectId: ids.business } }).catch(() => undefined);
+      await prisma.vacancy.deleteMany({ where: { id: { in: [ids.vacancy, ids.branchVacancy] } } }).catch(() => undefined);
+      await prisma.businessBranch.deleteMany({ where: { id: ids.branch } }).catch(() => undefined);
       await prisma.business.deleteMany({ where: { id: ids.business } }).catch(() => undefined);
       await prisma.jobSeeker.deleteMany({ where: { id: { in: ids.seekers } } }).catch(() => undefined);
       await prisma.auditLog.deleteMany({ where: { actorId: { in: ids.staff } } }).catch(() => undefined);
@@ -127,5 +137,33 @@ describe('Security M1: a placement’s agreed salary is CEO only and the unpaid 
     expect((await patch(tokens.ceo, pl.id, { agreedSalary: 1700000, reason: 'typo' })).status).toBe(200);
     const saved = await prisma.placement.findUniqueOrThrow({ where: { id: pl.id } });
     expect([saved.agreedSalary, saved.placementFee, saved.gstAmount]).toEqual([1700000, 800000, 144000]);
+  });
+
+  it('M1-R1: money checked against the old amount is not confirmed once the amount changed; Finance is flagged', async () => {
+    const pl = await placement();
+    const req = await pendingRequest(pl.id);
+    // A CEO correction lands between the bank match (checked against 944000) and the confirm.
+    await prisma.payment.update({ where: { id: req.paymentId }, data: { amount: 1180000, expectedAmountPaise: 1180000 } });
+    const result = await app.get(PaymentService).onPaymentSucceeded(req.paymentId, { confirmedAt: new Date(), confirmedBy: 'bank_feed', expectedAmountPaise: 944000 });
+    expect(result).toMatchObject({ confirmed: false, amountMismatch: true });
+    expect((await prisma.payment.findUniqueOrThrow({ where: { id: req.paymentId } })).status).toBe('pending');
+    expect((await prisma.placement.findUniqueOrThrow({ where: { id: pl.id } })).paidAt).toBeNull();
+    const flag = await prisma.reviewFlag.findFirstOrThrow({ where: { subjectId: req.paymentId, kind: 'payment_mismatch' } });
+    expect(JSON.stringify(flag.details)).toContain('amount_changed_before_confirm');
+  });
+
+  it('M1-R3: after a recompute the new request goes to the branch contact, as when it was made', async () => {
+    const pl = await placement({ vacancyId: ids.branchVacancy });
+    const req = await pendingRequest(pl.id);
+    const send = jest.spyOn(app.get(MessagingService), 'send');
+    try {
+      expect((await patch(tokens.ceo, pl.id, { agreedSalary: 2000000, reason: 'Owner agreed' })).status).toBe(200);
+      const requests = send.mock.calls.map(([input]) => input).filter((input) => input.template === 'payment_request');
+      expect(requests.length).toBeGreaterThan(0);
+      for (const input of requests) expect(input.recipientPhone).toBe(`+9194${digits}220`);
+      void req;
+    } finally {
+      send.mockRestore();
+    }
   });
 });
