@@ -570,7 +570,7 @@ If something does not open: wait an hour (the Hostinger change may still be spre
 | `OTP_PROVIDER_MODE`, `SMS_PROVIDER_MODE`, `PAYMENT_PROVIDER_MODE`, `WHATSAPP_PROVIDER_MODE`, `TELEPHONY_PROVIDER_MODE` | `mock` (fixed) until each vendor is signed up | Picks the mock or the real vendor; the only switch for each vendor |
 | `CUSTOMER_PUSH_PROVIDER_MODE` | `mock` (fixed) until push is tested on a real phone | Laboura app notifications: `mock` writes them to the log; `real` sends them through Expo's free push service (Google FCM for Android, Apple APNs for iPhone). The inbox inside the app works either way. Before `real`: upload the Firebase server key (FCM V1 service account) to the Expo project, and later the Apple push key |
 | `EXPO_ACCESS_TOKEN` | empty | Only if "enhanced push security" is switched on in the Expo account; the worker copies it from the web service |
-| `SMS_API_KEY`, `SMS_API_URL`, `DLT_SENDER_ID`, `DLT_TEMPLATE_ID`, `DLT_ENTITY_ID`, `SMS_DLT_TEMPLATE_IDS` | From the SMS gateway | OTP and SMS messages. Register a DLT template for every SMS template name, including `replacement_upgrade_cancelled` ("your replacement was cancelled because the salary difference was not paid in time", rev 178), `selection_cancelled` (to the job seeker: "the job you were selected for was cancelled", Fable re-check) and `interview_cancelled` (to the job seeker: "your interview is cancelled because the business is suspended"), and add its id to `SMS_DLT_TEMPLATE_IDS` |
+| `SMS_API_KEY`, `SMS_API_URL`, `DLT_SENDER_ID`, `DLT_TEMPLATE_ID`, `DLT_ENTITY_ID`, `SMS_DLT_TEMPLATE_IDS` | From the SMS gateway | OTP and SMS messages. Register a DLT template for every SMS template name, including `replacement_upgrade_cancelled` ("your replacement was cancelled because the salary difference was not paid in time", rev 178), `selection_cancelled` (to the job seeker: "the job you were selected for was cancelled", Fable re-check) `interview_cancelled` (to the job seeker: "your interview is cancelled because the business is suspended") and `phone_number_changed` (to the OLD number: "the mobile number on your Laboura record {code} was changed to one ending {newLast4}; call Laboura if this was not you", security M3), and add its id to `SMS_DLT_TEMPLATE_IDS` |
 | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` | From Meta | WhatsApp messages |
 | `TELEPHONY_VENDOR`, `TOLL_FREE_NUMBER` | From the calling vendor | Calls |
 | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `RAZORPAYX_WEBHOOK_SECRET`, `RAZORPAYX_ACCOUNT_NUMBER` | From Razorpay | Card payments (only when a payer picks a card) and payouts |
@@ -621,8 +621,24 @@ Nothing to set on Render. People may notice these, once, right after the deploy:
 
 - **Login and reset codes revealed just before the deploy stop working** (AUTH-1: the 6-digit codes are now uniform, so the same request gives a different code). The senior reveals the code again on the code screen; the request itself still works.
 - **Receipt and invoice links sent before the deploy stop working** (AC-5: links now carry a 90-day expiry). Finance or the CEO send a fresh one if someone asks; staff screens already make fresh links.
-- **Payment links (INF-1):** the deploy adds one column (`Payment.pageTokenHash`, migration `20261201000000_payment_page_token`, run by Pre-Deploy as usual). New payment links carry a long page token instead of the payment reference. A link sent before the deploy keeps working while it is unpaid; once it is paid, or once someone taps "Resend payment link", only the new link works. A paid page closes 30 days after the money arrived, and it no longer shows receipt or invoice links (they go by SMS and WhatsApp as before).
+- **Payment links (INF-1):** the deploy adds one column (`Payment.pageTokenHash`, migration `20261201000000_payment_page_token`, run by Pre-Deploy as usual). New payment links carry a long page token instead of the payment reference. A link sent before the deploy keeps working while it is unpaid, until PR #154 is deployed (see its backfill step below); once it is paid, or once someone taps "Resend payment link", only the new link works. A paid page closes 30 days after the money arrived, and it no longer shows receipt or invoice links (they go by SMS and WhatsApp as before).
 - **Registration, agreement, partner and payout links:** a code an agent sends (staff "Send OTP") no longer opens or completes a person's own link (AC-3). The person taps "Send code" on their link. Staff screens that send a link no longer show its token.
+
+---
+
+## Security follow-ups (PR #154): one step after the deploy
+
+### Pay page tokens: one-off backfill (L3)
+
+Payment links sent before PR #152 opened by the payment reference. PR #152 kept those working while unpaid; this update removes that, so an unpaid request made before PR #152 needs its new link. Once, right after this update is live:
+
+1. Open **`laboura-api`**, then **Shell**.
+2. Run `npm run backfill:pay-page-tokens -- --resend`.
+3. It prints how many waiting requests got a page token and "Sent a new link: PAY-…" for each (by SMS / WhatsApp, to the person the request was for). A line "Not sent (PAY-…)" names one to re-send by hand from its screen ("Resend payment link"); the reason is printed with it (for example, a ₹499 whose ID check is not finished).
+
+Without `--resend` it only saves the tokens and lists the payment codes. Running it again does nothing to a request that already has its token. **If it stopped part-way** (or printed "Not sent" lines), send just those again: `npm run backfill:pay-page-tokens -- --resend-codes PAY-00012,PAY-00013` (the codes it printed; it ends with the exact line to copy for any that were not sent). Codes no longer waiting for money are skipped. Until it runs, an old unpaid link answers "Payment request not found".
+
+Before the deploy: register the DLT template `phone_number_changed` and add its id to `SMS_DLT_TEMPLATE_IDS` (All settings, the SMS row). It goes to the OLD number when a record's mobile number is changed (M3).
 
 ---
 

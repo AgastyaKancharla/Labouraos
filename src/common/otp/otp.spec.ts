@@ -137,10 +137,14 @@ describe('OTP Provider and Mock Implementation', () => {
         jobSeeker: { findFirst: jest.fn().mockResolvedValue({ id: 'seeker-1', code: 'JS-01042', registeredByStaffId: 'agent-1' }) },
         business: { findFirst: jest.fn() },
         referral: { findFirst: jest.fn() },
+        // Security L1: the "Already registered" answer is counted as a full-number search.
+        auditLog: { count: jest.fn().mockResolvedValue(0) },
+        $executeRaw: jest.fn().mockResolvedValue(1),
+        $transaction: jest.fn((fn: (tx: unknown) => unknown) => fn(prisma)),
         staff: { findUnique: jest.fn(), findFirst: jest.fn() },
       } as unknown as PrismaService;
       const auditLog = jest.fn().mockResolvedValue(undefined);
-      const audit = { log: auditLog } as unknown as AuditService;
+      const audit = { log: auditLog, prepare: jest.fn().mockResolvedValue({ code: 'AU-1', device: {} }) } as unknown as AuditService;
       const service = new OtpService(provider, audit, prisma);
 
       await expect(service.sendOtp('9876543210', 'job_seeker', 'agent-1', 'call_agent'))
@@ -158,13 +162,17 @@ describe('OTP Provider and Mock Implementation', () => {
         jobSeeker: { findFirst: jest.fn().mockResolvedValue({ id: 'seeker-1', code: 'JS-01042', registeredByStaffId: 'other-agent' }) },
         business: { findFirst: jest.fn() },
         referral: { findFirst: jest.fn() },
+        // Security L1: the "Already registered" answer is counted as a full-number search.
+        auditLog: { count: jest.fn().mockResolvedValue(0) },
+        $executeRaw: jest.fn().mockResolvedValue(1),
+        $transaction: jest.fn((fn: (tx: unknown) => unknown) => fn(prisma)),
         staff: {
           findUnique: jest.fn().mockResolvedValue({ id: 'lead-1', role: 'team_lead' }),
           // other-agent is on another team (OwnTeam reads lead-1's team).
           findMany: jest.fn().mockResolvedValue([]),
         },
       } as unknown as PrismaService;
-      const audit = { log: jest.fn().mockResolvedValue(undefined) } as unknown as AuditService;
+      const audit = { log: jest.fn().mockResolvedValue(undefined), prepare: jest.fn().mockResolvedValue({ code: 'AU-1', device: {} }) } as unknown as AuditService;
       const service = new OtpService(provider, audit, prisma);
 
       await expect(service.sendOtp('9876543210', 'job_seeker', 'lead-1', 'team_lead'))
@@ -237,6 +245,21 @@ describe('OTP Provider and Mock Implementation', () => {
           imports: [AuthModule, OtpModule],
         }).compile(),
       ).rejects.toThrow('Unsupported OTP provider: unknown_provider');
+    });
+  });
+
+  describe('security: an empty phone never matches', () => {
+    it('isVerified and consumeVerified refuse a verified code when the phone passed is empty or missing', async () => {
+      const provider = { isVerified: jest.fn().mockResolvedValue(true), consumeVerified: jest.fn().mockResolvedValue(true) } as unknown as OtpProvider;
+      const service = new OtpService(provider, {} as AuditService, {} as PrismaService);
+      await expect(service.isVerified('req-1', '')).resolves.toBe(false);
+      await expect(service.isVerified('req-1', null)).resolves.toBe(false);
+      await expect(service.consumeVerified('req-1', '')).resolves.toBe(false);
+      await expect(service.consumeVerified('req-1', null)).resolves.toBe(false);
+      await expect(service.isVerifiedForPage('req-1', '', 'token')).resolves.toBe(false);
+      expect(provider.isVerified).not.toHaveBeenCalled();
+      expect(provider.consumeVerified).not.toHaveBeenCalled();
+      await expect(service.isVerified('req-1', '+919876543210')).resolves.toBe(true);
     });
   });
 });

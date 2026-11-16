@@ -6,6 +6,7 @@ import { RBAC_MATRIX, Role } from '../rbac/rbac.types';
 import { mobileLookupValues, phoneLast4, requireIndianMobile } from '../phone/indian-mobile';
 import { OTP_PROVIDER, OtpProvider, OtpSendOptions, OtpSendResult } from './otp.interface';
 import { publicPageOtpPurpose } from './public-page-otp';
+import { lookupAsFullNumberSearch } from '../phone/full-number-search';
 
 export const OTP_PURPOSES = [
   'job_seeker',
@@ -57,7 +58,16 @@ export class OtpService {
     const last4 = phoneLast4(phone);
     const staffId = actorId;
     if (staffId && !requestId && !CONFIRMATION_PURPOSES.includes(purpose)) {
-      const duplicate = await this.findDuplicate(phone);
+      // Security L1: an "Already registered" answer tells the staff member the
+      // number is ours, so it counts as a full-number search (audited, 30 an
+      // hour). At the limit every fresh send is refused, so a number that is ours
+      // and one that is not get the same answer.
+      // L1-R1: the limit check, the lookup and the record run under one per-staff lock, so a
+      // burst of parallel sends cannot tell a number that is ours from one that is not.
+      const duplicate = await lookupAsFullNumberSearch(
+        this.prisma, this.auditService, { id: staffId, role: actorRole }, 'otp_send', phone,
+        (client) => this.findDuplicate(phone, client),
+      );
       if (duplicate) {
         const visible = await this.canSeeRecord(duplicate, staffId, actorRole);
         const response = visible
@@ -129,6 +139,25 @@ export class OtpService {
   }
 
   /**
+   * A staff-sent code bound to one record (e.g. `vacancy_confirm:<vacancyId>:<round>`),
+   * so it only confirms that record in that round. Never reachable from POST /otp/send
+   * (OTP_PURPOSES). Audited like any staff send.
+   */
+  async sendBoundOtp(rawPhone: string, purpose: string, actorId: string, requestId?: string): Promise<OtpSendResult> {
+    const phone = requireIndianMobile(rawPhone);
+    const result = await this.provider.sendOtp(phone, { purpose, requestId });
+    await this.auditService.log({
+      actorId,
+      action: 'otp.send_attempt',
+      entityType: 'otp_request',
+      entityCode: result.requestId,
+      after: { phoneMasked: `******${phoneLast4(phone)}`, purpose: purpose.split(':')[0], isResend: Boolean(requestId) },
+      city: 'Bengaluru',
+    });
+    return result;
+  }
+
+  /**
    * "Send code" on a person's own public page (/p/...): the code goes to the
    * number the link was issued for, with a purpose bound to that link
    * (public-page-otp.ts). Only isVerifiedForPage / consumeVerifiedForPage with
@@ -151,11 +180,18 @@ export class OtpService {
     return this.consumeVerified(requestId, phone, publicPageOtpPurpose(linkToken));
   }
 
-  async isVerified(requestId: string, phone?: string, purpose?: string): Promise<boolean> {
+  /**
+   * A phone that is passed but empty (`''`, null) never matches: it refuses, rather
+   * than skipping the check that the code went to that number (a link or record
+   * with no phone must not accept any verified code).
+   */
+  async isVerified(requestId: string, phone?: string | null, purpose?: string): Promise<boolean> {
+    if (phone !== undefined && !phone) return false;
     return this.provider.isVerified ? this.provider.isVerified(requestId, phone, purpose) : false;
   }
 
-  async consumeVerified(requestId: string, phone: string, purpose?: string): Promise<boolean> {
+  async consumeVerified(requestId: string, phone: string | null, purpose?: string): Promise<boolean> {
+    if (!phone) return false;
     return this.provider.consumeVerified
       ? this.provider.consumeVerified(requestId, phone, purpose)
       : false;
@@ -165,16 +201,19 @@ export class OtpService {
     return this.provider;
   }
 
-  private async findDuplicate(phone: string) {
+  private async findDuplicate(
+    phone: string,
+    client: Pick<PrismaService, 'jobSeeker' | 'business' | 'businessBranch' | 'referral'> = this.prisma,
+  ) {
     const variants = mobileLookupValues(phone);
-    const seeker = await this.prisma.jobSeeker.findFirst({
+    const seeker = await client.jobSeeker.findFirst({
       where: { phone: { in: variants } },
       select: { id: true, code: true, registeredByStaffId: true },
     });
     if (seeker) {
       return { ...seeker, type: 'job_seeker', resource: 'job_seeker' as const, ownerStaffIds: [seeker.registeredByStaffId], teamOwnerIds: [seeker.registeredByStaffId] };
     }
-    const business = await this.prisma.business.findFirst({
+    const business = await client.business.findFirst({
       where: { OR: [
         { phone: { in: variants } },
         { additionalContactPhone: { in: variants } },
@@ -190,7 +229,7 @@ export class OtpService {
         teamOwnerIds: businessOwners(business),
       };
     }
-    const branch = await this.prisma.businessBranch.findFirst({
+    const branch = await client.businessBranch.findFirst({
       where: { contactPersonPhone: { in: variants } },
       select: { business: { select: { id: true, code: true, accountAgentId: true, leadCreatedByStaffId: true } } },
     });
@@ -203,7 +242,7 @@ export class OtpService {
         teamOwnerIds: businessOwners(branch.business),
       };
     }
-    const referral = await this.prisma.referral.findFirst({
+    const referral = await client.referral.findFirst({
       where: { phone: { in: variants } },
       select: { id: true, code: true },
     });

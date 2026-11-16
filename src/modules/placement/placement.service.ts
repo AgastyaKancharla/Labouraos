@@ -93,7 +93,8 @@ export function calculateDaysElapsed(
  * The only column PATCH /placements/:id writes (security AC-1). Every other
  * placement change has a dedicated route: payment and fee (UPI / Finance),
  * joining date (joining call), joined (POST /placements/:id/joined), claims,
- * refunds, cancelling an upgrade. A paid placement's salary: CEO only.
+ * refunds, cancelling an upgrade. The agreed salary: CEO only (M1); before
+ * payment the fee, GST and pending request are worked out again with it.
  */
 export const ALLOWED_PLACEMENT_UPDATE_FIELDS: ReadonlySet<string> = new Set(['agreedSalary']);
 
@@ -152,21 +153,46 @@ export class PlacementService {
       return record;
     }
 
-    // Once the fee is paid, the agreed salary is what a later replacement's
-    // salary-difference fee is measured against (D3), so only the CEO changes it.
-    if (diff.changedFields.includes('agreedSalary') && record.paidAt && editActor.role !== 'ceo') {
-      throw new ForbiddenException('The fee for this placement is paid: only the CEO can change its agreed salary');
+    // M1: the agreed salary sets the fee (and, once paid, the base a later replacement's
+    // salary-difference fee is measured against, D3), so only the CEO changes it.
+    if (diff.changedFields.includes('agreedSalary') && editActor.role !== 'ceo') {
+      throw new ForbiddenException("Only the CEO can change a placement's agreed salary: it sets the fee");
     }
 
-    const data: Record<string, unknown> = {};
-    for (const key of diff.changedFields) {
-      data[key] = updates[key];
+    let updated: Awaited<ReturnType<PrismaService['placement']['update']>>;
+    let recomputed: Awaited<ReturnType<PlacementService['recomputeUnpaidFee']>> | null = null;
+    if (diff.changedFields.includes('agreedSalary') && !record.paidAt) {
+      // Before payment: the fee, its GST and the pending payment request follow the new salary.
+      recomputed = await this.recomputeUnpaidFee(record.id as string, updates.agreedSalary as number);
+      updated = recomputed.placement;
+    } else {
+      const data: Record<string, unknown> = {};
+      for (const key of diff.changedFields) {
+        data[key] = updates[key];
+      }
+      updated = await this.prisma.placement.update({
+        where: { id: record.id as string },
+        data,
+      });
     }
-
-    const updated = await this.prisma.placement.update({
-      where: { id: record.id as string },
-      data,
-    });
+    if (recomputed) {
+      await this.auditService.log({
+        actorId: editActor.id,
+        action: 'placement.fee_recomputed',
+        entityType: 'placement',
+        entityCode: updated.code,
+        before: recomputed.before,
+        after: recomputed.after,
+        changedFields: ['agreedSalary', 'placementFee', 'gstAmount', ...(recomputed.paymentId ? ['expectedAmountPaise'] : [])],
+        reason: reason ?? 'Agreed salary changed before payment',
+        city: updated.city,
+      });
+      // The owner gets the request again with the new amount (the pay page already shows it), on the
+      // same number as when it was made: the branch contact for a branch vacancy (M1-R3).
+      if (recomputed.paymentId) {
+        await this.resendPaymentLink(updated.id).catch(() => undefined);
+      }
+    }
 
     await this.editPolicyService.logEdit({
       actorId: editActor.id,
@@ -182,6 +208,62 @@ export class PlacementService {
 
   private async getPolicy() {
     return this.pricingService.current();
+  }
+
+  /**
+   * M1: the agreed salary of a placement not paid yet changed (CEO only). In one
+   * transaction — placement locked first, then its pending payment — the fee and
+   * GST are worked out again at the percentages frozen on the placement, and the
+   * pending UPI request's amount follows. Refused for a replacement (its fee is the
+   * salary difference in the chain: cancel it and record the new salary), and when
+   * the payer already started a card payment or says they paid the old amount.
+   */
+  private async recomputeUnpaidFee(placementId: string, agreedSalary: number) {
+    const policy = await this.getPolicy();
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Placement" WHERE "id" = ${placementId} FOR UPDATE`);
+      const placement = await tx.placement.findUniqueOrThrow({ where: { id: placementId } });
+      if (placement.paidAt) throw new ConflictException('The fee for this placement was just paid: change the salary again to record it without a fee change');
+      if (placement.rootPlacementId && placement.rootPlacementId !== placement.id) {
+        throw new ConflictException("A replacement's fee is the salary difference in its chain: cancel it and record the new salary instead");
+      }
+      const pendingIds = await tx.payment.findMany({
+        where: { placementId, type: 'placement_fee', status: 'pending' },
+        select: { id: true },
+        orderBy: { createdAt: 'asc' },
+      });
+      // M1-R2: lock each pending request, then read it again: a card start or a UTR hint that
+      // landed before the lock is seen.
+      const pending: { id: string; gatewayReference: string | null; payerUtrHint: string | null; amount: number; expectedAmountPaise: number | null; status: string }[] = [];
+      for (const { id } of pendingIds) {
+        await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Payment" WHERE "id" = ${id} FOR UPDATE`);
+        const fresh = await tx.payment.findUniqueOrThrow({
+          where: { id },
+          select: { id: true, gatewayReference: true, payerUtrHint: true, amount: true, expectedAmountPaise: true, status: true },
+        });
+        if (fresh.status === 'pending') pending.push(fresh);
+      }
+      for (const payment of pending) {
+        if (payment.gatewayReference || payment.payerUtrHint) {
+          throw new ConflictException('The owner has started paying the old amount (card or UPI reference): wait for the bank before changing the salary');
+        }
+      }
+      const feePercent = placement.feePercentAtCreation ?? policy.placementFeePercent;
+      const gstPercent = placement.gstPercentAtCreation ?? policy.gstPercent;
+      const placementFee = calculatePlacementFee(agreedSalary, feePercent);
+      const gstAmount = calculateGst(placementFee, gstPercent);
+      const updated = await tx.placement.update({ where: { id: placementId }, data: { agreedSalary, placementFee, gstAmount } });
+      const payment = pending[0] ?? null;
+      if (payment) {
+        await tx.payment.update({ where: { id: payment.id }, data: { amount: placementFee + gstAmount, expectedAmountPaise: placementFee + gstAmount } });
+      }
+      return {
+        placement: updated,
+        paymentId: payment?.id ?? null,
+        before: { agreedSalary: placement.agreedSalary, placementFee: placement.placementFee, gstAmount: placement.gstAmount, ...(payment ? { expectedAmountPaise: payment.expectedAmountPaise } : {}) },
+        after: { agreedSalary, placementFee, gstAmount, ...(payment ? { expectedAmountPaise: placementFee + gstAmount } : {}) },
+      };
+    });
   }
 
   async createAwaitingPaymentFromInterview(interviewId: string, now: Date) {

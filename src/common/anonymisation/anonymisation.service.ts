@@ -11,6 +11,17 @@ import {
   CandidatePhotoStorage,
 } from '../../modules/job-seeker/photo-storage';
 
+/**
+ * Security L5: true when `path` is an object under `<root>/<id>/` (no `..`,
+ * no empty segments), the only place a record's own files are stored.
+ */
+export function ownStoragePath(path: unknown, root: string, id: string): path is string {
+  if (typeof path !== 'string' || !id) return false;
+  const prefix = `${root}/${id}/`;
+  if (!path.startsWith(prefix) || path.length === prefix.length) return false;
+  return path.split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..');
+}
+
 export type AnonymisableSubjectType = 'job_seeker' | 'business' | 'referral';
 
 export interface AnonymiseResult {
@@ -71,19 +82,12 @@ export class AnonymisationService {
 
     switch (subjectType) {
       case 'job_seeker': {
-        const photoPath = record.photoStoragePath as string | null;
-        if (photoPath) {
+        // Security L5: only objects under this job seeker's own prefix are deleted, never
+        // a path that points at someone else's file.
+        for (const path of [record.photoStoragePath, record.cvStoragePath]) {
+          if (!ownStoragePath(path, 'job-seekers', id)) continue;
           try {
-            await this.photoStorage.delete(photoPath);
-          } catch {
-            // ignore if already deleted
-          }
-        }
-
-        const cvPath = record.cvStoragePath as string | null;
-        if (cvPath) {
-          try {
-            await this.photoStorage.delete(cvPath);
+            await this.photoStorage.delete(path);
           } catch {
             // ignore if already deleted
           }

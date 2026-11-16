@@ -15,6 +15,7 @@
     "start:worker:dev": "nest start --entryFile worker --watch",
     "migrate:deploy": "prisma migrate deploy",
     "break-glass:ceo": "sh scripts/break-glass-ceo.sh",
+    "backfill:pay-page-tokens": "sh scripts/backfill-pay-page-tokens.sh",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\"",
     "test": "jest --runInBand",
     "test:watch": "jest --watch",

@@ -291,6 +291,11 @@ describe('Laboura Field selling (in-shop confirmation)', () => {
     expect(sent.some((m) => m.template === 'interview_result_confirm_details' && m.variables.decision === 'selected')).toBe(true);
     await request(server()).post(`/field-selling/interviews/${interviewId}/decision`).set('Authorization', `Bearer ${token}`)
       .send({ ...decisionBody, otpRequestId: otpSent.body.otpRequestId, code: '000000' }).expect(400);
+    // A plain staff "interview_result" code to the owner's phone (POST /otp/send) is not this interview's code.
+    const staffCode = await request(server()).post('/otp/send').set('Authorization', `Bearer ${token}`)
+      .send({ phone: businessPhone, purpose: 'interview_result' }).expect(201);
+    await request(server()).post(`/field-selling/interviews/${interviewId}/decision`).set('Authorization', `Bearer ${token}`)
+      .send({ ...decisionBody, otpRequestId: staffCode.body.requestId, code: codeOf(staffCode.body.requestId) }).expect(400);
     const selected = await request(server()).post(`/field-selling/interviews/${interviewId}/decision`).set('Authorization', `Bearer ${token}`)
       .send({ ...decisionBody, otpRequestId: otpSent.body.otpRequestId, code: codeOf(otpSent.body.otpRequestId) });
     // A wrong code consumed nothing; if the mock locked the request, resend and try again.

@@ -384,7 +384,7 @@ export class CustomerRequestsService {
       await this.signIn.consumeStepUp(sessionId, 'confirm_vacancy');
       const vacancy = await this.vacancies.create(draft.businessId, dto, `customer:${accountId}`, { selfRegisteredByAccountId: accountId });
       vacancyId = vacancy.id;
-      const confirmed = await this.vacancyConfirmation.confirmInApp(vacancy.id, account.phone, `customer:${accountId}`);
+      const confirmed = await this.vacancyConfirmation.confirmInApp(vacancy.id, account.phone, `customer:${accountId}`, vacancy.updatedAt);
       await this.prisma.customerVacancyDraft.update({ where: { id: draft.id }, data: { status: 'confirmed', vacancyId: vacancy.id, confirmedAt: this.clock.now() } });
       return { vacancy: { code: confirmed.code, status: confirmed.status } };
     } catch (error) {

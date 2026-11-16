@@ -322,16 +322,13 @@ export class UpiCollectionService {
   }
 
   /**
-   * The payment a pay page token opens. A link sent before page tokens existed
-   * (/p/pay/<upiReference>) still opens its request while it waits for money and
-   * has no page token yet; once paid, or once a new link was sent, only the token works.
+   * The payment a pay page token opens (by the hash of the token only).
    */
   private async paymentForPage(token: string) {
     if (typeof token !== 'string' || !token || token.length > 200) return null;
-    const byToken = await this.prisma.payment.findUnique({ where: { pageTokenHash: payPageTokenHash(token) } });
-    if (byToken) return byToken;
-    const legacy = await this.prisma.payment.findUnique({ where: { upiReference: token } });
-    return legacy && legacy.pageTokenHash === null && legacy.status === 'pending' ? legacy : null;
+    // Security L3: the UPI reference never opens it; requests made before page tokens get their
+    // hash from src/scripts/backfill-pay-page-tokens.ts.
+    return this.prisma.payment.findUnique({ where: { pageTokenHash: payPageTokenHash(token) } });
   }
 
   async getPaymentPage(token: string) {

@@ -35,6 +35,8 @@ import {
 import { HEARD_FROM_VALUES } from '../job-seeker/job-seeker.validator';
 import { mobileLookupValues, optionalIndianMobile, requireIndianMobile } from '../../common/phone/indian-mobile';
 import { TradeService } from '../trade/trade.service';
+import { sendPhoneChangedNotice } from '../../common/phone/phone-change-notice';
+import { MessagingService } from '../message/messaging.service';
 import { GST_LOOKUP_PROVIDER, GstLookupProvider } from './gst-lookup.provider';
 import { BUSINESS_PHOTO_STORAGE, BusinessPhotoStorage } from './storefront-photo.storage';
 import { PricingService } from '../pricing/pricing.service';
@@ -44,6 +46,8 @@ import { EditPolicyService, EditActor, pickEditableFields } from '../../common/e
 import { AnonymisationService } from '../../common/anonymisation/anonymisation.service';
 import { AgentViewer, agentViewerFor, businessForViewer } from './business-agent-view';
 import { areaAutoFillMaxMeters, areaRequiredError, DEFAULT_AREA_AUTO_FILL_MAX_METERS } from './area-auto-fill';
+import { recordFullNumberSearch } from '../../common/phone/full-number-search';
+import { ownerVisitOtpPurpose } from '../../common/otp/bound-otp-purposes';
 
 /**
  * The only columns PATCH /businesses/:id writes (security AC-1). Not here, on
@@ -104,6 +108,7 @@ export class BusinessService {
     private readonly anonymisationService: AnonymisationService,
     private readonly tradeService: TradeService,
     @Optional() private readonly fieldVisits?: FieldVisitService,
+    @Optional() private readonly messaging?: MessagingService,
   ) {}
 
   async update(id: string, dto: Record<string, unknown>, actor: EditActor | string) {
@@ -198,6 +203,8 @@ export class BusinessService {
         reason: reason ?? 'Mobile number changed after OTP on the new number',
         city: updated.city,
       });
+      // M3: the old number is told.
+      await sendPhoneChangedNotice(this.messaging, { subjectType: 'business', subjectId: updated.id, code: updated.code, oldPhone: record.phone as string, newPhone: phoneChange.phone });
     }
 
     await this.editPolicyService.logEdit({
@@ -279,6 +286,10 @@ export class BusinessService {
       where: { phone: { in: mobileLookupValues(phone) } },
     });
     if (existing) {
+      // Security L1: the 409 tells a staff member the number is ours: a full-number search (audited, 30 an hour).
+      if (!options.selfRegisteredByAccountId) {
+        await recordFullNumberSearch(this.prisma, this.auditService, { id: actorId }, 'business_create', phone);
+      }
       throw new ConflictException({
         statusCode: 409,
         error: 'Conflict',
@@ -969,7 +980,7 @@ export class BusinessService {
       }
       const otpValid = await this.otpService.verifyOtp(dto.ownerOtpRequestId, dto.ownerOtpCode);
       const otpBelongsToOwner = otpValid
-        ? await this.otpService.isVerified(dto.ownerOtpRequestId, business.phone)
+        ? await this.otpService.isVerified(dto.ownerOtpRequestId, business.phone, ownerVisitOtpPurpose(assignment.id))
         : false;
       if (!otpBelongsToOwner) {
         throw new BadRequestException('Valid owner presence OTP is required for a verification visit');

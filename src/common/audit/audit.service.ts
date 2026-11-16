@@ -147,8 +147,25 @@ export class AuditService {
     private readonly idService: IdService,
   ) {}
 
-  async log(params: CreateAuditLogParams) {
-    const code = await this.idService.generateCode('audit_log');
+  /**
+   * The row's code and device, worked out ahead (they read the database through
+   * the pool). Pass the result to `log` together with a transaction, so nothing
+   * inside the transaction waits for a second connection (Security L2).
+   */
+  async prepare(): Promise<{ code: string; device: AuditDevice }> {
+    return { code: await this.idService.generateCode('audit_log'), device: await this.currentDevice() };
+  }
+
+  /**
+   * `client`: a transaction to write the row inside it; then pass `prepared`
+   * (from `prepare()`, taken before the transaction) too (Security L2).
+   */
+  async log(
+    params: CreateAuditLogParams,
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
+    prepared?: { code: string; device: AuditDevice },
+  ) {
+    const code = prepared?.code ?? (await this.idService.generateCode('audit_log'));
     const changedFieldsSet = new Set<string>(params.changedFields ?? []);
 
     const redactedBefore = params.before
@@ -174,9 +191,9 @@ export class AuditService {
       }
     }
 
-    const device = await this.currentDevice();
+    const device = prepared?.device ?? (await this.currentDevice());
 
-    return this.prisma.auditLog.create({
+    return client.auditLog.create({
       data: {
         code,
         deviceId: device.deviceId,

@@ -33,6 +33,9 @@ import { AttendanceService } from '../attendance/attendance.service';
 import { CallFollowThroughService } from './call-follow-through.service';
 import { parseClock } from './call-window';
 
+/** Security L4: the only keys PATCH /calls/:id takes. */
+const CALL_NOTE_EDIT_KEYS = new Set(['notes', 'agentOutcomeReason', 'reason']);
+
 export interface CallActor {
   id: string;
   role: string;
@@ -82,12 +85,19 @@ export class CallService {
       editActor = actor;
     }
 
-    // Only the agent's note is editable. Any other key is passed on to the edit
-    // policy so it is refused (provider fields: "never editable"; anything else:
-    // unknown field) instead of being silently ignored (security AC-1).
-    const { notes, agentOutcomeReason, ...rest } = (body ?? {}) as Record<string, unknown>;
-    const updates: Record<string, unknown> = { ...rest };
-    delete updates.reason;
+    // Only the agent's note is editable (security AC-1, L4): any key other than
+    // notes, agentOutcomeReason and reason is refused here, before the edit policy.
+    const { notes, agentOutcomeReason } = (body ?? {}) as Record<string, unknown>;
+    const refused = Object.keys(body ?? {}).filter((key) => !CALL_NOTE_EDIT_KEYS.has(key));
+    if (refused.length) {
+      throw new BadRequestException(
+        `Call provider fields and recordings are never editable; only the agent's note can be changed (notes or agentOutcomeReason, with a reason). Refused: ${refused.join(', ')}`,
+      );
+    }
+    for (const [key, value] of [['notes', notes], ['agentOutcomeReason', agentOutcomeReason]] as const) {
+      if (value !== undefined && typeof value !== 'string') throw new BadRequestException(`${key} must be text`);
+    }
+    const updates: Record<string, unknown> = {};
     if (agentOutcomeReason !== undefined) {
       updates.agentOutcomeReason = agentOutcomeReason;
     }

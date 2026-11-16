@@ -329,7 +329,8 @@ describe('Phase 19 Gate End-to-End Proof', () => {
 
     it('step 5 & 6: clock moved forward 23 months and a day: dry run reports the job seeker, real run anonymises them, deletes their photo and a separate 13m recording, while placement and payment totals are unchanged', async () => {
       // Setup candidate #1: photo in storage. Their profile remains eligible for anonymisation.
-      photoPath1 = `candidates/proof-${suffix}.jpg`;
+      // Security L5: a job seeker's files live under job-seekers/<id>/ (anonymisation deletes only those).
+      photoPath1 = `job-seekers/${seeker1Id}/profile-photo`;
       await photoStorage.put(photoPath1, Buffer.from('proof-photo-candidate-1'), 'image/jpeg');
 
       await prisma.jobSeeker.update({
@@ -491,6 +492,11 @@ describe('Phase 19 Gate End-to-End Proof', () => {
           updatedAt: baseDate,
           createdAt: baseDate,
         },
+      });
+      // Messages to him are activity too (the phone change above SMSes his old number, M3).
+      await prisma.messageLog.updateMany({
+        where: { subjectType: 'job_seeker', subjectId: seeker1Id },
+        data: { createdAt: baseDate, sentAt: baseDate },
       });
 
       // Calculate future clock: 23 months and 1 day after baseDate

@@ -509,7 +509,7 @@ describe('Phase 19 Task 1: Who can edit what, and why', () => {
   });
 
   describe('3. Placement & Referral Edit Rules', () => {
-    it('placement creator can edit before confirmed, locked once confirmed', async () => {
+    it('placement salary: CEO only (M1); the creator is also locked once confirmed', async () => {
       const plCode = await idService.generateCode('placement');
       const seekerCode = await idService.generateCode('job_seeker');
       const seeker = await prisma.jobSeeker.create({
@@ -542,7 +542,8 @@ describe('Phase 19 Task 1: Who can edit what, and why', () => {
       });
       placementIds.push(pl.id);
 
-      // Agent can edit before payment/confirmation
+      // M1 (security follow-up): the agreed salary sets the fee, so only the CEO changes it —
+      // not the agent who created the placement, not a Manager (security-m1-agreed-salary.spec.ts).
       const resPre = await request(app.getHttpServer())
         .patch(`/placements/${pl.id}`)
         .set('Authorization', `Bearer ${agent1.token}`)
@@ -550,8 +551,8 @@ describe('Phase 19 Task 1: Who can edit what, and why', () => {
           agreedSalary: 2200000,
           reason: 'Negotiated revised salary with business',
         });
-      expect(resPre.status).toBe(200);
-      expect(resPre.body.agreedSalary).toBe(2200000);
+      expect(resPre.status).toBe(403);
+      expect(resPre.body.message).toContain('Only the CEO');
 
       // Now set to confirmed
       await prisma.placement.update({
@@ -559,7 +560,7 @@ describe('Phase 19 Task 1: Who can edit what, and why', () => {
         data: { status: 'confirmed' },
       });
 
-      // Agent is now locked out
+      // Agent is now locked out by the money rule before anything else
       const resPost = await request(app.getHttpServer())
         .patch(`/placements/${pl.id}`)
         .set('Authorization', `Bearer ${agent1.token}`)
@@ -570,7 +571,7 @@ describe('Phase 19 Task 1: Who can edit what, and why', () => {
       expect(resPost.status).toBe(403);
       expect(resPost.body.message).toContain('Locked — money involved, ask your Team Lead');
 
-      // Manager can edit with reason
+      // A Manager may pass the edit policy but not the CEO-only salary rule
       const resMgr = await request(app.getHttpServer())
         .patch(`/placements/${pl.id}`)
         .set('Authorization', `Bearer ${manager.token}`)
@@ -578,11 +579,9 @@ describe('Phase 19 Task 1: Who can edit what, and why', () => {
           agreedSalary: 2500000,
           reason: 'Manager corrected placement salary',
         });
-      expect(resMgr.status).toBe(200);
-      // The agreed salary is a job detail a Manager sees (decided 11 Nov).
-      expect(resMgr.body.agreedSalary).toBe(2500000);
+      expect(resMgr.status).toBe(403);
       const savedPl = await prisma.placement.findUniqueOrThrow({ where: { id: pl.id } });
-      expect(savedPl.agreedSalary).toBe(2500000);
+      expect(savedPl.agreedSalary).toBe(2000000);
     });
 
     it('referral partner editable until payout approved, locked once approved', async () => {
@@ -698,6 +697,19 @@ describe('Phase 19 Task 1: Who can edit what, and why', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.message).toContain('Call provider fields and recordings are never editable');
+    });
+
+    it('L4: refuses any key other than notes, agentOutcomeReason and reason, even next to a note', async () => {
+      const before = await prisma.callRecord.findUniqueOrThrow({ where: { id: callId } });
+      for (const extra of [{ outcome: 'connected' }, { jobSeekerId: callId }, { consentAnswer: 'yes' }, { notes: { set: 'x' } }]) {
+        const res = await request(app.getHttpServer())
+          .patch(`/calls/${callId}`)
+          .set('Authorization', `Bearer ${agent1.token}`)
+          .send({ notes: 'Sneaky note', reason: 'Trying an extra key', ...extra });
+        expect(res.status).toBe(400);
+      }
+      const after = await prisma.callRecord.findUniqueOrThrow({ where: { id: callId } });
+      expect(after.agentOutcomeReason).toBe(before.agentOutcomeReason);
     });
   });
 

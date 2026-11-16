@@ -72,7 +72,9 @@ import { assertIdReadyForPayment } from './id-payment-gate';
 export { ID_WAITING_FOR_TEAM_LEAD } from './id-payment-gate';
 import { PublicLinkStoreService } from '../../common/public-link-store.service';
 import { MessagingService } from '../message/messaging.service';
+import { sendPhoneChangedNotice } from '../../common/phone/phone-change-notice';
 import { publicPageLink } from '../../common/public-pages';
+import { recordFullNumberSearch } from '../../common/phone/full-number-search';
 import {
   mobileLookupValues,
   optionalIndianMobile,
@@ -112,14 +114,17 @@ const ALLOWED_JOB_SEEKER_UPDATE_FIELDS = new Set([
   'certificates',
   'drivingLicenceType',
   'ownVehicle',
-  'policeVerified',
   'hasSmartphone',
-  'cvStoragePath',
   'keySkills',
   'qualification',
   'currentSalaryPaise',
   // Not pausedAt (security AC-1): pausing follows a consent withdrawal, never a plain edit.
+  // Not policeVerified or cvStoragePath (security L5): a verification result and a storage
+  // path are never typed in by staff (a path could point anonymisation at another file).
 ]);
+
+/** Security L5: refused by name instead of silently dropped. */
+const NEVER_EDITED_JOB_SEEKER_FIELDS = ['policeVerified', 'cvStoragePath'];
 
 /** Who pays through a payment-only link (design CA08e "Who is it?"). Never personal data beyond the relation. */
 export const PAYMENT_PAYER_RELATIONS = ['brother', 'sister', 'parent', 'spouse', 'friend', 'other'] as const;
@@ -256,6 +261,10 @@ export class JobSeekerService {
     if (existing) {
       // Guide (Forms): a number already registered shows "Already registered — open it"
       // instead of creating a second record, so the answer names the existing record.
+      // Security L1: the 409 tells a staff member the number is ours: a full-number search (audited, 30 an hour).
+      if (!options.selfRegisteredByAccountId) {
+        await recordFullNumberSearch(this.prisma, this.auditService, { id: actorId }, 'job_seeker_create', phone);
+      }
       throw new ConflictException({
         statusCode: 409,
         error: 'Conflict',
@@ -1397,6 +1406,10 @@ export class JobSeekerService {
 
     const reason = typeof dto.reason === 'string' ? dto.reason : undefined;
 
+    const neverEdited = NEVER_EDITED_JOB_SEEKER_FIELDS.filter((key) => key in dto);
+    if (neverEdited.length) {
+      throw new BadRequestException(`${neverEdited.join(', ')} cannot be changed by an edit`);
+    }
     const filteredDto: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(dto)) {
       if (ALLOWED_JOB_SEEKER_UPDATE_FIELDS.has(key) && value !== undefined) {
@@ -1435,7 +1448,8 @@ export class JobSeekerService {
       if (!otpRequestId) {
         throw new BadRequestException('Changing the mobile number needs an OTP check on the new number: send an OTP to it and pass phoneOtpRequestId');
       }
-      if (!(await this.otpService.isVerified(otpRequestId, newPhone))) {
+      // M3: a code sent for a job seeker's number (purpose job_seeker), not one from another flow.
+      if (!(await this.otpService.isVerified(otpRequestId, newPhone, 'job_seeker'))) {
         throw new BadRequestException('The new mobile number must pass OTP verification before it is saved');
       }
       const taken = await this.prisma.jobSeeker.findFirst({
@@ -1453,7 +1467,7 @@ export class JobSeekerService {
       filteredDto.phone = newPhone;
       phoneChange = { otpRequestId, phone: newPhone };
     }
-    if (phoneChange && !(await this.otpService.consumeVerified(phoneChange.otpRequestId, phoneChange.phone))) {
+    if (phoneChange && !(await this.otpService.consumeVerified(phoneChange.otpRequestId, phoneChange.phone, 'job_seeker'))) {
       throw new BadRequestException('This verified OTP request has already been used or expired');
     }
 
@@ -1488,6 +1502,8 @@ export class JobSeekerService {
         reason: reason ?? 'Mobile number changed after OTP on the new number',
         city: updated.city,
       });
+      // M3: the old number is told.
+      await sendPhoneChangedNotice(this.messagingService, { subjectType: 'job_seeker', subjectId: updated.id, code: updated.code, oldPhone: record.phone as string, newPhone: phoneChange.phone });
     }
 
     let guaranteeFloorPaise = updated.guaranteeFloorPaise;

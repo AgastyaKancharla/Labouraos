@@ -5,6 +5,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -15,6 +16,9 @@ import { CreateReferralDto } from './dto/create-referral.dto';
 import { assertNoRawAadhaar, HEARD_FROM_VALUES } from '../job-seeker/job-seeker.validator';
 import { EditPolicyService, EditActor, pickEditableFields } from '../../common/edit-policy/edit-policy.service';
 import { mobileLookupValues, requireIndianMobile } from '../../common/phone/indian-mobile';
+import { sendPhoneChangedNotice } from '../../common/phone/phone-change-notice';
+import { MessagingService } from '../message/messaging.service';
+import { recordFullNumberSearch } from '../../common/phone/full-number-search';
 
 /**
  * The only columns PATCH /referrals/:id writes (security AC-1). Not here, on
@@ -65,6 +69,7 @@ export class ReferralService {
     private readonly auditService: AuditService,
     private readonly otpService: OtpService,
     private readonly editPolicyService: EditPolicyService,
+    @Optional() private readonly messaging?: MessagingService,
   ) {}
 
   async update(id: string, dto: Record<string, unknown>, actor: EditActor | string) {
@@ -158,6 +163,8 @@ export class ReferralService {
         reason: reason ?? 'Mobile number changed after OTP on the new number',
         city: updated.city,
       });
+      // M3: the old number is told.
+      await sendPhoneChangedNotice(this.messaging, { subjectType: 'referral', subjectId: updated.id, code: updated.code, oldPhone: record.phone as string, newPhone: phoneChange.phone });
     }
 
     await this.editPolicyService.logEdit({
@@ -234,6 +241,10 @@ export class ReferralService {
       where: { phone: { in: mobileLookupValues(phone) } },
     });
     if (existing) {
+      // Security L1: the 409 tells a staff member the number is ours: a full-number search (audited, 30 an hour).
+      if (!options.selfRegisteredByAccountId) {
+        await recordFullNumberSearch(this.prisma, this.auditService, { id: actorId }, 'referral_create', phone);
+      }
       throw new ConflictException({
         statusCode: 409,
         error: 'Conflict',

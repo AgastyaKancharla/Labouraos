@@ -315,11 +315,10 @@ describe('UpiCollectionService', () => {
       await expect(service.saveUtrHint(payment.upiReference, '123456789012')).rejects.toThrow(/not found/);
     });
 
-    it('a link sent before page tokens (no hash yet) still opens its request while it waits for money, never once paid', async () => {
+    it('L3: a request with no page token hash does not open by its UPI reference', async () => {
       const legacy = { ...payment, pageTokenHash: null };
       findUnique.mockImplementation(async (args: { where: Record<string, unknown> }) => (args.where.upiReference === payment.upiReference ? legacy : null));
-      await expect(service.getPaymentPage(payment.upiReference)).resolves.toMatchObject({ amountPaise: 49900 });
-      findUnique.mockImplementation(async (args: { where: Record<string, unknown> }) => (args.where.upiReference === payment.upiReference ? { ...legacy, status: 'succeeded' } : null));
+      await expect(service.getPaymentPage(payment.upiReference)).rejects.toThrow(/not found/);
       await expect(service.getPublicSummary(payment.upiReference)).rejects.toThrow(/not found/);
     });
   });

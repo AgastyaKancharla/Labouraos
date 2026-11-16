@@ -275,6 +275,7 @@ export class PaymentService {
     return this.onPaymentSucceeded(payment.id, {
       confirmedAt: new Date(),
       confirmedBy: 'gateway',
+      expectedAmountPaise: owedPaise,
     });
   }
 
@@ -341,7 +342,15 @@ export class PaymentService {
 
   async onPaymentSucceeded(
     paymentId: string,
-    confirmation: { confirmedAt: Date; confirmedBy: string; confirmedByStaffId?: string; bankUtr?: string; bookedAt?: Date; bookingNote?: string | null; bankCreditId?: string },
+    confirmation: {
+      confirmedAt: Date; confirmedBy: string; confirmedByStaffId?: string; bankUtr?: string; bookedAt?: Date; bookingNote?: string | null; bankCreditId?: string;
+      /**
+       * Security M1-R1: the amount owed that the caller checked the money against. Read again
+       * under the locks; if the request's amount changed since (a CEO salary correction), the
+       * payment is not confirmed and Finance gets a payment_mismatch flag.
+       */
+      expectedAmountPaise?: number;
+    },
   ) {
     const { confirmedAt, confirmedBy, confirmedByStaffId, bankUtr } = confirmation;
     // The money is booked on bookedAt (the open month, when the bank's month is
@@ -362,6 +371,10 @@ export class PaymentService {
       if (!payment) throw new NotFoundException(`Payment '${paymentId}' not found`);
       if (payment.status === 'succeeded') return { alreadyProcessed: true as const, payment };
       if (payment.status === 'failed') return { alreadyFailed: true as const, payment };
+      const owedNow = payment.expectedAmountPaise ?? payment.amount;
+      if (confirmation.expectedAmountPaise !== undefined && owedNow !== confirmation.expectedAmountPaise) {
+        return { amountChanged: true as const, payment, owedNow };
+      }
 
       const claimed = await tx.payment.updateMany({
         where: { id: paymentId, status: payment.status },
@@ -475,6 +488,22 @@ export class PaymentService {
       // C1: money for a request already closed is flagged for a refund, never swallowed.
       await this.flagPaidAfterClosed(paymentId, { confirmedBy, bankUtr: bankUtr ?? null, bankCreditId: confirmation.bankCreditId ?? null });
       return { received: true, alreadyFailed: true, paymentId };
+    }
+    if ('amountChanged' in transition && transition.amountChanged) {
+      await this.reviewFlagService.raise({
+        kind: 'payment_mismatch',
+        subjectType: 'payment',
+        subjectId: paymentId,
+        details: {
+          reason: 'amount_changed_before_confirm',
+          checkedAgainstPaise: confirmation.expectedAmountPaise ?? null,
+          expectedAmountPaise: transition.owedNow,
+          confirmedBy,
+          bankUtr: bankUtr ?? null,
+          bankCreditId: confirmation.bankCreditId ?? null,
+        },
+      });
+      return { received: true, confirmed: false, amountMismatch: true, paymentId };
     }
     if (transition.placementNotWaiting) {
       await this.flagPaidAfterClosed(paymentId, { confirmedBy, bankUtr: bankUtr ?? null, placementStatus: 'not_awaiting_payment' });
@@ -727,10 +756,16 @@ export class PaymentService {
         bookedAt: booking.at,
         bookingNote: booking.note,
         bankCreditId: credit.id,
+        expectedAmountPaise: expectedAmount,
       });
     } catch (error) {
       await release();
       throw error;
+    }
+    // M1-R1: the amount owed changed while this credit was being matched: the credit stays unmatched (flagged).
+    if (confirmed && 'amountMismatch' in confirmed && confirmed.amountMismatch) {
+      await release();
+      return { received: true, status: 'unmatched', reason: 'amount_changed', bankCreditId: credit.id, paymentId: matchedPayment.id };
     }
     if (confirmed && 'alreadyProcessed' in confirmed && confirmed.alreadyProcessed) {
       await release();
@@ -985,10 +1020,15 @@ export class PaymentService {
         bookedAt: booking.at,
         bookingNote: booking.note,
         bankCreditId: credit.id,
+        expectedAmountPaise: expectedAmount,
       });
     } catch (error) {
       await releaseCredit();
       throw error;
+    }
+    if (confirmed && 'amountMismatch' in confirmed && confirmed.amountMismatch) {
+      await releaseCredit();
+      throw new ConflictException('The amount owed on this payment changed meanwhile; the credit stays unmatched and is flagged for Finance');
     }
     // Another credit confirmed this payment at the same moment: this credit
     // goes back to unmatched (it is an overpayment to sort out), never left

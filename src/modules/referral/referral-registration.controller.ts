@@ -251,7 +251,7 @@ export class ReferralRegistrationController {
       otpCode: body.otpCode ?? '',
       method,
       ...(method === 'upi' ? { upiId: body.upiId } : { accountNumber: body.accountNumber, ifsc: body.ifsc }),
-    }, undefined, sessionVerified ? { otpVerifiedForPhone: link.phone ?? '' } : {});
+    }, undefined, sessionVerified ? { otpVerifiedForPhone: link.phone! } : {});
   }
 
   @Get('referrals/:id/registration-status')

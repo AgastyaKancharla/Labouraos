@@ -271,6 +271,17 @@ describe('Phase 13 Task 5 — verification visits and verified gate', () => {
     expect(ownerOtp.body.phone).toBe(`******${businessPhone.replace(/\D/g, '').slice(-4)}`);
     const provider = otpService.getProvider() as MockOtpProvider;
     const ownerOtpCode = provider.getCode(ownerOtp.body.requestId)!;
+    // A code to the owner's phone from another flow (here a plain job seeker / contact code) is refused:
+    // only the one sent for this visit assignment counts.
+    for (const purpose of [undefined, 'business_contact']) {
+      const other = purpose ? await otpService.getProvider().sendOtp(businessPhone, { purpose }) : await otpService.sendOtp(businessPhone);
+      const otherCode = provider.getCode(other.requestId)!;
+      await request(app.getHttpServer())
+        .post(`/businesses/${businessId}/visits`)
+        .set('Authorization', `Bearer ${nearestAgentToken}`)
+        .send({ ...visitBody, ownerOtpRequestId: other.requestId, ownerOtpCode: otherCode })
+        .expect(400);
+    }
     const visit = await request(app.getHttpServer())
       .post(`/businesses/${businessId}/visits`)
       .set('Authorization', `Bearer ${nearestAgentToken}`)
