@@ -5,7 +5,7 @@ import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { Banner, Button, Card, HeroCard, Screen } from '@/components';
 import { useI18n } from '@/i18n';
-import { sellingRoutes } from '@/navigation/routes';
+import { useSellingRoutes } from '@/navigation/useFlow';
 import { colors } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { formatRupees, KeyValue, QueryView, useParam } from '../_selling';
@@ -17,6 +17,7 @@ import { formatRupees, KeyValue, QueryView, useParam } from '../_selling';
  * salary that would bring the salary ones in — the owner decides.
  */
 export default function NoMoreScreen() {
+  const sr = useSellingRoutes();
   const { t } = useI18n();
   const vacancyId = useParam('vacancyId');
   const businessId = useParam('businessId');
@@ -51,7 +52,7 @@ export default function NoMoreScreen() {
                   label={t('fa15x.change')}
                   variant="secondary"
                   style={styles.flex1}
-                  onPress={() => router.push(sellingRoutes.addVacancy(businessId || undefined))}
+                  onPress={() => router.push(sr.addVacancy(businessId || undefined))}
                   testID="change-vacancy"
                 />
                 <Button label={t('fa15x.done')} style={styles.flex1} onPress={() => router.back()} testID="done" />

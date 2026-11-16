@@ -21,6 +21,8 @@ export function outcomeKey(outcome: string | null): MessageKey {
   switch (outcome) {
     case 'onboarded':
       return 'outcome.onboarded';
+    case 'already_onboarded':
+      return 'outcome.already_onboarded';
     case 'interested_later':
       return 'outcome.interested_later';
     case 'not_interested':

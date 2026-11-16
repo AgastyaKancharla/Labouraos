@@ -1,58 +1,101 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useI18n } from '@/i18n';
 import { Banner, Button, Card, Emoji, EmptyState, ErrorState, LoadingState, Screen, Text, TextField, type IconName } from '@/components';
+import { useEndpoints } from '@/api/ApiProvider';
+import { queryKeys } from '@/api/queryClient';
 import { isApiError } from '@/api/errors';
-import { visitPaths, type VisitOutcome } from '@/api/endpoints';
+import { errorCode, visitPaths } from '@/api/endpoints';
 import { useOfflineQueue } from '@/device/offline-queue';
-import { routes } from '@/navigation/routes';
+import { useFormDraft } from '@/lib/formDraft';
+import { pageRoutes, routes } from '@/navigation/routes';
+import { finishLater } from '@/navigation/useFlow';
 import { type Accent, colors } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { ChoiceList } from '../_visits/ChoiceList';
 import { DatePicker } from '../_visits/DatePicker';
-import { useVisit } from '../_visits/useVisit';
+import { useDraft } from '../_visits/visitDraft';
 
-const OUTCOMES: VisitOutcome[] = ['onboarded', 'interested_later', 'not_interested', 'owner_not_there'];
-/** Each outcome's colour code: onboarded green, come back cyan, not interested orange, owner away gold. */
-const OUTCOME_LOOK: Record<VisitOutcome, { icon: IconName; accent: Accent }> = {
-  onboarded: { icon: 'check-circle', accent: 'green' },
+/** The results picked here. Onboarded is never picked: saving the business form sets it. */
+export const PICKED_OUTCOMES = ['interested_later', 'not_interested', 'owner_not_there'] as const;
+export type PickedOutcome = (typeof PICKED_OUTCOMES)[number];
+/** Each outcome's colour code: come back cyan, not interested orange, owner away gold. */
+export const OUTCOME_LOOK: Record<PickedOutcome, { icon: IconName; accent: Accent }> = {
   interested_later: { icon: 'calendar', accent: 'cyan' },
   not_interested: { icon: 'x-circle', accent: 'orange' },
   owner_not_there: { icon: 'clock', accent: 'gold' },
 };
-const REASONS = ['hires_family_friends', 'fee_too_high', 'no_staff_needed', 'other_agency', 'other'] as const;
+export const REASONS = ['hires_family_friends', 'fee_too_high', 'no_staff_needed', 'other_agency', 'other'] as const;
 
 /**
- * FA06c — Visit outcome. Every visit ends with one: onboarded; interested —
- * come back later (date); not interested (reason); owner not there (date).
- * "Come back" visits reappear on Home and the Map on that date. Saved
- * through the offline queue. "Onboarded" is only for a registered business.
+ * FA06c — How did the visit go? For a visit that did not end in onboarding:
+ * interested — come back later (date); not interested (reason); owner not
+ * there (date). "Come back" visits reappear in Needs you now on that date.
+ * Saved through the offline queue.
+ *
+ * Redesign (16 Nov): the visit is always read fresh from the server, and a
+ * visit that already has a result (onboarded or any other) never opens this
+ * question again: it goes to the visit details page, where a result other
+ * than Onboarded can be changed with a reason.
  */
 export default function VisitOutcomeScreen() {
   const { t } = useI18n();
   const params = useLocalSearchParams<{ id?: string; outcome?: string }>();
-  const { visit, server, loading, error } = useVisit(params.id);
+  const id = params.id ?? '';
+  const draft = useDraft(id || undefined);
+  const { visits } = useEndpoints();
+  const server = useQuery({
+    queryKey: queryKeys.visit(id),
+    queryFn: () => visits.get(id),
+    enabled: Boolean(id),
+    retry: false,
+    staleTime: 0,
+    refetchOnMount: 'always',
+  });
+  const finished = Boolean(server.data?.outcome);
+  useEffect(() => {
+    if (finished) router.replace(pageRoutes.visitDetails(id));
+  }, [finished, id]);
+
+  if (!id) return <EmptyState message={t('common.error')} />;
+  // Fresh from the server; only without signal does the phone's copy of the visit stand in.
+  if (server.isPending || finished) return <LoadingState />;
+  if (server.isError && !draft) return <ErrorState error={server.error} onRetry={() => void server.refetch()} />;
+  const v = server.data;
+  const visit = {
+    id,
+    name: v?.business?.name ?? draft?.businessName ?? (draft?.shopName || v?.shopName) ?? '',
+    hasBusiness: Boolean(v?.business ?? draft?.businessId),
+    shopName: draft?.shopName || v?.shopName || '',
+    spokeTo: draft?.spokeTo || v?.spokeTo || '',
+    contactPhone: draft?.contactPhone ?? '',
+    endedAt: draft?.endedAt ?? v?.endedAt ?? null,
+  };
+  return <OutcomeForm visit={visit} initial={params.outcome} />;
+}
+
+function OutcomeForm({ visit, initial }: {
+  visit: { id: string; name: string; hasBusiness: boolean; shopName: string; spokeTo: string; contactPhone: string; endedAt: string | null };
+  initial?: string;
+}) {
+  const { t } = useI18n();
   const queue = useOfflineQueue();
   const client = useQueryClient();
-  const [outcome, setOutcome] = useState<VisitOutcome | null>(
-    OUTCOMES.includes(params.outcome as VisitOutcome) ? (params.outcome as VisitOutcome) : null,
-  );
-  const [revisitOn, setRevisitOn] = useState<string | null>(null);
-  const [reason, setReason] = useState<string | null>(null);
-  const [note, setNote] = useState('');
+  const [form, setForm, clearForm] = useFormDraft(`fa06c:${visit.id}`, () => ({
+    outcome: (PICKED_OUTCOMES as readonly string[]).includes(initial ?? '') ? (initial as PickedOutcome) : (null as PickedOutcome | null),
+    revisitOn: null as string | null,
+    reason: null as string | null,
+    note: '',
+  }));
+  const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
   const [problem, setProblem] = useState<string | null>(null);
   const [saved, setSaved] = useState<'sent' | 'queued' | null>(null);
   const [busy, setBusy] = useState(false);
   const [openedAt] = useState(() => Date.now());
-
-  if (!params.id) return <EmptyState message={t('common.error')} />;
-  if (loading) return <LoadingState />;
-  if (!visit) return <ErrorState error={error} onRetry={() => router.replace(routes.visits)} />;
-
+  const { outcome, revisitOn, reason, note } = form;
   const needsDate = outcome === 'interested_later' || outcome === 'owner_not_there';
-  const name = visit.businessName ?? visit.shopName;
 
   async function save() {
     if (!outcome) return setProblem(t('fa06c.pickOutcome'));
@@ -61,23 +104,31 @@ export default function VisitOutcomeScreen() {
     setProblem(null);
     setBusy(true);
     try {
-      const result = await queue.submit(`${t('fa06c.queueLabel')} · ${name}`, {
+      const result = await queue.submit(`${t('fa06c.queueLabel')} · ${visit.name}`, {
         method: 'POST',
-        path: visitPaths.outcome(visit!.id),
+        path: visitPaths.outcome(visit.id),
         json: {
           outcome,
-          ...(visit!.businessId ? {} : { shopName: visit!.shopName }),
-          ...(visit!.spokeTo ? { spokeTo: visit!.spokeTo } : {}),
-          ...(visit!.contactPhone ? { contactPhone: visit!.contactPhone } : {}),
+          ...(visit.hasBusiness || !visit.shopName ? {} : { shopName: visit.shopName }),
+          ...(visit.spokeTo ? { spokeTo: visit.spokeTo } : {}),
+          ...(visit.contactPhone ? { contactPhone: visit.contactPhone } : {}),
           ...(needsDate ? { revisitOn } : {}),
           ...(outcome === 'not_interested' ? { reason } : {}),
           ...(note.trim() ? { note: note.trim() } : {}),
-          ...(visit!.endedAt ? { endedAt: visit!.endedAt } : {}),
+          ...(visit.endedAt ? { endedAt: visit.endedAt } : {}),
         },
       });
+      clearForm();
       setSaved(result.status);
       void client.invalidateQueries({ queryKey: ['field-work'] });
+      void client.invalidateQueries({ queryKey: ['field-visits'] });
     } catch (e) {
+      // Someone (or another phone) already gave this visit a result: show it instead.
+      if (errorCode(e) === 'VISIT_RESULT_ALREADY_SET') {
+        void client.invalidateQueries({ queryKey: queryKeys.visit(visit.id) });
+        router.replace(pageRoutes.visitDetails(visit.id));
+        return;
+      }
       setProblem(isApiError(e) ? e.message : t('common.error'));
     } finally {
       setBusy(false);
@@ -92,26 +143,21 @@ export default function VisitOutcomeScreen() {
           <View style={styles.qRow}>
             <View style={styles.flex1}>
               <Text variant="h2">{t('fa06c.question')}</Text>
-              <Text variant="muted">{name}</Text>
+              <Text variant="muted">{visit.name}</Text>
             </View>
             <Emoji symbol="🤝" size={28} />
           </View>
           <View style={styles.gap} />
           <ChoiceList
-            choices={OUTCOMES.map((o) => ({
-              value: o,
-              label: t(`fa06c.${o}` as const),
-              disabled: o === 'onboarded' && !visit.businessId,
-              ...OUTCOME_LOOK[o],
-            }))}
+            choices={PICKED_OUTCOMES.map((o) => ({ value: o, label: t(`fa06c.${o}` as const), ...OUTCOME_LOOK[o] }))}
             value={outcome}
-            onChange={setOutcome}
+            onChange={(o) => set({ outcome: o })}
             testID="fa06c-outcome"
           />
         </Card>
         {needsDate ? (
           <Card stripe accent="cyan">
-            <DatePicker label={t('fa06c.comeBackOn')} value={revisitOn} onChange={setRevisitOn} now={openedAt} testID="fa06c-date" />
+            <DatePicker label={t('fa06c.comeBackOn')} value={revisitOn} onChange={(d) => set({ revisitOn: d })} now={openedAt} testID="fa06c-date" />
           </Card>
         ) : null}
         {outcome === 'not_interested' ? (
@@ -119,22 +165,22 @@ export default function VisitOutcomeScreen() {
             <Text variant="small" style={styles.label}>
               {t('fa06c.why')}
             </Text>
-            <ChoiceList choices={REASONS.map((r) => ({ value: r, label: t(`reason.${r}` as const) }))} value={reason} onChange={setReason} testID="fa06c-reason" />
+            <ChoiceList choices={REASONS.map((r) => ({ value: r, label: t(`reason.${r}` as const) }))} value={reason} onChange={(r) => set({ reason: r })} testID="fa06c-reason" />
           </Card>
         ) : null}
         <Card stripe accent="navy">
-          <TextField label={t('fa06c.note')} value={note} onChangeText={setNote} multiline numberOfLines={3} maxLength={1000} testID="fa06c-note" />
+          <TextField label={t('fa06c.note')} value={note} onChangeText={(n) => set({ note: n })} multiline numberOfLines={3} maxLength={1000} testID="fa06c-note" />
         </Card>
         {problem ? <Banner tone="error" message={problem} testID="fa06c-problem" /> : null}
         {saved ? (
           <Banner tone={saved === 'sent' ? 'ok' : 'info'} message={saved === 'sent' ? t('fa06c.saved') : t('fa06c.queued')} testID="fa06c-saved" />
         ) : null}
         {saved ? (
-          <Button label={t('fa06c.backToVisits')} onPress={() => router.replace(routes.visits)} testID="fa06c-done" />
+          // Closes every step of this visit, so back never reopens them.
+          <Button label={t('fa06c.backToVisits')} onPress={() => finishLater(routes.visits)} testID="fa06c-done" />
         ) : (
           <Button label={t('common.save')} loading={busy} onPress={() => void save()} testID="fa06c-save" />
         )}
-        {server?.outcome && !saved ? <Text variant="muted">{t('fa06c.changing')}</Text> : null}
       </Screen>
     </View>
   );

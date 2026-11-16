@@ -58,9 +58,12 @@ export function CodeInput({ value, onChange, length = 6, label, onComplete, auto
 
 const styles = StyleSheet.create({
   wrap: { position: 'relative' },
-  row: { flexDirection: 'row', gap: 8 },
+  // The boxes share the card's width (six fit in a card at 360 px, fix list A8), up to 48 px each.
+  row: { flexDirection: 'row', gap: 6 },
   box: {
-    width: 44,
+    flex: 1,
+    minWidth: 0,
+    maxWidth: 48,
     height: 52,
     borderWidth: 1,
     borderColor: colors.border,

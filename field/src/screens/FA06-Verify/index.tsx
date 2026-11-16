@@ -6,8 +6,9 @@ import { useI18n } from '@/i18n';
 import { Banner, Button, Card, CodeInput, EmptyState, ErrorState, IconTile, LoadingState, Screen, StatusChip, Text } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
+import { useAfterSave } from '@/api/refresh';
 import { isApiError } from '@/api/errors';
-import { visitPaths } from '@/api/endpoints';
+import { errorCode, visitPaths } from '@/api/endpoints';
 import { isNeedsSignalError, useOfflineQueue } from '@/device/offline-queue';
 import { useLocation } from '@/device/location/useLocation';
 import { distanceMeters } from '@/device/location/location';
@@ -32,6 +33,7 @@ export default function VerifyScreen() {
   const params = useLocalSearchParams<{ businessId?: string; assignmentId?: string }>();
   const { fieldWork, visits } = useEndpoints();
   const queue = useOfflineQueue();
+  const afterSave = useAfterSave();
   const location = useLocation();
   const { read } = location;
   const business = useQuery({
@@ -62,7 +64,15 @@ export default function VerifyScreen() {
   const atShop = fromPin !== null && fromPin <= SAME_SPOT_METERS;
 
   function explain(e: unknown) {
-    setProblem(isNeedsSignalError(e) ? t('common.needsSignal') : isApiError(e) ? e.message : t('common.error'));
+    setProblem(
+      isNeedsSignalError(e)
+        ? t('common.needsSignal')
+        : errorCode(e) === 'AGREEMENT_SMS_FAILED'
+          ? t('common.smsFailed')
+          : isApiError(e)
+            ? e.isNetworkError ? t('common.networkError') : e.message
+            : t('common.error'),
+    );
   }
 
   async function onPhoto(kind: 'board' | 'selfie', photo: CapturedPhoto) {
@@ -102,6 +112,7 @@ export default function VerifyScreen() {
     try {
       await queue.live(() => visits.sendAgreementLink(b.id));
       setAgreementSent(true);
+      afterSave();
     } catch (e) {
       explain(e);
     } finally {
@@ -115,8 +126,13 @@ export default function VerifyScreen() {
     setBusy('complete');
     try {
       await queue.flush();
-      await queue.live(() => visits.verify(visitId, { ownerOtpRequestId: otp.requestId, ownerOtpCode: code }));
-      router.replace({ pathname: routes.visitDone, params: { businessId: b.id, visitId } });
+      const done = await queue.live(() => visits.verify(visitId, { ownerOtpRequestId: otp.requestId, ownerOtpCode: code }));
+      afterSave(['field-visits'], ['selling']);
+      // A business with no account agent gets the verifying agent (server S1): say so only then, and
+      // go on to the agreement while it is unsigned (he may act on it now), else to the finish step.
+      const next = { businessId: b.id, visitId, ...(done?.becameAccountAgent ? { accountAgent: 'new' } : {}) };
+      const mine = Boolean(done?.isAccountAgent || done?.becameAccountAgent);
+      router.replace({ pathname: mine && !b.agreement ? routes.visitAgreement : routes.visitDone, params: next });
     } catch (e) {
       explain(e);
     } finally {

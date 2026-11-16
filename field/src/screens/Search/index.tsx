@@ -7,7 +7,7 @@ import { queryKeys } from '@/api/queryClient';
 import { isSearchable, type SearchResult, type SearchRow, type SearchType } from '@/api/endpoints';
 import { Button, Card, EmptyState, ErrorState, Icon, IconTile, LoadingState, Screen, StatusChip, Text, TextField, type IconName } from '@/components';
 import { useI18n, type MessageKey } from '@/i18n';
-import { routes } from '@/navigation/routes';
+import { pageRoutes, routes } from '@/navigation/routes';
 import { type Accent, colors, fonts, radius, shadow, type Tone, touch } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { useParam } from '../_selling';
@@ -78,14 +78,16 @@ export function resultHref(row: SearchRow): string | null {
   const businessCode = typeof row.extra.businessCode === 'string' ? row.extra.businessCode : null;
   switch (row.type) {
     case 'job_seeker':
-      return `/job-seeker/${encodeURIComponent(row.id)}`; // FA10c
+      return pageRoutes.seekerProgress(row.id); // FA10c
     case 'business':
-      return `${routes.business}/${encodeURIComponent(row.id)}`; // FA08
+      return pageRoutes.business(row.id); // FA08
     case 'vacancy':
     case 'placement':
-      return businessCode ? `${routes.business}/${encodeURIComponent(businessCode)}` : null; // FA08 of its business
+      return businessCode ? pageRoutes.business(businessCode) : null; // FA08 of its business
+    case 'referral':
+      return pageRoutes.referralSaved(row.id); // FA23b
     default:
-      return null; // referral partners have no screen in the field app
+      return null;
   }
 }
 
@@ -103,7 +105,9 @@ export default function SearchScreen() {
   const initial = useParam('q');
   const [text, setText] = useState(initial);
   const [q, setQ] = useState(initial.trim());
-  const [tab, setTab] = useState<Tab>('all');
+  // Opened from a tab's search with a kind (?type=business on Businesses, job_seeker on Job seekers).
+  const initialType = useParam('type');
+  const [tab, setTab] = useState<Tab>(TABS.includes(initialType as Tab) ? (initialType as Tab) : 'all');
   useEffect(() => {
     const id = setTimeout(() => setQ(text.trim()), SEARCH_DELAY_MS);
     return () => clearTimeout(id);

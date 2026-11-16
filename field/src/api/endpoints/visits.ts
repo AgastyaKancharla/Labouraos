@@ -54,14 +54,21 @@ export const visitsApi = (api: ApiClient) => ({
   get: (id: string) => api.get<Visit>(`/field-visits/${encodeURIComponent(id)}`),
   /** FA06: live only (the owner reads the code out). */
   verify: (id: string, body: { ownerOtpRequestId: string; ownerOtpCode: string }) =>
-    api.post<Visit & { businessVerificationStatus: string | null }>(`/field-visits/${encodeURIComponent(id)}/verify`, body),
+    api.post<Visit & {
+      businessVerificationStatus: string | null;
+      /** The verifying agent is the business's account agent now (server, 16 Nov). */
+      isAccountAgent?: boolean;
+      /** He became it with this visit (the business had none): the finish screen says so. */
+      becameAccountAgent?: boolean;
+    }>(`/field-visits/${encodeURIComponent(id)}/verify`, body),
   /** FA06: sends the owner's presence code (live). */
   sendOwnerOtp: (businessId: string, assignmentId: string) =>
     api.post<{ success: boolean; requestId: string; phone: string }>(
       `/businesses/${encodeURIComponent(businessId)}/visit-assignments/${encodeURIComponent(assignmentId)}/owner-otp`,
     ),
+  /** The business form's first agreement link; `smsSent: false` when the SMS did not go (show Resend). */
   sendAgreementLink: (businessId: string, language?: string) =>
-    api.post<unknown>(`/businesses/${encodeURIComponent(businessId)}/agreement-links`, language ? { language } : {}),
+    api.post<{ success?: boolean; smsSent?: boolean } | null>(`/businesses/${encodeURIComponent(businessId)}/agreement-links`, language ? { language } : {}),
   checkIn: (body: { latitude: number; longitude: number; accuracyMeters: number }) => api.post<unknown>('/field-agent/check-in', body),
   leaderboard: () =>
     api.get<{ leaderboard: { position: number; staffId: string; staffCode: string; name: string; placementsClosed: number }[] }>(

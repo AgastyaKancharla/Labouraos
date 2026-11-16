@@ -8,7 +8,7 @@ import { Banner, Button, Card, HeroCard, Icon, Screen, StatusChip, Text } from '
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useI18n } from '@/i18n';
 import { formatDayIst } from '@/lib/format';
-import { sellingRoutes } from '@/navigation/routes';
+import { useSellingRoutes } from '@/navigation/useFlow';
 import { colors, fonts } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { Avatar, formatRupees, KeyValue, Note, QueryView, SHIFT_KEYS, useParam } from '../_selling';
@@ -40,6 +40,7 @@ export default function CandidateScreen() {
 }
 
 function Body({ card: c, vacancyId }: { card: CandidateCard; vacancyId: string }) {
+  const sr = useSellingRoutes();
   const { t } = useI18n();
   const queue = useOfflineQueue();
   const client = useQueryClient();
@@ -109,7 +110,7 @@ function Body({ card: c, vacancyId }: { card: CandidateCard; vacancyId: string }
           icon={<Icon name="phone" color={colors.white} />}
           style={styles.action}
           disabled={!c.suitable}
-          onPress={() => router.push(sellingRoutes.call(vacancyId, c.jobSeekerId))}
+          onPress={() => router.push(sr.call(vacancyId, c.jobSeekerId))}
           testID="call-to-confirm"
         />
       </View>

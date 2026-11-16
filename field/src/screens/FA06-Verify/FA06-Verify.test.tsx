@@ -14,44 +14,78 @@ const business = {
   agreement: null, contact: null, branches: [], vacancies: [], stats: { candidatesShown: 0, interviews: 0, placements: 0, inGuarantee: 0 }, visits: [],
 };
 
+beforeEach(() => jest.clearAllMocks());
+
+/** Walks the whole verification visit; the server answers /verify with `verified` and /agreement-links with `agreementLink`. */
+async function walk(verified: object, biz: object = business, agreementLink: { status: number; body?: unknown } = { status: 201, body: {} }) {
+  searchParams.current = { businessId: 'b-1', assignmentId: 'a-1' };
+  const queued: { path: string; fields: Record<string, string> }[] = [];
+  const live: { url: string; body: unknown }[] = [];
+  const queue = new OfflineQueue({ store: createMemoryQueueStore(), send: async (item) => void queued.push(item.request as never) });
+  await renderWithApp(<VerifyScreen />, {
+    signedInAs: kiran,
+    queue,
+    route: (url, init) => {
+      if (url.endsWith('/field-work/businesses/b-1')) return { status: 200, body: biz };
+      if (url.endsWith('/visit-assignments/a-1/owner-otp')) return { status: 201, body: { success: true, requestId: 'otp-1', phone: '******4321' } };
+      if (url.endsWith('/agreement-links')) return agreementLink;
+      if (url.includes('/verify')) {
+        live.push({ url, body: JSON.parse(String(init.body)) });
+        return { status: 201, body: verified };
+      }
+      return undefined;
+    },
+  });
+  await waitFor(() => expect(screen.getByTestId('fa06-from-pin')).toHaveTextContent(/33 m from the map pin/));
+  expect(screen.getByTestId('fa06-complete').props.accessibilityState.disabled).toBe(true);
+  await fireEvent.press(screen.getByTestId('fa06-board'));
+  await fireEvent.press(screen.getByTestId('fake-camera-back'));
+  await waitFor(() => expect(queued).toHaveLength(1));
+  expect(queued[0].fields).toMatchObject({ businessId: 'b-1', assignmentId: 'a-1', source: 'live_camera' });
+  await fireEvent.press(screen.getByTestId('fa06-selfie'));
+  await fireEvent.press(screen.getByTestId('fake-camera-front'));
+  await waitFor(() => expect(queued).toHaveLength(2));
+  expect(queued[1].path).toBe(`/field-visits/${queued[0].fields.id}/proof`);
+  await fireEvent.press(screen.getByTestId('fa06-send-code'));
+  await waitFor(() => screen.getByText(/We just sent an OTP to the owner \(\*{6}4321\)/));
+  await fireEvent.changeText(screen.getByTestId('fa06-code'), '391108');
+  return { queued, live };
+}
+
+async function complete(live: unknown[]) {
+  await fireEvent.press(screen.getByTestId('fa06-complete'));
+  await waitFor(() => expect(live).toHaveLength(1));
+}
+
 describe('FA06 Verification visit', () => {
   it('GPS against the pin, live photo + selfie queued, owner OTP and agreement live, then completes', async () => {
-    searchParams.current = { businessId: 'b-1', assignmentId: 'a-1' };
-    const queued: { path: string; fields: Record<string, string> }[] = [];
-    const live: { url: string; body: unknown }[] = [];
-    const queue = new OfflineQueue({ store: createMemoryQueueStore(), send: async (item) => void queued.push(item.request as never) });
-    await renderWithApp(<VerifyScreen />, {
-      signedInAs: kiran,
-      queue,
-      route: (url, init) => {
-        if (url.endsWith('/field-work/businesses/b-1')) return { status: 200, body: business };
-        if (url.endsWith('/visit-assignments/a-1/owner-otp')) return { status: 201, body: { success: true, requestId: 'otp-1', phone: '******4321' } };
-        if (url.endsWith('/agreement-links')) return { status: 201, body: {} };
-        if (url.includes('/verify')) {
-          live.push({ url, body: JSON.parse(String(init.body)) });
-          return { status: 201, body: { businessVerificationStatus: 'pending_tl_check' } };
-        }
-        return undefined;
-      },
-    });
-    await waitFor(() => expect(screen.getByTestId('fa06-from-pin')).toHaveTextContent(/33 m from the map pin/));
-    expect(screen.getByTestId('fa06-complete').props.accessibilityState.disabled).toBe(true);
-    await fireEvent.press(screen.getByTestId('fa06-board'));
-    await fireEvent.press(screen.getByTestId('fake-camera-back'));
-    await waitFor(() => expect(queued).toHaveLength(1));
-    expect(queued[0].fields).toMatchObject({ businessId: 'b-1', assignmentId: 'a-1', source: 'live_camera' });
-    await fireEvent.press(screen.getByTestId('fa06-selfie'));
-    await fireEvent.press(screen.getByTestId('fake-camera-front'));
-    await waitFor(() => expect(queued).toHaveLength(2));
-    expect(queued[1].path).toBe(`/field-visits/${queued[0].fields.id}/proof`);
-    await fireEvent.press(screen.getByTestId('fa06-send-code'));
-    await waitFor(() => screen.getByText(/We just sent an OTP to the owner \(\*{6}4321\)/));
-    await fireEvent.changeText(screen.getByTestId('fa06-code'), '391108');
+    const { queued, live } = await walk({ businessVerificationStatus: 'pending_tl_check' });
     await fireEvent.press(screen.getByTestId('fa06-agreement'));
     await waitFor(() => screen.getByText('Link sent'));
-    await fireEvent.press(screen.getByTestId('fa06-complete'));
-    await waitFor(() => expect(live).toHaveLength(1));
+    await complete(live);
     expect(live[0]).toEqual({ url: `https://api.test/field-visits/${queued[0].fields.id}/verify`, body: { ownerOtpRequestId: 'otp-1', ownerOtpCode: '391108' } });
     expect(router.replace).toHaveBeenCalledWith({ pathname: '/visit/done', params: { businessId: 'b-1', visitId: queued[0].fields.id } });
+  });
+
+  it('became the account agent with this visit: goes on to the agreement step, which says so', async () => {
+    const { queued, live } = await walk({ businessVerificationStatus: 'pending_tl_check', isAccountAgent: true, becameAccountAgent: true });
+    await complete(live);
+    expect(router.replace).toHaveBeenCalledWith({ pathname: '/visit/agreement', params: { businessId: 'b-1', visitId: queued[0].fields.id, accountAgent: 'new' } });
+  });
+
+  it('already the account agent, agreement signed: the finish step, without "You are now its account agent"', async () => {
+    const { queued, live } = await walk(
+      { businessVerificationStatus: 'pending_tl_check', isAccountAgent: true, becameAccountAgent: false },
+      { ...business, isMine: true, agreement: { signedAt: '2026-11-15T10:40:00Z', signedName: 'Manjunath' } },
+    );
+    await complete(live);
+    expect(router.replace).toHaveBeenCalledWith({ pathname: '/visit/done', params: { businessId: 'b-1', visitId: queued[0].fields.id } });
+  });
+
+  it('an agreement SMS the server could not send (502, details.code) shows a translated sentence', async () => {
+    await walk({}, business, { status: 502, body: { statusCode: 502, message: 'Bad Gateway: vendor said no', details: { code: 'AGREEMENT_SMS_FAILED' } } });
+    await fireEvent.press(screen.getByTestId('fa06-agreement'));
+    await waitFor(() => screen.getByText('The SMS could not be sent. Try again.'));
+    expect(screen.queryByText(/vendor said no/)).toBeNull();
   });
 });

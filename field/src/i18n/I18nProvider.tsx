@@ -1,9 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { setDateLanguage } from '@/lib/format';
 import { secureStorage, type KeyValueStore } from '@/lib/storage';
 import type { MessageKey } from './en';
 import {
   DEFAULT_LANGUAGE,
-  isLanguage,
+  isOfferedLanguage,
   LANGUAGE_STORAGE_KEY,
   translate,
   translatePlural,
@@ -39,7 +40,7 @@ export function I18nProvider({ children, storage = secureStorage, initialLanguag
     if (initialLanguage) return;
     let cancelled = false;
     void storage.getItem(LANGUAGE_STORAGE_KEY).then((saved) => {
-      if (!cancelled && isLanguage(saved)) setLanguageState(saved);
+      if (!cancelled && isOfferedLanguage(saved)) setLanguageState(saved);
     });
     return () => {
       cancelled = true;
@@ -64,6 +65,8 @@ export function I18nProvider({ children, storage = secureStorage, initialLanguag
     [language, setLanguage],
   );
 
+  // Dates follow the app language (Kannada month names): set before the screens below format theirs.
+  setDateLanguage(language);
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 

@@ -49,6 +49,6 @@ describe('FA15s Selected on the call', () => {
       body: { decision: 'selected', salaryPaise: 1700000, joiningDate: today, otpRequestId: 'otp-9', code: '123456' },
     });
     await fireEvent.press(screen.getByTestId('owner-paid'));
-    expect(router.push).toHaveBeenCalledWith('/job-seekers/placement/pl-1');
+    expect(router.push).toHaveBeenCalledWith('/businesses/placement/pl-1');
   });
 });

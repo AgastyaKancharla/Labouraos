@@ -36,7 +36,7 @@ describe('FA17 Add a vacancy', () => {
     expect(sent).toHaveLength(0);
     await fireEvent.press(screen.getByTestId('owner-told'));
     await fireEvent.press(screen.getByTestId('save-vacancy'));
-    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/vacancies/confirm/vac-9?otp=otp-3&last4=3310'));
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/businesses/vacancy/vac-9?otp=otp-3&last4=3310'));
     expect(sent[0].request).toMatchObject({
       method: 'POST', path: '/vacancies',
       json: { businessId: 'biz-1', tradeSkill: 'Waiter', headcount: 1, salaryMinPaise: 1400000, salaryMaxPaise: 1600000, salaryPeriod: 'monthly', shift: 'day', extras: ['food'], ownerToldMinimumWage: true },

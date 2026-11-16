@@ -34,7 +34,7 @@ describe('FA15e Calling the job seeker', () => {
     await waitFor(() => expect(screen.getByTestId('on-call')).toHaveTextContent(/recorded · numbers hidden/));
     await fireEvent.press(screen.getByTestId('answer-yes'));
     await fireEvent.press(screen.getByTestId('hand-over'));
-    await waitFor(() => expect(router.push).toHaveBeenCalledWith('/job-seekers/interview/iv-1/owner'));
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith('/businesses/interview/iv-1/owner'));
     expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(expect.arrayContaining([
       'POST /field-selling/calls/call-1/answer',
       'POST /field-selling/interviews/iv-1/hand-over',
@@ -61,6 +61,6 @@ describe('FA15e Calling the job seeker', () => {
     await renderWithApp(<CallingScreen />, { signedInAs: kiran, route });
     await waitFor(() => screen.getByTestId('owner-busy'));
     await fireEvent.press(screen.getByTestId('owner-busy'));
-    expect(router.push).toHaveBeenCalledWith('/job-seekers/book?vacancyId=vac-1&jobSeekerId=js-1');
+    expect(router.push).toHaveBeenCalledWith('/businesses/book?vacancyId=vac-1&jobSeekerId=js-1');
   });
 });

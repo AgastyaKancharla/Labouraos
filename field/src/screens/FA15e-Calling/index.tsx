@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
+import { useAfterSave } from '@/api/refresh';
 import type { CandidateCard } from '@/api/endpoints';
 import { useAuth } from '@/auth/AuthProvider';
 import { Banner, Button, Icon, IconTile, Screen, Text } from '@/components';
@@ -11,7 +12,7 @@ import { RadioGroup, SelectField } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useI18n } from '@/i18n';
 import { formatCountdown } from '@/lib/format';
-import { sellingRoutes } from '@/navigation/routes';
+import { useSellingRoutes } from '@/navigation/useFlow';
 import { colors, fonts, radius } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { ErrorBanner, formatRupees, Note, QueryView, Script, SHIFT_KEYS, useParam } from '../_selling';
@@ -49,10 +50,12 @@ export default function CallingScreen() {
 }
 
 function Calling({ card, vacancyId }: { card: CandidateCard; vacancyId: string }) {
+  const sr = useSellingRoutes();
   const { t } = useI18n();
   const { session } = useAuth();
   const { selling } = useEndpoints();
   const queue = useOfflineQueue();
+  const afterSave = useAfterSave();
   const [callId, setCallId] = useState<string | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -88,7 +91,8 @@ function Calling({ card, vacancyId }: { card: CandidateCard; vacancyId: string }
       return r;
     },
     onSuccess: (r) => {
-      if (answer === 'yes') router.push(sellingRoutes.owner(r.interviewId));
+      afterSave(['selling']);
+      if (answer === 'yes') router.push(sr.owner(r.interviewId));
       else router.back();
     },
   });
@@ -162,7 +166,7 @@ function Calling({ card, vacancyId }: { card: CandidateCard; vacancyId: string }
               <Button
                 label={t('fa15e.bookLater')}
                 style={styles.flex1}
-                onPress={() => router.push(sellingRoutes.book(vacancyId, card.jobSeekerId))}
+                onPress={() => router.push(sr.book(vacancyId, card.jobSeekerId))}
                 testID="book-later"
               />
             </View>
@@ -171,7 +175,7 @@ function Calling({ card, vacancyId }: { card: CandidateCard; vacancyId: string }
       )}
       <ErrorBanner error={place.error ?? save.error} />
       <Note>{t('fa15e.rules')}</Note>
-      <Button label={t('fa15e.ownerBusy')} variant="secondary" onPress={() => router.push(sellingRoutes.book(vacancyId, card.jobSeekerId))} testID="owner-busy" />
+      <Button label={t('fa15e.ownerBusy')} variant="secondary" onPress={() => router.push(sr.book(vacancyId, card.jobSeekerId))} testID="owner-busy" />
       <Button label={t('fa15e.endCall')} variant="danger" onPress={() => router.back()} testID="end-call" />
     </>
   );

@@ -35,7 +35,7 @@ describe('FA18 Call the owner', () => {
     await waitFor(() => screen.getByTestId('outcome-needs_staff'));
     await fireEvent.press(screen.getByTestId('outcome-needs_staff'));
     await fireEvent.press(screen.getByTestId('save-add'));
-    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/vacancies/new?businessId=biz-1'));
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/businesses/vacancy/new?businessId=biz-1'));
   });
 
   it('turns an IST date and time into an instant', () => {

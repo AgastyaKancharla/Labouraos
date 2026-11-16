@@ -8,8 +8,10 @@ import type { BusinessDetail, CreatedVacancy } from '@/api/endpoints';
 import { Banner, Button, Card, Emoji, Screen, Text, TextField } from '@/components';
 import { Checkbox, DateField, MoneyField, SelectField, todayKeyIst } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
+import { useFormDraft } from '@/lib/formDraft';
 import { useI18n } from '@/i18n';
-import { routes, sellingRoutes } from '@/navigation/routes';
+import { routes } from '@/navigation/routes';
+import { useSellingRoutes } from '@/navigation/useFlow';
 import { colors } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { BusinessHeader, BusinessTypeAhead, ErrorBanner, formatRupees, QueryView, SHIFT_KEYS, useParam } from '../_selling';
@@ -38,6 +40,7 @@ const ERROR_KEYS = {
  * the Vacancies tab or the SMS link.
  */
 export default function AddVacancyScreen() {
+  const sr = useSellingRoutes();
   const { t } = useI18n();
   const businessId = useParam('businessId');
   const { selling } = useEndpoints();
@@ -55,7 +58,7 @@ export default function AddVacancyScreen() {
         ) : (
           <BusinessTypeAhead
             hintKey="fa19.hint"
-            onPick={(b) => router.replace(sellingRoutes.addVacancy(b.id))}
+            onPick={(b) => router.replace(sr.addVacancy(b.id))}
             onRegister={() => router.push(routes.visitStart)}
           />
         )}
@@ -65,12 +68,13 @@ export default function AddVacancyScreen() {
 }
 
 function Form({ business }: { business: BusinessDetail }) {
+  const sr = useSellingRoutes();
   const { t } = useI18n();
   const { selling } = useEndpoints();
   const queue = useOfflineQueue();
   const client = useQueryClient();
   const trades = useQuery({ queryKey: queryKeys.trades, queryFn: () => selling.trades(), staleTime: 10 * 60_000 });
-  const [form, setForm] = useState<QuickVacancy>(EMPTY_VACANCY);
+  const [form, setForm, clearForm] = useFormDraft<QuickVacancy>(`fa17:${business.id}`, EMPTY_VACANCY);
   const [tried, setTried] = useState(false);
   const [queued, setQueued] = useState(false);
   const set = <K extends keyof QuickVacancy>(key: K, value: QuickVacancy[K]) => setForm((f) => ({ ...f, [key]: value }));
@@ -87,7 +91,9 @@ function Form({ business }: { business: BusinessDetail }) {
         json: vacancyBody(business.id, form),
       }),
     onSuccess: (result) => {
+      clearForm();
       void client.invalidateQueries({ queryKey: ['selling'] });
+      void client.invalidateQueries({ queryKey: ['field-work'] });
       if (result.status === 'queued') {
         setQueued(true);
         return;
@@ -95,7 +101,7 @@ function Form({ business }: { business: BusinessDetail }) {
       const created = result.response;
       if (!created?.id) return;
       const sent = created.confirmation && 'otpRequestId' in created.confirmation ? created.confirmation : null;
-      router.replace(`${sellingRoutes.confirmVacancy(created.id)}${sent ? `?otp=${encodeURIComponent(sent.otpRequestId)}&last4=${sent.sentToLast4}` : ''}`);
+      router.replace(`${sr.confirmVacancy(created.id)}${sent ? `?otp=${encodeURIComponent(sent.otpRequestId)}&last4=${sent.sentToLast4}` : ''}`);
     },
   });
 
@@ -110,7 +116,7 @@ function Form({ business }: { business: BusinessDetail }) {
         tone="info"
         title={t('fa03.waitingToSend')}
         message={t('fa17.queuedBody')}
-        action={<Button label={t('fa17.backToVacancies')} variant="secondary" onPress={() => router.replace(routes.vacancies)} />}
+        action={<Button label={t('fa17.backToBusiness')} variant="secondary" onPress={() => router.replace(sr.business(business.id))} />}
         testID="vacancy-queued"
       />
     );
@@ -123,7 +129,7 @@ function Form({ business }: { business: BusinessDetail }) {
   return (
     <>
       <Card>
-        <BusinessHeader name={business.name} sub={[business.code, business.locality].filter(Boolean).join(' · ')} onChange={() => router.replace(routes.vacancies)} />
+        <BusinessHeader name={business.name} sub={[business.code, business.locality].filter(Boolean).join(' · ')} onChange={() => router.replace(sr.addVacancy())} />
       </Card>
       <Card stripe accent="orange">
         <View style={styles.gap}>

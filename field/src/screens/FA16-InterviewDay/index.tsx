@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
+import { useAfterSave } from '@/api/refresh';
 import type { InterviewView } from '@/api/endpoints';
 import { Banner, Button, Card, HeroCard, Screen, StatusChip, Text } from '@/components';
 import { formatClock, RadioGroup } from '@/components/form';
@@ -12,7 +13,7 @@ import { distanceMeters } from '@/device/location/location';
 import { useLocation } from '@/device/location/useLocation';
 import { useI18n } from '@/i18n';
 import { formatDayIst, formatTimeIst } from '@/lib/format';
-import { sellingRoutes } from '@/navigation/routes';
+import { useSellingRoutes } from '@/navigation/useFlow';
 import { colors } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { ErrorBanner, KeyValue, Note, QueryView, StepRow, useParam, useNow, useSellingSettings, UserFacingError } from '../_selling';
@@ -41,10 +42,11 @@ export default function InterviewDayScreen() {
 }
 
 function Day({ interview: i }: { interview: InterviewView }) {
+  const sr = useSellingRoutes();
   const { t } = useI18n();
   const { selling } = useEndpoints();
   const queue = useOfflineQueue();
-  const client = useQueryClient();
+  const afterSave = useAfterSave();
   const settings = useSellingSettings();
   const location = useLocation();
   const [came, setCame] = useState<'arrived' | 'no_show' | null>(i.candidateArrivedAt ? 'arrived' : null);
@@ -64,7 +66,8 @@ function Day({ interview: i }: { interview: InterviewView }) {
         selling.arrival(i.id, { arrived: came === 'arrived', latitude: reading.latitude, longitude: reading.longitude, accuracyM: reading.accuracy }),
       );
     },
-    onSuccess: () => void client.invalidateQueries({ queryKey: queryKeys.sellingInterview(i.id) }),
+    // Today's planned interviews drop the one just recorded (fix list A1 / S4).
+    onSuccess: () => afterSave(queryKeys.sellingInterview(i.id)),
   });
   const now = useNow();
   const over = now >= new Date(i.slotEndsAt).getTime();
@@ -128,7 +131,7 @@ function Day({ interview: i }: { interview: InterviewView }) {
         />
       </Card>
       <Note>{t('fa16.noShowRule')}</Note>
-      <Button label={t('fa16.showNext')} variant="secondary" onPress={() => router.push(sellingRoutes.matches(i.business.id, i.vacancy.id))} testID="show-next" />
+      <Button label={t('fa16.showNext')} variant="secondary" onPress={() => router.push(sr.matches(i.business.id, i.vacancy.id))} testID="show-next" />
     </>
   );
 }

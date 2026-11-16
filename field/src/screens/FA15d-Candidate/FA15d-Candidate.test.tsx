@@ -20,6 +20,6 @@ describe('FA15d Candidate card', () => {
     expect(screen.getByTestId('why')).toHaveTextContent('Why he matches: same trade, salary fits, lives 2 km away, day 26 of his 30');
     expect(screen.getByTestId('like')).toHaveTextContent('♥ Owner likes');
     await fireEvent.press(screen.getByTestId('call-to-confirm'));
-    expect(router.push).toHaveBeenCalledWith('/job-seekers/call?vacancyId=vac-1&jobSeekerId=js-1');
+    expect(router.push).toHaveBeenCalledWith('/businesses/call?vacancyId=vac-1&jobSeekerId=js-1');
   });
 });

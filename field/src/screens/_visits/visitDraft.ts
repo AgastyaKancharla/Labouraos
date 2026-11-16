@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { registerDraftStore } from '@/lib/formDraft';
 
 /**
  * The visit in progress, kept in memory only while the agent walks through
@@ -51,6 +52,8 @@ export function clearDrafts(): void {
   drafts.clear();
   emit();
 }
+// Log out (or another agent signing in) empties the visits in progress too (fix list A6).
+registerDraftStore(clearDrafts);
 
 export function useDraft(id: string | undefined): VisitDraft | null {
   useSyncExternalStore(

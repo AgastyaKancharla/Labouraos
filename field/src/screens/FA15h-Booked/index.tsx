@@ -8,7 +8,7 @@ import { Banner, Button, Card, Screen } from '@/components';
 import { formatClock } from '@/components/form';
 import { useI18n } from '@/i18n';
 import { formatDayIst, formatTimeIst } from '@/lib/format';
-import { routes, sellingRoutes } from '@/navigation/routes';
+import { useSellingRoutes } from '@/navigation/useFlow';
 import { colors } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { Note, QueryView, StepRow, useParam, useSellingSettings } from '../_selling';
@@ -36,6 +36,7 @@ export default function BookedScreen() {
 }
 
 function Booked({ interview: i }: { interview: InterviewView }) {
+  const sr = useSellingRoutes();
   const { t } = useI18n();
   const settings = useSellingSettings();
   const day = formatDayIst(i.slotStartsAt);
@@ -63,10 +64,10 @@ function Booked({ interview: i }: { interview: InterviewView }) {
         <Button
           label={t('fa15h.bookAnother')}
           style={styles.flex1}
-          onPress={() => router.replace(sellingRoutes.matches(i.business.id, i.vacancy.id))}
+          onPress={() => router.replace(sr.matches(i.business.id, i.vacancy.id))}
           testID="book-another"
         />
-        <Button label={t('tabs.home')} variant="secondary" style={styles.flex1} onPress={() => router.replace(routes.home)} testID="home" />
+        <Button label={t('selling.backToBusiness')} variant="secondary" style={styles.flex1} onPress={() => router.replace(sr.business(i.business.id))} testID="home" />
       </View>
     </>
   );

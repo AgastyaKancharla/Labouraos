@@ -38,7 +38,7 @@ describe('FA15b Matches', () => {
     await waitFor(() => screen.getByTestId('call-candidate'));
     expect(screen.getByTestId('call-candidate')).toHaveTextContent('Call Sunil');
     await fireEvent.press(screen.getByTestId('call-candidate'));
-    expect(router.push).toHaveBeenCalledWith('/job-seekers/call?vacancyId=vac-1&jobSeekerId=js-2');
+    expect(router.push).toHaveBeenCalledWith('/businesses/call?vacancyId=vac-1&jobSeekerId=js-2');
     await fireEvent.press(screen.getByTestId('like-js-1'));
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0].request).toMatchObject({ method: 'POST', path: '/field-selling/vacancies/vac-1/favourites/js-1', json: { liked: true } });
@@ -54,7 +54,7 @@ describe('FA15b Matches', () => {
     await fireEvent.press(screen.getByTestId('show-next'));
     await waitFor(() => screen.getByTestId('map-candidate-js-4'));
     await fireEvent.press(screen.getByTestId('show-next'));
-    await waitFor(() => expect(router.push).toHaveBeenCalledWith('/job-seekers/no-more/vac-1?businessId=biz-1'));
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith('/businesses/no-more/vac-1?businessId=biz-1'));
   });
 
   it('a vacancy still waiting for the owner\'s OTP opens the confirmation', async () => {
@@ -63,7 +63,7 @@ describe('FA15b Matches', () => {
     await waitFor(() => screen.getByTestId('vacancy-chip-VC-0002'));
     expect(screen.getByTestId('vacancy-chip-VC-0002')).toHaveTextContent(/Kitchen helper.*waiting for OTP/);
     await fireEvent.press(screen.getByTestId('vacancy-chip-VC-0002'));
-    expect(router.push).toHaveBeenCalledWith('/vacancies/confirm/vac-2');
+    expect(router.push).toHaveBeenCalledWith('/businesses/vacancy/vac-2');
   });
 
   it('shows "Sign first" and no candidates when the agreement is not signed', async () => {

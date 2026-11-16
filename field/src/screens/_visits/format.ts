@@ -1,3 +1,5 @@
+import { monthName, weekdayName } from '@/lib/format';
+
 /** "6 min" style durations and "600 m" / "1.8 km" distances for the visit screens. */
 export function minutesOf(seconds: number | null | undefined): number | null {
   if (seconds === null || seconds === undefined) return null;
@@ -35,13 +37,10 @@ export function nextDateKeys(from: Date | number, count: number): string[] {
   return Array.from({ length: count }, (_, i) => new Date(start + i * 86_400_000).toISOString().slice(0, 10));
 }
 
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-/** "Mon 16 Nov" for a date key. */
+/** "Mon 16 Nov" for a date key, in the app language. */
 export function formatDateKey(key: string): string {
   const d = new Date(`${key}T00:00:00.000Z`);
-  return `${DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+  return `${weekdayName(d.getUTCDay())} ${d.getUTCDate()} ${monthName(d.getUTCMonth())}`;
 }
 
 /** "₹14–16k" for a monthly salary range in paise. */

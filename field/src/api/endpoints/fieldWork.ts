@@ -78,6 +78,8 @@ export interface FieldVisits {
     outcome: string | null;
     needsOutcome: boolean;
     needsProof: boolean;
+    /** Redesign: the step this visit still needs (visit details' nextStep). */
+    nextStep?: string;
   }[];
 }
 
@@ -94,6 +96,8 @@ export interface ShopPoint {
   revisitOn: string | null;
   lastVisitAt: string | null;
   isMine: boolean;
+  /** Redesign: the agent may act on it (his own business, or his own visit to an unregistered shop); else view-only. */
+  canAct?: boolean;
   distanceMeters?: number;
 }
 

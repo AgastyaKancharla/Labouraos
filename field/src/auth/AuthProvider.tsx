@@ -13,6 +13,7 @@ import {
   type SetupRequiredResponse,
 } from '@/api/endpoints/auth';
 import { ApiError, isApiError } from '@/api/errors';
+import { clearAllDrafts, setDraftOwner } from '@/lib/formDraft';
 import { secureStorage, type KeyValueStore } from '@/lib/storage';
 import { getDeviceId } from './device';
 import { reasonFromMessage, SessionStore, tokenNeedsRefresh, type Session, type SignOutReason } from './session';
@@ -20,6 +21,14 @@ import { reasonFromMessage, SessionStore, tokenNeedsRefresh, type Session, type 
 /** Refresh the 15-minute access token when less than this is left. */
 export const REFRESH_WHEN_LEFT_MS = 5 * 60 * 1000;
 export const CHECK_EVERY_MS = 60 * 1000;
+
+/**
+ * Sign-outs after which what the agent typed is thrown away (fix list A6):
+ * Log out, and a session ended by the office or refused by the server. After
+ * the 1-hour idle or 2-hour limit his drafts wait for him (they are kept
+ * under his staff id, so nobody else signing in sees them).
+ */
+const CLEARS_DRAFTS: readonly SignOutReason[] = ['logout', 'revoked', 'unauthorized'];
 
 export type AuthStatus = 'loading' | 'signedOut' | 'signedIn';
 
@@ -127,6 +136,7 @@ export function AuthProvider({ children, api: injectedApi, store = defaultStore,
       setSession(next);
       setStatus(next ? 'signedIn' : 'signedOut');
       if (!next && reason && reason !== 'logout') setSignOutReason(reason);
+      if (!next && reason && CLEARS_DRAFTS.includes(reason)) clearAllDrafts();
     });
     let cancelled = false;
     void (async () => {
@@ -231,6 +241,7 @@ export function AuthProvider({ children, api: injectedApi, store = defaultStore,
       // Offline or already ended: the phone forgets the session either way.
     }
     setSignOutReason(null);
+    clearAllDrafts();
     await store.clear('logout');
   }, [auth, store]);
 
@@ -254,6 +265,8 @@ export function AuthProvider({ children, api: injectedApi, store = defaultStore,
     [status, session, signOutReason, pendingLogin, pendingSetup, resetNotice, deviceId, startLogin, verifyCode, logout, store],
   );
 
+  // Drafts belong to the signed-in agent: set before the screens below read theirs.
+  setDraftOwner(session?.staff.id ?? store.get()?.staff.id ?? null);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

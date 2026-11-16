@@ -5,11 +5,13 @@ import MapScreen from '.';
 
 jest.mock('expo-router', () => require('@/test/expo-router-mock'));
 
-const shop = (id: string, name: string, status: string, distanceMeters: number, businessId: string | null) => ({
-  kind: businessId ? 'business' : 'prospect', id, businessId, visitId: businessId ? null : id, code: null, name, latitude: 12.912, longitude: 77.639, status, revisitOn: null, lastVisitAt: null, isMine: true, distanceMeters,
+const shop = (id: string, name: string, status: string, distanceMeters: number, businessId: string | null, canAct = true) => ({
+  kind: businessId ? 'business' : 'prospect', id, businessId, visitId: businessId ? null : id, code: null, name, latitude: 12.912, longitude: 77.639, status, revisitOn: null, lastVisitAt: null, isMine: canAct, canAct, distanceMeters,
 });
 
-describe('FA13 Map', () => {
+beforeEach(() => jest.clearAllMocks());
+
+describe('FA13 Shops near me', () => {
   it('shows where he is with accuracy, shops by status, and revisits due first in "Near you"', async () => {
     const urls: string[] = [];
     await renderWithApp(<MapScreen />, {
@@ -37,6 +39,62 @@ describe('FA13 Map', () => {
     await fireEvent.press(screen.getByTestId('fa13-shop-v-2'));
     expect(router.push).toHaveBeenCalledWith({ pathname: '/visit/start', params: { revisitOf: 'v-2', name: 'Lakshmi Tiffins' } });
     await fireEvent.press(screen.getByTestId('fa13-shop-b-1'));
-    expect(router.push).toHaveBeenCalledWith('/business/b-1');
+    expect(router.push).toHaveBeenCalledWith('/businesses/b-1');
+  });
+
+  it('markers open the shop too; another agent’s shop is view-only and his revisit cannot be started', async () => {
+    await renderWithApp(<MapScreen />, {
+      signedInAs: kiran,
+      route: (url) =>
+        url.includes('/field-work/map')
+          ? {
+              status: 200,
+              body: {
+                me: { latitude: 12.9116, longitude: 77.6389 }, radiusMeters: 3000, duplicateRadiusMeters: 50,
+                shops: [shop('b-5', 'Sagar Hotel', 'onboarded', 300, 'b-5', false), shop('v-7', 'Ravi Stores', 'revisit_due', 200, null, false)],
+                revisitsDue: [],
+              },
+            }
+          : undefined,
+    });
+    await waitFor(() => screen.getByTestId('fa13-shop-v-7'));
+    expect(screen.getByTestId('fa13-shop-b-5')).toHaveTextContent(/Sagar Hotel.*View only/);
+    expect(screen.getByTestId('fa13-shop-v-7')).toHaveTextContent(/Ravi Stores.*View only/);
+    await fireEvent.press(screen.getByTestId('fa13-shop-v-7'));
+    expect(router.push).not.toHaveBeenCalled();
+    // The map draws once it knows its width; the marker of a business opens its page (view-only there).
+    await fireEvent(screen.getByTestId('fa13-map'), 'layout', { nativeEvent: { layout: { width: 358, height: 380, x: 0, y: 0 } } });
+    await fireEvent.press(screen.getByTestId('marker-b-5'));
+    expect(router.push).toHaveBeenCalledWith('/businesses/b-5');
+    expect(screen.queryByTestId('marker-v-7')).toBeNull();
+  });
+
+  it('his own unregistered shop (not interested, come back later) opens his latest visit there; "Open" shows only when something opens (A4)', async () => {
+    const noVisit = { ...shop('p-9', 'Old Kiosk', 'not_interested', 400, null), visitId: null };
+    await renderWithApp(<MapScreen />, {
+      signedInAs: kiran,
+      route: (url) =>
+        url.includes('/field-work/map')
+          ? {
+              status: 200,
+              body: {
+                me: { latitude: 12.9116, longitude: 77.6389 }, radiusMeters: 3000, duplicateRadiusMeters: 50,
+                shops: [shop('v-3', 'Ganesh Juice', 'not_interested', 150, null), shop('v-4', 'Mani Bakery', 'interested', 250, null), noVisit],
+                revisitsDue: [],
+              },
+            }
+          : undefined,
+    });
+    await waitFor(() => screen.getByTestId('fa13-shop-v-3'));
+    expect(screen.getByTestId('fa13-shop-v-3')).toHaveTextContent(/Ganesh Juice.*Open/);
+    expect(screen.getByTestId('fa13-shop-v-4')).toHaveTextContent(/Mani Bakery.*Open/);
+    expect(screen.getByTestId('fa13-shop-p-9')).not.toHaveTextContent(/Open/);
+    await fireEvent.press(screen.getByTestId('fa13-shop-v-3'));
+    expect(router.push).toHaveBeenLastCalledWith('/visit/details/v-3');
+    await fireEvent.press(screen.getByTestId('fa13-shop-p-9'));
+    expect(router.push).toHaveBeenCalledTimes(1);
+    await fireEvent(screen.getByTestId('fa13-map'), 'layout', { nativeEvent: { layout: { width: 358, height: 380, x: 0, y: 0 } } });
+    await fireEvent.press(screen.getByTestId('marker-v-4'));
+    expect(router.push).toHaveBeenLastCalledWith('/visit/details/v-4');
   });
 });

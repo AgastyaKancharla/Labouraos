@@ -4,13 +4,14 @@ import { router } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
+import { useAfterSave } from '@/api/refresh';
 import type { BusinessDetail } from '@/api/endpoints';
 import { Banner, Button, Icon, IconTile, Screen, Text, TextField } from '@/components';
 import { addDays, DateField, RadioGroup, TimeField, todayKeyIst } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useI18n } from '@/i18n';
 import { formatCountdown } from '@/lib/format';
-import { sellingRoutes } from '@/navigation/routes';
+import { useSellingRoutes } from '@/navigation/useFlow';
 import { colors, fonts, radius } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { ErrorBanner, QueryView, useParam } from '../_selling';
@@ -51,9 +52,11 @@ export default function CallOwnerScreen() {
 }
 
 function CallOwner({ business }: { business: BusinessDetail }) {
+  const sr = useSellingRoutes();
   const { t } = useI18n();
   const { selling } = useEndpoints();
   const queue = useOfflineQueue();
+  const afterSave = useAfterSave();
   const [callId, setCallId] = useState<string | null>(null);
   const [startedAt, setStartedAt] = useState(0);
   const [now, setNow] = useState(() => Date.now());
@@ -89,7 +92,8 @@ function CallOwner({ business }: { business: BusinessDetail }) {
         .then((r) => ({ r, andAddVacancy })),
     onSuccess: ({ r, andAddVacancy }) => {
       setSaved(r.status);
-      if (andAddVacancy) router.replace(sellingRoutes.addVacancy(business.id));
+      afterSave(['selling']);
+      if (andAddVacancy) router.replace(sr.addVacancy(business.id));
     },
   });
   const ready = !!outcome && (outcome !== 'callback' || (!!date && !!time)) && (outcome !== 'complaint' || !!note.trim());

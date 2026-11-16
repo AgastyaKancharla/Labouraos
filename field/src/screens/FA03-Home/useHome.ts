@@ -61,7 +61,7 @@ export function useAttendanceLogin() {
     },
     onSuccess: (today) => {
       client.setQueryData(queryKeys.attendanceToday, today);
-      void client.invalidateQueries({ queryKey: queryKeys.fieldHome });
+      void client.invalidateQueries({ queryKey: ['field-work'] });
     },
   });
 }

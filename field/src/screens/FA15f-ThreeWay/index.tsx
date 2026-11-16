@@ -10,7 +10,7 @@ import { Banner, Button, Card, IconTile, Screen, Text } from '@/components';
 import { RadioGroup, SelectField } from '@/components/form';
 import { useI18n } from '@/i18n';
 import { formatCountdown } from '@/lib/format';
-import { sellingRoutes } from '@/navigation/routes';
+import { useSellingRoutes } from '@/navigation/useFlow';
 import { colors, fonts, radius } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { Note, QueryView, REASON_KEYS, useParam, useSellingSettings } from '../_selling';
@@ -39,6 +39,7 @@ export default function ThreeWayScreen() {
 }
 
 function Decide({ interview: i }: { interview: InterviewView }) {
+  const sr = useSellingRoutes();
   const { t } = useI18n();
   const { session } = useAuth();
   const { selling } = useEndpoints();
@@ -63,7 +64,7 @@ function Decide({ interview: i }: { interview: InterviewView }) {
         tone="info"
         title={t('fa15f.alreadyDecided')}
         message={i.result === 'selected' ? t('fa15f.wasSelected') : t('fa15f.wasOther')}
-        action={i.result === 'selected' ? <Button label={t('fa15f.openSelected')} onPress={() => router.replace(sellingRoutes.selected(i.id))} /> : undefined}
+        action={i.result === 'selected' ? <Button label={t('fa15f.openSelected')} onPress={() => router.replace(sr.selected(i.id))} /> : undefined}
         testID="already-decided"
       />
     );
@@ -93,11 +94,11 @@ function Decide({ interview: i }: { interview: InterviewView }) {
         ]}
       />
       {decision === 'selected' ? (
-        <Button label={t('fa15f.continueSelected')} onPress={() => router.push(sellingRoutes.selected(i.id))} testID="go-selected" />
+        <Button label={t('fa15f.continueSelected')} onPress={() => router.push(sr.selected(i.id))} testID="go-selected" />
       ) : decision === 'meet' ? (
         <Button
           label={t('fa15f.continueMeet')}
-          onPress={() => router.push(sellingRoutes.book(i.vacancy.id, i.candidate.id, i.id))}
+          onPress={() => router.push(sr.book(i.vacancy.id, i.candidate.id, i.id))}
           testID="go-meet"
         />
       ) : decision === 'not_selected' ? (
@@ -120,7 +121,7 @@ function Decide({ interview: i }: { interview: InterviewView }) {
               verify={async (requestId, code) => {
                 await selling.decision(i.id, { decision: 'not_selected', reason, otpRequestId: requestId, code });
                 await client.invalidateQueries({ queryKey: ['selling', 'matches', i.vacancy.id] });
-                router.replace(sellingRoutes.matches(i.business.id, i.vacancy.id));
+                router.replace(sr.matches(i.business.id, i.vacancy.id));
               }}
             />
           ) : null}

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { useI18n } from '@/i18n';
 import { Banner, Button, Card, EmptyState, ErrorState, IconTile, ListRow, LoadingState, Screen, StatusChip, Text } from '@/components';
 import { isApiError } from '@/api/errors';
@@ -10,7 +11,7 @@ import { useOfflineQueue } from '@/device/offline-queue';
 import { distanceMeters, formatCoordinates } from '@/device/location/location';
 import type { CapturedPhoto } from '@/device/camera';
 import { formatStampIst } from '@/lib/format';
-import { routes } from '@/navigation/routes';
+import { pageRoutes, routes } from '@/navigation/routes';
 import { colors, heroGradient, radius } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { CameraSheet } from '../_visits/CameraSheet';
@@ -34,6 +35,7 @@ export default function VisitProofScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const { visit, server, loading, error } = useVisit(id);
   const queue = useOfflineQueue();
+  const client = useQueryClient();
   const [cameraOpen, setCameraOpen] = useState(false);
   const [selfie, setSelfie] = useState<CapturedPhoto | null>(null);
   const [sent, setSent] = useState(false);
@@ -70,6 +72,7 @@ export default function VisitProofScreen() {
       await queue.submit(`${t('fa22.queueLabel')} · ${visit!.shopName}`, photoRequest(visitPaths.proof(visit!.id), photo, {}, 'selfie.jpg'));
       updateDraft(visit!.id, { proofDistance: distance === null ? null : Math.round(distance), proofAt: photo.stamp.takenAt });
       setSent(true);
+      void client.invalidateQueries({ queryKey: ['field-work'] });
     } catch (e) {
       setProblem(isApiError(e) ? e.message : t('common.error'));
     } finally {
@@ -81,7 +84,7 @@ export default function VisitProofScreen() {
     <View style={styles.flex} testID="screen-FA22">
       <AppHeader title={t('fa20.title')} />
       <Screen>
-        <StepHeader step={3} label={t('fa22.step')} />
+        <StepHeader step={3} revisit={Boolean(visit.businessId)} />
         <Card title={t('fa22.selfieTitle')} icon="user" accent="green">
           <LinearGradient colors={done ? doneGradient : heroGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.photoBox}>
             <IconTile icon={done ? 'check' : 'camera'} accent={done ? 'green' : 'cyan'} size={60} />
@@ -124,12 +127,18 @@ export default function VisitProofScreen() {
         </Card>
         {problem ? <Banner tone="error" message={problem} testID="fa22-problem" /> : null}
         <Button
-          label={t('fa22.continue')}
+          label={visit.businessId ? t('fa22.continueRevisit') : t('fa22.continue')}
           disabled={!done}
-          onPress={() => router.push({ pathname: routes.businessNew, params: { visitId: visit.id } })}
+          onPress={() =>
+            // A shop already in Laboura (a revisit) is not registered again: its visit details offer the
+            // next step: "Mark onboarded" the first time, else "Already onboarded — save visit" (rev 189).
+            visit.businessId
+              ? router.push(pageRoutes.visitDetails(visit.id))
+              : router.push({ pathname: routes.visitBusiness, params: { visitId: visit.id } })
+          }
           testID="fa22-continue"
         />
-        <Text variant="muted">{t('fa22.next')}</Text>
+        <Text variant="muted">{visit.businessId ? t('fa22.nextRevisit') : t('fa22.next')}</Text>
       </Screen>
       <CameraSheet open={cameraOpen} facing="front" label={visit.shopName} onCapture={(p) => void onSelfie(p)} onClose={() => setCameraOpen(false)} />
     </View>
