@@ -27,9 +27,7 @@ export interface UpdateJobSeekerProfileDto {
   certificates?: string[];
   drivingLicenceType?: string | null;
   ownVehicle?: boolean | null;
-  policeVerified?: boolean | null;
   hasSmartphone?: boolean | null;
-  cvStoragePath?: string | null;
   keySkills?: string[];
   qualification?: string | null;
   currentSalaryPaise?: number | null;

@@ -114,14 +114,17 @@ const ALLOWED_JOB_SEEKER_UPDATE_FIELDS = new Set([
   'certificates',
   'drivingLicenceType',
   'ownVehicle',
-  'policeVerified',
   'hasSmartphone',
-  'cvStoragePath',
   'keySkills',
   'qualification',
   'currentSalaryPaise',
   // Not pausedAt (security AC-1): pausing follows a consent withdrawal, never a plain edit.
+  // Not policeVerified or cvStoragePath (security L5): a verification result and a storage
+  // path are never typed in by staff (a path could point anonymisation at another file).
 ]);
+
+/** Security L5: refused by name instead of silently dropped. */
+const NEVER_EDITED_JOB_SEEKER_FIELDS = ['policeVerified', 'cvStoragePath'];
 
 /** Who pays through a payment-only link (design CA08e "Who is it?"). Never personal data beyond the relation. */
 export const PAYMENT_PAYER_RELATIONS = ['brother', 'sister', 'parent', 'spouse', 'friend', 'other'] as const;
@@ -1403,6 +1406,10 @@ export class JobSeekerService {
 
     const reason = typeof dto.reason === 'string' ? dto.reason : undefined;
 
+    const neverEdited = NEVER_EDITED_JOB_SEEKER_FIELDS.filter((key) => key in dto);
+    if (neverEdited.length) {
+      throw new BadRequestException(`${neverEdited.join(', ')} cannot be changed by an edit`);
+    }
     const filteredDto: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(dto)) {
       if (ALLOWED_JOB_SEEKER_UPDATE_FIELDS.has(key) && value !== undefined) {

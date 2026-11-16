@@ -1,6 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as request from 'supertest';
+import { randomUUID } from 'node:crypto';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
@@ -138,13 +139,17 @@ describe('Phase 19 Task 2: One way to anonymise', () => {
   describe('1. Job Seeker Anonymisation', () => {
     let seekerId: string;
     let seekerCode: string;
-    const photoPath = `job-seekers/test-photo-${suffix}.png`;
-    const cvPath = `job-seekers/test-cv-${suffix}.pdf`;
+    // Security L5: files live under the job seeker's own prefix; another path is never deleted.
+    const presetId = randomUUID();
+    const photoPath = `job-seekers/${presetId}/profile-photo`;
+    const cvPath = `job-seekers/${presetId}/cv.pdf`;
+    const otherFile = `job-seekers/${randomUUID()}/profile-photo`;
 
     beforeAll(async () => {
       seekerCode = await idService.generateCode('job_seeker');
       const seeker = await prisma.jobSeeker.create({
         data: {
+          id: presetId,
           code: seekerCode,
           name: 'Anil Kumar',
           phone: `99${suffix}01`,
@@ -175,6 +180,7 @@ describe('Phase 19 Task 2: One way to anonymise', () => {
       // Create photo and cv files in storage
       await photoStorage.put(photoPath, Buffer.from('photo data'), 'image/png');
       await photoStorage.put(cvPath, Buffer.from('cv data'), 'application/pdf');
+      await photoStorage.put(otherFile, Buffer.from('someone else'), 'image/png');
 
       // Create a completed payment
       const payCode = await idService.generateCode('payment');
@@ -242,6 +248,7 @@ describe('Phase 19 Task 2: One way to anonymise', () => {
       // Verify files deleted from storage
       expect((photoStorage as MemoryCandidatePhotoStorage).has(photoPath)).toBe(false);
       expect((photoStorage as MemoryCandidatePhotoStorage).has(cvPath)).toBe(false);
+      expect((photoStorage as MemoryCandidatePhotoStorage).has(otherFile)).toBe(true);
 
       // Verify payout account wiped
       const acc = await prisma.payoutAccount.findUniqueOrThrow({ where: { id: payoutAccountIds[0] } });

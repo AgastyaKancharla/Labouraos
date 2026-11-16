@@ -217,7 +217,6 @@ describe('Phase 12 Task 2 — JobSeeker new fields and status list', () => {
       certificates: ['ITI_Plumber'],
       drivingLicenceType: '2_wheeler',
       ownVehicle: true,
-      policeVerified: false,
       hasSmartphone: true,
       keySkills: ['Pipefitting', 'Welding'],
     };

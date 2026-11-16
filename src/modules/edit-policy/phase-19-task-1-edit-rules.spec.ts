@@ -698,6 +698,19 @@ describe('Phase 19 Task 1: Who can edit what, and why', () => {
       expect(res.status).toBe(400);
       expect(res.body.message).toContain('Call provider fields and recordings are never editable');
     });
+
+    it('L4: refuses any key other than notes, agentOutcomeReason and reason, even next to a note', async () => {
+      const before = await prisma.callRecord.findUniqueOrThrow({ where: { id: callId } });
+      for (const extra of [{ outcome: 'connected' }, { jobSeekerId: callId }, { consentAnswer: 'yes' }, { notes: { set: 'x' } }]) {
+        const res = await request(app.getHttpServer())
+          .patch(`/calls/${callId}`)
+          .set('Authorization', `Bearer ${agent1.token}`)
+          .send({ notes: 'Sneaky note', reason: 'Trying an extra key', ...extra });
+        expect(res.status).toBe(400);
+      }
+      const after = await prisma.callRecord.findUniqueOrThrow({ where: { id: callId } });
+      expect(after.agentOutcomeReason).toBe(before.agentOutcomeReason);
+    });
   });
 
   describe('5. Never-Editable Entities Across All Routes', () => {
