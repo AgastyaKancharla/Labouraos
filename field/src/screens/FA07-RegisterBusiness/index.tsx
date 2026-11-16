@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useI18n, type MessageKey } from '@/i18n';
 import { Banner, Button, Card, CodeInput, Emoji, LoadingState, Screen, StatusChip, Text, TextField } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
+import { readOtpSend, duplicateMessage } from '@/lib/otp-send';
 import { queryKeys } from '@/api/queryClient';
 import { isApiError } from '@/api/errors';
 import type { Trade } from '@/api/endpoints';
@@ -111,6 +112,16 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
   }));
   const [showErrors, setShowErrors] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // A Send OTP / Verify problem is shown right under that mobile field and next to its
+  // button (owner, testing 16 Nov: the banner at the bottom of the form was never seen).
+  const [mobileProblem, setMobileProblem] = useState<Record<string, string>>({});
+  const setFieldProblem = (field: string, message: string | null) =>
+    setMobileProblem((all) => {
+      const next = { ...all };
+      if (message) next[field] = message;
+      else delete next[field];
+      return next;
+    });
   const [busy, setBusy] = useState<string | null>(null);
   const set = (patch: Partial<FormState>) => setForm((f) => ({ ...f, ...patch }));
 
@@ -151,19 +162,27 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
     setProblem(isNeedsSignalError(e) ? t('common.needsSignal') : isApiError(e) ? e.message : t('common.error'));
   }
 
+  function mobileErrorText(e: unknown): string {
+    return isNeedsSignalError(e) ? t('common.needsSignal') : isApiError(e) ? e.message : t('common.error');
+  }
+
   async function sendOtp(current: MobileState, update: (m: MobileState) => void, key: string) {
-    if (!/^[6-9]\d{9}$/.test(current.number)) return setProblem(t('fa07.mobileInvalid'));
-    setProblem(null);
+    const field = key.replace(/-send$/, '');
+    if (!/^[6-9]\d{9}$/.test(current.number)) return setFieldProblem(field, t('fa07.mobileInvalid'));
+    setFieldProblem(field, null);
     setBusy(key);
     try {
-      const sent = await queue.live(() => registration.sendOtp(current.number, current.requestId ?? undefined));
-      if (sent.alreadyRegistered) {
-        setProblem(t('fa07.alreadyRegistered', { code: sent.existingCode ?? '' }));
-      } else if (sent.requestId) {
-        update({ ...current, requestId: sent.requestId, sentAt: sent.resendAvailableAt ? Date.parse(sent.resendAvailableAt) - 30_000 : openedAt, code: '' });
+      const outcome = readOtpSend(await queue.live(() => registration.sendOtp(current.number, current.requestId ?? undefined)));
+      if (outcome.kind === 'duplicate') {
+        setFieldProblem(field, duplicateMessage(outcome, t));
+      } else if (outcome.kind === 'sent') {
+        update({ ...current, requestId: outcome.requestId, sentAt: outcome.resendAvailableAt ? Date.parse(outcome.resendAvailableAt) - 30_000 : openedAt, code: '' });
+      } else {
+        // Neither a request nor "already registered": never do nothing.
+        setFieldProblem(field, t('otp.noAnswer'));
       }
     } catch (e) {
-      explain(e);
+      setFieldProblem(field, mobileErrorText(e));
     } finally {
       setBusy(null);
     }
@@ -171,12 +190,14 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
 
   async function verifyOtp(current: MobileState, update: (m: MobileState) => void, key: string) {
     if (!current.requestId || current.code.length !== 6) return;
+    const field = key.replace(/-verify$/, '');
+    setFieldProblem(field, null);
     setBusy(key);
     try {
       await queue.live(() => registration.verifyOtp(current.requestId!, current.code));
       update({ ...current, verifiedAt: new Date().toISOString() });
     } catch (e) {
-      explain(e);
+      setFieldProblem(field, mobileErrorText(e));
     } finally {
       setBusy(null);
     }
@@ -228,8 +249,11 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
               editable={!m.verifiedAt}
               keyboardType="number-pad"
               maxLength={10}
-              onChangeText={(v) => update({ ...emptyMobile(), number: v.replace(/\D/g, '').slice(0, 10) })}
-              error={err(key) ? t('fa07.mobileRequired') : null}
+              onChangeText={(v) => {
+                setFieldProblem(key, null);
+                update({ ...emptyMobile(), number: v.replace(/\D/g, '').slice(0, 10) });
+              }}
+              error={mobileProblem[key] ?? (err(key) ? t('fa07.mobileRequired') : null)}
               testID={`fa07-${key}`}
               style={styles.mobileInput}
             />
@@ -254,6 +278,7 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
         ) : (
           <Button label={t('fa07.sendOtp')} variant="secondary" loading={busy === `${key}-send`} onPress={() => void sendOtp(m, update, `${key}-send`)} testID={`fa07-${key}-send`} />
         )}
+        {mobileProblem[key] && !m.verifiedAt ? <Banner tone="error" message={mobileProblem[key]} testID={`fa07-${key}-problem`} /> : null}
       </View>
     );
   }

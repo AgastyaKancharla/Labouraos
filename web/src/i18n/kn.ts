@@ -317,6 +317,7 @@ export const kn: Messages = {
   "form.otp.verified": "ಸಂಖ್ಯೆ ಪರಿಶೀಲಿಸಲಾಗಿದೆ",
   "form.otp.incomplete": "ಎಲ್ಲಾ 6 ಅಂಕಿಗಳನ್ನು ನಮೂದಿಸಿ.",
   "form.otp.alreadyRegistered": "ಈಗಾಗಲೇ ನೋಂದಾಯಿಸಲಾಗಿದೆ — ತೆರೆಯಿರಿ",
+  "form.otp.noAnswer": "ಕೋಡ್ ಕಳುಹಿಸಲಾಗಿಲ್ಲ: ಸರ್ವರ್ ಉತ್ತರ ನೀಡಲಿಲ್ಲ. ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.",
   "form.pincode.label": "ಪಿನ್‌ಕೋಡ್",
   "form.pincode.invalid": "6 ಅಂಕಿಯ ಪಿನ್‌ಕೋಡ್ ನಮೂದಿಸಿ.",
   "form.money.perMonth": "ತಿಂಗಳಿಗೆ",

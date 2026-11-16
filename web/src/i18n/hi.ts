@@ -317,6 +317,7 @@ export const hi: Messages = {
   "form.otp.verified": "नंबर की जाँच हो गई",
   "form.otp.incomplete": "सभी 6 अंक डालें।",
   "form.otp.alreadyRegistered": "पहले से रजिस्टर्ड है — खोलें",
+  "form.otp.noAnswer": "कोड नहीं भेजा गया: सर्वर ने कोई जवाब नहीं दिया। फिर से कोशिश करें।",
   "form.pincode.label": "पिनकोड",
   "form.pincode.invalid": "6 अंकों का पिनकोड डालें।",
   "form.money.perMonth": "हर महीने",

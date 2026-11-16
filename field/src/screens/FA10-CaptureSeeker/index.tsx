@@ -9,6 +9,7 @@ import { addDays, Checkbox, ChipPicker, DateField, MobileField, MoneyField, Segm
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useLocation } from '@/device/location/useLocation';
 import { useI18n, type MessageKey } from '@/i18n';
+import { duplicateMessage, readOtpSend } from '@/lib/otp-send';
 import { formatTimeIst } from '@/lib/format';
 import { sellingRoutes } from '@/navigation/routes';
 import { type Accent, accents, colors, fonts } from '@/theme';
@@ -71,7 +72,7 @@ export default function CaptureSeekerScreen() {
   const trades = useQuery({ queryKey: queryKeys.trades, queryFn: () => selling.trades(), staleTime: 10 * 60_000 });
   const [form, setForm] = useState<JobSeekerForm>(() => draft ?? EMPTY_FORM);
   const [verified, setVerified] = useState<{ requestId: string; at: number; mobile: string } | null>(null);
-  const [duplicate, setDuplicate] = useState<{ code?: string } | null>(null);
+  const [duplicate, setDuplicate] = useState<{ code?: string; type?: 'job_seeker' | 'business' | 'referral' | null } | null>(null);
   const [tried, setTried] = useState(false);
   const [scriptLang, setScriptLang] = useState<ScriptLanguage>('kn');
   const inShort = useQuery({
@@ -156,8 +157,15 @@ export default function CaptureSeekerScreen() {
             <Banner
               tone="warn"
               title={t('fa10.alreadyTitle')}
-              message={duplicate.code ? t('fa10.alreadyBody', { code: duplicate.code }) : t('fa10.alreadyHidden')}
-              action={duplicate.code ? <Button label={t('fa10.openIt')} variant="secondary" onPress={() => router.push(sellingRoutes.seekerProgress(duplicate.code!))} /> : undefined}
+              message={
+                duplicate.code && duplicate.type && duplicate.type !== 'job_seeker'
+                  ? duplicateMessage({ type: duplicate.type, code: duplicate.code }, t)
+                  : duplicate.code
+                    ? t('fa10.alreadyBody', { code: duplicate.code })
+                    : t('fa10.alreadyHidden')
+              }
+              // "Open it" opens a job seeker's progress; a business or partner number has no such page here.
+              action={duplicate.code && (!duplicate.type || duplicate.type === 'job_seeker') ? <Button label={t('fa10.openIt')} variant="secondary" onPress={() => router.push(sellingRoutes.seekerProgress(duplicate.code!))} /> : undefined}
               testID="already-registered"
             />
           ) : mobileOk ? (
@@ -168,12 +176,14 @@ export default function CaptureSeekerScreen() {
               verifyLabel={t('fa10.verify')}
               intro={() => t('fa10.otpSent', { last4: form.mobile.slice(-4) })}
               send={async (prev) => {
-                const r = await selling.sendOtp(form.mobile, prev);
-                if ('alreadyRegistered' in r) {
-                  setDuplicate({ code: r.code });
+                const outcome = readOtpSend(await selling.sendOtp(form.mobile, prev));
+                if (outcome.kind === 'duplicate') {
+                  setDuplicate({ code: outcome.code ?? undefined, type: outcome.type });
                   throw new UserFacingError(t('fa10.alreadyTitle'));
                 }
-                return { otpRequestId: r.requestId, sentToLast4: form.mobile.slice(-4), contactName: null };
+                // Neither a request nor "already registered": a clear error, never nothing.
+                if (outcome.kind === 'empty') throw new UserFacingError(t('otp.noAnswer'));
+                return { otpRequestId: outcome.requestId, sentToLast4: form.mobile.slice(-4), contactName: null };
               }}
               verify={async (requestId, code) => {
                 await selling.verifyOtp(requestId, code);

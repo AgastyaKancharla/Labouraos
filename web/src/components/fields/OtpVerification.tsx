@@ -73,8 +73,13 @@ export function OtpVerification({ mobile, onSend, onVerify, onVerified, onAlread
     try {
       const previous = state.step === 'sent' ? state.requestId : undefined;
       const result = await onSend(mobile, previous);
-      if ('alreadyRegistered' in result) {
+      if (result && 'alreadyRegistered' in result && result.alreadyRegistered) {
         setState({ step: 'duplicate', type: result.type, code: result.code });
+        return;
+      }
+      // Neither a request nor "already registered" (testing fixes, 16 Nov): say so, never do nothing.
+      if (!result || !('requestId' in result) || !result.requestId) {
+        setError(t('form.otp.noAnswer'));
         return;
       }
       const current = clock().getTime();
@@ -125,6 +130,7 @@ export function OtpVerification({ mobile, onSend, onVerify, onVerified, onAlread
       <div className="lb-otpflow" role="status">
         <Button variant="primary" onClick={() => onAlreadyRegistered?.({ type: state.type, code: state.code })}>
           {t('form.otp.alreadyRegistered')}
+          {state.type === 'business' ? ` · ${t('reg.dup.business')}` : state.type === 'referral' ? ` · ${t('reg.dup.referral')}` : state.type === 'job_seeker' ? ` · ${t('reg.dup.jobSeeker')}` : ''}
           {state.code ? ` · ${state.code}` : ''}
         </Button>
       </div>

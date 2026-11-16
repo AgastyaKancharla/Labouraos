@@ -164,9 +164,25 @@ describe('OtpVerification', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Send OTP' }));
-    const open = await screen.findByRole('button', { name: /Already registered — open it · JS-00203/ });
+    // Names the kind of record (job seeker, business or referral partner) and its code.
+    const open = await screen.findByRole('button', { name: /Already registered — open it · the job seeker · JS-00203/ });
     await userEvent.click(open);
     expect(onAlready).toHaveBeenCalledWith({ type: 'job_seeker', code: 'JS-00203' });
+  });
+
+  it('an answer with neither requestId nor alreadyRegistered shows a clear error next to the button', async () => {
+    renderScreen(<OtpVerification mobile="9876543210" onSend={async () => ({}) as never} onVerify={vi.fn()} onVerified={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Send OTP' }));
+    expect(await screen.findByText('The code was not sent: the server gave no answer. Try again.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send OTP' })).toBeInTheDocument();
+  });
+
+  it('a business number says it is the business', async () => {
+    renderScreen(
+      <OtpVerification mobile="9876543210" onSend={async () => ({ alreadyRegistered: true as const, type: 'business', code: 'BZ-00009' })} onVerify={vi.fn()} onVerified={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Send OTP' }));
+    expect(await screen.findByRole('button', { name: /open it · the business · BZ-00009/ })).toBeInTheDocument();
   });
 
   it('shows the API error when the code is wrong', async () => {

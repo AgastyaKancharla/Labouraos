@@ -317,6 +317,7 @@ export const en = {
   "form.otp.verified": "Number verified",
   "form.otp.incomplete": "Enter all 6 digits.",
   "form.otp.alreadyRegistered": "Already registered — open it",
+  "form.otp.noAnswer": "The code was not sent: the server gave no answer. Try again.",
   "form.pincode.label": "Pincode",
   "form.pincode.invalid": "Enter the 6-digit pincode.",
   "form.money.perMonth": "per month",
