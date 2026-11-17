@@ -15,7 +15,7 @@ describe('P01c-Selfie', () => {
     expect(await screen.findByRole('heading', { name: 'Take a selfie' })).toBeInTheDocument();
     expect(screen.getByText('Step 2 of 4 · Selfie')).toBeInTheDocument();
     expect(await screen.findByText(/Camera access is blocked/)).toBeInTheDocument();
-    expect(getUserMedia).toHaveBeenCalledWith(expect.objectContaining({ video: expect.objectContaining({ facingMode: 'user' }), audio: false }));
+    expect(getUserMedia).toHaveBeenCalledWith(expect.objectContaining({ video: expect.objectContaining({ facingMode: { ideal: 'user' } }), audio: false }));
     expect(container.querySelector('input[type="file"]')).toBeNull();
     expect(screen.getByText(/photos from the gallery aren't accepted/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();

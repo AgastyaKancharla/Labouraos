@@ -16,7 +16,7 @@ describe('P-PartnerSelfie (step 2)', () => {
     expect(screen.getByText('Step 2 of 4 · Selfie')).toBeInTheDocument();
     expect(screen.getByText(/partner profile/)).toBeInTheDocument();
     expect(await screen.findByText(/Camera access is blocked/)).toBeInTheDocument();
-    expect(getUserMedia).toHaveBeenCalledWith(expect.objectContaining({ video: expect.objectContaining({ facingMode: 'user' }), audio: false }));
+    expect(getUserMedia).toHaveBeenCalledWith(expect.objectContaining({ video: expect.objectContaining({ facingMode: { ideal: 'user' } }), audio: false }));
     expect(container.querySelector('input[type="file"]')).toBeNull();
   });
 
