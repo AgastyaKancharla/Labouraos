@@ -108,8 +108,9 @@ describe('Laboura Field redesign: Today, Today\'s work, businesses, agreement, j
         businessId,
         tradeSkill: fields.tradeSkill ?? 'Cook',
         headcount: 2,
-        salaryMinPaise: fields.salaryMinPaise ?? 2500000,
-        salaryMaxPaise: 3000000,
+        // A cook is skilled (rev 193): ₹29,000 is above Zone 1's skilled minimum (₹28,285.47).
+        salaryMinPaise: fields.salaryMinPaise ?? 2900000,
+        salaryMaxPaise: 3200000,
         salaryPeriod: 'monthly',
         shift: fields.shift === undefined ? 'day' : fields.shift,
         startDate: fields.startDate === undefined ? new Date('2026-11-20T00:00:00.000Z') : fields.startDate,

@@ -71,7 +71,7 @@ describe('Registration link endpoints for the public pages', () => {
   it('payment-only info shows only the masked payer number and how long the link lasts', async () => {
     publicLinks.findByToken.mockResolvedValue(payLink);
     const info = await controller.paymentOnlyInfo('pay-tok');
-    expect(info).toEqual({ maskedPhone: '******0000', language: 'kn', expiresAt: payLink.expiresAt });
+    expect(info).toEqual({ maskedPhone: '******0000', language: 'en', expiresAt: payLink.expiresAt });
   });
 
   it('the old payment-only URL sends a browser to the new page', async () => {

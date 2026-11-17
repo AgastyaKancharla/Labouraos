@@ -106,6 +106,7 @@ export function UpdatedTerms({ profileId, legal }: { profileId: string; legal: L
                 submit={accept}
                 sendLabel={t('terms.sendOtp', { last4: account?.phoneLast4 ?? '' })}
                 submitLabel={t('terms.accept')}
+                codeSubmits
                 sentText={t('otp.sentTo', { last4: account?.phoneLast4 ?? '' })}
               />
             </>

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { minimumWageTable, MinimumWageZone } from '../trade/minimum-wage';
 import { PricingPolicy, Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
@@ -469,17 +470,28 @@ export class CeoAdminService {
   /** C-Pricing-MinWage: the figures in force and how many open vacancies sit below them. */
   async minimumWage() {
     const policy = await this.pricing.current();
-    const [open, below, belowOwnerTold] = await Promise.all([
+    const [open, below, belowOwnerTold, byZone] = await Promise.all([
       this.prisma.vacancy.count({ where: { status: 'open' } }),
       this.prisma.vacancy.count({ where: { status: 'open', belowLegalMinimum: true } }),
       this.prisma.vacancy.count({ where: { status: 'open', belowLegalMinimum: true, ownerToldMinimumWage: true } }),
+      this.prisma.business.groupBy({ by: ['minimumWageZone'], where: { anonymisedAt: null }, _count: { _all: true } }),
     ]);
+    const table = minimumWageTable(policy);
+    const zone = (z: MinimumWageZone) => ({
+      unskilledPaise: table[z].unskilled,
+      semiSkilledPaise: table[z].semi_skilled,
+      skilledPaise: table[z].skilled,
+      highlySkilledPaise: table[z].highly_skilled,
+      businesses: byZone.find((row) => row.minimumWageZone === z)?._count._all ?? 0,
+    });
     return {
       effectiveFrom: policy.legalMinimumWageEffectiveFrom.toISOString(),
+      // Zone 1 (Greater Bengaluru) at the top level, as before; all three zones under `zones` (rev 193).
       unskilledPaise: policy.legalMinimumWageUnskilledPaise,
       semiSkilledPaise: policy.legalMinimumWageSemiSkilledPaise,
       skilledPaise: policy.legalMinimumWageSkilledPaise,
       highlySkilledPaise: policy.legalMinimumWageHighlySkilledPaise,
+      zones: { 1: zone(1), 2: zone(2), 3: zone(3) },
       openVacancies: open,
       belowMinimum: below,
       belowMinimumOwnerTold: belowOwnerTold,

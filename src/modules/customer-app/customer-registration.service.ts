@@ -1,3 +1,4 @@
+import { PRODUCT_LANGUAGE } from '../../common/language/english-only';
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CustomerAuthClock } from '../../common/customer-auth/customer-auth.clock';
@@ -155,7 +156,7 @@ export class CustomerRegistrationService {
     if (typeof kind !== 'string' || !(CUSTOMER_PROFILE_KINDS as readonly string[]).includes(kind)) {
       throw validation('kind must be job_seeker, business or referral', { field: 'kind' });
     }
-    const account = await this.verifiedAccount(accountId);
+    await this.verifiedAccount(accountId);
     const existing = await this.existingProfile(accountId, kind as CustomerProfileKind);
     if (existing) throw this.profileExists(existing.id);
     if (typeof body.contactMe === 'boolean') await this.accounts.setContactMe(accountId, body.contactMe);
@@ -163,7 +164,8 @@ export class CustomerRegistrationService {
       source: typeof body.source === 'string' && (SIGNUP_SOURCES as readonly string[]).includes(body.source) ? body.source : null,
       sourceDetail: typeof body.sourceDetail === 'string' ? body.sourceDetail.trim().slice(0, 60) : null,
       referralCode: typeof body.referralCode === 'string' ? body.referralCode.trim().toUpperCase().slice(0, 20) : null,
-      language: account.language,
+      // No language: the app is English only (rev 193), so sign-up help goes by fair share, not a language.
+      language: null,
     });
     return { created, body: { signupId: tracker.id, kind, stage: tracker.stage } };
   }
@@ -190,7 +192,7 @@ export class CustomerRegistrationService {
         source: extra.source ?? null,
         sourceDetail: extra.sourceDetail ?? null,
         referralCode: extra.referralCode ?? null,
-        language: extra.language ?? account.language,
+        language: extra.language === undefined ? null : extra.language,
         contactConsent: account.contactMeConsent,
         lastActivityAt: now,
         events: { create: { kind: 'stage', toStage: 'A', note: 'phone verified, role chosen in the app' } },
@@ -336,7 +338,7 @@ export class CustomerRegistrationService {
       phone: account.phone,
       otpRequestId: otp.requestId,
       heardFrom: referralCode ? 'referral_partner' : HEARD_FROM_LABOURA_APP,
-      contactLanguage: typeof body.contactLanguage === 'string' ? body.contactLanguage : account.language,
+      contactLanguage: PRODUCT_LANGUAGE,
     } as unknown as CreateBusinessDto;
     let created: { id: string; code: string; verificationStatus?: string | null };
     try {

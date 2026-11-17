@@ -162,6 +162,22 @@ export class PricingService {
           updates.legalMinimumWageSkilledPaise ?? before.legalMinimumWageSkilledPaise,
         legalMinimumWageHighlySkilledPaise:
           updates.legalMinimumWageHighlySkilledPaise ?? before.legalMinimumWageHighlySkilledPaise,
+        legalMinimumWageZone2UnskilledPaise:
+          updates.legalMinimumWageZone2UnskilledPaise ?? before.legalMinimumWageZone2UnskilledPaise,
+        legalMinimumWageZone2SemiSkilledPaise:
+          updates.legalMinimumWageZone2SemiSkilledPaise ?? before.legalMinimumWageZone2SemiSkilledPaise,
+        legalMinimumWageZone2SkilledPaise:
+          updates.legalMinimumWageZone2SkilledPaise ?? before.legalMinimumWageZone2SkilledPaise,
+        legalMinimumWageZone2HighlySkilledPaise:
+          updates.legalMinimumWageZone2HighlySkilledPaise ?? before.legalMinimumWageZone2HighlySkilledPaise,
+        legalMinimumWageZone3UnskilledPaise:
+          updates.legalMinimumWageZone3UnskilledPaise ?? before.legalMinimumWageZone3UnskilledPaise,
+        legalMinimumWageZone3SemiSkilledPaise:
+          updates.legalMinimumWageZone3SemiSkilledPaise ?? before.legalMinimumWageZone3SemiSkilledPaise,
+        legalMinimumWageZone3SkilledPaise:
+          updates.legalMinimumWageZone3SkilledPaise ?? before.legalMinimumWageZone3SkilledPaise,
+        legalMinimumWageZone3HighlySkilledPaise:
+          updates.legalMinimumWageZone3HighlySkilledPaise ?? before.legalMinimumWageZone3HighlySkilledPaise,
         legalMinimumWageEffectiveFrom: updates.legalMinimumWageEffectiveFrom
           ? new Date(updates.legalMinimumWageEffectiveFrom)
           : before.legalMinimumWageEffectiveFrom,
@@ -405,32 +421,66 @@ export class PricingService {
     }, actorId);
   }
 
-  async updateMinimumWages(input: {
-    unskilledPaise: number;
-    semiSkilledPaise: number;
-    skilledPaise: number;
-    highlySkilledPaise: number;
-    effectiveFrom: string;
-  }, actorId: string): Promise<PricingPolicy> {
-    const wageValues: Array<[string, number]> = [
-      ['unskilledPaise', input.unskilledPaise],
-      ['semiSkilledPaise', input.semiSkilledPaise],
-      ['skilledPaise', input.skilledPaise],
-      ['highlySkilledPaise', input.highlySkilledPaise],
-    ];
-    for (const [field, value] of wageValues) {
-      if (!Number.isSafeInteger(value) || value <= 0) {
+  /**
+   * All twelve legal minimum wage figures (rev 193), paise a month. The four
+   * unprefixed ones are Zone 1 (required, as before); Zone 2 and Zone 3 keys
+   * left out keep their current figures.
+   */
+  async updateMinimumWages(input: UpdateMinimumWagesInput, actorId: string): Promise<PricingPolicy> {
+    const before = await this.current();
+    const pick = (value: unknown, current: number | null): number | null => (value === undefined || value === null ? current : (value as number));
+    const values = {
+      unskilledPaise: pick(input.unskilledPaise, null),
+      semiSkilledPaise: pick(input.semiSkilledPaise, null),
+      skilledPaise: pick(input.skilledPaise, null),
+      highlySkilledPaise: pick(input.highlySkilledPaise, null),
+      zone2UnskilledPaise: pick(input.zone2UnskilledPaise, before.legalMinimumWageZone2UnskilledPaise),
+      zone2SemiSkilledPaise: pick(input.zone2SemiSkilledPaise, before.legalMinimumWageZone2SemiSkilledPaise),
+      zone2SkilledPaise: pick(input.zone2SkilledPaise, before.legalMinimumWageZone2SkilledPaise),
+      zone2HighlySkilledPaise: pick(input.zone2HighlySkilledPaise, before.legalMinimumWageZone2HighlySkilledPaise),
+      zone3UnskilledPaise: pick(input.zone3UnskilledPaise, before.legalMinimumWageZone3UnskilledPaise),
+      zone3SemiSkilledPaise: pick(input.zone3SemiSkilledPaise, before.legalMinimumWageZone3SemiSkilledPaise),
+      zone3SkilledPaise: pick(input.zone3SkilledPaise, before.legalMinimumWageZone3SkilledPaise),
+      zone3HighlySkilledPaise: pick(input.zone3HighlySkilledPaise, before.legalMinimumWageZone3HighlySkilledPaise),
+    };
+    for (const [field, value] of Object.entries(values)) {
+      if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
         throw new BadRequestException(`${field} must be a positive integer number of paise`);
       }
     }
     const effectiveFrom = new Date(input.effectiveFrom);
     if (Number.isNaN(effectiveFrom.getTime())) throw new BadRequestException('effectiveFrom must be a valid date');
     return this.createVersion({
-      legalMinimumWageUnskilledPaise: input.unskilledPaise,
-      legalMinimumWageSemiSkilledPaise: input.semiSkilledPaise,
-      legalMinimumWageSkilledPaise: input.skilledPaise,
-      legalMinimumWageHighlySkilledPaise: input.highlySkilledPaise,
+      legalMinimumWageUnskilledPaise: values.unskilledPaise as number,
+      legalMinimumWageSemiSkilledPaise: values.semiSkilledPaise as number,
+      legalMinimumWageSkilledPaise: values.skilledPaise as number,
+      legalMinimumWageHighlySkilledPaise: values.highlySkilledPaise as number,
+      legalMinimumWageZone2UnskilledPaise: values.zone2UnskilledPaise as number,
+      legalMinimumWageZone2SemiSkilledPaise: values.zone2SemiSkilledPaise as number,
+      legalMinimumWageZone2SkilledPaise: values.zone2SkilledPaise as number,
+      legalMinimumWageZone2HighlySkilledPaise: values.zone2HighlySkilledPaise as number,
+      legalMinimumWageZone3UnskilledPaise: values.zone3UnskilledPaise as number,
+      legalMinimumWageZone3SemiSkilledPaise: values.zone3SemiSkilledPaise as number,
+      legalMinimumWageZone3SkilledPaise: values.zone3SkilledPaise as number,
+      legalMinimumWageZone3HighlySkilledPaise: values.zone3HighlySkilledPaise as number,
       legalMinimumWageEffectiveFrom: effectiveFrom,
     }, actorId);
   }
+}
+
+/** PUT /pricing/legal-minimum-wages. Zone 1 keys are required; Zone 2 and 3 keys are optional. */
+export interface UpdateMinimumWagesInput {
+  unskilledPaise: number;
+  semiSkilledPaise: number;
+  skilledPaise: number;
+  highlySkilledPaise: number;
+  zone2UnskilledPaise?: number;
+  zone2SemiSkilledPaise?: number;
+  zone2SkilledPaise?: number;
+  zone2HighlySkilledPaise?: number;
+  zone3UnskilledPaise?: number;
+  zone3SemiSkilledPaise?: number;
+  zone3SkilledPaise?: number;
+  zone3HighlySkilledPaise?: number;
+  effectiveFrom: string;
 }

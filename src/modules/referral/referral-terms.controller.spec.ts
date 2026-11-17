@@ -23,11 +23,15 @@ describe('Public referral partner terms', () => {
     expect(await controller.terms()).toMatchObject({ referralPayoutPaise: 25000, payoutDetailsCoolingHours: 72 });
   });
 
-  it('the partner’s signing page (registration link) links to the full terms in their language', () => {
-    for (const lang of ['kn', 'hi', 'en'] as const) {
-      const html = renderReferralTermsPageHtml('tok', 'Raju', '******0011', '<article></article>', lang);
-      expect(html).toContain(`href="${REFERRAL_TERMS_PAGE_PATH}?lang=${lang}"`);
-    }
+  it('the partner’s fallback signing page is English and signs with one button: send the code, typing it signs (rev 193)', () => {
+    const html = renderReferralTermsPageHtml('tok', 'Raju', '******0011', '<article></article>');
+    expect(html).toContain(`href="${REFERRAL_TERMS_PAGE_PATH}"`);
+    expect(html).toContain('<html lang="en">');
+    expect(html).toContain('Send code to sign');
+    expect(html).not.toContain('btn-submit');
+    expect(html).toContain("codeInput.value.trim().length === 6) void submitCode()");
+    expect(html).toContain("language: 'en'");
+    expect(html).not.toMatch(/\p{Script=Kannada}|\p{Script=Devanagari}/u);
     expect(REFERRAL_TERMS_PAGE_PATH).toBe('/p/referral-terms');
   });
 });

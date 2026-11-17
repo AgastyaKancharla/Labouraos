@@ -1,7 +1,5 @@
 /**
- * Search (the call agent's CA16-Search adapted to the phone). Spread into
- * en.ts; kn and hi in search.kn.ts and search.hi.ts (drafts — a native
- * speaker checks them).
+ * Search (the call agent's CA16-Search adapted to the phone). Spread into en.ts (English only, Master Guide rev 193).
  */
 export const searchEn = {
   'search.title': 'Search',

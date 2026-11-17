@@ -73,7 +73,8 @@ function Form({ business }: { business: BusinessDetail }) {
   const { selling } = useEndpoints();
   const queue = useOfflineQueue();
   const client = useQueryClient();
-  const trades = useQuery({ queryKey: queryKeys.trades, queryFn: () => selling.trades(), staleTime: 10 * 60_000 });
+  // Rev 193: the legal minimum warned about is the one for this business's zone.
+  const trades = useQuery({ queryKey: [...queryKeys.trades, business.id], queryFn: () => selling.trades(business.id), staleTime: 10 * 60_000 });
   const [form, setForm, clearForm] = useFormDraft<QuickVacancy>(`fa17:${business.id}`, EMPTY_VACANCY);
   const [tried, setTried] = useState(false);
   const [queued, setQueued] = useState(false);

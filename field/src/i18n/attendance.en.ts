@@ -1,7 +1,6 @@
 /**
  * My attendance, leave, corrections and payslips (FA04e–FA04h, the call
- * agent's CA14e–CA14h adapted to the phone). Spread into en.ts; kn and hi in
- * attendance.kn.ts and attendance.hi.ts (drafts — a native speaker checks them).
+ * agent's CA14e–CA14h adapted to the phone). Spread into en.ts (English only, Master Guide rev 193).
  */
 export const attendanceEn = {
   // FA04e — My attendance
@@ -58,7 +57,7 @@ export const attendanceEn = {
   'fa04f.from': 'From',
   'fa04f.to': 'To',
   'fa04f.toHint': 'For one day, leave this as the same day.',
-  // Half-day leave (owner decision 12 Nov). Kannada and Hindi: for native-speaker review.
+  // Half-day leave (owner decision 12 Nov).
   'fa04f.halfDay': 'Half day?',
   'fa04f.fullDay': 'Full day',
   'fa04f.firstHalf': 'Half day — first half',

@@ -45,7 +45,7 @@ export default function ReferralSavedScreen() {
     refetchInterval: (q) => (q.state.data?.currentStep === 'complete' ? false : 5000),
   });
   const resend = useMutation({
-    mutationFn: () => queue.live(() => redesign.resendReferralLink(id, header.data?.language ?? undefined)),
+    mutationFn: () => queue.live(() => redesign.resendReferralLink(id)),
     onSuccess: () => afterSave(queryKeys.referralStatus(id)),
   });
   const chip = (s: ReferralStep | undefined): { label: string; tone: 'green' | 'amber' | 'neutral' | 'tomato' } =>

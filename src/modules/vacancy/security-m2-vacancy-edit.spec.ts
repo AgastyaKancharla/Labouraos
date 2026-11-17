@@ -32,7 +32,7 @@ describe('Security M2: vacancy edits re-check the minimum wage and need the owne
     const n = ids.vacancies.length + 1;
     const v = await prisma.vacancy.create({
       data: {
-        code: `VC-M2-${suffix}-${n}`, businessId: ids.business, tradeSkill: 'Cook', city: 'Bengaluru',
+        code: `VC-M2-${suffix}-${n}`, businessId: ids.business, tradeSkill: 'Housekeeping', city: 'Bengaluru',
         salaryMinPaise: 2500000, salaryMaxPaise: 3000000, salaryPeriod: 'monthly', headcount: 1,
         status: 'open', confirmedAt: new Date(), confirmationMethod: 'code_on_call', confirmedByName: 'Owner', confirmedPhoneLast4: '1234',
         ...overrides,

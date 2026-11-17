@@ -18,6 +18,7 @@ import { routes } from '@/navigation/routes';
 import { OtpCodeCard } from '../shared/OtpCodeCard';
 import { shiftChoices } from '../shared/choices';
 import { belowLegalMinimum, emptyVacancy, toVacancyDraft, validateVacancy, type VacancyErrors } from './form';
+import { legalMinimumOf } from '@/api/types';
 
 type Step = 'form' | 'otp' | 'done';
 
@@ -86,10 +87,11 @@ export default function AddVacancy() {
   const trades = options.data.trades;
   const trade = trades.find((tr) => tr.name === form.trade);
   const tradeChoices: Choice[] = trades.map((tr) => ({ value: tr.name, label: tr.name }));
-  const below = belowLegalMinimum(trade, form);
+  const zone = activeProfile?.kind === 'business' ? (activeProfile.minimumWageZone ?? null) : null;
+  const below = belowLegalMinimum(trade, form, zone);
 
   const saveDraft = async () => {
-    const found = validateVacancy(form, trade);
+    const found = validateVacancy(form, trade, zone);
     setErrors(found);
     if (Object.keys(found).length > 0) return;
     setBusy(true);
@@ -181,6 +183,7 @@ export default function AddVacancy() {
                 submit={(otp) => confirm(otp, ownerTold)}
                 sendLabel={t('vacancy.sendOtp', { last4: account?.phoneLast4 ?? '' })}
                 submitLabel={t('vacancy.confirm')}
+                codeSubmits
                 sentText={t('otp.sentTo', { last4: account?.phoneLast4 ?? '' })}
               />
             </Card>
@@ -220,7 +223,7 @@ export default function AddVacancy() {
             ) : null}
             {below && trade ? (
               <View style={styles.gap} testID="vacancy-min-wage">
-                <Banner tone="warn" title={t('vacancy.belowMinimumTitle')} message={t('vacancy.belowMinimum', { amount: rupees(trade.legalMinimumPaise) })} />
+                <Banner tone="warn" title={t('vacancy.belowMinimumTitle')} message={t('vacancy.belowMinimum', { amount: rupees(legalMinimumOf(trade, zone)) })} />
                 <Checkbox label={t('vacancy.legalMinimumTick')} checked={form.legalMinimumAcknowledged} onChange={(v) => set('legalMinimumAcknowledged', v)} testID="vacancy-min-wage-tick" />
                 {errors.legalMinimumAcknowledged ? (
                   <Text variant="small" style={styles.errorText} testID="vacancy-min-wage-error">

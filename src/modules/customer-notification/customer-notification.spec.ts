@@ -123,21 +123,13 @@ function setup(at: Date = ist('10:00')) {
   return { prisma, clock, settings, notifications, provider, sender, inbox, kicker, account, me };
 }
 
-describe('Customer notifications: wording in three languages', () => {
-  it('has Kannada, Hindi and English for every event, with the same placeholders', () => {
+describe('Customer notifications: wording in English only (rev 193)', () => {
+  it('has English, and only English, for every event', () => {
     for (const kind of CUSTOMER_EVENT_KINDS) {
       const table = CUSTOMER_NOTIFICATION_WORDING[kind];
-      expect(Object.keys(table).sort()).toEqual(['en', 'hi', 'kn']);
+      expect(Object.keys(table)).toEqual(['en']);
       const placeholders = (s: string) => (s.match(/\{(\w+)\}/g) ?? []).sort();
-      for (const lang of ['kn', 'hi'] as const) {
-        expect({ kind, lang, title: placeholders(table[lang].title), body: placeholders(table[lang].body) }).toEqual({
-          kind,
-          lang,
-          title: placeholders(table.en.title),
-          body: placeholders(table.en.body),
-        });
-        expect(table[lang].body).not.toEqual(table.en.body); // translated, never copied English
-      }
+      expect(`${table.en.title} ${table.en.body}`).not.toMatch(/\p{Script=Kannada}|\p{Script=Devanagari}/u);
       const used = [...placeholders(table.en.title), ...placeholders(table.en.body)].map((p) => p.slice(1, -1));
       expect(used.sort()).toEqual([...new Set(used)].sort().filter((v) => CUSTOMER_EVENTS[kind].vars.includes(v as never)));
     }
@@ -175,14 +167,14 @@ describe('Customer notifications: quiet hours in India time', () => {
 });
 
 describe('Customer notifications: notify and send', () => {
-  it('writes the inbox row in the person\'s language and queues the push', async () => {
+  it('writes the inbox row in English, even for an account that had Hindi saved, and queues the push', async () => {
     const t = setup();
     const accountId = await t.account({ language: 'hi', jobSeekerId: 'js-1' });
     const result = await t.notifications.notify({ jobSeekerId: 'js-1' }, 'refund_approved');
     expect(result).toEqual({ inbox: 1, queued: 1, held: 0, skipped: [] });
     const [row] = t.prisma.tables.customerInboxMessage;
-    expect(row).toMatchObject({ accountId, profileId: 'prof-1', kind: 'refund_approved', language: 'hi', pushStatus: 'queued', category: 'service' });
-    expect(row.title).toBe(CUSTOMER_NOTIFICATION_WORDING.refund_approved.hi.title);
+    expect(row).toMatchObject({ accountId, profileId: 'prof-1', kind: 'refund_approved', language: 'en', pushStatus: 'queued', category: 'service' });
+    expect(row.title).toBe(CUSTOMER_NOTIFICATION_WORDING.refund_approved.en.title);
     expect(t.kicker.kick).toHaveBeenCalledTimes(1);
 
     const sent = await t.sender.sendDue();

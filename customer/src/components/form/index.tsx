@@ -242,7 +242,7 @@ export function RadioGroup<V extends string>({
   );
 }
 
-/** Two or three buttons side by side (List | Map, ಕನ್ನಡ | हिंदी | English). */
+/** Two or three buttons side by side (List | Map). */
 export function Segmented<V extends string>({ value, options, onChange, testID }: {
   value: V;
   options: readonly Choice<V>[];

@@ -4,7 +4,6 @@ export { Button, type ButtonVariant } from './Button';
 export { Card } from './Card';
 export { CodeInput } from './CodeInput';
 export { Icon, type IconName } from './Icon';
-export { LanguageSwitcher } from './LanguageSwitcher';
 export { ListRow } from './ListRow';
 export { ProgressBar } from './ProgressBar';
 export { Screen } from './Screen';

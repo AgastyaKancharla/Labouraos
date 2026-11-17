@@ -2,9 +2,11 @@ import {
   Body,
   Controller,
   Get,
+  NotFoundException,
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -14,7 +16,9 @@ import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { RequirePermission } from '../../common/rbac/permissions.decorator';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
+import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
+import { isMinimumWageZone, MinimumWageZone } from './minimum-wage';
 import { CreateTradeInput, TradeService } from './trade.service';
 
 @Controller('trades')
@@ -23,13 +27,26 @@ export class TradeController {
   constructor(
     private readonly trades: TradeService,
     private readonly pricing: PricingService,
+    private readonly prisma: PrismaService,
   ) {}
 
+  /**
+   * `?businessId=` gives each trade's legal minimum for that business's zone
+   * (rev 193); `?zone=1|2|3` for a zone; neither gives Zone 1's figures.
+   */
   @Get()
   @RequirePermission('trade', 'read')
   @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo', 'finance')
-  async listActive() {
-    return this.trades.listActive(await this.pricing.current());
+  async listActive(@Query('businessId') businessId?: string, @Query('zone') zone?: string) {
+    let forZone: MinimumWageZone | null = null;
+    if (typeof businessId === 'string' && businessId) {
+      const business = await this.prisma.business.findUnique({ where: { id: businessId }, select: { minimumWageZone: true } });
+      if (!business) throw new NotFoundException(`Business '${businessId}' not found`);
+      forZone = isMinimumWageZone(business.minimumWageZone) ? business.minimumWageZone as MinimumWageZone : null;
+    } else if (typeof zone === 'string' && isMinimumWageZone(Number(zone))) {
+      forZone = Number(zone) as MinimumWageZone;
+    }
+    return this.trades.listActive(await this.pricing.current(), forZone);
   }
 
   @Get('manage')

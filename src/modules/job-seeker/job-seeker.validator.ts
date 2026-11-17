@@ -58,9 +58,6 @@ export function validateJobSeekerRegistration(
     }
   }
   const phone = requireIndianMobile(dto.phone);
-  if (!['kn', 'hi', 'en'].includes(dto.messageLanguage)) {
-    throw new BadRequestException('messageLanguage must be kn, hi or en');
-  }
   const window = REGISTRATION_WINDOWS[dto.bestTimeToCall];
   if (!window) throw new BadRequestException('bestTimeToCall is invalid');
   if (!HEARD_FROM_VALUES.includes(dto.heardFrom)) {

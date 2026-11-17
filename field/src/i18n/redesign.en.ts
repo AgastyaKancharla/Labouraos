@@ -1,16 +1,14 @@
 /**
  * English words of the Laboura Field redesign (Master Guide rev 188, 16 Nov):
  * five tabs, the onboarding steps, Today, Visits, the one business page, my
- * job seekers, referral partners and Me. Spread into en.ts; redesign.kn.ts
- * has the same keys. Hindi is hidden in Laboura Field for now, so these keys
- * have no Hindi (English shows if a phone ever has Hindi).
+ * job seekers, referral partners and Me. Spread into en.ts (English only, rev 193).
  */
 export const redesignEn = {
   // Tabs and header
   'tabs.today': 'Today',
   'tabs.businesses': 'Businesses',
   'tabs.me': 'Me',
-  /** The tab bar's label: five tabs share 360 px, so it must fit one line there (Kannada uses the short word, fix list A8). */
+  /** The tab bar's label: five tabs share 360 px, so it must fit one line there (fix list A8). */
   'tabs.jobSeekersTab': 'Job seekers',
   'common.back': 'Back',
   'common.searchEveryone': 'Search everyone by name, mobile or ID',
@@ -268,7 +266,6 @@ export const redesignEn = {
   'fa23.heading': 'Register a referral partner',
   'fa23.intro': 'Someone who sends job seekers to Laboura. He is paid when a person he referred joins a job.',
   'fa23.name': 'Full name',
-  'fa23.language': 'His message language',
   'fa23.partnerIs': 'The partner is',
   'fa23.type.individual': 'A person',
   'fa23.type.business': 'A business',
@@ -307,7 +304,6 @@ export const redesignEn = {
   'me.leave': 'Request leave',
   'me.corrections': 'Attendance corrections',
   'me.payslips': 'Payslips',
-  'me.languageNote': 'Laboura Field is in Kannada and English for now.',
 
   // Fee calculator during a visit
   'fa14.backToVisit': 'Back to the visit',

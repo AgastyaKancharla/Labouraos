@@ -510,7 +510,7 @@ describe('InterviewService booking', () => {
       const details = await service.candidateReplyDetails('single-use-token');
       expect(details).toMatchObject({
         firstName: 'Candidate', job: 'Cook', area: 'Indiranagar', salaryMinPaise: 1600000, salaryMaxPaise: 1800000,
-        salaryPeriod: 'monthly', shift: 'day', awaitingReply: true, belowGuaranteeFloor: false, language: 'kn',
+        salaryPeriod: 'monthly', shift: 'day', awaitingReply: true, belowGuaranteeFloor: false, language: 'en',
       });
       expect(JSON.stringify(details)).not.toContain('PRIVATE');
     });
@@ -567,7 +567,7 @@ describe('InterviewService booking', () => {
       const details = await service.ownerResultDetails('single-use-token');
       expect(details).toMatchObject({
         candidateFirstName: 'Candidate', businessName: 'PRIVATE BUSINESS', maskedPhone: '******8812',
-        awaitingResult: true, language: 'hi', vacancySalaryMinPaise: 1600000,
+        awaitingResult: true, language: 'en', vacancySalaryMinPaise: 1600000,
       });
       expect(details.reasons).toContain('skills');
       expect(JSON.stringify(details)).not.toContain('+919876543210');

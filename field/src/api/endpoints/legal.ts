@@ -3,7 +3,7 @@ import type { ApiClient } from '../client';
 /**
  * Legal documents v1.1 (Master Guide rev 176): the server renders each text
  * from its versioned content. Laboura Field reads the "In short" aloud to
- * the person before their OTP, in their language. Which version a person
+ * the person before their OTP, in English (rev 193). Which version a person
  * accepted comes on the (scoped) registration status screen.
  */
 export type LegalDocumentKey = 'job_seeker_terms' | 'business_agreement' | 'referral_terms';
@@ -11,7 +11,7 @@ export type LegalDocumentKey = 'job_seeker_terms' | 'business_agreement' | 'refe
 export interface LegalDocument {
   key: LegalDocumentKey;
   version: string;
-  language: 'kn' | 'hi' | 'en';
+  language: 'en';
   title: string;
   summary: string[];
   summaryHtml: string;
@@ -19,7 +19,7 @@ export interface LegalDocument {
 }
 
 export const legalApi = (api: ApiClient) => ({
-  document: (key: LegalDocumentKey, language: string) =>
+  document: (key: LegalDocumentKey, language: 'en' = 'en') =>
     api.get<LegalDocument>(`/legal/documents/${key}`, { query: { lang: language }, auth: false }),
 });
 

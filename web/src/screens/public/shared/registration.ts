@@ -3,7 +3,7 @@ import { useCallback, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { registrationApi, type RegistrationOpen, type RegistrationStep } from './api';
-import { tabMemory, usePersonLanguage } from './ui';
+import { tabMemory } from './ui';
 
 /**
  * The one registration link (P00 → P02b). The OTP he verified on P00 is kept
@@ -41,7 +41,6 @@ export function useRegistrationStatus(token: string, options: { poll?: boolean }
     refetchInterval: options.poll ? 10_000 : false,
     staleTime: 0,
   });
-  usePersonLanguage(query.data?.language, token);
   return { ...query, requestId };
 }
 

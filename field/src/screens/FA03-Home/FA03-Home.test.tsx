@@ -146,10 +146,9 @@ describe('FA03 Today', () => {
     expect(screen.getByTestId('needs-agreement_waiting:b-1')).toHaveTextContent(/JP Nagar/);
   });
 
-  it('dates follow the app language: Kannada month and day names (A8)', async () => {
-    await renderWithApp(<HomeScreen />, { signedInAs: kiran, language: 'kn', route: api(loggedIn, (url) => (url.endsWith('/field-work/today') ? { status: 200, body: todayView() } : undefined)) });
-    await waitFor(() => expect(screen.getByTestId('today-hero')).toHaveTextContent(/ಸೋಮ 16 ನವೆಂ/));
-    expect(screen.getByTestId('today-hero')).not.toHaveTextContent(/Mon 16 Nov/);
+  it('dates are in English (rev 193)', async () => {
+    await renderWithApp(<HomeScreen />, { signedInAs: kiran, route: api(loggedIn, (url) => (url.endsWith('/field-work/today') ? { status: 200, body: todayView() } : undefined)) });
+    await waitFor(() => expect(screen.getByTestId('today-hero')).toHaveTextContent(/Mon 16 Nov/));
   });
 
   it('the status chip offers exactly the statuses a person can pick; Travelling shows as the current status only (A2)', async () => {
@@ -177,10 +176,9 @@ describe('FA03 Today', () => {
     expect(sent).toEqual([{ status: 'lunch' }]);
   });
 
-  it('a refused status shows a translated sentence, never the server\'s English message (A2)', async () => {
+  it('a refused status shows the app\'s own sentence, never the server\'s message (A2)', async () => {
     await renderWithApp(<HomeScreen />, {
       signedInAs: kiran,
-      language: 'kn',
       route: api(loggedIn, (url) =>
         url.endsWith('/attendance/status')
           ? { status: 400, body: { statusCode: 400, message: 'Status on_visit is set automatically', details: { code: 'STATUS_NOT_PICKABLE' } } }
@@ -191,7 +189,7 @@ describe('FA03 Today', () => {
     await fireEvent.press(screen.getByTestId('attendance-status'));
     await fireEvent.press(screen.getByTestId('status-choice-training'));
     await waitFor(() => screen.getByTestId('attendance-error'));
-    expect(screen.getByTestId('attendance-error')).toHaveTextContent(translate('kn', 'today.statusFailed'));
+    expect(screen.getByTestId('attendance-error')).toHaveTextContent(translate('en', 'today.statusFailed'));
     expect(screen.getByTestId('attendance-error')).not.toHaveTextContent(/set automatically/);
   });
 
@@ -266,8 +264,9 @@ describe('FA03 Today', () => {
     expect(fetchImpl.mock.calls.some(([url]) => String(url).endsWith('/auth/logout'))).toBe(true);
   });
 
-  it('switches to Kannada', async () => {
-    await renderWithApp(<HomeScreen />, { signedInAs: kiran, route: api(notLoggedIn), language: 'kn' });
-    await waitFor(() => expect(screen.getByTestId('attendance-not-logged-in')).toHaveTextContent(/ಇನ್ನೂ ಲಾಗಿನ್ ಆಗಿಲ್ಲ/));
+  it('shows English, with no language switcher (rev 193)', async () => {
+    await renderWithApp(<HomeScreen />, { signedInAs: kiran, route: api(notLoggedIn) });
+    await waitFor(() => expect(screen.getByTestId('attendance-not-logged-in')).toHaveTextContent(/Not logged in yet/));
+    expect(screen.queryByTestId('language-switcher')).toBeNull();
   });
 });
