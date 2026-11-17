@@ -34,7 +34,7 @@ export class TeamLeadRecordsService {
       this.prisma.staff.findUnique({ where: { id: actor.id }, select: { city: true } }),
       this.prisma.staff.findMany({ where: { id: { in: members.map((m) => m.id) }, status: 'active' }, select: { id: true } }),
     ]);
-    return sectionScope(actor, staffIds, [me?.city ?? 'Bengaluru'], [actor.id, ...active.map((a) => a.id)]);
+    return sectionScope(this.prisma, actor, staffIds, [me?.city ?? 'Bengaluru'], [actor.id, ...active.map((a) => a.id)]);
   }
 
   /**

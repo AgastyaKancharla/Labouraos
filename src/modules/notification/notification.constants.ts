@@ -168,7 +168,7 @@ const LINKS: Record<NotificationKind, LinkTable> = {
   password_reset: { team_lead: 'login-codes', manager: 'login-codes', ceo: 'login-codes' },
   // Field agents read their bell in Laboura Field (no web link); the others open the record.
   job_seeker_assigned: { call_agent: 'people/:id', team_lead: 'job-seekers/:id', manager: 'job-seekers/:id', field_agent: '' },
-  referral_assigned: { call_agent: '', team_lead: 'referrals/:id', manager: 'referrals/:id', field_agent: '' },
+  referral_assigned: { call_agent: 'people/:id', team_lead: 'referrals/:id', manager: 'referrals/:id', field_agent: '' },
   business_assigned: { team_lead: 'businesses/:id', manager: 'businesses/:id', field_agent: '' },
 };
 

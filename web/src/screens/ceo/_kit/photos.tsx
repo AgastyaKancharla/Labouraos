@@ -110,6 +110,8 @@ export function ProfileHero({
     enabled,
     staleTime: LINK_FRESH_MS,
     refetchInterval: LINK_FRESH_MS,
+    // Never while the tab is hidden; the server audits a view once per 30 minutes anyway.
+    refetchIntervalInBackground: false,
   });
   const photo = !enabled || query.isError ? NO_PHOTO : query.data;
   const alt = kind === 'job_seeker' ? `Live selfie of ${name}` : kind === 'referral' ? `Photo of ${name}` : `Shop name board of ${name}`;
@@ -142,6 +144,8 @@ export function VisitPhotos({ businessId, businessName, visit }: { businessId: s
     enabled: Boolean(visit.id),
     staleTime: LINK_FRESH_MS,
     refetchInterval: LINK_FRESH_MS,
+    // Never while the tab is hidden; the server audits a view once per 30 minutes anyway.
+    refetchIntervalInBackground: false,
   });
   const gone: Photo = { kept: false, url: null, expiresInSeconds: 0 };
   const data = query.isError || !visit.id ? { boardPhoto: gone, selfie: gone } : query.data;

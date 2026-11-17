@@ -239,6 +239,7 @@ export class ScreensManagerController {
       age: cleanOption(q.age),
       stage: cleanOption(q.stage),
       checks: cleanOption(q.checks),
+      dateField: q.dateField === 'paid' ? 'paid' : undefined,
     };
   }
 

@@ -196,12 +196,15 @@ describe('Team Lead home: business numbers and close to a refund', () => {
         referralPartners: { registered: 6, introduced: 11, introducedPaid: 5, partnersPaid: 2, partnersNotPaid: 3 },
       },
     });
-    renderScreen(<BusinessNumbers />, { portal: 'team-lead', path: '/team-lead' });
+    renderScreen(<BusinessNumbers />, { portal: 'team-lead', path: '/team-lead', now: new Date('2026-11-09T06:00:00.000Z') });
     const box = await screen.findByTestId('tl-business');
-    expect(await within(box).findByRole('link', { name: 'Registered: 41' })).toHaveAttribute('href', '/team-lead/job-seekers');
-    expect(within(box).getByRole('link', { name: 'Not paid: 19' })).toHaveAttribute('href', '/team-lead/job-seekers?status=not_paid');
-    expect(within(box).getByRole('link', { name: 'Vacancies added: 8' })).toHaveAttribute('href', '/team-lead/vacancies');
-    expect(within(box).getByRole('link', { name: 'Reward not paid yet: 3' })).toHaveAttribute('href', '/team-lead/referrals');
+    // Each list opens for the same period (this month by default: 1–9 Nov on the test clock).
+    const period = 'from=2026-11-01&to=2026-11-09';
+    expect(await within(box).findByRole('link', { name: 'Registered: 41' })).toHaveAttribute('href', `/team-lead/job-seekers?${period}`);
+    expect(within(box).getByRole('link', { name: 'Not paid: 19' })).toHaveAttribute('href', `/team-lead/job-seekers?status=not_paid&${period}`);
+    expect(within(box).getByRole('link', { name: 'Paid: 22' })).toHaveAttribute('href', `/team-lead/job-seekers?dateField=paid&${period}`);
+    expect(within(box).getByRole('link', { name: 'Vacancies added: 8' })).toHaveAttribute('href', `/team-lead/vacancies?${period}`);
+    expect(within(box).getByRole('link', { name: 'Reward not paid yet: 3' })).toHaveAttribute('href', `/team-lead/referrals?${period}`);
     expect(box.textContent).not.toMatch(/₹/);
     expect(api.calls('GET /team-lead/pipeline')[0].query.get('fromDate')).toBeTruthy();
     // The period picker reads the numbers again.
@@ -225,5 +228,27 @@ describe('Team Lead home: business numbers and close to a refund', () => {
     expect(document.body.textContent).not.toMatch(/₹/);
     await userEvent.click(screen.getByRole('button', { name: 'Remind the agent' }));
     await waitFor(() => expect(api.calls('POST /team-lead/remind')[0]?.body).toEqual({ staffId: 'ca1', jobSeekerId: 'js9' }));
+  });
+});
+
+describe('Lists opened from T-Home', () => {
+  it('a job seeker list opens for the period in the address, on the payment day for "Paid"', async () => {
+    signInAs('team_lead');
+    const api = mockApi({ 'GET /team-lead/job-seekers': { rows: [], total: 0, page: 1, pageSize: 25, trades: [], summary }, 'POST /app-signups/labels': {} });
+    renderScreen(<JobSeekersList />, { portal: 'team-lead', path: '/team-lead/job-seekers?dateField=paid&from=2026-11-01&to=2026-11-09' });
+    await waitFor(() => expect(api.calls('GET /team-lead/job-seekers').length).toBeGreaterThan(0));
+    const q = api.calls('GET /team-lead/job-seekers').at(-1)!.query;
+    expect(q.get('dateField')).toBe('paid');
+    expect(q.get('fromDate')).toBe('2026-10-31T18:30:00.000Z');
+    expect(q.get('toDate')).toBeTruthy();
+  });
+
+  it('puts Assign in the first column on Not assigned, in reach on a phone', async () => {
+    signInAs('team_lead');
+    mockApi({ 'GET /team-lead/job-seekers': { rows: [seekerRow], total: 1, page: 1, pageSize: 25, trades: [], summary }, 'POST /app-signups/labels': {} });
+    renderScreen(<JobSeekersList />, { portal: 'team-lead', path: '/team-lead/job-seekers?section=unassigned' });
+    const button = await screen.findByRole('button', { name: 'Assign Manju Gowda' });
+    const row = button.closest('tr')!;
+    expect(row.querySelector('td')!.contains(button)).toBe(true);
   });
 });

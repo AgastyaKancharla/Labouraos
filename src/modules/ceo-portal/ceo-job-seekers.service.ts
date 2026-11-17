@@ -38,6 +38,8 @@ export interface JobSeekerListQuery {
   sort?: string;
   /** Manager portal: only these job seekers (record-scope.ts). The CEO passes none. */
   scope?: Prisma.JobSeekerWhereInput;
+  /** 'paid': the date range is when they paid, not when they registered (T-Home "Paid" number). */
+  dateField?: string;
 }
 
 export interface JobSeekerRow {
@@ -109,7 +111,7 @@ export class CeoJobSeekersService {
     const and: Prisma.JobSeekerWhereInput[] = [{ anonymisedAt: null }];
     if (query.scope) and.push(query.scope);
     const created = dateFilter(query.range);
-    if (created) and.push({ createdAt: created });
+    if (created) and.push(query.dateField === 'paid' ? { paymentReceivedAt: created } : { createdAt: created });
     if (query.search) {
       const s = query.search;
       const digits = phoneSearchDigits(s);

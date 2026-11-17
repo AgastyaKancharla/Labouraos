@@ -9,7 +9,7 @@ import { TopBar } from '../../../components/TopBar';
 import { formatINR } from '../../../lib/format/money';
 import { formatMobile } from '../../../lib/format/phone';
 import { SEEKER_STATUS, guaranteePill } from '../_kit/labels';
-import { homeBack, useInitialParam, useRecordsPortal } from '../_kit/records';
+import { homeBack, useInitialParam, useInitialPeriod, useRecordsPortal } from '../_kit/records';
 import { AssignButton, SectionSwitch, sectionQuery, useSection } from '../_kit/assign';
 import {
   DateFilter,
@@ -78,9 +78,11 @@ export default function JobSeekersList() {
   const [trade, setTrade] = useState('');
   const [kyc, setKyc] = useState('');
   const [sort, setSort] = useState('soonest');
-  const [period, setPeriod] = useState<ListPeriod>(null);
+  const [period, setPeriod] = useState<ListPeriod>(useInitialPeriod());
+  // T-Home's "Paid" number: the period is the payment day (dateField=paid), not the registration day.
+  const dateField = useInitialParam('dateField') === 'paid' ? 'paid' : '';
   const q = useDebounced(search);
-  const list = useCeoList<JobSeekerRow, { trades: string[] }, Summary>(`${base}/job-seekers`, { search: q, status, trade, kyc, sort, ...rangeQuery(period), ...sectionQuery(sections, section) });
+  const list = useCeoList<JobSeekerRow, { trades: string[] }, Summary>(`${base}/job-seekers`, { search: q, status, trade, kyc, sort, ...rangeQuery(period), ...(dateField ? { dateField } : {}), ...sectionQuery(sections, section) });
   const s = list.query.data?.summary;
   const loading = list.query.isPending;
   /** A tile sets the Status filter to its own rows (click it again to show all). */
@@ -90,6 +92,10 @@ export default function JobSeekersList() {
 
   const appLabels = useAppLabels('job_seeker', (list.query.data?.rows ?? []).map((r) => r.id));
   const columns: Column<JobSeekerRow>[] = [
+    // Not assigned: Assign comes first, so it is in reach on a phone without scrolling the table.
+    ...(sections && section === 'unassigned'
+      ? [{ key: 'assign', header: '', cell: (r: JobSeekerRow) => <AssignButton kind="job_seeker" id={r.id} name={r.name} /> } satisfies Column<JobSeekerRow>]
+      : []),
     { key: 'code', header: 'Code', cell: (r) => <span className="code">{r.code}</span>, csv: (r) => r.code },
     {
       key: 'name',
@@ -116,9 +122,6 @@ export default function JobSeekersList() {
     { key: 'hits', header: 'Hits', cell: (r) => <Hits count={r.hits} max={r.maxHits} />, csv: (r) => r.hits },
     { key: 'kyc', header: 'KYC', cell: (r) => <StatusPill tone={KYC[r.kyc].tone}>{KYC[r.kyc].label}</StatusPill>, csv: (r) => KYC[r.kyc].label, hideOnPhone: true },
     { key: 'guarantee', header: 'Refund guarantee', cell: (r) => guaranteePill(r.guaranteeDaysLeft), csv: (r) => r.guaranteeDaysLeft },
-    ...(sections && section === 'unassigned'
-      ? [{ key: 'assign', header: '', cell: (r: JobSeekerRow) => <AssignButton kind="job_seeker" id={r.id} name={r.name} /> } satisfies Column<JobSeekerRow>]
-      : []),
     { key: 'open', header: '', cell: (r) => <OpenLink to={to('C-JobSeeker', { id: r.id })} /> },
   ];
 
@@ -200,7 +203,7 @@ export default function JobSeekersList() {
             { value: 'newest', label: 'Newest registrations' },
           ]}
         />
-        <DateFilter label="Registered" value={period} onChange={setPeriod} />
+        <DateFilter label={dateField ? 'Paid' : 'Registered'} value={period} onChange={setPeriod} />
       </FilterPanel>
       <PagedTable
         list={list}

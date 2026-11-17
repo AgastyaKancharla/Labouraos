@@ -29,6 +29,9 @@ export interface ProfilePhoto {
  * and every view is audited. Aadhaar QR and ID card photos are never served
  * here (they live elsewhere and are deleted after the check).
  */
+/** One audit row per viewer, record and kind of photo within this window (links refresh every few minutes). */
+export const PHOTO_VIEW_AUDIT_WINDOW_MS = 30 * 60 * 1000;
+
 @Injectable()
 export class RecordPhotosService {
   constructor(
@@ -45,7 +48,7 @@ export class RecordPhotosService {
     if (!seeker) throw new NotFoundException(`Job seeker '${id}' not found`);
     if (!seeker.photoStoragePath || !this.candidatePhotos) return { kept: false, url: null, expiresInSeconds: 0 };
     const url = await this.candidatePhotos.signedUrl(seeker.photoStoragePath, CANDIDATE_PHOTO_LINK_TTL_SECONDS);
-    await this.audit.log({ actorId: viewer.id, action: 'record.selfie_viewed', entityType: 'job_seeker', entityCode: seeker.code, changedFields: [], city: seeker.city });
+    await this.logView(viewer, 'record.selfie_viewed', 'job_seeker', seeker.code, seeker.city);
     return { kept: Boolean(url), url: url ?? null, expiresInSeconds: url ? CANDIDATE_PHOTO_LINK_TTL_SECONDS : 0 };
   }
 
@@ -56,7 +59,7 @@ export class RecordPhotosService {
     if (!partner) throw new NotFoundException(`Referral partner '${id}' not found`);
     if (!partner.photoStoragePath || !this.candidatePhotos) return { kept: false, url: null, expiresInSeconds: 0 };
     const url = await this.candidatePhotos.signedUrl(partner.photoStoragePath, CANDIDATE_PHOTO_LINK_TTL_SECONDS);
-    await this.audit.log({ actorId: viewer.id, action: 'record.partner_photo_viewed', entityType: 'referral', entityCode: partner.code, changedFields: [], city: partner.city });
+    await this.logView(viewer, 'record.partner_photo_viewed', 'referral', partner.code, partner.city);
     return { kept: Boolean(url), url: url ?? null, expiresInSeconds: url ? CANDIDATE_PHOTO_LINK_TTL_SECONDS : 0 };
   }
 
@@ -73,7 +76,21 @@ export class RecordPhotosService {
       return { kept: Boolean(url), url: url ?? null, expiresInSeconds: url ? BUSINESS_PHOTO_LINK_TTL_SECONDS : 0 };
     };
     const result = { boardPhoto: await sign(visit.boardPhotoPath), selfie: await sign(visit.selfieUrl), expiresInSeconds: BUSINESS_PHOTO_LINK_TTL_SECONDS };
-    await this.audit.log({ actorId: viewer.id, action: 'record.visit_photos_viewed', entityType: 'business_visit', entityCode: visit.id, changedFields: [], city: business.city });
+    await this.logView(viewer, 'record.visit_photos_viewed', 'business_visit', visit.id, business.city);
     return result;
+  }
+
+  /**
+   * Audits a photo view at most once per viewer, record and kind of photo per
+   * 30 minutes: the page asks for a fresh link every few minutes while open,
+   * and each refresh is not a new view.
+   */
+  private async logView(viewer: PhotoViewer, action: string, entityType: string, entityCode: string, city: string): Promise<void> {
+    const recent = await this.prisma.auditLog.findFirst({
+      where: { actorId: viewer.id, action, entityType, entityCode, createdAt: { gte: new Date(Date.now() - PHOTO_VIEW_AUDIT_WINDOW_MS) } },
+      select: { id: true },
+    });
+    if (recent) return;
+    await this.audit.log({ actorId: viewer.id, action, entityType, entityCode, changedFields: [], city });
   }
 }

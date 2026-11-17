@@ -6,7 +6,7 @@ import { StatGrid, StatTile } from '../../../components/StatTile';
 import { StatusPill } from '../../../components/Badge';
 import { TopBar } from '../../../components/TopBar';
 import { formatINR } from '../../../lib/format/money';
-import { homeBack, useInitialParam, useRecordsPortal } from '../_kit/records';
+import { homeBack, useInitialParam, useInitialPeriod, useRecordsPortal } from '../_kit/records';
 import { SectionSwitch, sectionQuery, useSection } from '../_kit/assign';
 import { DateFilter, FilterPanel, HBar, Kv, OpenLink, PagedTable, SearchField, SelectFilter, facetOptions, humanize, rangeQuery, useCeoList, useDebounced, type ListPeriod } from '../_kit/kit';
 import { VACANCY_STATUS } from '../_kit/labels';
@@ -68,7 +68,7 @@ export default function VacanciesList() {
   const [trade, setTrade] = useState('');
   const [area, setArea] = useState('');
   const [age, setAge] = useState('');
-  const [period, setPeriod] = useState<ListPeriod>(null);
+  const [period, setPeriod] = useState<ListPeriod>(useInitialPeriod());
   const q = useDebounced(search);
   const list = useCeoList<Row, Extra, Summary>(`${base}/vacancies`, { search: q, status: status || 'all', trade, area, age, ...rangeQuery(period), ...sectionQuery(sections, section) });
   const d = list.query.data;

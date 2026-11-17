@@ -72,45 +72,91 @@ export function scopeWheres(scope: RecordScope): RecordWheres {
 }
 
 /**
+ * Who owns what, for the "My team" / "Not assigned" sections (rev 194/196),
+ * loaded once per request (record-section-scope.ts loadOwnership).
+ *  - staffIds: the owners that count as "My team" (the Team Lead and his
+ *    agents, or a Manager's whole tree);
+ *  - cities: the stored city spellings that match the viewer's cities
+ *    (compared trimmed and case-insensitive);
+ *  - app sign-ups (customer app) have no registering agent: the agent the
+ *    sign-up is given to (SignupTracker.assignedStaffId) owns them. teamApp*
+ *    are those given to staffIds, assignedApp* those given to anyone.
+ */
+export interface Ownership {
+  staffIds: string[];
+  cities: string[];
+  teamAppSeekerIds: string[];
+  teamAppReferralIds: string[];
+  assignedAppSeekerIds: string[];
+  assignedAppReferralIds: string[];
+}
+
+/** Optional NULL-safe "not one of these": NULL counts as not one of them. */
+function nullOrNotIn<K extends string>(key: K, ids: string[]): Record<string, unknown> {
+  return { OR: [{ [key]: null }, { [key]: { notIn: ids } }] };
+}
+
+function personOwnedByTeam(staffIds: string[], appIds: string[]) {
+  return { OR: [{ registeredByStaffId: { in: staffIds } }, { assignedStaffId: { in: staffIds } }, ...(appIds.length ? [{ id: { in: appIds } }] : [])] };
+}
+
+/** NULL-safe complement of personOwnedByTeam (no SQL NOT over nullable columns). */
+function personNotOwnedByTeam(staffIds: string[], appIds: string[]) {
+  return { AND: [nullOrNotIn('registeredByStaffId', staffIds), nullOrNotIn('assignedStaffId', staffIds), ...(appIds.length ? [{ id: { notIn: appIds } }] : [])] };
+}
+
+/** NULL-safe complement of businessesOwnedBy: owned by someone else, or by nobody. */
+function businessNotOwnedBy(staffIds: string[]): Prisma.BusinessWhereInput {
+  return {
+    OR: [
+      { accountAgentId: { not: null, notIn: staffIds } },
+      { accountAgentId: null, OR: [{ leadCreatedByStaffId: null }, { leadCreatedByStaffId: { notIn: staffIds } }] },
+    ],
+  };
+}
+
+/**
  * "My team" (Team Lead rev 194, Manager rev 196): records owned by these staff
  * (the Team Lead and his agents, or a Manager's tree), by the same owner rules —
- * and no unowned records (those are the "Not assigned" section).
+ * an app sign-up given to one of them included — and no unowned records (those
+ * are the "Not assigned" section).
  */
-export function teamWheres(staffIds: string[]): RecordWheres {
-  const seeker: Prisma.JobSeekerWhereInput = peopleOwnedBy(staffIds);
-  const business = businessesOwnedBy(staffIds);
+export function teamWheres(o: Ownership): RecordWheres {
+  const seeker = personOwnedByTeam(o.staffIds, o.teamAppSeekerIds) as Prisma.JobSeekerWhereInput;
+  const business = businessesOwnedBy(o.staffIds);
   return {
     seeker,
-    referral: peopleOwnedBy(staffIds),
+    referral: personOwnedByTeam(o.staffIds, o.teamAppReferralIds) as Prisma.ReferralWhereInput,
     business,
-    vacancy: { OR: [{ capturedByStaffId: { in: staffIds } }, { business }] },
+    vacancy: { OR: [{ capturedByStaffId: { in: o.staffIds } }, { business }] },
     interview: { OR: [{ business }, { jobSeeker: seeker }] },
     placement: { OR: [{ business }, { jobSeeker: seeker }] },
   };
 }
 
 /**
- * "Not assigned" (Team Lead rev 194, Manager rev 196): records with no owner
- * in the viewer's cities (the Team Lead's Staff.city; every Staff.city of a
- * Manager's tree), against the record's city. A job seeker or
- * partner nobody registered or was assigned; a business with no account agent
- * and no lead creator; a vacancy through its business; an interview or a
- * placement through its business or its job seeker. Anything that already
- * counts as the team's ("My team") is left out, so a record is in one section.
+ * "Not assigned" (Team Lead rev 194, Manager rev 196): records with no owner in
+ * the viewer's cities. A job seeker or partner nobody registered, was assigned
+ * or was given as an app sign-up; a business with no account agent and no lead
+ * creator; a vacancy of such a business that nobody captured; an interview or a
+ * placement through its business or its job seeker. What already counts as the
+ * team's ("My team") is left out, so a record is in one section. Every filter is
+ * written NULL-safe (no SQL NOT over a nullable column).
  */
-export function unassignedWheres(staffIds: string[], cities: string[]): RecordWheres {
-  const team = teamWheres(staffIds);
-  const city = { in: cities };
-  const seeker: Prisma.JobSeekerWhereInput = { ...NO_PERSON_OWNER, city };
+export function unassignedWheres(o: Ownership): RecordWheres {
+  const city = { in: o.cities };
+  const seeker = { registeredByStaffId: null, assignedStaffId: null, city, ...(o.assignedAppSeekerIds.length ? { id: { notIn: o.assignedAppSeekerIds } } : {}) } as Prisma.JobSeekerWhereInput;
+  const referral = { registeredByStaffId: null, assignedStaffId: null, city, ...(o.assignedAppReferralIds.length ? { id: { notIn: o.assignedAppReferralIds } } : {}) } as Prisma.ReferralWhereInput;
   const business: Prisma.BusinessWhereInput = { ...NO_BUSINESS_OWNER, city };
+  const notTeam = { business: businessNotOwnedBy(o.staffIds), jobSeeker: personNotOwnedByTeam(o.staffIds, o.teamAppSeekerIds) as Prisma.JobSeekerWhereInput };
   return {
     seeker,
-    referral: { ...NO_PERSON_OWNER, city },
+    referral,
     business,
-    // Its business has no owner, so only who captured it can make it the team's (a NULL-safe NOT).
-    vacancy: { AND: [{ business }, { OR: [{ capturedByStaffId: null }, { capturedByStaffId: { notIn: staffIds } }] }] },
-    interview: { AND: [{ OR: [{ business }, { jobSeeker: seeker }] }, { NOT: team.interview }] },
-    placement: { AND: [{ OR: [{ business }, { jobSeeker: seeker }] }, { NOT: team.placement }] },
+    // Captured by someone (in this team or another) makes it that person's, so only nobody's here.
+    vacancy: { business, capturedByStaffId: null },
+    interview: { AND: [{ OR: [{ business }, { jobSeeker: seeker }] }, notTeam] },
+    placement: { AND: [{ OR: [{ business }, { jobSeeker: seeker }] }, notTeam] },
   };
 }
 

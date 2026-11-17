@@ -7,7 +7,7 @@ import { StatGrid, StatTile } from '../../../components/StatTile';
 import { StatusPill, type StatusTone } from '../../../components/Badge';
 import { TopBar } from '../../../components/TopBar';
 import { formatINR } from '../../../lib/format/money';
-import { homeBack, useInitialParam, useRecordsPortal } from '../_kit/records';
+import { homeBack, useInitialParam, useInitialPeriod, useRecordsPortal } from '../_kit/records';
 import { AssignButton, SectionSwitch, sectionQuery, useSection } from '../_kit/assign';
 import { DateFilter, FilterPanel, HBar, Kv, OpenLink, PagedTable, SearchField, SelectFilter, humanize, rangeQuery, useCeoList, useDebounced, type ListPeriod } from '../_kit/kit';
 
@@ -64,7 +64,7 @@ export default function Referrals() {
   const [type, setType] = useState('');
   const [payoutF, setPayout] = useState('');
   const [checks, setChecks] = useState(useInitialParam('checks'));
-  const [period, setPeriod] = useState<ListPeriod>(null);
+  const [period, setPeriod] = useState<ListPeriod>(useInitialPeriod());
   const q = useDebounced(search);
   const list = useCeoList<Row, Extra, Summary>(`${base}/referrals`, { search: q, type, payout: ceo ? payoutF : '', checks, ...rangeQuery(period), ...sectionQuery(sections, section) });
   const showAll = () => {
@@ -80,6 +80,8 @@ export default function Referrals() {
 
   const appLabels = useAppLabels('referral', (list.query.data?.rows ?? []).map((r) => r.id));
   const columns: Column<Row>[] = [
+    // Not assigned: Assign comes first, so it is in reach on a phone without scrolling the table.
+    ...(sections && section === 'unassigned' ? [{ key: 'assign', header: '', cell: (r: Row) => <AssignButton kind="referral" id={r.id} name={r.name} /> } satisfies Column<Row>] : []),
     { key: 'code', header: 'Code', cell: (r) => <span className="code">{r.code}</span>, csv: (r) => r.code },
     {
       key: 'partner',
@@ -107,7 +109,6 @@ export default function Referrals() {
         ]
       : []),
     { key: 'checks', header: 'Checks', cell: (r) => <StatusPill tone={CHECKS[r.checks]?.tone ?? 'muted'}>{CHECKS[r.checks]?.label ?? r.checks}</StatusPill>, csv: (r) => CHECKS[r.checks]?.label, hideOnPhone: true },
-    ...(sections && section === 'unassigned' ? [{ key: 'assign', header: '', cell: (r: Row) => <AssignButton kind="referral" id={r.id} name={r.name} /> } satisfies Column<Row>] : []),
     { key: 'go', header: '', cell: (r) => <OpenLink to={to('C-Partner', { id: r.id })} /> },
   ];
 

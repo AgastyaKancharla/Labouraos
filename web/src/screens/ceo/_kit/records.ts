@@ -1,5 +1,6 @@
 import { useSearchParams } from 'react-router-dom';
 import { usePortal, useScreenPath } from '../../../portals/PortalContext';
+import { customPeriod, type Period } from '../../../lib/period';
 
 /**
  * The CEO's pipeline lists and profiles (job seekers, businesses, vacancies,
@@ -42,4 +43,17 @@ export function homeBack(link: (screenId: string) => string | null): { to: strin
 export function useInitialParam(name: string, fallback = ''): string {
   const [params] = useSearchParams();
   return params.get(name) ?? fallback;
+}
+
+/**
+ * A list's starting period from the address (`?from=2026-11-01&to=2026-11-17`,
+ * IST days), so a number on the Team Lead's home opens the list for the same
+ * period it counted. Null when the address has none.
+ */
+export function useInitialPeriod(): Period | null {
+  const [params] = useSearchParams();
+  const from = params.get('from');
+  const to = params.get('to');
+  const day = /^\d{4}-\d{2}-\d{2}$/;
+  return from && to && day.test(from) && day.test(to) ? customPeriod(from, to) : null;
 }

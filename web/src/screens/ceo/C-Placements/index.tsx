@@ -8,7 +8,7 @@ import { TopBar } from '../../../components/TopBar';
 import { formatINR } from '../../../lib/format/money';
 import { DateFilter, FilterPanel, Kv, OpenLink, PagedTable, SearchField, SelectFilter, dateOrDash, facetOptions, humanize, rangeQuery, useCeoList, useDebounced, type ListPeriod } from '../_kit/kit';
 import { PLACEMENT_STAGE } from '../_kit/labels';
-import { homeBack, useInitialParam, useRecordsPortal } from '../_kit/records';
+import { homeBack, useInitialParam, useInitialPeriod, useRecordsPortal } from '../_kit/records';
 import { SectionSwitch, sectionQuery, useSection } from '../_kit/assign';
 import { PlacementTabs } from '../_kit/tabs';
 
@@ -54,7 +54,7 @@ export default function PlacementsList() {
   const [search, setSearch] = useState('');
   const [stage, setStage] = useState(useInitialParam('stage'));
   const [trade, setTrade] = useState('');
-  const [period, setPeriod] = useState<ListPeriod>(null);
+  const [period, setPeriod] = useState<ListPeriod>(useInitialPeriod());
   const q = useDebounced(search);
   const list = useCeoList<Row, Extra, Summary>(`${base}/placements`, { search: q, stage, trade, ...rangeQuery(period), ...sectionQuery(sections, section) });
   const d = list.query.data;

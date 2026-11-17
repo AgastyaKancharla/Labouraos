@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AuditService } from '../../common/audit/audit.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -14,6 +14,7 @@ import { NotificationService } from '../notification/notification.service';
 import { ManagerListQuery, ManagerRecordsService } from './manager-records.service';
 
 export { parseSection, sectionScope } from './record-section-scope';
+import { normaliseCity } from './record-section-scope';
 export type { AssignKind, RecordSection, SectionScope, Viewer } from './record-section-scope';
 
 /** The receiving agent's bell (rev 196): one kind per record kind, linking to the record. */
@@ -119,11 +120,19 @@ export class RecordSectionsService {
     const where = { OR: [{ id: ref }, { code: ref }] };
     if (kind === 'business') {
       const b = await this.prisma.business.findFirst({ where, select: { id: true, code: true, name: true, city: true, accountAgentId: true, leadCreatedByStaffId: true } });
-      return b ? { ...b, assignedStaffId: null as string | null, owners: businessOwners(b) } : null;
+      return b ? { ...b, assignedStaffId: null as string | null, registeredByStaffId: null as string | null, owners: businessOwners(b) } : null;
     }
     const select = { id: true, code: true, name: true, city: true, registeredByStaffId: true, assignedStaffId: true } as const;
     const p = kind === 'job_seeker' ? await this.prisma.jobSeeker.findFirst({ where, select }) : await this.prisma.referral.findFirst({ where, select });
-    return p ? { ...p, accountAgentId: null as string | null, owners: personOwners(p) } : null;
+    if (!p) return null;
+    // An app sign-up given to an agent (SignupTracker) is that agent's, like a registration.
+    const tracker = await this.prisma.signupTracker.findFirst({
+      where: { subjectType: kind, subjectId: p.id, assignedStaffId: { not: null } },
+      orderBy: { updatedAt: 'desc' },
+      select: { assignedStaffId: true },
+    });
+    const owners = [...new Set([...personOwners(p), ...(tracker?.assignedStaffId ? [tracker.assignedStaffId] : [])])];
+    return { ...p, accountAgentId: null as string | null, owners };
   }
 
   /** Where a record stands for the profile: its section and who holds it. */
@@ -144,7 +153,7 @@ export class RecordSectionsService {
       orderBy: [{ role: 'asc' }, { name: 'asc' }],
     });
     const me = rows.filter((r) => r.id === s.viewer.id);
-    return { rows: [...me, ...rows.filter((r) => r.id !== s.viewer.id)].map((r) => ({ ...r, me: r.id === s.viewer.id, canHoldBusiness: r.id === s.viewer.id || r.role === 'field_agent' || r.role === 'team_lead' })) };
+    return { rows: [...me, ...rows.filter((r) => r.id !== s.viewer.id)].map((r) => ({ ...r, me: r.id === s.viewer.id, canHoldBusiness: r.role === 'field_agent' || r.role === 'team_lead' })) };
   }
 
   /**
@@ -167,26 +176,32 @@ export class RecordSectionsService {
     const record = await this.loadOwned(kind, id);
     if (!record) throw new NotFoundException('Not found');
     const inTeam = record.owners.some((owner) => s.staffIds.includes(owner));
-    const unassignedHere = record.owners.length === 0 && s.cities.includes(record.city);
+    const unassignedHere = record.owners.length === 0 && s.cities.includes(normaliseCity(record.city));
     if (!inTeam && !unassignedHere) throw new ForbiddenException('This belongs to another team. Only your own records and unassigned ones in your city can be assigned here.');
 
     const to = s.assignees.includes(toStaffId)
       ? await this.prisma.staff.findFirst({ where: { id: toStaffId, status: 'active' }, select: { id: true, code: true, name: true, role: true } })
       : null;
     if (!to) throw new BadRequestException(s.viewer.role === 'team_lead' ? 'Pick yourself or an active agent of your team' : 'Pick someone active in your teams');
-    if (kind === 'business' && to.id !== s.viewer.id && to.role !== 'field_agent' && to.role !== 'team_lead') {
-      throw new BadRequestException('A business goes to a field agent (or a Team Lead), not a call agent');
+    // The account agent is a field agent or a Team Lead (owner rule) — never a call agent or a Manager.
+    if (kind === 'business' && to.role !== 'field_agent' && to.role !== 'team_lead') {
+      throw new BadRequestException('A business goes to a field agent or a Team Lead');
     }
     const fromId = kind === 'business' ? record.accountAgentId : record.assignedStaffId;
     if (fromId === to.id) throw new BadRequestException(`It is already with ${to.name}`);
 
     const where = `Assigned on the ${s.viewer.role === 'team_lead' ? 'Team Lead' : 'Manager'} portal`;
+    // Atomic: the change happens only if nobody changed the holder since it was read; else 409.
     if (kind === 'business') {
       await this.setAccountAgent(s.viewer, { id: record.id, code: record.code, city: record.city, accountAgentId: record.accountAgentId }, to.id, where);
     } else {
       const assignedAt = this.clock.now();
-      if (kind === 'job_seeker') await this.prisma.jobSeeker.update({ where: { id: record.id }, data: { assignedStaffId: to.id, assignedAt } });
-      else await this.prisma.referral.update({ where: { id: record.id }, data: { assignedStaffId: to.id, assignedAt } });
+      const still = { id: record.id, assignedStaffId: record.assignedStaffId, registeredByStaffId: record.registeredByStaffId };
+      const done =
+        kind === 'job_seeker'
+          ? await this.prisma.jobSeeker.updateMany({ where: still, data: { assignedStaffId: to.id, assignedAt } })
+          : await this.prisma.referral.updateMany({ where: still, data: { assignedStaffId: to.id, assignedAt } });
+      if (done.count !== 1) await this.lostRace(kind, record.id);
     }
     await this.audit.log({
       actorId: s.viewer.id,
@@ -201,6 +216,18 @@ export class RecordSectionsService {
     });
     if (to.id !== s.viewer.id) await this.notifyAssigned(kind, record, to, s.viewer);
     return { ok: true, kind, id: record.id, code: record.code, from: fromId, to: { id: to.id, name: to.name } };
+  }
+
+  /** Someone else assigned it first: 409 "Already assigned to <name>". */
+  private async lostRace(kind: AssignKind, id: string): Promise<never> {
+    const holderId =
+      kind === 'business'
+        ? (await this.prisma.business.findUnique({ where: { id }, select: { accountAgentId: true } }))?.accountAgentId
+        : kind === 'job_seeker'
+          ? (await this.prisma.jobSeeker.findUnique({ where: { id }, select: { assignedStaffId: true } }))?.assignedStaffId
+          : (await this.prisma.referral.findUnique({ where: { id }, select: { assignedStaffId: true } }))?.assignedStaffId;
+    const holder = holderId ? await this.prisma.staff.findUnique({ where: { id: holderId }, select: { name: true } }) : null;
+    throw new ConflictException(holder ? `Already assigned to ${holder.name}` : 'Someone else changed this just now. Refresh and try again.');
   }
 
   /** The receiver's bell: "New job seeker assigned to you" with the record's code and name. */
@@ -240,12 +267,15 @@ export class RecordSectionsService {
     const now = this.clock.now();
     const fromId = business.accountAgentId;
     const moved = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      await tx.business.update({ where: { id: business.id }, data: { accountAgentId: toStaffId, accountAgentAssignedAt: now } });
+      // Only if the account agent is still the one read (a concurrent change wins; this one is refused).
+      const set = await tx.business.updateMany({ where: { id: business.id, accountAgentId: fromId }, data: { accountAgentId: toStaffId, accountAgentAssignedAt: now } });
+      if (set.count !== 1) return null;
       if (!fromId) return { followUps: 0, visits: 0 };
       const followUps = await tx.followUpTask.updateMany({ where: { subjectType: 'business', subjectId: business.id, status: 'pending', assignedStaffId: fromId }, data: { assignedStaffId: toStaffId } });
       const visits = await tx.visitAssignment.updateMany({ where: { businessId: business.id, status: { in: ['pending', 'assigned'] }, assignedStaffId: fromId }, data: { assignedStaffId: toStaffId } });
       return { followUps: followUps.count, visits: visits.count };
     });
+    if (!moved) return this.lostRace('business', business.id);
     await this.audit.log({
       actorId: actor.id,
       action: fromId ? 'business.account_agent_moved' : 'business.account_agent_assigned',

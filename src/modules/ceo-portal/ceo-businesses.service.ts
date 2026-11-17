@@ -559,7 +559,8 @@ export class CeoBusinessesService {
     const openTrades = countBy(open, (v) => v.tradeSkill);
     const shortTrades = openTrades.filter((t) => (pool.get(t.name.toLowerCase()) ?? 0) < t.count).map((t) => t.name);
     const overdueResults = await this.prisma.interview.findMany({
-      where: { status: { in: ['confirmed', 'completed', 'no_result'] }, result: null, resultDueAt: { lt: now } },
+      // Scoped like the rest of the list: a Manager or Team Lead sees only his own vacancies' owners.
+      where: { status: { in: ['confirmed', 'completed', 'no_result'] }, result: null, resultDueAt: { lt: now }, ...(q.vacancyScope ? { vacancy: q.vacancyScope } : {}) },
       select: { business: { select: { name: true } } },
     });
     const slowOwners = countBy(overdueResults, (i) => i.business.name);

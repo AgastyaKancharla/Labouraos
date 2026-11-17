@@ -48,8 +48,9 @@ export function BusinessNumbers() {
   });
   const p = query.data;
   const loading = query.isPending;
+  // Every list opens for the same period the number counted (?from&to, IST days).
   const list = (screen: string, params?: Record<string, string>) => {
-    const qs = new URLSearchParams(params).toString();
+    const qs = new URLSearchParams({ ...params, from: period.from, to: period.to }).toString();
     return `${to(screen)}${qs ? `?${qs}` : ''}`;
   };
   return (
@@ -62,12 +63,12 @@ export function BusinessNumbers() {
           <div className="ceo-stages">
             <Stage to={list('JobSeekers')} label="Registered" value={p?.jobSeekers.registered} foot="OTP-verified" loading={loading} />
             <Stage to={list('JobSeekers', { status: 'not_paid' })} label="Stuck before paying" value={p?.jobSeekers.stuckBeforePaying} foot="link not finished · call them" loading={loading} />
-            <Stage to={list('JobSeekers', { status: 'active' })} label="Paid" value={p?.jobSeekers.paid} foot="paid the registration fee" loading={loading} />
+            <Stage to={list('JobSeekers', { dateField: 'paid' })} label="Paid" value={p?.jobSeekers.paid} foot="paid the registration fee" loading={loading} />
             <Stage to={list('JobSeekers', { status: 'not_paid' })} label="Not paid" value={p?.jobSeekers.notPaid} foot="registered, no payment yet" loading={loading} />
             <Stage to={list('C-Interviews')} label="Interviewed" value={p?.jobSeekers.interviewed} foot="went to an interview" loading={loading} />
             <Stage to={list('C-Interviews')} label="Offered a job" value={p?.jobSeekers.offered} foot="with an offer" loading={loading} />
             <Stage to={list('C-Placements')} label="Accepted" value={p?.jobSeekers.accepted} foot="accepted the offer" loading={loading} />
-            <Stage to={list('C-Placements', { stage: 'joined_this_month' })} label="Joined" value={p?.jobSeekers.joined} foot="started work" loading={loading} />
+            <Stage to={list('C-Placements')} label="Joined" value={p?.jobSeekers.joined} foot="started work" loading={loading} />
           </div>
           <div className="eyebrow">Businesses</div>
           <div className="ceo-stages">

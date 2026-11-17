@@ -11,7 +11,7 @@ import { formatDateTimeIST, formatTimeIST } from '../../../lib/format/date';
 import { periodFor, periodRangeLabel, periodToUtcRange, type Period } from '../../../lib/period';
 import { useNow } from '../../../lib/useNow';
 import { OpenLink, humanize } from '../_kit/kit';
-import { homeBack, useRecordsPortal } from '../_kit/records';
+import { homeBack, useInitialPeriod, useRecordsPortal } from '../_kit/records';
 import { SectionSwitch, sectionQuery, useSection } from '../_kit/assign';
 
 /** Interviews — design C-Interviews.dc.html. */
@@ -118,7 +118,8 @@ export default function Interviews() {
   const [section, setSection] = useSection();
   const navigate = useNavigate();
   const now = useNow(60_000);
-  const [period, setPeriod] = useState<Period>(() => periodFor('today', now));
+  const initialPeriod = useInitialPeriod();
+  const [period, setPeriod] = useState<Period>(() => initialPeriod ?? periodFor('today', now));
   // Which rows the main table shows: every interview in the period, or a tile's own rows.
   const [view, setView] = useState<View>('all');
   const query = useQuery({

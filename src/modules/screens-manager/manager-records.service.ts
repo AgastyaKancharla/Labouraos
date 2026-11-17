@@ -44,6 +44,8 @@ export interface ManagerListQuery {
   age?: string;
   stage?: string;
   checks?: string;
+  /** Job seekers: 'paid' puts the date range on the payment day. */
+  dateField?: string;
 }
 
 /**
@@ -83,7 +85,7 @@ export class ManagerRecordsService {
     const people = await this.prisma.staff.findMany({ where: { id: { in: staffIds } }, select: { id: true, city: true, status: true } });
     const cities = [...new Set(people.map((p) => p.city))];
     const assignees = people.filter((p) => p.status === 'active').map((p) => p.id);
-    return sectionScope(manager, staffIds, cities, assignees);
+    return sectionScope(this.prisma, manager, staffIds, cities, assignees);
   }
 
   private async assertFound(count: Promise<number>, what: string, id: string): Promise<void> {
@@ -96,7 +98,7 @@ export class ManagerRecordsService {
   // Job seekers ------------------------------------------------------------
 
   async jobSeekersIn(scope: Prisma.JobSeekerWhereInput, q: ManagerListQuery) {
-    return this.seekers.list({ range: q.range, page: q.page, search: q.search, status: q.status, trade: q.trade, kyc: q.kyc, sort: q.sort, scope });
+    return this.seekers.list({ range: q.range, page: q.page, search: q.search, status: q.status, trade: q.trade, kyc: q.kyc, sort: q.sort, scope, dateField: q.dateField });
   }
 
   async jobSeekerIn(scope: Prisma.JobSeekerWhereInput, id: string) {
