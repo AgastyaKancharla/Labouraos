@@ -7,7 +7,7 @@ import { Banner, Button, Card, EmptyState, ErrorState, HeroCard, Icon, IconTile,
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { isApiError } from '@/api/errors';
-import { errorCode, type BusinessNextStep, type BusinessPage } from '@/api/endpoints';
+import { errorCode, type BusinessNextStep, type BusinessPage, type HistoryEntry } from '@/api/endpoints';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { formatDayIst, formatTimeIst } from '@/lib/format';
 import { pageRoutes, routes } from '@/navigation/routes';
@@ -43,7 +43,8 @@ export function nextStepText(step: BusinessNextStep, t: (key: MessageKey) => str
  * screens): name, area, account agent, status; the onboarding checklist
  * (registered, owner's phone confirmed, agreement signed or Resend agreement
  * link, Team Lead check); vacancies, each with its one next step, and
- * + Vacancy; candidates shown and interviews; visit history; Record a visit
+ * + Vacancy; candidates shown and interviews; history (visits and vacancy
+ * events, 17 Nov); Record a visit
  * and Call owner. A business that is not the agent's own is view-only (the
  * server sends no contact and no actions, and refuses writes).
  * Data: GET /field-work/businesses/:id/page.
@@ -168,28 +169,58 @@ function Page({ b }: { b: BusinessPage }) {
         ) : null}
       </Card>
 
-      <Card title={t('fa08.visitHistory')} icon="clock" accent="gold" testID="fa08-visits">
-        {b.visits.length === 0 ? <EmptyState compact emoji="👟" message={t('fa08.noVisits')} /> : null}
-        {b.visits.map((v, i) => {
-          const m = minutesOf(v.durationSeconds);
-          const when = istDateKey(v.at) === today ? `${t('date.today')} ${formatTimeIst(v.at)}` : formatDayIst(v.at);
-          const proof = [v.hasBoardPhoto ? '📷' : null, v.hasSelfie ? t('fa05.plusSelfie') : null].filter(Boolean).join(' ');
+      <History b={b} today={today} />
+    </>
+  );
+}
+
+/**
+ * The business's history (17 Nov): its visits and its vacancy events
+ * (added, sent to the owner, confirmed, filled, closed), newest first.
+ * Adding a vacancy shows here, not as a row of My visits / Today's work.
+ */
+function History({ b, today }: { b: BusinessPage; today: string }) {
+  const { t } = useI18n();
+  const sr = useSellingRoutes();
+  const entries: HistoryEntry[] = b.history ?? b.visits.map((v) => ({ kind: 'visit' as const, at: v.at, visit: v }));
+  const whenOf = (at: string) => (istDateKey(at) === today ? `${t('date.today')} ${formatTimeIst(at)}` : formatDayIst(at));
+  return (
+    <Card title={t('fa08.history')} icon="clock" accent="gold" testID="fa08-visits">
+      {entries.length === 0 ? <EmptyState compact emoji="👟" message={t('fa08.noHistory')} /> : null}
+      {entries.map((e, i) => {
+        const last = i === entries.length - 1;
+        if (e.kind === 'vacancy') {
+          const trade = e.headcount > 1 ? `${e.trade} × ${e.headcount}` : e.trade;
           return (
             <ListRow
-              key={v.id}
-              title={[when, m !== null ? t('common.minutes', { minutes: m }) : null, proof || null].filter(Boolean).join(' · ')}
-              subtitle={v.staffName ?? undefined}
-              leading={<IconTile icon={v.outcome === 'onboarded' ? 'check-circle' : v.outcome ? 'store' : 'clipboard'} accent={v.outcome === 'onboarded' ? 'green' : v.outcome ? 'cyan' : 'gold'} size={34} />}
-              trailing={<StatusChip tone={v.outcome === 'onboarded' ? 'green' : v.outcome === 'already_onboarded' ? 'blue' : v.outcome ? 'cyan' : 'amber'} label={t(outcomeKey(v.outcome))} />}
-              // Visit details are for the agent's own visits.
-              onPress={v.mine ? () => router.push(pageRoutes.visitDetails(v.id, '/businesses')) : undefined}
-              last={i === b.visits.length - 1}
-              testID={`fa08-visit-${v.id}`}
+              key={`${e.vacancyId}-${e.event}-${e.at}`}
+              title={t(`history.vacancy.${e.event}` as MessageKey, { trade })}
+              subtitle={[whenOf(e.at), e.byName].filter(Boolean).join(' · ')}
+              leading={<IconTile icon="briefcase" accent={e.event === 'confirmed' || e.event === 'filled' ? 'green' : e.event === 'closed' ? 'navy' : 'orange'} size={34} />}
+              onPress={b.canAct && e.event !== 'filled' && e.event !== 'closed' ? () => router.push(sr.confirmVacancy(e.vacancyId)) : undefined}
+              last={last}
+              testID={`fa08-history-${e.vacancyId}-${e.event}`}
             />
           );
-        })}
-      </Card>
-    </>
+        }
+        const v = e.visit;
+        const m = minutesOf(v.durationSeconds);
+        const proof = [v.hasBoardPhoto ? '📷' : null, v.hasSelfie ? t('fa05.plusSelfie') : null].filter(Boolean).join(' ');
+        return (
+          <ListRow
+            key={v.id}
+            title={[whenOf(v.at), m !== null ? t('common.minutes', { minutes: m }) : null, proof || null].filter(Boolean).join(' · ')}
+            subtitle={[t('history.visit'), v.staffName].filter(Boolean).join(' · ')}
+            leading={<IconTile icon={v.outcome === 'onboarded' ? 'check-circle' : v.outcome ? 'store' : 'clipboard'} accent={v.outcome === 'onboarded' ? 'green' : v.outcome ? 'cyan' : 'gold'} size={34} />}
+            trailing={<StatusChip tone={v.outcome === 'onboarded' ? 'green' : v.outcome === 'already_onboarded' ? 'blue' : v.outcome ? 'cyan' : 'amber'} label={t(outcomeKey(v.outcome))} />}
+            // Visit details are for the agent's own visits.
+            onPress={v.mine ? () => router.push(pageRoutes.visitDetails(v.id, '/businesses')) : undefined}
+            last={last}
+            testID={`fa08-visit-${v.id}`}
+          />
+        );
+      })}
+    </Card>
   );
 }
 

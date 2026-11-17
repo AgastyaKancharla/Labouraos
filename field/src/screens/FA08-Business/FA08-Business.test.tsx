@@ -102,4 +102,21 @@ describe('FA08 the one business page', () => {
     expect(screen.getByTestId('fa08-visit-v-5')).toHaveTextContent(/Already onboarded/);
     expect(screen.getByTestId('fa08-visit-v-1')).toHaveTextContent(/Onboarded/);
   });
+  it('17 Nov: vacancy events are on the business history beside the visits, newest first', async () => {
+    const page = businessPage();
+    page.history = [
+      { kind: 'vacancy', at: '2026-11-16T07:00:00Z', event: 'confirmed', vacancyId: 'vac-3', code: 'VC-00033', trade: 'Baker', headcount: 1, byName: null },
+      { kind: 'vacancy', at: '2026-11-16T06:00:00Z', event: 'added', vacancyId: 'vac-1', code: 'VC-00031', trade: 'Cook', headcount: 2, byName: 'Kiran Kumar' },
+      { kind: 'visit', at: page.visits[0].at, visit: page.visits[0] },
+    ];
+    const { route } = routeTable({ '/field-work/businesses/b-1/page': page });
+    await renderWithApp(<BusinessScreen />, { signedInAs: kiran, route });
+    await waitFor(() => screen.getByTestId('fa08-history-vac-1-added'));
+    expect(screen.getByTestId('fa08-visits')).toHaveTextContent(/History/);
+    expect(screen.getByTestId('fa08-history-vac-1-added')).toHaveTextContent(/Vacancy added · Cook × 2.*Kiran Kumar/);
+    expect(screen.getByTestId('fa08-history-vac-3-confirmed')).toHaveTextContent(/Vacancy confirmed by the owner · Baker/);
+    expect(screen.getByTestId(`fa08-visit-${page.visits[0].id}`)).toBeTruthy();
+    await fireEvent.press(screen.getByTestId('fa08-history-vac-1-added'));
+    expect(router.push).toHaveBeenCalledWith('/businesses/vacancy/vac-1');
+  });
 });

@@ -40,6 +40,7 @@ const NEEDS_LOOK: Record<NeedsItem['kind'], { icon: IconName; accent: Accent }> 
   vacancy_awaiting_owner: { icon: 'briefcase', accent: 'gold' },
   vacancy_draft: { icon: 'briefcase', accent: 'navy' },
   ready_show_candidates: { icon: 'users', accent: 'green' },
+  vacancies_to_fill: { icon: 'briefcase', accent: 'orange' },
   joining_due: { icon: 'briefcase', accent: 'green' },
   revisit_due: { icon: 'store', accent: 'gold' },
   followup_task: { icon: 'phone', accent: 'royal' },
@@ -162,7 +163,7 @@ export default function TodayScreen() {
 
 /** One item of Needs you now: what it is (in the agent's language), when, and where it opens. */
 function NeedsRow({ item, last }: { item: NeedsItem; last: boolean }) {
-  const { t } = useI18n();
+  const { t, tn } = useI18n();
   const look = NEEDS_LOOK[item.kind] ?? { icon: 'bell', accent: 'navy' };
   const href = needsTarget(item);
   const vacancy = item.vacancy ? (item.vacancy.headcount > 1 ? `${item.vacancy.trade} × ${item.vacancy.headcount}` : item.vacancy.trade) : null;
@@ -173,6 +174,8 @@ function NeedsRow({ item, last }: { item: NeedsItem; last: boolean }) {
         ? t(`needs.visit.${item.target.step ?? 'record_result'}` as MessageKey)
         : item.kind === 'agreement_waiting'
           ? t(item.agreement?.state === 'link_expired' ? 'needs.agreement_expired' : item.agreement?.state === 'not_sent' ? 'needs.agreement_not_sent' : 'needs.agreement_waiting')
+          : item.kind === 'vacancies_to_fill'
+            ? [tn('needs.vacancies_to_fill', item.toFill?.count ?? 0), item.toFill?.trades.join(', ')].filter(Boolean).join(' · ')
           : item.kind === 'joining_due' && item.placement
             ? t('needs.joining_due', { name: item.placement.candidateFirstName })
             : vacancy && (item.kind === 'vacancy_awaiting_owner' || item.kind === 'vacancy_draft' || item.kind === 'ready_show_candidates')

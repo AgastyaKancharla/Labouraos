@@ -8,7 +8,7 @@ import { queryKeys } from '@/api/queryClient';
 import type { DayItem, DayItemType, DayView } from '@/api/endpoints';
 import { useI18n, type MessageKey } from '@/i18n';
 import { formatTimeIst } from '@/lib/format';
-import { pageRoutes, sellingRoutes } from '@/navigation/routes';
+import { pageRoutes, routes, sellingRoutes } from '@/navigation/routes';
 import { type Accent } from '@/theme';
 import { ChipChoices } from './ChoiceList';
 import { outcomeKey } from './labels';
@@ -38,7 +38,6 @@ export const DAY_TYPES: DayItemType[] = [
   'business_registered',
   'job_seeker_registered',
   'referral_registered',
-  'vacancy_added',
   'vacancy_confirmed',
   'candidates_shown',
   'interview_booked',
@@ -50,7 +49,6 @@ const TYPE_LOOK: Record<DayItemType, { icon: IconName; accent: Accent }> = {
   business_registered: { icon: 'check-circle', accent: 'green' },
   job_seeker_registered: { icon: 'user-plus', accent: 'cyan' },
   referral_registered: { icon: 'users', accent: 'orange' },
-  vacancy_added: { icon: 'briefcase', accent: 'gold' },
   vacancy_confirmed: { icon: 'briefcase', accent: 'green' },
   candidates_shown: { icon: 'users', accent: 'cyan' },
   interview_booked: { icon: 'calendar', accent: 'royal' },
@@ -86,7 +84,10 @@ function statusText(item: DayItem, t: (key: MessageKey, params?: Record<string, 
   return null;
 }
 
-/** Today / Yesterday / a picked day: the date the agent is looking at. */
+/**
+ * Today / Yesterday / All visits (17 Nov) / a picked day: the date the agent
+ * is looking at. "All visits" opens the whole visit history (FA05c).
+ */
 export function DaySwitcher({ date, onDate, testID = 'day' }: { date: string; onDate: (date: string) => void; testID?: string }) {
   const { t } = useI18n();
   const today = todayKeyIst();
@@ -98,9 +99,10 @@ export function DaySwitcher({ date, onDate, testID = 'day' }: { date: string; on
         choices={[
           { value: 'today', label: t('date.today') },
           { value: 'yesterday', label: t('work.yesterday') },
+          { value: 'all', label: t('visits.allVisits') },
         ]}
         value={which === 'other' ? null : which}
-        onChange={(v) => onDate(v === 'today' ? today : yesterday)}
+        onChange={(v) => (v === 'all' ? router.push(routes.allVisits) : onDate(v === 'today' ? today : yesterday))}
         testID={testID}
       />
       <DateField label={t('work.pickDay')} value={date} onChange={onDate} max={today} min={addDays(today, -DAY_WORK_MAX_DAYS_BACK)} testID={`${testID}-pick`} />
@@ -115,8 +117,9 @@ export function useDayWork(date: string) {
 
 /**
  * Today's work (redesign, 16 Nov): every visit with its result, businesses
- * onboarded, job seekers and referral partners registered, vacancies added,
- * candidates shown and interviews attended, for one IST day.
+ * onboarded, job seekers and referral partners registered, vacancies
+ * confirmed, candidates shown and interviews attended, for one IST day.
+ * Adding a vacancy is not a row (17 Nov): it shows on the business's history.
  * Data: GET /field-work/day?date=.
  */
 export function DayWork({ date, kind, limit, onMore, testID = 'day-work' }: {

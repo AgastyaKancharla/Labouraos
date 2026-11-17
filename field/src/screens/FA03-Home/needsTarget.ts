@@ -35,6 +35,8 @@ export function needsTarget(item: NeedsItem): Href | null {
       return sellingRoutes.confirmVacancy(tg.id);
     case 'ready_show_candidates':
       return sellingRoutes.matches(tg.id, tg.vacancyId ?? undefined);
+    case 'vacancies_to_fill':
+      return pageRoutes.business(tg.id);
     case 'joining_due':
       return sellingRoutes.joining(tg.id);
     case 'revisit_due':

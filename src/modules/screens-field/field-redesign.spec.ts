@@ -278,6 +278,9 @@ describe('Laboura Field redesign: Today, Today\'s work, businesses, agreement, j
     expect(ids).not.toContain(`visit:${theirs.id}`);
     expect(today.items.find((i: { id: string }) => i.id === `visit:${early.id}`).status).toBe('unfinished');
     expect(today.items.some((i: { type: string; title: string }) => i.type === 'referral_registered' && i.title === 'Partner One')).toBe(true);
+    // 17 Nov: adding a vacancy is not a row of Today's work / My visits (it is on the business's history).
+    expect(today.items.some((i: { type: string }) => i.type === 'vacancy_added')).toBe(false);
+    expect(today.counts).not.toHaveProperty('vacancy_added');
     const times = today.items.map((i: { at: string }) => i.at);
     expect([...times].sort().reverse()).toEqual(times);
     expect(today.counts.visit).toBeGreaterThanOrEqual(1);
@@ -288,6 +291,53 @@ describe('Laboura Field redesign: Today, Today\'s work, businesses, agreement, j
     await bad('2026-11-13', 'DATE_IN_FUTURE');
     await bad('2026-08-13', 'DATE_TOO_OLD');
     await get(agent, '/field-work/day?date=2026-08-14').expect(200);
+  });
+
+  it('All visits (17 Nov): my whole history, newest first, searchable, IST date range, paged; no 90-day limit', async () => {
+    clock.at = new Date('2026-11-12T10:00:00.000Z');
+    const old = await makeVisit(agent, { visitedAt: new Date('2026-03-01T06:00:00.000Z'), outcome: 'not_interested', shopName: 'Ancient Sweets' });
+    const shop = await makeBusiness(agent, { name: 'Searchable Tiffins', locality: 'Basavanagudi' });
+    const onShop = await makeVisit(agent, { visitedAt: new Date('2026-11-10T06:00:00.000Z'), businessId: shop.id, outcome: 'onboarded' });
+    const theirs = await makeVisit(otherAgent, { visitedAt: new Date('2026-11-10T07:00:00.000Z'), shopName: 'Ancient Other' });
+
+    const all = (await get(agent, '/field-work/visits/all').expect(200)).body;
+    const ids = all.items.map((i: { id: string }) => i.id);
+    expect(ids).toEqual(expect.arrayContaining([old.id, onShop.id]));
+    expect(ids).not.toContain(theirs.id);
+    const times = all.items.map((i: { visitedAt: string }) => i.visitedAt);
+    expect([...times].sort().reverse()).toEqual(times);
+    expect(all.items.find((i: { id: string }) => i.id === onShop.id)).toMatchObject({
+      title: 'Searchable Tiffins', subtitle: 'Basavanagudi', businessId: shop.id, businessCode: shop.code, status: 'onboarded', hasBoardPhoto: true,
+    });
+
+    const byName = (await get(agent, '/field-work/visits/all?q=ancient').expect(200)).body.items.map((i: { id: string }) => i.id);
+    expect(byName).toEqual([old.id]);
+    expect((await get(agent, '/field-work/visits/all?q=basavanagudi').expect(200)).body.items.map((i: { id: string }) => i.id)).toEqual([onShop.id]);
+    expect((await get(agent, `/field-work/visits/all?q=${shop.code.toLowerCase()}`).expect(200)).body.items.map((i: { id: string }) => i.id)).toEqual([onShop.id]);
+
+    // 23:59:59 IST on 11 Nov is the 11th; 00:00 IST on the 12th is not.
+    const ranged = (await get(agent, '/field-work/visits/all?from=2026-11-11&to=2026-11-11').expect(200)).body.items.map((i: { title: string }) => i.title);
+    expect(ranged).toContain('Late Shop');
+    expect(ranged).not.toContain('Early Shop');
+    expect(ranged).not.toContain('Searchable Tiffins');
+    expect((await get(agent, '/field-work/visits/all?from=2026-03-01&to=2026-03-01').expect(200)).body.items.map((i: { id: string }) => i.id)).toEqual([old.id]);
+
+    // Paging by cursor visits every row once.
+    const seen: string[] = [];
+    let before: string | null = null;
+    for (let page = 0; page < 20; page += 1) {
+      const res: { items: Array<{ id: string }>; nextBefore: string | null } = (await get(agent, `/field-work/visits/all?limit=1${before ? `&before=${encodeURIComponent(before)}` : ''}`).expect(200)).body;
+      seen.push(...res.items.map((i) => i.id));
+      before = res.nextBefore;
+      if (!before) break;
+    }
+    expect(seen).toEqual(ids);
+
+    const bad = async (query: string, code: string) => expect((await get(agent, `/field-work/visits/all?${query}`).expect(400)).body.code).toBe(code);
+    await bad('from=2026-02-30', 'DATE_INVALID');
+    await bad('from=2026-11-12&to=2026-11-01', 'DATE_RANGE_INVALID');
+    await bad('before=nope', 'CURSOR_INVALID');
+    for (const who of [callAgent, lead]) await get(who, '/field-work/visits/all').expect(403);
   });
 
   it('Today: numbers from records (onboarded counts a registration from a visit), targets bar and every Needs-you-now kind, most urgent first', async () => {
@@ -345,13 +395,19 @@ describe('Laboura Field redesign: Today, Today\'s work, businesses, agreement, j
     expect(byId(`vacancy_awaiting_owner:${waiting.id}`)).toMatchObject({ target: { type: 'vacancy', step: 'enter_code', businessId: ready.id } });
     expect(byId(`vacancy_draft:${draft.id}`)).toMatchObject({ target: { type: 'vacancy', step: 'send_to_owner', businessId: ready.id } });
     expect(byId(`ready_show_candidates:${open.id}`)).toMatchObject({ target: { type: 'business', id: ready.id, step: 'show_candidates', vacancyId: open.id } });
+    // 17 Nov: one heads-up per business with open seats to fill (the open vacancy wants 2, one is placed), opening that business.
+    expect(byId(`vacancies_to_fill:${ready.id}`)).toMatchObject({
+      kind: 'vacancies_to_fill', title: 'Ready Hotel', target: { type: 'business', id: ready.id, step: 'fill_vacancies' },
+      toFill: { count: 1, vacancies: 1, trades: ['Cook'] },
+    });
+    expect(items.filter((i) => i.kind === 'vacancies_to_fill').map((i) => i.id)).toEqual([`vacancies_to_fill:${ready.id}`]);
     expect(byId(`joining_due:${placement.id}`)).toMatchObject({ due: 'tomorrow', target: { type: 'placement', step: 'confirm_joining' } });
     expect(byId(`revisit_due:${revisit.id}`)).toMatchObject({ due: 'today', target: { type: 'revisit', id: revisit.id, step: 'start_visit', businessId: null } });
     expect(byId(`followup_task:${task.id}`)).toMatchObject({ target: { type: 'followup', relatedType: 'placement', relatedId: placement.id } });
     expect(items.some((i) => i.id === `agreement_waiting:${theirs.id}`)).toBe(false);
     expect(items.some((i) => i.id === `agreement_waiting:${ready.id}`)).toBe(false);
     // Most urgent first; expired agreement links before unsent ones.
-    const order = ['interview_today', 'visit_unfinished', 'agreement_waiting', 'vacancy_awaiting_owner', 'vacancy_draft', 'ready_show_candidates', 'joining_due', 'revisit_due', 'followup_task'];
+    const order = ['interview_today', 'visit_unfinished', 'agreement_waiting', 'vacancy_awaiting_owner', 'vacancy_draft', 'ready_show_candidates', 'vacancies_to_fill', 'joining_due', 'revisit_due', 'followup_task'];
     const ranks = items.map((i) => order.indexOf(i.kind));
     expect([...ranks].sort((a, b) => a - b)).toEqual(ranks);
     expect(items.findIndex((i) => i.id === `agreement_waiting:${expired.id}`)).toBeLessThan(items.findIndex((i) => i.id === `agreement_waiting:${notSent.id}`));
@@ -392,6 +448,12 @@ describe('Laboura Field redesign: Today, Today\'s work, businesses, agreement, j
     expect(lowRow.nextStep).toMatchObject({ kind: 'send_to_owner', missing: ['shift'], needsMinimumWageTick: true });
     expect(lowRow.nextStep.legalMinimumPaise).toBeGreaterThan(100000);
     expect(page.candidates).toMatchObject({ shown: 1, shownByMe: 1, interviews: { total: 2, today: 2 } });
+    // 17 Nov: vacancy events are on the business's history, newest first, beside its visits.
+    const history = page.history as Array<{ kind: string; at: string; event?: string; vacancyId?: string; trade?: string; byName?: string | null }>;
+    expect(history.filter((h) => h.kind === 'vacancy' && h.event === 'added').map((h) => h.vacancyId)).toEqual(expect.arrayContaining([low.id]));
+    expect(history.find((h) => h.vacancyId === low.id && h.event === 'added')).toMatchObject({ trade: 'Cook', byName: agent.name });
+    expect(history.some((h) => h.kind === 'vacancy' && h.event === 'confirmed')).toBe(true);
+    expect([...history.map((h) => h.at)].sort().reverse()).toEqual(history.map((h) => h.at));
 
     // GET /field-work/businesses/:ref/page: another agent gets the view-only page
     const viewOnly = (await get(otherAgent, `/field-work/businesses/${ready.id}/page`).expect(200)).body;

@@ -118,6 +118,8 @@ describe('FA03 Today', () => {
     expect(screen.getByTestId('needs-agreement_waiting:b-1')).toHaveTextContent(/Sri Sai Bakery.*Agreement link expired · resend it/);
     expect(screen.getByTestId('needs-vacancy_draft:vac-1')).toHaveTextContent(/Check and send to the owner · Cook × 2/);
     expect(screen.getByTestId('needs-revisit_due:v-9')).toHaveTextContent(/Lakshmi Tiffins.*Revisit due.*Overdue/);
+    // 17 Nov: a heads-up per business with vacancies to fill, opening that business.
+    expect(screen.getByTestId('needs-vacancies_to_fill:b-4')).toHaveTextContent(/Green Leaf Café.*2 vacancies to fill · Waiter, Cook · Jayanagar/);
     const expected: [string, unknown][] = [
       ['interview_today:iv-1', '/visit/interview/iv-1/day'],
       ['visit_unfinished:v-3', { pathname: '/visit/business', params: { visitId: 'v-3' } }],
@@ -125,6 +127,7 @@ describe('FA03 Today', () => {
       ['vacancy_awaiting_owner:vac-2', '/businesses/vacancy/vac-2'],
       ['vacancy_draft:vac-1', '/businesses/vacancy/vac-1'],
       ['ready_show_candidates:b-4', '/businesses/candidates/b-4?vacancyId=vac-9'],
+      ['vacancies_to_fill:b-4', '/businesses/b-4'],
       ['joining_due:pl-1', '/businesses/placement/pl-1/joining'],
       ['revisit_due:v-9', { pathname: '/visit/start', params: { revisitOf: 'v-9', name: 'Lakshmi Tiffins' } }],
       ['followup_task:t-1', '/businesses/placement/pl-2'],
