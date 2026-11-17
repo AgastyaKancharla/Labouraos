@@ -20,6 +20,7 @@ import { NewTempPasswordButton, SetCallingPhoneButton, ReactivateButton, ResetSi
 import { useT } from '../../../i18n/I18nProvider';
 import { roleLabel } from '../_kit/format';
 import { TeamTabs } from '../_kit/tabs';
+import { RowMenu } from '../../../components/RowMenu';
 import '../_kit/ceo.css';
 
 /** Team & access — design C-Team.dc.html. */
@@ -173,101 +174,119 @@ export default function Team() {
     },
     {
       key: 'actions',
-      header: '',
-      cell: (r) => (
-        <div className="ceo-actions" onClick={(e) => e.stopPropagation()}>
-          {bossRoleFor(r.role) && r.role !== 'manager' && r.role !== 'finance' && r.state !== 'deactivated' && (
-            <ActionButton
-              label="Change who they report to"
-              title={`Change who ${r.name} reports to`}
-              description="Their requests, targets, login codes and reports follow the new line straight away. Open work moves with them."
-              choice={{ label: 'Reports to', options: bossChoices(r), initial: bossChoices(r).find((o) => o.value !== r.reportsTo?.id)?.value }}
-              reason={{ label: 'Reason', required: false }}
-              confirmLabel="Move"
-              run={({ choice, reason }) => api.post(`/staff/${r.id}/reporting-line`, { reportsToId: choice, reason: reason || undefined, moveOpenWork: true })}
-              success={`${r.name} now reports to the new person`}
-            />
-          )}
-          {r.role === 'ceo' && r.state !== 'deactivated' && (
-            <ActionButton
-              label="Title"
-              title={`Title for ${r.name}`}
-              description="CEO, founder and co-founder are one top-level role: same access, a different title."
-              choice={{ label: 'Title', options: Object.entries(TITLE_LABEL).map(([value, label]) => ({ value, label })), initial: r.title ?? 'ceo' }}
-              confirmLabel="Save title"
-              run={({ choice }) => api.post(`/ceo/team/${r.id}/title`, { title: choice })}
-              success="Title saved"
-            />
-          )}
-          {isAgentRole(r.role) && r.state !== 'deactivated' && (
-            <ActionButton
-              label={r.ownerAccount ? 'Owner account · clear' : 'Mark as owner account'}
-              title={r.ownerAccount ? `Clear owner account · ${r.name}` : `Mark ${r.name} as an owner account`}
-              description={
-                r.ownerAccount
-                  ? `They go back to being a normal agent: targets, leaderboard, attendance and salary apply again from now. ${OWNER_ACCOUNT_TIMING}`
-                  : `${OWNER_ACCOUNT_EXPLANATION}. They sign in like any agent: device approval and a login code each time. ${OWNER_ACCOUNT_TIMING}`
-              }
-              confirmLabel={r.ownerAccount ? 'Clear owner account' : 'Mark as owner account'}
-              run={() => api.put(`/staff/${r.id}/owner-account`, { ownerAccount: !r.ownerAccount })}
-              success={r.ownerAccount ? `${r.name} is a normal agent again` : `${r.name} is now an owner account`}
-            />
-          )}
-          {languages.loaded && r.state !== 'deactivated' && (
-            <SpokenLanguagesButton key={(languages.byId.get(r.id) ?? []).join(',')} id={r.id} name={r.name} current={languages.byId.get(r.id) ?? []} options={languages.options} />
-          )}
-          {r.state !== 'deactivated' && <NewTempPasswordButton id={r.id} name={r.name} />}
-          {r.state !== 'deactivated' && <SetCallingPhoneButton id={r.id} name={r.name} />}
-          {(r.state === 'active' || r.state === 'locked') && <ResetSignInButton id={r.id} name={r.name} />}
-          {r.state === 'active' && r.role !== 'ceo' && !r.photoRetakeRequested && (
-            <ActionButton
-              label="Ask for a new photo"
-              title={`New staff photo · ${r.name}`}
-              description="They take a new live camera selfie at their next login, before going on. Their current photo stays until then."
-              reason={{ label: 'Reason', required: false }}
-              confirmLabel="Ask for a new photo"
-              run={({ reason }) => api.post(`/staff/${r.id}/photo/retake`, { reason: reason || undefined })}
-              success={`${r.name} will take a new photo at their next login`}
-            />
-          )}
-          {r.state === 'locked' && (
-            <ActionButton label="Unlock" title={`Unlock ${r.name}`} description={r.lockedReason ? `Locked: ${r.lockedReason}` : undefined} run={() => api.post(`/staff/${r.id}/unlock`)} success={`${r.name} is unlocked`} />
-          )}
-          {(r.state === 'active' || r.state === 'invite_pending') && (
-            <ActionButton
-              label="Lock"
-              variant="danger"
-              title={`Lock ${r.name}`}
-              description="They are signed out everywhere and cannot sign in until someone unlocks them."
-              reason
-              run={({ reason }) => api.post(`/staff/${r.id}/lock`, { reason })}
-              success={`${r.name} is locked`}
-            />
-          )}
-          {r.state !== 'deactivated' && r.role !== 'ceo' && (
-            <ActionButton
-              label="Deactivate"
-              variant="danger"
-              title={`Deactivate ${r.name}`}
-              description="For someone who has left. Their records stay; they can never sign in again unless reactivated."
-              run={() => api.post(`/staff/${r.id}/deactivate`)}
-              success={`${r.name} is deactivated`}
-            />
-          )}
-          {r.state === 'deactivated' && <ReactivateButton id={r.id} name={r.name} />}
-          {r.role !== 'ceo' && (
-            <FormAction
-              label={r.joinedOn ? `Joined ${formatDateIST(`${r.joinedOn}T00:00:00+05:30`)}` : 'Joining date'}
-              size="compact"
-              title={`Joining date · ${r.name}`}
-              description="Pay starts on this day: working days before it are not paid. Leave it empty and the first login is used."
-              fields={[{ name: 'joinedOn', kind: 'date', label: 'Joined on', required: true, initial: r.joinedOn ?? '' }]}
-              run={(v) => api.put(`/staff/${r.id}/joined-on`, { joinedOn: v.joinedOn })}
-              success={`Joining date saved for ${r.name}`}
-            />
-          )}
-        </div>
-      ),
+      header: 'Actions',
+      // 17 Nov: the row's actions sit in two menus, "Edit ▾" (profile settings) and "Access ▾" (sign-in and
+      // account). Each item opens the same dialog and calls the same API as the button it replaces.
+      cell: (r) => {
+        const active = r.state !== 'deactivated';
+        const canMove = Boolean(bossRoleFor(r.role)) && r.role !== 'manager' && r.role !== 'finance' && active;
+        const canTitle = r.role === 'ceo' && active;
+        const canOwner = isAgentRole(r.role) && active;
+        const canLanguages = languages.loaded && active;
+        const canPhoto = r.state === 'active' && r.role !== 'ceo' && !r.photoRetakeRequested;
+        const canJoined = r.role !== 'ceo';
+        const hasEdit = canMove || canTitle || canOwner || canLanguages || canPhoto || canJoined;
+        return (
+          <div className="ceo-actions" onClick={(e) => e.stopPropagation()}>
+            {hasEdit && (
+              <RowMenu label="Edit" name={r.name} testId={`edit-menu-${r.id}`}>
+                {canMove && (
+                  <ActionButton
+                    label="Change who they report to"
+                    title={`Change who ${r.name} reports to`}
+                    description="Their requests, targets, login codes and reports follow the new line straight away. Open work moves with them."
+                    choice={{ label: 'Reports to', options: bossChoices(r), initial: bossChoices(r).find((o) => o.value !== r.reportsTo?.id)?.value }}
+                    reason={{ label: 'Reason', required: false }}
+                    confirmLabel="Move"
+                    run={({ choice, reason }) => api.post(`/staff/${r.id}/reporting-line`, { reportsToId: choice, reason: reason || undefined, moveOpenWork: true })}
+                    success={`${r.name} now reports to the new person`}
+                  />
+                )}
+                {canTitle && (
+                  <ActionButton
+                    label="Title"
+                    title={`Title for ${r.name}`}
+                    description="CEO, founder and co-founder are one top-level role: same access, a different title."
+                    choice={{ label: 'Title', options: Object.entries(TITLE_LABEL).map(([value, label]) => ({ value, label })), initial: r.title ?? 'ceo' }}
+                    confirmLabel="Save title"
+                    run={({ choice }) => api.post(`/ceo/team/${r.id}/title`, { title: choice })}
+                    success="Title saved"
+                  />
+                )}
+                {canOwner && (
+                  <ActionButton
+                    label={r.ownerAccount ? 'Owner account · clear' : 'Mark as owner account'}
+                    title={r.ownerAccount ? `Clear owner account · ${r.name}` : `Mark ${r.name} as an owner account`}
+                    description={
+                      r.ownerAccount
+                        ? `They go back to being a normal agent: targets, leaderboard, attendance and salary apply again from now. ${OWNER_ACCOUNT_TIMING}`
+                        : `${OWNER_ACCOUNT_EXPLANATION}. They sign in like any agent: device approval and a login code each time. ${OWNER_ACCOUNT_TIMING}`
+                    }
+                    confirmLabel={r.ownerAccount ? 'Clear owner account' : 'Mark as owner account'}
+                    run={() => api.put(`/staff/${r.id}/owner-account`, { ownerAccount: !r.ownerAccount })}
+                    success={r.ownerAccount ? `${r.name} is a normal agent again` : `${r.name} is now an owner account`}
+                  />
+                )}
+                {canLanguages && (
+                  <SpokenLanguagesButton key={(languages.byId.get(r.id) ?? []).join(',')} id={r.id} name={r.name} current={languages.byId.get(r.id) ?? []} options={languages.options} />
+                )}
+                {canPhoto && (
+                  <ActionButton
+                    label="Ask for a new photo"
+                    title={`New staff photo · ${r.name}`}
+                    description="They take a new live camera selfie at their next login, before going on. Their current photo stays until then."
+                    reason={{ label: 'Reason', required: false }}
+                    confirmLabel="Ask for a new photo"
+                    run={({ reason }) => api.post(`/staff/${r.id}/photo/retake`, { reason: reason || undefined })}
+                    success={`${r.name} will take a new photo at their next login`}
+                  />
+                )}
+                {canJoined && (
+                  <FormAction
+                    label={r.joinedOn ? `Joined ${formatDateIST(`${r.joinedOn}T00:00:00+05:30`)}` : 'Joining date'}
+                    size="compact"
+                    title={`Joining date · ${r.name}`}
+                    description="Pay starts on this day: working days before it are not paid. Leave it empty and the first login is used."
+                    fields={[{ name: 'joinedOn', kind: 'date', label: 'Joined on', required: true, initial: r.joinedOn ?? '' }]}
+                    run={(v) => api.put(`/staff/${r.id}/joined-on`, { joinedOn: v.joinedOn })}
+                    success={`Joining date saved for ${r.name}`}
+                  />
+                )}
+              </RowMenu>
+            )}
+            <RowMenu label="Access" name={r.name} testId={`access-menu-${r.id}`}>
+              {active && <NewTempPasswordButton id={r.id} name={r.name} />}
+              {active && <SetCallingPhoneButton id={r.id} name={r.name} />}
+              {(r.state === 'active' || r.state === 'locked') && <ResetSignInButton id={r.id} name={r.name} />}
+              {r.state === 'locked' && (
+                <ActionButton label="Unlock" title={`Unlock ${r.name}`} description={r.lockedReason ? `Locked: ${r.lockedReason}` : undefined} run={() => api.post(`/staff/${r.id}/unlock`)} success={`${r.name} is unlocked`} />
+              )}
+              {(r.state === 'active' || r.state === 'invite_pending') && (
+                <ActionButton
+                  label="Lock"
+                  variant="danger"
+                  title={`Lock ${r.name}`}
+                  description="They are signed out everywhere and cannot sign in until someone unlocks them."
+                  reason
+                  run={({ reason }) => api.post(`/staff/${r.id}/lock`, { reason })}
+                  success={`${r.name} is locked`}
+                />
+              )}
+              {active && r.role !== 'ceo' && (
+                <ActionButton
+                  label="Deactivate"
+                  variant="danger"
+                  title={`Deactivate ${r.name}`}
+                  description="For someone who has left. Their records stay; they can never sign in again unless reactivated."
+                  run={() => api.post(`/staff/${r.id}/deactivate`)}
+                  success={`${r.name} is deactivated`}
+                />
+              )}
+              {r.state === 'deactivated' && <ReactivateButton id={r.id} name={r.name} />}
+            </RowMenu>
+          </div>
+        );
+      },
     },
   ];
 

@@ -31,6 +31,11 @@ const render = (ui: React.ReactElement, path: string, route?: string) => {
   return renderScreen(ui, { portal: 'manager', path, route, now: NOW });
 };
 const dialog = () => screen.findByRole('dialog');
+/** Opens a row's "Edit ▾" or "Access ▾" menu (17 Nov) and returns one of its items. */
+async function menuItem(row: HTMLElement, menu: 'Edit' | 'Access', item: string) {
+  await userEvent.click(within(row).getByRole('button', { name: new RegExp(`^${menu} · `) }));
+  return within(within(row).getByRole('menu')).getByRole('menuitem', { name: item });
+}
 const f = (done: number, target: number | null, atThisSpeed: number, extra: number | null, verdict: string) => ({ done, target, stillToDo: target === null ? null : Math.max(0, target - done), needPerDay: target === null ? null : 1.6, doingPerDay: 1.2, atThisSpeed, extra, verdict });
 
 const overview = {
@@ -236,7 +241,7 @@ describe('Staff & access', () => {
     render(<Staff />, '/manager/staff');
     expect((await screen.findAllByText('Locked · 5 wrong passwords')).length).toBeGreaterThan(0);
     const row = screen.getByText('Ravi Shankar').closest('tr') as HTMLElement;
-    await userEvent.click(within(row).getByRole('button', { name: 'New temporary password' }));
+    await userEvent.click(await menuItem(row, 'Access', 'New temporary password'));
     let d = await dialog();
     expect(within(d).getByText(/replaces any earlier one/)).toBeInTheDocument();
     await userEvent.click(within(d).getByRole('button', { name: 'New temporary password' }));
@@ -248,7 +253,7 @@ describe('Staff & access', () => {
     expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Done' }));
 
-    await userEvent.click(within(row).getByRole('button', { name: 'Reset sign-in completely' }));
+    await userEvent.click(await menuItem(row, 'Access', 'Reset sign-in completely'));
     d = await dialog();
     await userEvent.click(within(d).getByRole('button', { name: 'Reset sign-in completely' }));
     await waitFor(() => expect(api.calls('POST /staff/tl1/reset-sign-in')).toHaveLength(1));
@@ -256,7 +261,7 @@ describe('Staff & access', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Done' }));
 
     const locked = screen.getByText('Arun P').closest('tr') as HTMLElement;
-    await userEvent.click(within(locked).getByRole('button', { name: 'Unlock' }));
+    await userEvent.click(await menuItem(locked, 'Access', 'Unlock'));
     d = await dialog();
     await userEvent.type(within(d).getByLabelText(/Reason/), 'Checked with him');
     await userEvent.click(within(d).getByRole('button', { name: 'Unlock' }));
