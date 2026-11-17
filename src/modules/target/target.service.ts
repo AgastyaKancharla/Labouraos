@@ -25,6 +25,10 @@ import {
 import { isPastPeriod } from '../../common/time/period-boundary';
 import { ReportingScopeService } from '../staff/reporting-scope.service';
 import { isOwnerAccount, NOT_OWNER_ACCOUNT, OWNER_ACCOUNT_NO_TARGETS } from '../staff/owner-account';
+import { TargetSplitHooks } from '../company-plan/target-split.hooks';
+
+/** The fields the automatic split fills; a value typed here is marked "set by hand" (17 Nov). */
+const SPLIT_FIELDS = ['candidatesActivated', 'vacanciesCaptured', 'placementsClosed', 'repeatBusinesses'] as const;
 
 @Injectable()
 export class TargetService {
@@ -32,6 +36,7 @@ export class TargetService {
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
     @Optional() private readonly reportingScope?: ReportingScopeService,
+    @Optional() private readonly splitHooks?: TargetSplitHooks,
   ) {}
 
   /**
@@ -172,7 +177,8 @@ export class TargetService {
       );
     }
 
-    // 5. Create target record
+    // 5. Create target record (the numbers typed here are set by hand)
+    const handSetFields = SPLIT_FIELDS.filter((f) => typeof dto[f] === 'number');
     const target = await this.prisma.target.create({
       data: {
         staffId: dto.staffId,
@@ -184,6 +190,7 @@ export class TargetService {
         placementsClosed: dto.placementsClosed ?? null,
         replacementsInside15Days: dto.replacementsInside15Days ?? null,
         repeatBusinesses: dto.repeatBusinesses ?? null,
+        handSetFields,
         createdById: actorId,
       },
       include: {
@@ -209,8 +216,10 @@ export class TargetService {
         placementsClosed: target.placementsClosed,
         replacementsInside15Days: target.replacementsInside15Days,
         repeatBusinesses: target.repeatBusinesses,
+        handSet: handSetFields,
       },
     });
+    await this.splitHooks?.agentHandSet(target.staffId, target.year, target.month, actorId);
 
     return this.formatTargetResponse(target);
   }
@@ -276,10 +285,14 @@ export class TargetService {
       repeatBusinesses: existing.repeatBusinesses,
     };
 
+    // A number typed here is set by hand; one cleared goes back to the automatic split.
+    const handSetFields = existing.handSetFields.filter((f) => !SPLIT_FIELDS.some((k) => k === f && dto[k] === null));
+    for (const f of SPLIT_FIELDS) if (typeof dto[f] === 'number' && !handSetFields.includes(f)) handSetFields.push(f);
     const updated = await this.prisma.target.update({
       where: { id },
       data: {
         ...mergedMetrics,
+        handSetFields,
         updatedById: actorId,
       },
       include: {
@@ -293,9 +306,10 @@ export class TargetService {
       entityType: 'target',
       entityCode: updated.id,
       city: existing.staff.city,
-      before: beforeState,
-      after: mergedMetrics,
+      before: { ...beforeState, handSet: existing.handSetFields },
+      after: { ...mergedMetrics, handSet: handSetFields },
     });
+    await this.splitHooks?.agentHandSet(updated.staffId, updated.year, updated.month, actorId);
 
     return this.formatTargetResponse(updated);
   }
@@ -382,12 +396,9 @@ export class TargetService {
 
   formatTargetResponse(target: Target & { staff: Staff }) {
     const staff = target.staff;
-    const { factor, isMidMonthJoiner, daysPresent, daysInMonth } = calculateProRatingFactor(
-      staff.createdAt,
-      target.year,
-      target.month,
-      staff.city,
-    );
+    const proRated = calculateProRatingFactor(staff.createdAt, target.year, target.month, staff.city);
+    // A share the automatic split gave for the working days left is not pro-rated again (17 Nov).
+    const { factor, isMidMonthJoiner, daysPresent, daysInMonth } = target.splitFromDay ? { ...proRated, factor: 1 } : proRated;
 
     const metricsRecord = {} as Record<TargetMetricKey, MetricEvaluationResult>;
     const storedValues = {} as Record<TargetMetricKey, number | null>;

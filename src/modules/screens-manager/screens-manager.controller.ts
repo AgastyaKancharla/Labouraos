@@ -144,6 +144,22 @@ export class ScreensManagerController {
     return this.targets.saveSplit(req.user, body ?? {}, new Date());
   }
 
+  /** "Reset to automatic": { year, month, kind: 'team' | 'agent', id, key? } for a team or agent in the tree. */
+  @Post('targets/reset')
+  @HttpCode(HttpStatus.OK)
+  @RequireRoles('manager')
+  resetTargets(@Req() req: AuthedRequest, @Body() body: { year?: unknown; month?: unknown; kind?: unknown; id?: unknown; key?: unknown }) {
+    return this.targets.reset(req.user, body ?? {}, new Date());
+  }
+
+  /** "Transfer target": { year, month, fromStaffId, toStaffId }, both in the tree (the one giving may have left). */
+  @Post('targets/transfer')
+  @HttpCode(HttpStatus.OK)
+  @RequireRoles('manager')
+  transferTargets(@Req() req: AuthedRequest, @Body() body: { year?: unknown; month?: unknown; fromStaffId?: unknown; toStaffId?: unknown }) {
+    return this.targets.transfer(req.user, body ?? {}, new Date());
+  }
+
   /** Copy from last month, for the Manager's own agents only. */
   @Post('targets/copy')
   @RequireRoles('manager')

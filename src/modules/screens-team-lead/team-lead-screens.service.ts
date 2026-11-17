@@ -1,6 +1,6 @@
 import { OwnTeam } from '../../common/rbac/own-team';
 import { leaveHalvesOf } from '../attendance/leave-units';
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AttendanceClock } from '../attendance/attendance-clock';
 import { AttendanceReportsService } from '../attendance/attendance-reports.service';
@@ -11,6 +11,7 @@ import { CallAgentMetricsService } from '../target/call-agent-metrics.service';
 import { FieldAgentMetricsService } from '../target/field-agent-metrics.service';
 import { istDayKey, istStartOfDay } from '../ceo-portal/ceo-common';
 import { paceRow, PaceRow } from './pace';
+import { CompanyPlanService, valuesOf } from '../company-plan/company-plan.service';
 
 export interface Actor {
   id: string;
@@ -44,6 +45,8 @@ export class TeamLeadScreensService {
     private readonly leave: LeaveService,
     private readonly callMetrics: CallAgentMetricsService,
     private readonly fieldMetrics: FieldAgentMetricsService,
+    /** The team plan (automatic split, 17 Nov): the team's targets when set. */
+    @Optional() private readonly plans?: CompanyPlanService,
   ) {}
 
   // -------------------------------------------------------------- the team
@@ -195,12 +198,14 @@ export class TeamLeadScreensService {
       }),
       this.prisma.jobSeeker.count({ where: { registeredByStaffId: { in: people }, createdAt: { gte: monthFrom, lte: now } } }),
     ]);
+    // The team plan's numbers when set (automatic split, 17 Nov); else the agents' targets added up.
+    const plan = this.plans ? valuesOf((await this.plans.teamPlans(year, month, [actor.id]))[0]) : null;
     const teamRows = [
-      { key: 'placed', label: 'People placed in jobs', hint: 'Each one earns a placement fee', ...paceRow(placedTarget, placedDone, dayOfMonth, daysInMonth) },
-      { key: 'paid', label: 'Paid the ₹499 registration fee', hint: 'Job seekers who paid on their own phone', ...paceRow(paidTarget, paidDone, dayOfMonth, daysInMonth) },
-      { key: 'businesses', label: 'Businesses signed up', hint: 'Owner confirmed by OTP', ...paceRow(null, new Set(signedRows.map((row) => row.businessId)).size, dayOfMonth, daysInMonth) },
-      { key: 'interviews', label: 'Interviews done', hint: 'Job seeker met the owner', ...paceRow(null, interviewsDone, dayOfMonth, daysInMonth) },
-      { key: 'registered', label: 'Job seekers registered', hint: 'Profile made by an agent', ...paceRow(null, registeredDone, dayOfMonth, daysInMonth) },
+      { key: 'placed', label: 'People placed in jobs', hint: 'Each one earns a placement fee', ...paceRow(plan?.placed ?? placedTarget, placedDone, dayOfMonth, daysInMonth) },
+      { key: 'paid', label: 'Paid the ₹499 registration fee', hint: 'Job seekers who paid on their own phone', ...paceRow(plan?.paid ?? paidTarget, paidDone, dayOfMonth, daysInMonth) },
+      { key: 'businesses', label: 'Businesses signed up', hint: 'Owner confirmed by OTP', ...paceRow(plan?.businessesSignedUp ?? null, new Set(signedRows.map((row) => row.businessId)).size, dayOfMonth, daysInMonth) },
+      { key: 'interviews', label: 'Interviews done', hint: 'Job seeker met the owner', ...paceRow(plan?.interviewsDone ?? null, interviewsDone, dayOfMonth, daysInMonth) },
+      { key: 'registered', label: 'Job seekers registered', hint: 'Profile made by an agent', ...paceRow(plan?.registered ?? null, registeredDone, dayOfMonth, daysInMonth) },
     ];
     return { year, month, dayOfMonth, daysInMonth, daysLeft: daysInMonth - dayOfMonth, team: teamRows, allAgents: agents };
   }

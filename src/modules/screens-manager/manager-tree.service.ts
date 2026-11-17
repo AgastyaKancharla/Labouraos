@@ -132,6 +132,11 @@ export class ManagerTreeService {
     throw new ForbiddenException('A Manager sees only the people in their own teams');
   }
 
+  /** Anyone under the Manager by the reporting line, deactivated people included (for a leaver's target). */
+  isUnder(managerId: string, staffId: string): Promise<boolean> {
+    return this.scope.personIsUnder(managerId, staffId);
+  }
+
   /** Ids of a team: the Team Lead and their agents. */
   teamIds(tree: ManagerTree, leadId: string): string[] {
     return tree.people.filter((p) => p.teamLeadId === leadId).map((p) => p.id);
