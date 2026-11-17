@@ -251,6 +251,10 @@ describe('Team Lead records, assign, pipeline and profile photos', () => {
     expect((await get('tlA', `/team-lead/vacancies/${rec.vB}`)).status).toBe(404); // TL records: vacancy profile
     expect((await get('tlA', `/team-lead/placements/${rec.pB}`)).status).toBe(404); // TL records: placement profile
     expect((await get('tlA', `/team-lead/referrals/${rec.rB}`)).status).toBe(404); // TL records: partner profile
+    expect((await get('tlA', `/team-lead/referrals/${rec.rB}/photo`)).status).toBe(404); // TL records: partner photo
+    expect((await get('tlA', `/team-lead/referrals/${rec.rA}/photo`)).body).toEqual({ kept: false, url: null, expiresInSeconds: 0 });
+    expect((await get('ceo', `/ceo/referrals/${rec.rB}/photo`)).status).toBe(200);
+    expect((await get('mgr', `/manager/referrals/${rec.rB}/photo`)).status).toBe(404);
   });
 
   it('no money and no unmasked phone number in any list or profile', async () => {

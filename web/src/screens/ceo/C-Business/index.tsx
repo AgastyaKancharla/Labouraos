@@ -16,7 +16,7 @@ import { formatMobile } from '../../../lib/format/phone';
 import type { ReactNode } from 'react';
 import { useRecordsPortal } from '../_kit/records';
 import { AssignmentLine, type Assignment } from '../_kit/assign';
-import { VisitPhotos } from '../_kit/photos';
+import { ProfileHero, VisitPhotos } from '../_kit/photos';
 import { ActionButton } from '../_kit/actions';
 import { Kv, Timeline, dateOrDash, humanize } from '../_kit/kit';
 import { BUSINESS_STATUS, VACANCY_STATUS } from '../_kit/labels';
@@ -187,6 +187,8 @@ export default function BusinessDetail() {
           </div>
         }
       />
+      {/* Photo at the top of the profile, the name and the ID under it (rev 198). */}
+      <ProfileHero kind="business" id={d.id} name={d.name} code={d.code} visits={d.visits} />
       <SuspensionBanner suspension={d.suspension} />
       <StatGrid>
         <StatTile label={`Open vacancies · ${d.tiles.openPositions} positions`} value={d.tiles.openVacancies} tone="gold" />

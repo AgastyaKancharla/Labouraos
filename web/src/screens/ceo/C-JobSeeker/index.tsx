@@ -15,7 +15,7 @@ import { formatINR } from '../../../lib/format/money';
 import { formatMobile } from '../../../lib/format/phone';
 import { useRecordsPortal } from '../_kit/records';
 import { AssignmentLine, type Assignment } from '../_kit/assign';
-import { SeekerSelfie } from '../_kit/photos';
+import { ProfileHero } from '../_kit/photos';
 import { ActionButton } from '../_kit/actions';
 import { useAuth } from '../../../auth/AuthProvider';
 import { BanButton, LegalAcceptanceCard } from '../_kit/legal';
@@ -210,6 +210,8 @@ export default function JobSeekerDetail() {
           </div>
         }
       />
+      {/* Photo at the top of the profile, the name and the ID under it (rev 198). */}
+      <ProfileHero kind="job_seeker" id={d.id} name={d.name} code={d.code} hasPhoto={d.registration.hasSelfie} />
 
       <LegalAcceptanceCard subjectType="job_seeker" subjectId={d.id} />
       <StatGrid>
@@ -283,17 +285,7 @@ export default function JobSeekerDetail() {
                 `Consent (${d.registration.consentsGranted} of ${d.registration.consentsAsked || d.registration.consentsGranted})`,
                 d.registration.consentAt ? <StatusPill tone="good">{formatDateTimeIST(d.registration.consentAt)}</StatusPill> : <StatusPill tone="muted">Not given</StatusPill>,
               ],
-              [
-                'Selfie',
-                d.registration.selfieAt || d.registration.hasSelfie ? (
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                    <SeekerSelfie id={d.id} name={d.name} hasSelfie={d.registration.hasSelfie} />
-                    {d.registration.selfieAt && <StatusPill tone="good">{formatDateTimeIST(d.registration.selfieAt)}</StatusPill>}
-                  </div>
-                ) : (
-                  <StatusPill tone="muted">Not taken</StatusPill>
-                ),
-              ],
+              ['Selfie', d.registration.selfieAt ? <StatusPill tone="good">{formatDateTimeIST(d.registration.selfieAt)}</StatusPill> : <StatusPill tone="muted">Not taken</StatusPill>],
               [
                 'ID check',
                 d.registration.idCheck?.last4 !== undefined && !d.registration.idCheck?.status ? (

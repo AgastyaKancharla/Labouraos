@@ -442,6 +442,11 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
     test: 'modules/screens-team-lead/team-lead-records.e2e.spec.ts',
     proof: '// TL records: placement profile',
   },
+  'TeamLeadRecordsController.partnerPhoto': {
+    reason: "Team Lead portal records (rev 194): only his team's records or unowned ones in his city (RecordSectionsService viewable filter); anything else is 404.",
+    test: 'modules/screens-team-lead/team-lead-records.e2e.spec.ts',
+    proof: '// TL records: partner photo',
+  },
   'TeamLeadRecordsController.partner': {
     reason: "Team Lead portal records (rev 194): only his team's records or unowned ones in his city (RecordSectionsService viewable filter); anything else is 404.",
     test: 'modules/screens-team-lead/team-lead-records.e2e.spec.ts',

@@ -171,6 +171,13 @@ export class CeoPortalController {
     return this.businesses.businessDetail(id);
   }
 
+  /** C-Partner: the partner's own photo through a short-lived private link (audited), or kept: false. */
+  @Get('referrals/:id/photo')
+  @RequireRoles('ceo')
+  partnerPhoto(@Req() req: AuthedRequest, @Param('id') id: string) {
+    return this.recordPhotos.partnerPhoto({ id: req.user.sub, role: req.user.role }, null, id);
+  }
+
   /** C-Business: one visit's name-board photo and the agent's selfie, through short-lived private links (audited). */
   @Get('businesses/:id/visits/:visitId/photos')
   @RequireRoles('ceo')

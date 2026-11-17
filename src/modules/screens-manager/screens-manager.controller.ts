@@ -339,6 +339,14 @@ export class ScreensManagerController {
     return this.sections.referrals(await this.scope(req), parseSection(q.section), this.listQuery(q));
   }
 
+  /** C-Partner: the partner's own photo, for a partner he may open; signed link only. */
+  @Get('referrals/:id/photo')
+  @RequireRoles('manager')
+  async partnerPhoto(@Req() req: AuthedRequest, @Param('id') id: string) {
+    (req as unknown as Record<string, unknown>)[PHOTO_LINK_ANSWER] = true;
+    return this.sections.partnerPhoto(await this.scope(req), id);
+  }
+
   @Get('referrals/:id')
   @RequireRoles('manager')
   async partner(@Req() req: AuthedRequest, @Param('id') id: string) {

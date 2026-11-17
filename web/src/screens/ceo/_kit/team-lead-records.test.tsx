@@ -128,7 +128,9 @@ describe('Profiles: Assign and real photos', () => {
     expect(screen.getByTestId('assignment')).toHaveTextContent('Not assigned yet');
     expect(screen.getByRole('button', { name: 'Assign Manju Gowda' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Reverse a hit' })).toBeNull();
-    const img = await screen.findByRole('img', { name: 'Live selfie of Manju Gowda' });
+    const hero = screen.getByTestId('profile-hero');
+    expect(hero).toHaveTextContent('JS-00099');
+    const img = await within(hero).findByRole('img', { name: 'Live selfie of Manju Gowda' });
     expect(img).toHaveAttribute('src', 'https://photos.example/selfie.jpg?token=x');
     await userEvent.click(screen.getByRole('button', { name: 'Enlarge: Live selfie of Manju Gowda' }));
     expect(await screen.findByRole('dialog', { name: 'Live selfie of Manju Gowda' })).toBeInTheDocument();
@@ -145,7 +147,9 @@ describe('Profiles: Assign and real photos', () => {
       'POST /app-signups/labels': {},
     });
     renderScreen(<JobSeekerDetail />, { portal: 'ceo', path: '/ceo/job-seekers/js9', route: '/ceo/job-seekers/:id' });
-    expect(await screen.findByRole('img', { name: 'Live selfie of Manju Gowda: Photo no longer kept' })).toBeInTheDocument();
+    // A clean initials placeholder when the photo is no longer kept (rev 198).
+    const gone = await screen.findByRole('img', { name: 'Live selfie of Manju Gowda: Photo no longer kept' });
+    expect(gone).toHaveTextContent('MG');
     expect(screen.queryByTestId('assignment')).toBeNull();
   });
 
@@ -171,7 +175,12 @@ describe('Profiles: Assign and real photos', () => {
       'POST /app-signups/labels': {},
     });
     renderScreen(<BusinessDetail />, { portal: 'manager', path: '/manager/businesses/b9', route: '/manager/businesses/:id' });
-    expect(await screen.findByRole('img', { name: /Shop name board of Shanti Sagar/ })).toHaveAttribute('src', 'data:image/jpeg;base64,Ym9hcmQ=');
+    // At the top: the shop's board photo, then the name and the BZ- ID under it (rev 198).
+    const hero = await screen.findByTestId('profile-hero');
+    expect(await within(hero).findByRole('img', { name: 'Shop name board of Shanti Sagar' })).toHaveAttribute('src', 'data:image/jpeg;base64,Ym9hcmQ=');
+    expect(hero).toHaveTextContent('Shanti Sagar');
+    expect(hero).toHaveTextContent('BZ-00099');
+    expect(await screen.findByRole('img', { name: /Shop name board of Shanti Sagar, visit on/ })).toHaveAttribute('src', 'data:image/jpeg;base64,Ym9hcmQ=');
     expect(screen.getByRole('img', { name: /Selfie of Kiran Kumar at Shanti Sagar.*Photo no longer kept/ })).toBeInTheDocument();
     expect(screen.getByTestId('assignment')).toHaveTextContent('Account agent: Kiran Kumar');
   });

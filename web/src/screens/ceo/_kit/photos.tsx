@@ -24,11 +24,31 @@ interface Photo {
 const LINK_FRESH_MS = 4 * 60 * 1000;
 export const PHOTO_GONE = 'Photo no longer kept';
 
-function Thumb({ photo, alt, size = 96 }: { photo: Photo | undefined; alt: string; size?: number }) {
+function initialsOf(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  return ((words[0]?.[0] ?? '') + (words.length > 1 ? (words[words.length - 1]?.[0] ?? '') : '')).toUpperCase() || '?';
+}
+
+/** The clean placeholder when there is no photo, or it is no longer kept (rev 198). */
+function Initials({ name, size, label }: { name: string; size: number; label: string }) {
+  return (
+    <div
+      role="img"
+      aria-label={label}
+      title={label}
+      style={{ width: size, height: size, borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'var(--royal-soft, #e6eefc)', color: 'var(--royal, #0b4fb3)', fontWeight: 700, fontSize: Math.round(size * 0.36) }}
+    >
+      {initialsOf(name)}
+    </div>
+  );
+}
+
+function Thumb({ photo, alt, size = 96, initials, round }: { photo: Photo | undefined; alt: string; size?: number; initials?: string; round?: boolean }) {
   const [open, setOpen] = useState(false);
   const [broken, setBroken] = useState(false);
   if (!photo) return <Skeleton width={size} height={size} />;
   if (!photo.kept || !photo.url || broken) {
+    if (initials) return <Initials name={initials} size={size} label={`${alt}: ${PHOTO_GONE}`} />;
     return (
       <div className="ceo-ph" style={{ width: size, minHeight: size, display: 'grid', placeItems: 'center', textAlign: 'center', fontSize: 11 }} role="img" aria-label={`${alt}: ${PHOTO_GONE}`}>
         {PHOTO_GONE}
@@ -38,7 +58,7 @@ function Thumb({ photo, alt, size = 96 }: { photo: Photo | undefined; alt: strin
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} style={{ padding: 0, border: 0, background: 'none', cursor: 'zoom-in' }} aria-label={`Enlarge: ${alt}`}>
-        <img src={photo.url} alt={alt} width={size} height={size} style={{ objectFit: 'cover', borderRadius: 8, display: 'block' }} onError={() => setBroken(true)} />
+        <img src={photo.url} alt={alt} width={size} height={size} style={{ objectFit: 'cover', borderRadius: round ? '50%' : 8, display: 'block' }} onError={() => setBroken(true)} />
       </button>
       <Modal open={open} onClose={() => setOpen(false)} title={alt} width={640}>
         <img src={photo.url} alt={alt} style={{ width: '100%', height: 'auto', borderRadius: 8 }} onError={() => setBroken(true)} />
@@ -47,19 +67,61 @@ function Thumb({ photo, alt, size = 96 }: { photo: Photo | undefined; alt: strin
   );
 }
 
-/** C-JobSeeker: the live selfie taken during registration. */
-export function SeekerSelfie({ id, name, hasSelfie }: { id: string; name: string; hasSelfie?: boolean }) {
+const NO_PHOTO: Photo = { kept: false, url: null, expiresInSeconds: 0 };
+
+/**
+ * The top of a profile (rev 198, "Photo at the top of every profile"): the
+ * photo, then the name and the ID under it. Job seeker: the live selfie;
+ * referral partner: the partner's photo; business: the shop's name-board
+ * photo from the latest visit that has one. Initials when there is none.
+ */
+export function ProfileHero({
+  kind,
+  id,
+  name,
+  code,
+  hasPhoto,
+  visits,
+}: {
+  kind: 'job_seeker' | 'referral' | 'business';
+  id: string;
+  name: string;
+  code: string;
+  hasPhoto?: boolean;
+  visits?: readonly VisitForPhotos[];
+}) {
   const { api: base } = useRecordsPortal();
+  const visit = kind === 'business' ? visits?.find((v) => v.id && v.hasBoardPhoto) : undefined;
+  const path =
+    kind === 'job_seeker'
+      ? `${base}/job-seekers/${id}/selfie`
+      : kind === 'referral'
+        ? `${base}/referrals/${id}/photo`
+        : visit
+          ? `${base}/businesses/${id}/visits/${visit.id}/photos`
+          : null;
+  const enabled = Boolean(path) && hasPhoto !== false;
   const query = useQuery({
-    queryKey: [base, 'job-seeker', id, 'selfie'],
-    queryFn: () => api.get<Photo>(`${base}/job-seekers/${id}/selfie`),
-    enabled: hasSelfie !== false,
+    queryKey: [base, kind, id, 'profile-photo', path],
+    queryFn: async () => {
+      const res = await api.get<Photo | { boardPhoto: Photo }>(path!);
+      return 'boardPhoto' in res ? res.boardPhoto : res;
+    },
+    enabled,
     staleTime: LINK_FRESH_MS,
     refetchInterval: LINK_FRESH_MS,
   });
-  if (hasSelfie === false) return <span className="ceo-sub">Not taken</span>;
-  if (query.isError) return <span className="ceo-sub">{PHOTO_GONE}</span>;
-  return <Thumb photo={query.data} alt={`Live selfie of ${name}`} size={88} />;
+  const photo = !enabled || query.isError ? NO_PHOTO : query.data;
+  const alt = kind === 'job_seeker' ? `Live selfie of ${name}` : kind === 'referral' ? `Photo of ${name}` : `Shop name board of ${name}`;
+  return (
+    <div className="ceo-profile-hero" data-testid="profile-hero" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8, marginBottom: 16 }}>
+      <Thumb photo={photo} alt={alt} size={112} initials={name} round={kind !== 'business'} />
+      <div>
+        <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--navy)' }}>{name}</div>
+        <div className="code" style={{ fontSize: 13 }}>{code}</div>
+      </div>
+    </div>
+  );
 }
 
 export interface VisitForPhotos {

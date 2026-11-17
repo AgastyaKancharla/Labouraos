@@ -160,6 +160,13 @@ export class TeamLeadRecordsController {
     return this.sections.referrals(await this.scope(req), parseSection(q.section), this.listQuery(q));
   }
 
+  /** C-Partner: the partner's own photo (short-lived private link, audited). */
+  @Get('referrals/:id/photo')
+  @RequireRoles('team_lead')
+  async partnerPhoto(@Req() req: Authed, @Param('id') id: string) {
+    return this.sections.partnerPhoto(await this.scope(req), id);
+  }
+
   @Get('referrals/:id')
   @RequireRoles('team_lead')
   async partner(@Req() req: Authed, @Param('id') id: string) {

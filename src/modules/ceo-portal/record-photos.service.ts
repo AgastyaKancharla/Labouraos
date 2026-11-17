@@ -49,6 +49,17 @@ export class RecordPhotosService {
     return { kept: Boolean(url), url: url ?? null, expiresInSeconds: url ? CANDIDATE_PHOTO_LINK_TTL_SECONDS : 0 };
   }
 
+  /** The referral partner's own photo (taken at registration), or kept: false (rev 198). */
+  async partnerPhoto(viewer: PhotoViewer, scope: Prisma.ReferralWhereInput | null, id: string): Promise<ProfilePhoto> {
+    const where: Prisma.ReferralWhereInput = { AND: [{ OR: [{ id }, { code: id }] }, ...(scope ? [scope] : [])] };
+    const partner = await this.prisma.referral.findFirst({ where, select: { id: true, code: true, city: true, photoStoragePath: true } });
+    if (!partner) throw new NotFoundException(`Referral partner '${id}' not found`);
+    if (!partner.photoStoragePath || !this.candidatePhotos) return { kept: false, url: null, expiresInSeconds: 0 };
+    const url = await this.candidatePhotos.signedUrl(partner.photoStoragePath, CANDIDATE_PHOTO_LINK_TTL_SECONDS);
+    await this.audit.log({ actorId: viewer.id, action: 'record.partner_photo_viewed', entityType: 'referral', entityCode: partner.code, changedFields: [], city: partner.city });
+    return { kept: Boolean(url), url: url ?? null, expiresInSeconds: url ? CANDIDATE_PHOTO_LINK_TTL_SECONDS : 0 };
+  }
+
   /** A visit to the business: its name-board photo and the agent's selfie. */
   async visitPhotos(viewer: PhotoViewer, scope: Prisma.BusinessWhereInput | null, businessId: string, visitId: string) {
     const where: Prisma.BusinessWhereInput = { AND: [{ OR: [{ id: businessId }, { code: businessId }] }, ...(scope ? [scope] : [])] };

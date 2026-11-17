@@ -105,6 +105,10 @@ export class RecordSectionsService {
     return this.photos.seekerSelfie(s.viewer, this.viewable(s).seeker, id);
   }
 
+  async partnerPhoto(s: SectionScope, id: string) {
+    return this.photos.partnerPhoto(s.viewer, this.viewable(s).referral, id);
+  }
+
   async visitPhotos(s: SectionScope, businessId: string, visitId: string) {
     return this.photos.visitPhotos(s.viewer, this.viewable(s).business, businessId, visitId);
   }
