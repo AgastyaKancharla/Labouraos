@@ -1502,6 +1502,14 @@ model Target {
   placementsClosed           Int?      // count floor
   replacementsInside15Days   Int?      // count floor
   repeatBusinesses           Int?      // count floor
+  /// The automatic split (17 Nov): the fields of this row set by hand (a
+  /// Manager, a Team Lead, the CEO, or a transfer). The split keeps them and
+  /// spreads the rest of the team's number over the other agents.
+  handSetFields              String[]  @default([])
+  /// Day of the month from which the automatic split counted this agent
+  /// (joined, came back or moved team mid-month). Their share is already for
+  /// the working days left, so it is not pro-rated again. Null: whole month.
+  splitFromDay               Int?
   createdById                String
   createdBy                  Staff     @relation("CreatedTargets", fields: [createdById], references: [id], onDelete: Restrict)
   updatedById                String?
@@ -2711,6 +2719,14 @@ model TeamPlan {
   placed             Int?
   leftWithin30       Int?
   repeatBusinesses   Int?
+  /// The automatic split (17 Nov): the metrics of this row set by hand (the
+  /// Manager, or a transfer between teams). The split keeps them and spreads
+  /// the rest of the Manager's share over the other teams.
+  handSetFields      String[] @default([])
+  /// What agents who left this team this month had reached of their target,
+  /// per agent metric ({ "paid": 3, "placed": 1 }): taken off the team's number
+  /// before the rest is spread over the agents still in the team.
+  leaverCredit       Json     @default("{}")
   setByStaffId       String
   setBy              Staff    @relation("TeamPlanSetBy", fields: [setByStaffId], references: [id], onDelete: Restrict)
   createdAt          DateTime @default(now())
