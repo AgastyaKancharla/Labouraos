@@ -27,6 +27,12 @@ interface Props {
   /** "Change number" (mobile forms only). */
   onChangeNumber?: () => void;
   disabled?: boolean;
+  /**
+   * One button (Master Guide rev 193): the send button is the only button,
+   * and typing the sixth digit submits — no separate confirm button. Used
+   * where the code signs or confirms something (a vacancy, updated terms).
+   */
+  codeSubmits?: boolean;
   testID: string;
 }
 
@@ -37,7 +43,7 @@ interface Props {
  * Resend unlocks after 30 seconds, at most 3 times. Errors in the person's
  * language from the contract's codes.
  */
-export function OtpCodeCard({ send, submit, sendLabel, submitLabel, submitVariant = 'primary', sentText, beforeSend, children, onChangeNumber, disabled, testID }: Props) {
+export function OtpCodeCard({ send, submit, sendLabel, submitLabel, submitVariant = 'primary', sentText, beforeSend, children, onChangeNumber, disabled, codeSubmits, testID }: Props) {
   const { t } = useI18n();
   const [sent, setSent] = useState<OtpSent | null>(null);
   const [code, setCode] = useState('');
@@ -104,7 +110,15 @@ export function OtpCodeCard({ send, submit, sendLabel, submitLabel, submitVarian
         <>
           <Text variant="muted">{sentText}</Text>
           <CodeInput label={t('otp.code')} value={code} onChange={setCode} onComplete={(value) => void doVerify(value)} autoFocus testID={`${testID}-code`} />
-          <Button label={submitLabel} variant={submitVariant} onPress={() => void doVerify()} loading={busy === 'verify'} disabled={disabled} testID={`${testID}-verify`} />
+          {codeSubmits ? (
+            busy === 'verify' ? (
+              <Text variant="muted" testID={`${testID}-checking`}>
+                {t('otp.checking')}
+              </Text>
+            ) : null
+          ) : (
+            <Button label={submitLabel} variant={submitVariant} onPress={() => void doVerify()} loading={busy === 'verify'} disabled={disabled} testID={`${testID}-verify`} />
+          )}
           <View style={styles.row}>
             {resendsLeft > 0 ? (
               <Button

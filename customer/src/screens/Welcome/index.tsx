@@ -2,19 +2,18 @@ import { Image, Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Swoosh, Text } from '@/components';
-import { LANGUAGES, useI18n } from '@/i18n';
+import { useI18n } from '@/i18n';
 import { routes } from '@/navigation/routes';
 import { colors, fonts, radius, space, touch } from '@/theme';
 
 const logo = require('../../../assets/logo-mark.png');
 
 /**
- * Step 1 for everyone (proposal 2.1): pick Kannada, Hindi or English with
- * three large buttons, before anything else. The choice is remembered on
- * the phone and can be changed any time from the header.
+ * Step 1 for everyone (proposal 2.1): the welcome, then one large button to
+ * sign in. English only (Master Guide rev 193): no language choice.
  */
 export default function Welcome() {
-  const { t, setLanguage } = useI18n();
+  const { t } = useI18n();
   const insets = useSafeAreaInsets();
   return (
     <View style={[styles.page, { paddingTop: insets.top + space.xxl }]} testID="welcome">
@@ -29,24 +28,15 @@ export default function Welcome() {
       </View>
       <Swoosh />
       <View style={styles.body}>
-        <Text variant="h2" align="center">
-          {t('welcome.chooseLanguage')}
-        </Text>
-        {LANGUAGES.map((lang) => (
-          <Pressable
-            key={lang.code}
-            accessibilityRole="button"
-            accessibilityLabel={lang.name}
-            onPress={() => {
-              setLanguage(lang.code);
-              router.push(routes.signIn);
-            }}
-            style={({ pressed }) => [styles.choice, pressed && styles.pressed]}
-            testID={`welcome-language-${lang.code}`}
-          >
-            <Text style={styles.choiceText}>{lang.label === 'EN' ? 'English' : lang.label}</Text>
-          </Pressable>
-        ))}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('welcome.start')}
+          onPress={() => router.push(routes.signIn)}
+          style={({ pressed }) => [styles.choice, pressed && styles.pressed]}
+          testID="welcome-start"
+        >
+          <Text style={styles.choiceText}>{t('welcome.start')}</Text>
+        </Pressable>
       </View>
     </View>
   );

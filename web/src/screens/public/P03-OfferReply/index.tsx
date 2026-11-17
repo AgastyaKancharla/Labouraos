@@ -5,7 +5,7 @@ import { useI18n } from '../../../i18n/I18nProvider';
 import type { MessageKey } from '../../../i18n/en';
 import { interviewApi, type BookedDetails } from '../shared/api';
 import { dayLabel, dayTimeLabel, rupeeRange, timeLabel } from '../shared/format';
-import { ActionError, LinkProblem, Loading, Muted, Ok, PageTitle, Row, usePersonLanguage, Warn } from '../shared/ui';
+import { ActionError, LinkProblem, Loading, Muted, Ok, PageTitle, Row, Warn } from '../shared/ui';
 
 /**
  * P03-OfferReply and P03b-OfferYes. The offer shows job, area, salary, shift
@@ -23,7 +23,6 @@ export default function OfferReply() {
   const { t, language } = useI18n();
   const token = useParams<{ token: string }>().token ?? '';
   const offer = useQuery({ queryKey: ['offer', token], queryFn: () => interviewApi.offer(token), enabled: Boolean(token), retry: false });
-  usePersonLanguage(offer.data?.language, token);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [confirmNo, setConfirmNo] = useState(false);

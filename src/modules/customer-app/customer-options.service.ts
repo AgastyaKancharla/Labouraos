@@ -1,4 +1,5 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
+import { legalMinimumByZone, legalMinimumFor, minimumWageTable } from '../trade/minimum-wage';
 import { LegalDocumentService } from '../legal/legal-document.service';
 import { LEGAL_DOCUMENT_FOR_SUBJECT } from '../legal/legal-documents';
 import { isLegalLanguage } from '../legal/legal-document.types';
@@ -100,10 +101,14 @@ export class CustomerOptionsService {
         marketSalaryMinPaise: t.salaryMinPaise,
         marketSalaryMaxPaise: t.salaryMaxPaise,
         minimumWageLevel: t.minimumWageLevel,
-        legalMinimumPaise: legalMinimumWagePaise[t.minimumWageLevel] ?? policy.legalMinimumWageUnskilledPaise,
+        /** Zone 1's figure (the default); `legalMinimumPaiseByZone` has the business's (profile `minimumWageZone`). */
+        legalMinimumPaise: legalMinimumFor(policy, 1, t.minimumWageLevel),
+        legalMinimumPaiseByZone: legalMinimumByZone(policy, t.minimumWageLevel),
       })),
-      /** An unlisted trade ("Other") is checked against the unskilled figure. */
+      /** Zone 1's figures by level. An unlisted trade ("Other") is checked against the unskilled figure. */
       legalMinimumWagePaise,
+      /** All twelve figures (rev 193): zone → level → paise a month. */
+      legalMinimumWagePaiseByZone: minimumWageTable(policy),
       legalMinimumWageEffectiveFrom: policy.legalMinimumWageEffectiveFrom,
       salaryDaysPerMonth: policy.salaryDaysPerMonth,
       adultMinimumAge: policy.adultMinimumAge,

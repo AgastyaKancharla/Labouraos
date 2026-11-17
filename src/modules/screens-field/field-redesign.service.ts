@@ -1,3 +1,4 @@
+import { PRODUCT_LANGUAGE, productLanguage } from '../../common/language/english-only';
 import { HttpStatus, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -816,7 +817,7 @@ export class FieldRedesignService {
           ['startDate', v.startDate],
         ].filter(([, value]) => value === null || value === undefined || value === '').map(([field]) => field);
         const check = v.tradeSkill?.trim() && typeof v.salaryMinPaise === 'number'
-          ? await this.confirmation.checkLegalMinimum(v.tradeSkill, v.salaryMinPaise, v.salaryPeriod)
+          ? await this.confirmation.checkLegalMinimum(v.tradeSkill, v.salaryMinPaise, v.salaryPeriod, { businessId: business.id })
           : null;
         nextStep = {
           kind: 'send_to_owner',
@@ -886,7 +887,7 @@ export class FieldRedesignService {
             name: business.additionalContactName ?? business.ownerName,
             role: business.contactRole,
             phoneLast4: phoneLast4(business.phone),
-            language: business.contactLanguage,
+            language: PRODUCT_LANGUAGE,
           }
         : null,
       checklist: {
@@ -993,8 +994,8 @@ export class FieldRedesignService {
         signedAt: agreement.signedAt?.toISOString() ?? null,
       });
     }
-    const requested = (body?.language ?? '').trim();
-    const language = requested || (['kn', 'en', 'hi'].includes(business.contactLanguage ?? '') ? business.contactLanguage! : 'en');
+    // English only (rev 193): a language an older app sends is ignored.
+    const language = productLanguage(body?.language);
     // The one-a-minute / five-a-day limit is checked inside createAgreementLink (shared by
     // every path that sends a link, S2); a link whose SMS failed is withdrawn there.
     const issued = await this.consentLinks.createAgreementLink(business.id, actor.sub, language);

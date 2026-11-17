@@ -7,7 +7,6 @@ export interface ReferralForm {
   mobile: string;
   whatsappSame: boolean;
   whatsapp: string;
-  language: string;
   type: 'individual' | 'business';
   individualRole: string;
   business: BusinessHit | null;
@@ -22,7 +21,6 @@ export const EMPTY_REFERRAL: ReferralForm = {
   mobile: '',
   whatsappSame: true,
   whatsapp: '',
-  language: '',
   type: 'individual',
   individualRole: '',
   business: null,
@@ -35,7 +33,6 @@ export const EMPTY_REFERRAL: ReferralForm = {
 export function referralErrors(form: ReferralForm): string[] {
   const e: string[] = [];
   if (!form.name.trim()) e.push('name');
-  if (!form.language) e.push('language');
   if (!form.whatsappSame && !/^[6-9]\d{9}$/.test(form.whatsapp)) e.push('whatsapp');
   if (form.type === 'individual' && !form.individualRole) e.push('individualRole');
   if (form.type === 'business' && !form.business && (!form.partnerBusinessName.trim() || !form.partnerBusinessType)) e.push('business');
@@ -52,7 +49,6 @@ export function referralBody(form: ReferralForm, otpRequestId: string) {
     otpRequestId,
     type: form.type,
     whatsappPhone: form.whatsappSame ? form.mobile : form.whatsapp,
-    language: form.language,
     ...(form.type === 'individual'
       ? { individualRole: form.individualRole }
       : form.business

@@ -120,6 +120,7 @@ model JobSeeker {
   termsAcceptedVersion      String?
   termsAcceptedLanguage     String?
   termsAcceptedHash         String?
+  /// Always "en" (English only, rev 193); kept for old rows and older clients.
   messageLanguage           String?
   heardFrom                 String?
   placements                Placement[]
@@ -479,6 +480,15 @@ model Business {
   leadCreatedByStaffId     String?
   leadChannel              String?
   locality                 String?
+  /// Legal minimum wage zone (Master Guide rev 193, 17 Nov): 1 = Greater
+  /// Bengaluru Authority area, 2 = other municipal corporations and district
+  /// headquarters, 3 = rest of Karnataka. Worked out from the address when
+  /// the business is created (zoneForBusiness, docs/minimum-wage.md); office
+  /// staff can change it (PATCH /businesses/:id/minimum-wage-zone).
+  minimumWageZone          Int       @default(1)
+  /// "auto" (worked out from the address; follows address edits) or "staff"
+  /// (set by office staff; an address edit no longer changes it).
+  minimumWageZoneSource    String    @default("auto")
   /// Set when the field agent who registered the business at the shop has
   /// the GPS-checked visit, the storefront photo and the agreement signed by
   /// OTP. Candidates and interviews are then allowed the same day, before the
@@ -1568,10 +1578,22 @@ model PricingPolicy {
   walkInEnd                    String    @default("18:00")
   matchPageSize                Int       @default(3)
   salaryDaysPerMonth           Int       @default(26)
-  legalMinimumWageUnskilledPaise     Int      @default(2337600)
-  legalMinimumWageSemiSkilledPaise   Int      @default(2571400)
-  legalMinimumWageSkilledPaise       Int      @default(2828600)
-  legalMinimumWageHighlySkilledPaise Int      @default(3111400)
+  /// Legal minimum wage, paise a month (Karnataka notification of 22 May 2026;
+  /// docs/minimum-wage.md). These four are Zone 1 (Greater Bengaluru).
+  legalMinimumWageUnskilledPaise     Int      @default(2337643)
+  legalMinimumWageSemiSkilledPaise   Int      @default(2571407)
+  legalMinimumWageSkilledPaise       Int      @default(2828547)
+  legalMinimumWageHighlySkilledPaise Int      @default(3111402)
+  /// Zone 2: other municipal corporations and district headquarters.
+  legalMinimumWageZone2UnskilledPaise     Int @default(2125130)
+  legalMinimumWageZone2SemiSkilledPaise   Int @default(2337643)
+  legalMinimumWageZone2SkilledPaise       Int @default(2571407)
+  legalMinimumWageZone2HighlySkilledPaise Int @default(2828547)
+  /// Zone 3: the rest of Karnataka.
+  legalMinimumWageZone3UnskilledPaise     Int @default(1931936)
+  legalMinimumWageZone3SemiSkilledPaise   Int @default(2125130)
+  legalMinimumWageZone3SkilledPaise       Int @default(2337643)
+  legalMinimumWageZone3HighlySkilledPaise Int @default(2571407)
   legalMinimumWageEffectiveFrom      DateTime @default("2026-05-22T00:00:00.000Z") @db.Date
   matchingWeights              Json      @default("{\"clock\":30,\"distance\":20,\"experience\":15,\"salary\":15,\"reliability\":10,\"completeness\":5,\"pastResults\":5}")
   adultMinimumAge              Int       @default(18)
@@ -2917,7 +2939,7 @@ model CustomerAccount {
   /// From Google sign-in, if used. The Google picture is never taken.
   email                 String?
   displayName           String?
-  /// kn, hi or en: the app and notifications use it.
+  /// Always "en": the app and notifications are English only (Master Guide rev 193).
   language              String    @default("en")
   /// "Laboura may call, SMS or WhatsApp me to help me finish registering" (C7).
   contactMeConsent      Boolean   @default(false)

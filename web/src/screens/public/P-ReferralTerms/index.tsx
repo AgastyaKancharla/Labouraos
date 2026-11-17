@@ -1,11 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { useI18n } from '../../../i18n/I18nProvider';
 import type { MessageKey } from '../../../i18n/en';
 import { api } from '../../../lib/api/client';
 import { formatINR } from '../../../lib/format/money';
-import { LinkProblem, Loading, Muted, PageTitle, usePersonLanguage } from '../shared/ui';
+import { LinkProblem, Loading, Muted, PageTitle } from '../shared/ui';
 import { LegalSummary, useLegalDocument } from '../shared/legal';
 import './referral-terms.css';
 
@@ -13,7 +12,6 @@ import './referral-terms.css';
  * Referral partner terms (public, /p/referral-terms). No design file; it
  * uses the public phone pages' look. Linked from the partner's registration
  * link (the terms they sign by OTP) and from the call agent's CA15 screen.
- * `?lang=kn|hi|en` opens it in the partner's language.
  *
  * Written from the Master Guide's referral rules (what earns, when it is
  * paid, payout details) and the pause rule already in the software; amounts
@@ -36,9 +34,6 @@ const SECTIONS: { title: MessageKey; lines: MessageKey[] }[] = [
 
 export default function ReferralTerms() {
   const { t } = useI18n();
-  const [params] = useSearchParams();
-  // Once per language link, so the switcher still works afterwards.
-  usePersonLanguage(params.get('lang'), `referral-terms:${params.get('lang') ?? ''}`);
   const terms = useQuery({
     queryKey: ['referral-terms'],
     queryFn: () => api.get<Terms>('/referral-terms', { auth: false }),

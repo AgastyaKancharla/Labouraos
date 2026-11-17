@@ -1,21 +1,14 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { en, type MessageKey, type Messages } from './en';
-import { hi } from './hi';
-import { kn } from './kn';
+import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
+import { en, type MessageKey } from './en';
 
 /**
- * Three languages: English (complete, the source of every key), Kannada and
- * Hindi. The translation files are typed as Record<MessageKey, string>, so a
- * missing or extra key fails the build.
+ * English only, everywhere (Master Guide rev 193, decided 17 Nov): every
+ * portal, the call agent console and the public pages show English. There is
+ * no language switcher and no per-person language. Words still go through
+ * `t('key')` so they live in one place (en.ts).
  */
-export const LANGUAGES = ['en', 'kn', 'hi'] as const;
+export const LANGUAGES = ['en'] as const;
 export type Language = (typeof LANGUAGES)[number];
-export const LANGUAGE_STORAGE_KEY = 'laboura_lang';
-
-const MESSAGES: Record<Language, Messages> = { en, kn, hi };
-
-/** What the switcher shows for each language, in its own script (P* designs). */
-export const LANGUAGE_NAMES: Record<Language, string> = { kn: 'ಕನ್ನಡ', hi: 'हिंदी', en: 'EN' };
 
 export type TranslateVars = Record<string, string | number>;
 export type Translate = (key: MessageKey, vars?: TranslateVars) => string;
@@ -27,48 +20,23 @@ export function interpolate(template: string, vars?: TranslateVars): string {
   );
 }
 
-export function translate(language: Language, key: MessageKey, vars?: TranslateVars): string {
-  return interpolate(MESSAGES[language][key] ?? en[key], vars);
+export function translate(_language: Language, key: MessageKey, vars?: TranslateVars): string {
+  return interpolate(en[key] ?? key, vars);
 }
 
 interface I18nValue {
+  /** Always "en" (kept so date and number formatting keep one signature). */
   language: Language;
-  setLanguage: (language: Language) => void;
   t: Translate;
 }
 
 const I18nContext = createContext<I18nValue | null>(null);
 
-function initialLanguage(): Language {
-  try {
-    const stored = localStorage.getItem(LANGUAGE_STORAGE_KEY);
-    if (stored && (LANGUAGES as readonly string[]).includes(stored)) return stored as Language;
-  } catch {
-    /* storage blocked */
-  }
-  return 'en';
-}
-
-export function I18nProvider({ children, language: forced }: { children: ReactNode; language?: Language }) {
-  const [language, setLanguageState] = useState<Language>(() => forced ?? initialLanguage());
-
-  const setLanguage = useCallback((next: Language) => {
-    setLanguageState(next);
-    try {
-      localStorage.setItem(LANGUAGE_STORAGE_KEY, next);
-    } catch {
-      /* storage blocked */
-    }
-  }, []);
-
+export function I18nProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
-    document.documentElement.lang = language;
-  }, [language]);
-
-  const value = useMemo<I18nValue>(
-    () => ({ language, setLanguage, t: (key, vars) => translate(language, key, vars) }),
-    [language, setLanguage],
-  );
+    document.documentElement.lang = 'en';
+  }, []);
+  const value = useMemo<I18nValue>(() => ({ language: 'en', t: (key, vars) => translate('en', key, vars) }), []);
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 

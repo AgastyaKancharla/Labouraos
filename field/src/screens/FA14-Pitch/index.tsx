@@ -2,27 +2,26 @@ import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { Button, Card, LoadingState, Screen, Text } from '@/components';
-import { MoneyField, Segmented } from '@/components/form';
+import { MoneyField } from '@/components/form';
 import { useI18n } from '@/i18n';
 import { routes } from '@/navigation/routes';
 import { useCurrentTab } from '@/navigation/useFlow';
 import { type Accent, accents, colors, fonts } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { ErrorBanner, feeBreakdown, formatRupees, KeyValue, useSellingSettings } from '../_selling';
-import { pitchLines, SCRIPT_LANGUAGES, type ScriptLanguage } from '../_selling/scripts';
+import { pitchLines } from '../_selling/scripts';
 
 /**
- * FA14 — Pitch and fee calculator. Three lines to explain Laboura in the
- * owner's language (ಕನ್ನಡ / हिंदी / English, whatever the app language), and
+ * FA14 — Pitch and fee calculator. Three lines to explain Laboura (English
+ * only, rev 193), and
  * the fee: salary → fee + GST (₹15,000 → ₹7,500 + ₹1,350). The percentages
  * come from Settings, never from the app.
  */
 export default function PitchScreen() {
-  const { t, language } = useI18n();
+  const { t } = useI18n();
   const settings = useSellingSettings();
   // Opened during a visit (Visits tab): back to the talk, never a second visit.
   const inVisit = useCurrentTab() === '(visits)';
-  const [lang, setLang] = useState<ScriptLanguage>(language);
   const [salary, setSalary] = useState<number | null>(null);
   const s = settings.data;
   const fee = s && salary ? feeBreakdown(salary, s.feePercent, s.gstPercent) : null;
@@ -31,10 +30,9 @@ export default function PitchScreen() {
       <AppHeader title={t('fa03.headerTitle')} subtitle={t('fa14.subtitle')} />
       <Screen testID="screen-FA14">
         <Card title={t('fa14.explain')} icon="chat" accent="cyan">
-          <Segmented value={lang} options={SCRIPT_LANGUAGES} onChange={setLang} testID="pitch-language" />
           {s ? (
             <View style={styles.lines} testID="pitch">
-              {pitchLines(lang, s.feePercent, s.gstPercent, s.maxFreeReplacements, s.replacementWindowDays).map((line, i) => (
+              {pitchLines(s.feePercent, s.gstPercent, s.maxFreeReplacements, s.replacementWindowDays).map((line, i) => (
                 <View key={i} style={styles.lineRow}>
                   <View style={[styles.lineBar, { backgroundColor: accents[LINE_ACCENTS[i % LINE_ACCENTS.length]].raw }]} />
                   <Text style={styles.line}>{`${i + 1}. ${line}`}</Text>

@@ -20,7 +20,6 @@ export const YEARS = [
   { value: '10+', years: 10 },
 ] as const;
 
-export const MESSAGE_LANGUAGES = ['kn', 'hi', 'en'] as const;
 export const GENDERS = ['female', 'male', 'other'] as const;
 export const BEST_TIME = ['09-12', '12-15', '15-18', '18-21', '09-21'] as const;
 export const HEARD_FROM = ['toll_free_missed_call', 'ad', 'referral_partner', 'field_visit', 'social_media', 'walk_in', 'other'] as const;
@@ -53,7 +52,6 @@ export interface JobSeekerForm {
   whatsapp: string;
   dateOfBirth: string;
   gender: string;
-  messageLanguage: string;
   bestTime: string;
   heardFrom: string;
   place: PlaceState;
@@ -92,7 +90,6 @@ export const EMPTY_FORM: JobSeekerForm = {
   whatsapp: '',
   dateOfBirth: '',
   gender: '',
-  messageLanguage: '',
   bestTime: '',
   heardFrom: 'field_visit',
   place: { area: '', pincode: '', latitude: null, longitude: null },
@@ -129,7 +126,7 @@ export function tradeName(row: TradeRow): string {
 }
 
 export type FieldError =
-  | 'name' | 'dateOfBirth' | 'gender' | 'messageLanguage' | 'bestTime' | 'heardFrom' | 'area' | 'pincode' | 'pin'
+  | 'name' | 'dateOfBirth' | 'gender' | 'bestTime' | 'heardFrom' | 'area' | 'pincode' | 'pin'
   | 'travelKm' | 'trade' | 'years' | 'lookingSince' | 'minSalary' | 'maxSalary' | 'salaryOrder' | 'availableFrom'
   | 'shift' | 'jobType' | 'spoken' | 'duplicateTrade' | 'whatsapp';
 
@@ -139,7 +136,6 @@ export function validate(form: JobSeekerForm): FieldError[] {
   if (!form.name.trim()) errors.push('name');
   if (!form.dateOfBirth) errors.push('dateOfBirth');
   if (!form.gender) errors.push('gender');
-  if (!form.messageLanguage) errors.push('messageLanguage');
   if (!form.bestTime) errors.push('bestTime');
   if (!form.heardFrom) errors.push('heardFrom');
   if (!form.place.area) errors.push('area');
@@ -169,7 +165,6 @@ export function createBody(form: JobSeekerForm, otpRequestId: string) {
     name: form.name.trim(),
     phone: form.mobile,
     otpRequestId,
-    messageLanguage: form.messageLanguage,
     bestTimeToCall: form.bestTime,
     dateOfBirth: form.dateOfBirth,
     gender: form.gender,

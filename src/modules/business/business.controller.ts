@@ -202,6 +202,19 @@ export class BusinessController {
     return this.verificationService.unpause(businessId, req.user.sub, reason);
   }
 
+  /** Rev 193: office staff set the legal minimum wage zone (1, 2 or 3), with a reason. */
+  @Patch(':id/minimum-wage-zone')
+  @RequireRoles('team_lead', 'manager', 'ceo')
+  @RequirePermission('business', 'write')
+  setMinimumWageZone(
+    @Param('id') businessId: string,
+    @Body('zone') zone: unknown,
+    @Body('reason') reason: string,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.verificationService.setMinimumWageZone(businessId, req.user.sub, zone, reason);
+  }
+
   @Post(':id/account-agent')
   @RequireRoles('team_lead', 'manager', 'ceo')
   @RequirePermission('business', 'write')

@@ -15,7 +15,7 @@ describe('Job seeker terms at payment', () => {
     const audit = { log: jest.fn() };
     const legal = {
       status: jest.fn().mockResolvedValue({ documentKey: 'job_seeker_terms', currentVersion: '1.1', acceptedVersion: '1.0', ...status }),
-      render: jest.fn().mockResolvedValue({ key: 'job_seeker_terms', version: '1.1', language: 'kn', hash: 'h'.repeat(64), html: '<p>terms</p>' }),
+      render: jest.fn().mockResolvedValue({ key: 'job_seeker_terms', version: '1.1', language: 'en', hash: 'h'.repeat(64), html: '<p>terms</p>' }),
       recordAcceptance: jest.fn(),
     };
     const service = new JobSeekerService(
@@ -32,7 +32,7 @@ describe('Job seeker terms at payment', () => {
     await service.acceptTermsAndCreatePayment('js-1', true, { language: 'kn', otpRequestId: 'otp-1', method: 'sms_link' });
     expect(prisma.jobSeeker.updateMany).toHaveBeenCalledWith({
       where: { id: 'js-1', OR: [{ paymentReceivedAt: null }, { status: { in: ['deactivated', 'closed', 'refunded'] } }] },
-      data: expect.objectContaining({ termsAcceptedVersion: '1.1', termsAcceptedLanguage: 'kn', termsAcceptedHash: 'h'.repeat(64) }),
+      data: expect.objectContaining({ termsAcceptedVersion: '1.1', termsAcceptedLanguage: 'en', termsAcceptedHash: 'h'.repeat(64) }),
     });
     expect(legal.recordAcceptance).toHaveBeenCalledWith(expect.objectContaining({ context: 'payment_terms', otpRequestId: 'otp-1' }));
   });

@@ -1,13 +1,12 @@
 import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
-import { useI18n, LANGUAGES } from '@/i18n';
+import { useI18n } from '@/i18n';
 import { Button, Card, HeroCard, Icon, IconTile, ListRow, ProgressBar, Screen, SearchBar, Text, type IconName } from '@/components';
 import { useAuth } from '@/auth/AuthProvider';
 import { routes } from '@/navigation/routes';
 import { type Accent, colors, fonts } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { placementsProgress, useTargetDashboard } from '../FA03-Home/useHome';
-import { ChipChoices } from '../_visits/ChoiceList';
 
 const LINKS: { key: string; title: 'me.targets' | 'me.today' | 'me.attendance' | 'me.leave' | 'me.corrections' | 'me.payslips'; href: string; icon: IconName; accent: Accent }[] = [
   { key: 'targets', title: 'me.targets', href: routes.targets, icon: 'trophy', accent: 'gold' },
@@ -20,11 +19,11 @@ const LINKS: { key: string; title: 'me.targets' | 'me.today' | 'me.attendance' |
 
 /**
  * FA24 — Me, the fifth tab (redesign, 16 Nov): targets and leaderboard, my
- * attendance, leave, corrections, payslips, language (Kannada / English) and
- * log out. Data: GET /targets/dashboard for the placements bar.
+ * attendance, leave, corrections, payslips and log out (English only, rev 193:
+ * no language choice). Data: GET /targets/dashboard for the placements bar.
  */
 export default function MeScreen() {
-  const { t, language, setLanguage } = useI18n();
+  const { t } = useI18n();
   const { session, logout } = useAuth();
   const dashboard = useTargetDashboard();
   const progress = placementsProgress(dashboard.data);
@@ -57,16 +56,6 @@ export default function MeScreen() {
             />
           ))}
         </Card>
-        <Card title={t('common.languageLabel')} icon="chat" accent="cyan" testID="me-language">
-          <ChipChoices
-            choices={LANGUAGES.map((l) => ({ value: l.code, label: l.label === 'EN' ? 'English' : l.label }))}
-            value={language}
-            onChange={(code) => setLanguage(code)}
-            testID="me-lang"
-          />
-          <View style={styles.gap} />
-          <Text variant="muted">{t('me.languageNote')}</Text>
-        </Card>
         <Button label={t('common.logout')} variant="danger" icon={<Icon name="logout" color={colors.white} />} onPress={() => void logout()} testID="me-logout" />
       </Screen>
     </View>
@@ -75,7 +64,6 @@ export default function MeScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
-  gap: { height: 8 },
   progress: { gap: 8, paddingTop: 4 },
   progressHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
   onBlue: { fontFamily: fonts.body700, fontSize: 11, letterSpacing: 0.6, textTransform: 'uppercase', color: colors.onBlueSoft, flex: 1 },

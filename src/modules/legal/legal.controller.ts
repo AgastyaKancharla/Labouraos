@@ -29,7 +29,7 @@ export class LegalController {
   }
 
   @Get('documents/:key')
-  @Public('public legal document text (In short + full text) in kn/hi/en; no personal data')
+  @Public('public legal document text (In short + full text), in English; no personal data')
   document(@Param('key') key: string, @Query('lang') lang?: string) {
     if (!isLegalDocumentKey(key)) throw new NotFoundException('No such legal document');
     return this.legal.publicDocument(key, languageOf(lang));

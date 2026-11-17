@@ -23,7 +23,8 @@ export const REQUIRED_CONSENT_PURPOSES_BY_SUBJECT: Record<string, readonly strin
   staff: ['gps_tracking', 'call_recording', 'data_use'],
 };
 
-export const CONSENT_LANGUAGES = ['kn', 'hi', 'en'] as const;
+/** English only (Master Guide rev 193). */
+export const CONSENT_LANGUAGES = ['en'] as const;
 export type ConsentLanguage = (typeof CONSENT_LANGUAGES)[number];
 
 export const CONSENT_METHODS = ['sms_link', 'in_app', 'contract'] as const;

@@ -48,24 +48,20 @@ describe('FA01 field agent sign in', () => {
     await waitFor(() => expect(screen.getByTestId('login-error')).toHaveTextContent(/waiting for your Team Lead to approve it.*phone UUID\d{1,4}\b/i));
   });
 
-  it('shows wrong password and locked messages in the chosen language', async () => {
+  it('shows wrong password and locked messages in English (rev 193)', async () => {
     await renderWithApp(<LoginScreen />, {
-      language: 'kn',
       route: () => ({ status: 401, body: { message: 'Invalid staff code or password' } }),
     });
     await fireEvent.changeText(screen.getByTestId('staff-code'), 'FA-00017');
     await fireEvent.changeText(screen.getByTestId('password'), 'x');
     await fireEvent.press(screen.getByTestId('sign-in'));
-    await waitFor(() => expect(screen.getByTestId('login-error')).toHaveTextContent('ಸ್ಟಾಫ್ ಕೋಡ್ ಅಥವಾ ಪಾಸ್‌ವರ್ಡ್ ತಪ್ಪಾಗಿದೆ.'));
+    await waitFor(() => expect(screen.getByTestId('login-error')).toHaveTextContent('Staff code or password is wrong.'));
   });
 
   it.each([
     ['en', 'This app is for field agents. Please sign in at app.laboura.com.'],
-    ['kn', 'ಈ ಆಪ್ ಫೀಲ್ಡ್ ಏಜೆಂಟ್‌ಗಳಿಗಾಗಿ ಮಾತ್ರ. ದಯವಿಟ್ಟು app.laboura.com ನಲ್ಲಿ ಸೈನ್ ಇನ್ ಮಾಡಿ.'],
-    ['hi', 'यह ऐप फ़ील्ड एजेंट के लिए है। कृपया app.laboura.com पर साइन इन करें।'],
-  ] as const)('refuses anyone who is not a field agent, in the chosen language (%s)', async (language, text) => {
+  ] as const)('refuses anyone who is not a field agent (%s)', async (_language, text) => {
     const { store } = await renderWithApp(<LoginScreen />, {
-      language,
       route: () => ({ status: 401, body: { message: 'This app is for field agents. Please sign in at app.laboura.com.' } }),
     });
     await fireEvent.changeText(screen.getByTestId('staff-code'), 'CEO-1');

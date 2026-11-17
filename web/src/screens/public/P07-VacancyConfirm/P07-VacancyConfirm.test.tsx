@@ -11,7 +11,7 @@ const details = {
 const render = () => renderScreen(<VacancyConfirm />, { portal: 'public', path: '/p/vacancy-confirm/vtok', route: '/p/vacancy-confirm/:token' });
 
 describe('P07-VacancyConfirm', () => {
-  it('shows the vacancy (job, people, salary, shift, start date, business), confirms with the owner OTP, then says thank you', async () => {
+  it('shows the vacancy (job, people, salary, shift, start date, business); one button sends the code and typing it confirms (rev 193)', async () => {
     const api = mockApi({
       'GET /vacancy-confirm/vtok': details,
       'POST /vacancy-confirm/vtok/send-otp': { requestId: 'vreq', otpRequestId: 'vreq', phone: '******4321' },
@@ -25,13 +25,15 @@ describe('P07-VacancyConfirm', () => {
     expect(screen.getByText('day shift')).toBeInTheDocument();
     expect(screen.getByText('Fri, 20 Nov')).toBeInTheDocument();
     expect(screen.getByText('This link works until 18 Nov, 12:40 PM.')).toBeInTheDocument();
-    const confirm = screen.getByRole('button', { name: 'Confirm vacancy' });
-    expect(confirm).toBeDisabled();
-    await userEvent.click(screen.getByRole('button', { name: 'Send code to ******4321' }));
-    expect(confirm).toBeDisabled();
+    // One button: no separate "Confirm vacancy" button before or after the code.
+    expect(screen.queryByRole('button', { name: 'Confirm vacancy' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Send code to confirm' }));
+    expect(screen.queryByRole('button', { name: 'Confirm vacancy' })).not.toBeInTheDocument();
+    expect(api.calls('POST /vacancy-confirm/vtok')).toHaveLength(0);
     await userEvent.click(screen.getAllByRole('textbox').find((el) => el.getAttribute('inputmode') === 'numeric')!);
     await userEvent.paste('802291');
-    await userEvent.click(confirm);
+    await screen.findByText('Confirmed, thank you');
+    expect(api.calls('POST /vacancy-confirm/vtok')).toHaveLength(1);
     expect(api.calls('POST /vacancy-confirm/vtok')[0]!.body).toEqual({ otpRequestId: 'vreq', code: '802291' });
     expect(await screen.findByText('Confirmed, thank you')).toBeInTheDocument();
     expect(screen.getByText("We'll start finding 2 people for Baker. Your Laboura agent will be in touch.")).toBeInTheDocument();
@@ -44,10 +46,9 @@ describe('P07-VacancyConfirm', () => {
       'POST /vacancy-confirm/vtok': apiError(400, 'Wrong or expired code'),
     });
     render();
-    await userEvent.click(await screen.findByRole('button', { name: 'Send code to ******4321' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Send code to confirm' }));
     await userEvent.click(screen.getAllByRole('textbox').find((el) => el.getAttribute('inputmode') === 'numeric')!);
     await userEvent.paste('111111');
-    await userEvent.click(screen.getByRole('button', { name: 'Confirm vacancy' }));
     expect(await screen.findByText(/That code is wrong or has run out/)).toBeInTheDocument();
     expect(screen.queryByText('Confirmed, thank you')).not.toBeInTheDocument();
   });
@@ -56,7 +57,7 @@ describe('P07-VacancyConfirm', () => {
     mockApi({ 'GET /vacancy-confirm/vtok': { ...details, status: 'open' } });
     render();
     expect(await screen.findByText('This vacancy is already confirmed. Thank you.')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Confirm vacancy' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Send code to confirm' })).not.toBeInTheDocument();
   });
 
   it('opening the used link again explains it', async () => {
@@ -71,9 +72,9 @@ describe('P07-VacancyConfirm', () => {
     expect(await screen.findByText(/This link has expired/)).toBeInTheDocument();
   });
 
-  it('opens in the language the link was sent in (Kannada)', async () => {
+  it('is in English even when an old link says Kannada (rev 193)', async () => {
     mockApi({ 'GET /vacancy-confirm/vtok': { ...details, preferredLanguage: 'kn' } });
     render();
-    expect(await screen.findByRole('heading', { name: 'ನಿಮ್ಮ ಖಾಲಿ ಹುದ್ದೆ ದೃಢೀಕರಿಸಿ · Sri Sai Bakery' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Confirm your vacancy · Sri Sai Bakery' })).toBeInTheDocument();
   });
 });

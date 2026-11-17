@@ -306,6 +306,56 @@ describe('Detail pages', () => {
     await waitFor(() => expect(api.calls('POST /businesses/b1/pause')[0].body).toEqual({ reason: 'Check the GST' }));
   });
 
+  it('business: shows the minimum wage zone and office staff change it with a reason (rev 193)', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /staff': [{ id: 'fa2', name: 'Arun S', role: 'field_agent', status: 'active' }],
+      'GET /ceo/businesses/b1': {
+        id: 'b1',
+        code: 'BZ-00012',
+        name: 'Sri Sai Hotel',
+        legalName: 'Sri Sai Foods Pvt Ltd',
+        phone: '+919900088812',
+        gstNumber: '29ABCDE1234F1Z5',
+        gstVerified: true,
+        type: 'restaurant_hotel',
+        employeeCount: 30,
+        employeeCountBand: null,
+        address: '27th Main, HSR Layout',
+        hasPin: true,
+        minimumWageZone: 1,
+        minimumWageZoneSource: 'auto',
+        contact: { name: 'Prakash', role: 'manager', phone: '+919900088812', verified: true },
+        branches: [],
+        accountAgent: { id: 'fa1', name: 'Kiran Kumar', since: '2026-09-03T05:00:00Z' },
+        heardFrom: 'field_visit',
+        leadChannel: null,
+        status: 'verified',
+        pauseReason: null,
+        noDocuments: false,
+        createdAt: '2026-09-03T05:00:00Z',
+        tiles: { openVacancies: 2, openPositions: 3, candidatesShown: 14, noBypassMonths: 12, interviews: 8, placements: 6, feesPaidPaise: 4800000, replacementsUsed: 1 },
+        agreement: null,
+        callRecordingConsent: true,
+        vacancies: [],
+        introductions: [],
+        visits: [],
+        history: [],
+      },
+      'PATCH /businesses/b1/minimum-wage-zone': { id: 'b1', minimumWageZone: 2 },
+    });
+    signInAs('ceo');
+    renderScreen(<BusinessDetail />, { portal: 'ceo', path: '/ceo/businesses/b1', route: '/ceo/businesses/:id', now: NOW });
+    expect(await screen.findByRole('heading', { level: 1, name: 'Sri Sai Hotel · BZ-00012' })).toBeInTheDocument();
+    expect(screen.getByTestId('minimum-wage-zone')).toHaveTextContent('Zone 1 · Greater Bengaluru (from the address)');
+    await userEvent.click(screen.getByRole('button', { name: 'Change zone' }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.selectOptions(within(dialog).getByRole('combobox'), '2');
+    await userEvent.type(within(dialog).getByLabelText(/Reason/), 'The shop is in Mysuru');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Change the minimum wage zone' }));
+    await waitFor(() => expect(api.calls('PATCH /businesses/b1/minimum-wage-zone')[0].body).toEqual({ zone: 2, reason: 'The shop is in Mysuru' }));
+  });
+
   it('placement: refuses a refund waiting with the CEO and keeps searching', async () => {
     const api = mockApi({
       ...common,

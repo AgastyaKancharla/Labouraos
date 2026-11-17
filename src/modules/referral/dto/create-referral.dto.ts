@@ -4,7 +4,8 @@ export interface CreateReferralDto {
   mobileNumber?: string;
   type: 'individual' | 'business';
   whatsappPhone: string;
-  language: 'kn' | 'hi' | 'en';
+  /** Ignored: English only (rev 193). Older clients may still send it. */
+  language?: string;
   individualRole?: 'auto_driver' | 'shop_staff' | 'shop_owner' | 'security_guard' | 'existing_worker' | 'other';
   businessId?: string;
   partnerBusinessType?: string;

@@ -6,7 +6,6 @@ export { Emoji } from './Emoji';
 export { HeroCard, HeroPill, HeroStat } from './HeroCard';
 export { Icon, type IconName } from './Icon';
 export { IconTile } from './IconTile';
-export { LanguageSwitcher } from './LanguageSwitcher';
 export { ListRow } from './ListRow';
 export { ProgressBar } from './ProgressBar';
 export { Screen } from './Screen';

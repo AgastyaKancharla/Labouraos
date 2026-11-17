@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useInShortScripts } from '../../public/shared/legal';
+import { useInShortScript } from '../../public/shared/legal';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Button } from '../../../components/Button';
@@ -24,14 +24,14 @@ import {
   WhatsAppField,
   type MobileState,
 } from '../_registration/kit';
-import { BUSINESS_TYPES, HEARD_FROM, INDIVIDUAL_ROLES, MESSAGE_LANGUAGES } from '../_registration/options';
+import { BUSINESS_TYPES, HEARD_FROM, INDIVIDUAL_ROLES } from '../_registration/options';
 import { referralScript } from '../_registration/scripts';
 import { useDraft } from '../_registration/useDraft';
 import { EMPTY_REFERRAL, referralBody, referralErrors, type ReferralForm } from './payload';
 
 /**
  * Register a referral partner — design CA15-RegisterReferral. Mobile by OTP,
- * individual or business, area, pincode and optional pin, language. Saving
+ * individual or business, area, pincode and optional pin. Saving
  * creates the RF- ID, sends it by SMS and sends the one resumable link
  * (terms → selfie → ID → UPI); then CA15b shows the steps.
  */
@@ -39,7 +39,7 @@ export default function RegisterReferral() {
   const t = useT();
   const scriptTerms = useScriptTerms();
   // Referral Partner Terms v1.0 "In short" (rev 176), read aloud before the partner's OTP.
-  const partnerInShort = useInShortScripts('referral_terms');
+  const partnerInShort = useInShortScript('referral_terms');
   const to = useScreenPath();
   const navigate = useNavigate();
   const toast = useToast();
@@ -123,7 +123,6 @@ export default function RegisterReferral() {
               onAlreadyRegistered={(record) => setDuplicate(record)}
             />
             {mobile.requestId && <WhatsAppField same={form.whatsappSame} onSame={(v) => set('whatsappSame', v)} value={form.whatsapp} onChange={(v) => set('whatsapp', v)} required />}
-            <SelectField label={t('reg.messageLanguage')} required value={form.language} onChange={(v) => set('language', v)} options={choiceOptions(t, MESSAGE_LANGUAGES)} error={err('language')} />
           </div>
           <div className="fld" role="radiogroup" aria-label={t('reg.ref.partnerIs')}>
             <span className="reg-label">{t('reg.ref.partnerIs')}</span>
@@ -179,10 +178,10 @@ export default function RegisterReferral() {
           </div>
         </fieldset>
 
-        <ExplainScript n={3} title={t('reg.ref.explain')} scripts={partnerInShort ?? (scriptTerms ? referralScript(scriptTerms) : null)} language={form.language} note={
+        <ExplainScript n={3} title={t('reg.ref.explain')} script={partnerInShort ?? (scriptTerms ? referralScript(scriptTerms) : null)} note={
             <>
               {t('reg.ref.explainNote')}{' '}
-              <a href={`${import.meta.env.BASE_URL}p/referral-terms?lang=${form.language || 'kn'}`} target="_blank" rel="noopener noreferrer">
+              <a href={`${import.meta.env.BASE_URL}p/referral-terms`} target="_blank" rel="noopener noreferrer">
                 {t('rterms.open')}
               </a>
             </>

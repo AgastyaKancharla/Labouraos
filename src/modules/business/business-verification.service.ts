@@ -21,6 +21,9 @@ import { BusinessClock } from './business-clock';
 import { testModeFields } from '../../common/otp/otp-test-mode';
 import { CustomerNotificationHooks } from '../customer-notification/customer-notification-hooks.service';
 import { VERIFICATION_VISIT_PURPOSES } from './business.constants';
+import { PricingService } from '../pricing/pricing.service';
+import { isMinimumWageZone, legalMinimumFor } from '../trade/minimum-wage';
+import { tradeNameKey } from '../trade/trade.service';
 import { ownerVisitOtpPurpose } from '../../common/otp/bound-otp-purposes';
 
 // business_signup: a business that signed up in the customer app (proposal 4.2).
@@ -47,7 +50,64 @@ export class BusinessVerificationService {
     private readonly reviewFlagService: ReviewFlagService,
     private readonly clock: BusinessClock,
     @Optional() private readonly customerNotifications?: CustomerNotificationHooks,
+    @Optional() private readonly pricing?: PricingService,
   ) {}
+
+  /**
+   * Office staff set a business's legal minimum wage zone (rev 193): Team
+   * Lead of the business's team, Manager or CEO, with a reason. The zone is
+   * then kept when the address is edited. Vacancies not yet filled, closed
+   * or cancelled are checked again against the new zone (belowLegalMinimum
+   * and the figure); an owner-told tick already given stays as it was.
+   */
+  async setMinimumWageZone(businessId: string, actorId: string, zone: unknown, reason: string) {
+    const trimmedReason = typeof reason === 'string' ? reason.trim() : '';
+    if (!trimmedReason) throw new BadRequestException('A reason is required to change the minimum wage zone');
+    const next = typeof zone === 'string' && /^[123]$/.test(zone) ? Number(zone) : zone;
+    if (!isMinimumWageZone(next)) throw new BadRequestException('zone must be 1, 2 or 3');
+    const actor = await this.requireReviewActor(actorId);
+    const business = await this.prisma.business.findUnique({ where: { id: businessId } });
+    if (!business) throw new NotFoundException(`Business '${businessId}' not found`);
+    await this.assertTeamLeadOwnsBusiness(actor, business.leadCreatedByStaffId, business.accountAgentId);
+    const policy = this.pricing ? await this.pricing.current() : null;
+    const { updated, rechecked } = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.business.update({
+        where: { id: businessId },
+        data: { minimumWageZone: next, minimumWageZoneSource: 'staff' },
+      });
+      let changed = 0;
+      if (policy) {
+        const vacancies = await tx.vacancy.findMany({
+          where: { businessId, status: { notIn: ['filled', 'closed', 'cancelled'] }, salaryMinPaise: { gt: 0 } },
+          select: { id: true, tradeSkill: true, salaryMinPaise: true, salaryPeriod: true, belowLegalMinimum: true, legalMinimumPaise: true },
+        });
+        const trades = await tx.trade.findMany({ where: { active: true }, select: { nameKey: true, minimumWageLevel: true } });
+        const levelOf = new Map(trades.map((t) => [t.nameKey, t.minimumWageLevel]));
+        for (const v of vacancies) {
+          const level = levelOf.get(tradeNameKey(v.tradeSkill ?? '')) ?? 'unskilled';
+          const legal = legalMinimumFor(policy, next, level);
+          const monthly = v.salaryPeriod === 'daily' ? v.salaryMinPaise! * policy.salaryDaysPerMonth : v.salaryMinPaise!;
+          const below = monthly < legal;
+          if (below === v.belowLegalMinimum && legal === v.legalMinimumPaise) continue;
+          await tx.vacancy.update({ where: { id: v.id }, data: { belowLegalMinimum: below, legalMinimumPaise: legal } });
+          changed += 1;
+        }
+      }
+      return { updated: row, rechecked: changed };
+    });
+    await this.auditService.log({
+      actorId,
+      action: 'business.minimum_wage_zone_set',
+      entityType: 'business',
+      entityCode: business.code,
+      before: { minimumWageZone: business.minimumWageZone, minimumWageZoneSource: business.minimumWageZoneSource },
+      after: { minimumWageZone: next, minimumWageZoneSource: 'staff', vacanciesRechecked: rechecked },
+      changedFields: ['minimumWageZone', 'minimumWageZoneSource'],
+      reason: trimmedReason,
+      city: business.city,
+    });
+    return { ...updated, vacanciesRechecked: rechecked };
+  }
 
   async listAssignments(staffId: string, role: string) {
     const staff = await this.prisma.staff.findUnique({ where: { id: staffId } });

@@ -34,7 +34,6 @@ import {
   HEARD_FROM,
   HIRING_FREQUENCIES,
   LICENCE_KINDS,
-  MESSAGE_LANGUAGES,
   OTHER_TRADE,
   VACANCY_SHIFTS,
   WEEKDAYS,
@@ -95,7 +94,7 @@ export default function RegisterBusiness() {
       );
       let agreementSent = true;
       try {
-        await api.post(`/businesses/${created.id}/agreement-links`, { language: form.language });
+        await api.post(`/businesses/${created.id}/agreement-links`, {});
       } catch {
         agreementSent = false;
       }
@@ -177,7 +176,6 @@ export default function RegisterBusiness() {
               onAlreadyRegistered={(record) => setDuplicate({ record, what: 'number' })}
             />
             {mobile.requestId && <WhatsAppField same={form.whatsappSame} onSame={(v) => set('whatsappSame', v)} value={form.whatsapp} onChange={(v) => set('whatsapp', v)} />}
-            <SelectField label={t('reg.messageLanguage')} required value={form.language} onChange={(v) => set('language', v)} options={choiceOptions(t, MESSAGE_LANGUAGES)} error={err('language')} />
             <TextField label={t('reg.biz.billingEmail')} type="email" value={form.billingEmail} onChange={(v) => set('billingEmail', v)} error={showErrors && errors.includes('billingEmail') ? t('reg.err.email') : undefined} />
             <SelectField label={t('reg.heardFrom')} required value={form.heardFrom} onChange={(v) => set('heardFrom', v)} options={choiceOptions(t, HEARD_FROM)} error={err('heardFrom')} />
           </div>
@@ -246,7 +244,6 @@ export default function RegisterBusiness() {
                 <PlaceFields value={b.place} onChange={(p) => setBranch(i, { place: p })} pinRequired={false} />
                 <TextField label={t('reg.biz.contactName')} required value={b.contactName} onChange={(v) => setBranch(i, { contactName: v })} />
                 <SelectField label={t('reg.biz.role')} required value={b.contactRole} onChange={(v) => setBranch(i, { contactRole: v })} options={choiceOptions(t, CONTACT_ROLES)} />
-                <SelectField label={t('reg.messageLanguage')} value={b.language} onChange={(v) => setBranch(i, { language: v })} options={choiceOptions(t, MESSAGE_LANGUAGES)} />
                 <VerifiedMobile
                   purpose="branch_contact"
                   label={t('reg.biz.branchMobile')}
@@ -349,7 +346,7 @@ export default function RegisterBusiness() {
           </Button>
         </fieldset>
 
-        <ExplainScript n={household ? 5 : 6} title={t('reg.biz.explain')} scripts={scriptTerms ? businessScript(scriptTerms) : null} language={form.language} note={t('reg.biz.explainNote')} />
+        <ExplainScript n={household ? 5 : 6} title={t('reg.biz.explain')} script={scriptTerms ? businessScript(scriptTerms) : null} note={t('reg.biz.explainNote')} />
 
         {saveError && (
           <div className="warn" role="alert">

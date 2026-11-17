@@ -28,13 +28,12 @@ describe('FA07b agreement, step 5 of 7', () => {
     await waitFor(() => screen.getByTestId('fa07b-waiting'));
     expect(screen.getByTestId('step-counter')).toHaveTextContent('Step 5 of 7 · agreement');
     expect(screen.getByTestId('fa07b-waiting')).toHaveTextContent(/signs on his own phone.*You never sign for him.*Link sent to \*\*\*\*\*\*4321 at 11:01 AM.*Waiting/);
-    // The summary is the agreement's "In short" from the server, Kannada first, English on a tap.
-    await waitFor(() => expect(screen.getByTestId('fa07b-in-short')).toHaveTextContent(/ವ್ಯಾಪಾರ ಒಪ್ಪಂದ · v1.1/));
-    await fireEvent.press(screen.getByTestId('fa07b-lang-en'));
+    // The summary is the agreement's "In short" from the server, in English (rev 193); no language choice.
     await waitFor(() => expect(screen.getByTestId('fa07b-in-short')).toHaveTextContent(/You pay only when you select someone: 50%/));
+    expect(screen.queryByTestId('fa07b-lang')).toBeNull();
     await fireEvent.press(screen.getByTestId('fa07b-resend'));
     await waitFor(() => expect(screen.getByTestId('fa07b-resend')).toHaveTextContent('Sent again to ******4321'));
-    expect(calls).toContainEqual({ method: 'POST', path: '/field-work/businesses/b-1/agreement-link', body: { language: 'en' } });
+    expect(calls).toContainEqual({ method: 'POST', path: '/field-work/businesses/b-1/agreement-link', body: {} });
     await fireEvent.press(screen.getByTestId('fa07b-next'));
     expect(router.push).toHaveBeenCalledWith({ pathname: '/visit/vacancies', params: { businessId: 'b-1', visitId: 'v-1' } });
     await fireEvent.press(screen.getByTestId('finish-later'));

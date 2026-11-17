@@ -106,7 +106,7 @@ describe('Customer app notifications (API and database)', () => {
     expect(first.pushToken).toBe(`ExponentPushToken[e2e-${stamp}-aaaa]`);
   });
 
-  it('a notification lands in my inbox in my language, and goes out through the mock push service', async () => {
+  it('a notification lands in my inbox in English, and goes out through the mock push service', async () => {
     const notifications = app.get(CustomerNotificationService);
     const first = await notifications.notify({ accountId: accounts[0].id }, 'refund_approved', {}, { dedupeKey: `e2e-${stamp}` });
     expect(first).toMatchObject({ inbox: 1, queued: 1 });
@@ -119,7 +119,8 @@ describe('Customer app notifications (API and database)', () => {
     expect(provider.sent.some((m) => m.to === `ExponentPushToken[e2e-${stamp}-aaaa]`)).toBe(true);
 
     const row = await prisma.customerInboxMessage.findFirst({ where: { accountId: accounts[0].id } });
-    expect(row).toMatchObject({ kind: 'refund_approved', language: 'kn', pushStatus: 'sent' });
+    // English only (rev 193): an account that had Kannada saved gets English.
+    expect(row).toMatchObject({ kind: 'refund_approved', language: 'en', pushStatus: 'sent' });
     const log = await prisma.messageLog.findUnique({ where: { id: row!.messageLogId! } });
     expect(log).toMatchObject({ channel: 'push', status: 'sent', subjectType: 'customer_account', subjectId: accounts[0].id });
     // C17: a push is never a contact attempt.

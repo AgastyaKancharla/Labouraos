@@ -11,7 +11,7 @@ import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { interviewApi, type OwnerResult } from '../shared/api';
 import { dayLabel, timeLabel } from '../shared/format';
-import { ActionError, Choice, LinkProblem, Loading, Muted, Ok, OtpBlock, PageTitle, usePersonLanguage, Warn } from '../shared/ui';
+import { ActionError, Choice, LinkProblem, Loading, Muted, Ok, OtpBlock, PageTitle, Warn } from '../shared/ui';
 
 /**
  * P05-InterviewResult: the owner records the result on their own phone,
@@ -35,7 +35,6 @@ export default function InterviewResult() {
   const to = useScreenPath();
   const today = istDateKey(useNow(60_000));
   const details = useQuery({ queryKey: ['owner-result', token], queryFn: () => interviewApi.ownerResult(token), enabled: Boolean(token), retry: false });
-  usePersonLanguage(details.data?.language, token);
   const [result, setResult] = useState<OwnerResult | null>(null);
   const [salary, setSalary] = useState<number | null>(null);
   const [joining, setJoining] = useState('');

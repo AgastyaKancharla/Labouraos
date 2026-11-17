@@ -855,11 +855,35 @@ describe('Pricing & policy', () => {
     await waitFor(() => expect(api.calls('POST /areas')[0].body).toEqual({ name: 'Begur', pincode: '560068', latitude: 12.88, longitude: 77.62 }));
   });
 
-  it('minimum wage shows the figures and how many vacancies sit below', async () => {
-    mockApi({ ...common, 'GET /ceo/pricing/minimum-wage': { effectiveFrom: '2026-05-22T00:00:00Z', unskilledPaise: 2337600, semiSkilledPaise: 2571400, skilledPaise: 2828600, highlySkilledPaise: 3111400, openVacancies: 12, belowMinimum: 7, belowMinimumOwnerTold: 5 } });
+  it('minimum wage shows the twelve figures by zone and how many vacancies sit below; the CEO updates all of them (rev 193)', async () => {
+    const zone = (u: number, s: number, k: number, h: number, businesses: number) => ({ unskilledPaise: u, semiSkilledPaise: s, skilledPaise: k, highlySkilledPaise: h, businesses });
+    const api = mockApi({
+      ...common,
+      'GET /ceo/pricing/minimum-wage': {
+        effectiveFrom: '2026-05-22T00:00:00Z', unskilledPaise: 2337643, semiSkilledPaise: 2571407, skilledPaise: 2828547, highlySkilledPaise: 3111402,
+        zones: { 1: zone(2337643, 2571407, 2828547, 3111402, 40), 2: zone(2125130, 2337643, 2571407, 2828547, 2), 3: zone(1931936, 2125130, 2337643, 2571407, 0) },
+        openVacancies: 12, belowMinimum: 7, belowMinimumOwnerTold: 5,
+      },
+      'PUT /pricing/legal-minimum-wages': { id: 'p2' },
+    });
     render(<MinimumWage />, '/ceo/pricing/minimum-wage');
-    expect(await screen.findByText('₹23,376 a month basic')).toBeInTheDocument();
+    expect(await screen.findByText('₹23,376.43 a month basic')).toBeInTheDocument();
+    expect(screen.getByTestId('zone-2')).toHaveTextContent('₹21,251.30 a month basic');
+    expect(screen.getByTestId('zone-3')).toHaveTextContent('₹25,714.07');
+    expect(screen.getByTestId('zone-1')).toHaveTextContent('Businesses in this zone40');
     expect(screen.getByText('7 of 12 open (5 with owner told)')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Update figures' }));
+    const d = await dialog();
+    const zone3Unskilled = within(d).getByLabelText(/Zone 3 · Unskilled/);
+    await userEvent.clear(zone3Unskilled);
+    await userEvent.type(zone3Unskilled, '19500');
+    await userEvent.click(within(d).getByRole('button', { name: 'Save figures' }));
+    await waitFor(() => expect(api.calls('PUT /pricing/legal-minimum-wages')).toHaveLength(1));
+    expect(api.calls('PUT /pricing/legal-minimum-wages')[0].body).toMatchObject({
+      unskilledPaise: 2337643, highlySkilledPaise: 3111402,
+      zone2UnskilledPaise: 2125130, zone2HighlySkilledPaise: 2828547,
+      zone3UnskilledPaise: 1950000, zone3SemiSkilledPaise: 2125130, zone3SkilledPaise: 2337643, zone3HighlySkilledPaise: 2571407,
+    });
   });
 
   it('keeping data runs a dry run and shows what would happen', async () => {

@@ -38,16 +38,13 @@ export interface AssignmentPick {
 const LANGUAGE_ALIASES: Record<string, string> = {
   kn: 'kn',
   kannada: 'kn',
-  'ಕನ್ನಡ': 'kn',
   hi: 'hi',
   hindi: 'hi',
-  'हिंदी': 'hi',
-  'हिन्दी': 'hi',
   en: 'en',
   english: 'en',
 };
 
-/** "Kannada", "kn", "ಕನ್ನಡ" → "kn". Unknown names are kept lower-case so they still compare. */
+/** Spoken languages (what a person speaks, not the app's language): "Kannada", "kn" → "kn". Unknown names are kept lower-case so they still compare. */
 export function languageCode(value: string | null | undefined): string | null {
   if (!value) return null;
   const key = value.trim().toLowerCase();
