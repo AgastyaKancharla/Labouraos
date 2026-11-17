@@ -30,6 +30,7 @@ import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 import { encryptCallRoutingPhone, getCallRoutingKey } from './call-routing-key';
 import { requireIndianMobile } from '../../common/phone/indian-mobile';
 import { ReportingScopeService } from './reporting-scope.service';
+import { TargetSplitHooks } from '../company-plan/target-split.hooks';
 import { assertPayrollCanCorrect, frozenMonthsWithoutLine, monthOfDay, monthsBetween } from '../finance/payroll-window';
 import { monthLabel } from '../finance/payroll-rules';
 import { OWNER_ACCOUNT_HAS_PAY, OWNER_ACCOUNT_ROLES } from './owner-account';
@@ -208,6 +209,8 @@ export class StaffService {
     private readonly authService: AuthService,
     private readonly reportingScope: ReportingScopeService,
     @Optional() private readonly live?: LiveEventsService,
+    /** The automatic target split: told when agents join, leave or move (17 Nov). */
+    @Optional() private readonly splitHooks?: TargetSplitHooks,
   ) {
     getCallRoutingKey();
   }
@@ -496,6 +499,9 @@ export class StaffService {
         tempPasswordExpiresAt: temp.expiresAt.toISOString(),
       },
     });
+    if (TEAM_MEMBER_ROLES.includes(role as string) && !ownerAccount) {
+      await this.splitHooks?.staffChanged({ kind: 'joined', staffId: staff.id, actorId: actor.sub, fromToday: false });
+    }
 
     return { staff, tempPassword: temp.tempPassword, tempPasswordExpiresAt: temp.expiresAt };
   }
@@ -720,6 +726,9 @@ export class StaffService {
         sessionsRevoked,
       },
     });
+    if (TEAM_MEMBER_ROLES.includes(target.role)) {
+      await this.splitHooks?.staffChanged({ kind: 'left', staffId, actorId: actor.sub });
+    }
 
     return { staff, sessionsRevoked };
   }
@@ -1071,6 +1080,9 @@ export class StaffService {
         tempPasswordExpiresAt: temp.expiresAt.toISOString(),
       },
     });
+    if (TEAM_MEMBER_ROLES.includes(target.role) && !target.isOwnerAccount) {
+      await this.splitHooks?.staffChanged({ kind: 'joined', staffId, actorId: actor.sub, fromToday: true });
+    }
 
     return { staff, tempPassword: temp.tempPassword, tempPasswordExpiresAt: temp.expiresAt };
   }
@@ -1303,6 +1315,11 @@ export class StaffService {
     const teamLeadChanged = (target.teamLeadId ?? null) !== (newTeamLeadId ?? null);
     const moveOpenWork = body.moveOpenWork !== false;
     const previousTeamLeadId = target.teamLeadId;
+    // The agent's target this month as it was before the move (the automatic split credits the old team with what was reached).
+    const splitBefore =
+      this.splitHooks && teamLeadChanged && TEAM_MEMBER_ROLES.includes(target.role)
+        ? await this.currentTargetValues(target.id)
+        : null;
 
     const moved = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.staff.update({
@@ -1358,7 +1375,27 @@ export class StaffService {
         openWork: moved.openWork,
       },
     });
+    if (TEAM_MEMBER_ROLES.includes(target.role) && teamLeadChanged && !target.isOwnerAccount) {
+      await this.splitHooks?.staffChanged({
+        kind: 'moved',
+        staffId: target.id,
+        actorId: actor.sub,
+        fromTeamLeadId: previousTeamLeadId ?? (target.reportsTo?.role === 'team_lead' ? target.reportsToId : null),
+        before: splitBefore,
+      });
+    } else if (target.role === 'team_lead' && (target.reportsToId ?? null) !== (reportsToId ?? null)) {
+      await this.splitHooks?.staffChanged({ kind: 'team_moved', staffId: target.id, actorId: actor.sub });
+    }
     return moved.updated;
+  }
+
+  /** An agent's target numbers this month (IST), for the automatic split. */
+  private async currentTargetValues(staffId: string) {
+    const { year, month } = getCalendarPartsInTimezone(new Date());
+    return this.prisma.target.findUnique({
+      where: { staffId_year_month: { staffId, year, month } },
+      select: { candidatesActivated: true, vacanciesCaptured: true, placementsClosed: true, repeatBusinesses: true },
+    });
   }
 
   private async assertManagerMayMove(
@@ -1553,6 +1590,10 @@ export class StaffService {
       after: { isOwnerAccount: value },
       changedFields: ['isOwnerAccount'],
     });
+    // An owner account carries no targets: marking one is like leaving, clearing it like joining.
+    if (TEAM_MEMBER_ROLES.includes(target.role)) {
+      await this.splitHooks?.staffChanged(value ? { kind: 'left', staffId, actorId: actor.sub } : { kind: 'joined', staffId, actorId: actor.sub, fromToday: true });
+    }
     return staff;
   }
 
