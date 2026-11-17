@@ -86,7 +86,7 @@ describe('Business shifts (staff)', () => {
     const base = `/businesses/${shop.id}/shifts`;
     const morning = await call(agent, 'post', base, { name: 'Morning', startTime: '07:00', endTime: '15:00' }).expect(201);
     expect(morning.body).toEqual(expect.objectContaining({ businessId: shop.id, label: 'Morning 07:00–15:00', category: 'day' }));
-    const bad = await call(agent, 'post', base, { name: 'Broken', startTime: '9am', endTime: '17:00' }).expect(400);
+    const bad = await call(agent, 'post', base, { name: 'Broken', startTime: '25:00', endTime: '17:00' }).expect(400);
     expect(bad.body.code ?? bad.body.details?.code).toBe('SHIFT_INVALID');
     const dup = await call(agent, 'post', base, { name: 'Morning', startTime: '06:00', endTime: '14:00' }).expect(409);
     expect(dup.body.code ?? dup.body.details?.code).toBe('SHIFT_NAME_TAKEN');
