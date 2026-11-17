@@ -111,11 +111,23 @@ describe('Business shifts (staff)', () => {
     expect(actions).toEqual(['business.shift_added', 'business.shift_changed', 'business.shift_added', 'business.shift_removed']);
   });
 
-  it('a call agent edits shifts on his own lead (the business write rule)', async () => {
+  it('a call agent adds a shift and a vacancy on a business he did not create; changing or removing it stays with the business editors', async () => {
+    const theirs = await business({ accountAgentId: agent.id, leadCreatedByStaffId: agent.id });
+    const added = await call(callAgent, 'post', `/businesses/${theirs.id}/shifts`, { name: 'Day', startTime: '09:00', endTime: '18:00' }).expect(201);
+    const vacancy = await call(callAgent, 'post', '/vacancies', {
+      businessId: theirs.id, tradeSkill: 'Cook', headcount: 1, salaryMinPaise: 3000000, salaryPeriod: 'monthly', startDate: '2026-12-01',
+      interviewType: 'walk_in', businessShiftId: added.body.id,
+    }).expect(201);
+    expect((await prisma.vacancy.findUniqueOrThrow({ where: { id: vacancy.body.id } })).shift).toBe('Day 09:00–18:00');
+    expect(await prisma.auditLog.count({ where: { actorId: callAgent.id, action: 'business.shift_added', entityCode: theirs.code } })).toBe(1);
+    await call(callAgent, 'patch', `/businesses/${theirs.id}/shifts/${added.body.id}`, { name: 'Morning' }).expect(403);
+    await call(callAgent, 'delete', `/businesses/${theirs.id}/shifts/${added.body.id}`).expect(403);
+    // On his own lead he may also change it (the business write rule).
     const leadShop = await business({ leadCreatedByStaffId: callAgent.id, verificationStatus: 'lead' });
-    await call(callAgent, 'post', `/businesses/${leadShop.id}/shifts`, { name: 'Day', startTime: '09:00', endTime: '18:00' }).expect(201);
-    const theirs = await business({ accountAgentId: agent.id });
-    await call(callAgent, 'post', `/businesses/${theirs.id}/shifts`, { name: 'Day', startTime: '09:00', endTime: '18:00' }).expect(403);
+    const own = await call(callAgent, 'post', `/businesses/${leadShop.id}/shifts`, { name: 'Day', startTime: '09:00', endTime: '18:00' }).expect(201);
+    await call(callAgent, 'patch', `/businesses/${leadShop.id}/shifts/${own.body.id}`, { name: 'Morning' }).expect(200);
+    // A field agent adds shifts only where he may add vacancies (his account businesses).
+    await call(otherAgent, 'post', `/businesses/${theirs.id}/shifts`, { name: 'Late', startTime: '14:00', endTime: '22:00' }).expect(403);
   });
 
   it('a vacancy picks one of its business\'s shifts and keeps the label and times; a typed shift drops the pick', async () => {
