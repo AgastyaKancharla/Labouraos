@@ -646,10 +646,13 @@ export class FieldRedesignService {
   async allVisits(actor: Actor, query: { q?: string; from?: string; to?: string; before?: string; limit?: string }) {
     const staffId = actor.sub;
     const limit = Math.min(Math.max(Number.parseInt(query.limit ?? '', 10) || ALL_VISITS_PAGE, 1), ALL_VISITS_PAGE_MAX);
-    const day = (value: string | undefined, name: 'from' | 'to'): string | null => {
-      const v = (value ?? '').trim();
-      if (!v) return null;
-      if (!DATE_KEY.test(v) || new Date(`${v}T00:00:00.000Z`).toISOString().slice(0, 10) !== v) {
+    const day = (value: unknown, name: 'from' | 'to'): string | null => {
+      if (value === undefined || value === null || value === '') return null;
+      const v = typeof value === 'string' ? value.trim() : '';
+      if (!v && typeof value === 'string') return null;
+      const parsed = new Date(`${v}T00:00:00.000Z`);
+      // Not a string (a repeated ?from=), not YYYY-MM-DD, not a real date (2026-13-45, 2026-02-30): 400, never 500.
+      if (!DATE_KEY.test(v) || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== v) {
         throw codedError(HttpStatus.BAD_REQUEST, 'DATE_INVALID', `${name} must be YYYY-MM-DD`);
       }
       return v;
@@ -659,7 +662,8 @@ export class FieldRedesignService {
     if (from && to && from > to) throw codedError(HttpStatus.BAD_REQUEST, 'DATE_RANGE_INVALID', 'from must be on or before to');
     // The cursor is "<visitedAt ISO>|<visit id>" of the last row seen (ties on the time are kept apart by the id).
     let cursor: { at: Date; id: string } | null = null;
-    if (query.before) {
+    if (query.before !== undefined && query.before !== '') {
+      if (typeof query.before !== 'string') throw codedError(HttpStatus.BAD_REQUEST, 'CURSOR_INVALID', 'before is not a cursor from this list');
       const [iso, id] = query.before.split('|');
       const at = new Date(iso);
       if (Number.isNaN(at.getTime()) || !id) throw codedError(HttpStatus.BAD_REQUEST, 'CURSOR_INVALID', 'before is not a cursor from this list');
@@ -668,7 +672,7 @@ export class FieldRedesignService {
     const visitedAt: Prisma.DateTimeFilter = {};
     if (from) visitedAt.gte = new Date(`${from}T00:00:00.000+05:30`);
     if (to) visitedAt.lt = new Date(new Date(`${to}T00:00:00.000+05:30`).getTime() + DAY_MS);
-    const q = (query.q ?? '').trim().slice(0, 80);
+    const q = (typeof query.q === 'string' ? query.q : '').trim().slice(0, 80);
     const insensitive = { contains: q, mode: Prisma.QueryMode.insensitive };
     const and: Prisma.BusinessVisitWhereInput[] = [];
     if (cursor) and.push({ OR: [{ visitedAt: { lt: cursor.at } }, { visitedAt: cursor.at, id: { lt: cursor.id } }] });

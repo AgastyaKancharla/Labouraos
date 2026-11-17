@@ -336,6 +336,11 @@ describe('Laboura Field redesign: Today, Today\'s work, businesses, agreement, j
 
     const bad = async (query: string, code: string) => expect((await get(agent, `/field-work/visits/all?${query}`).expect(400)).body.code).toBe(code);
     await bad('from=2026-02-30', 'DATE_INVALID');
+    await bad('from=2026-13-45', 'DATE_INVALID');
+    await bad('to=2026-11-99', 'DATE_INVALID');
+    await bad('from=2026-11-01&from=2026-11-02', 'DATE_INVALID');
+    await bad('before=a&before=b', 'CURSOR_INVALID');
+    await bad('before=not-a-time|x', 'CURSOR_INVALID');
     await bad('from=2026-11-12&to=2026-11-01', 'DATE_RANGE_INVALID');
     await bad('before=nope', 'CURSOR_INVALID');
     for (const who of [callAgent, lead]) await get(who, '/field-work/visits/all').expect(403);
