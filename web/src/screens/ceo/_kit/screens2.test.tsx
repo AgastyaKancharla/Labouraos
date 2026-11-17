@@ -883,6 +883,8 @@ describe('Pricing & policy', () => {
       unskilledPaise: 2337643, highlySkilledPaise: 3111402,
       zone2UnskilledPaise: 2125130, zone2HighlySkilledPaise: 2828547,
       zone3UnskilledPaise: 1950000, zone3SemiSkilledPaise: 2125130, zone3SkilledPaise: 2337643, zone3HighlySkilledPaise: 2571407,
+      // The date already in force stays unless changed, sent as the calendar date (never a day early, never "today").
+      effectiveFrom: '2026-05-22',
     });
   });
 

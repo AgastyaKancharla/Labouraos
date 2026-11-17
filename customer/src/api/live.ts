@@ -5,6 +5,7 @@ import type { ApiClient } from './client';
 import type { CustomerApi } from './customerApi';
 import { isApiError } from './errors';
 import type {
+  Trade,
   BusinessShift,
   AppConfig,
   AuthResult,
@@ -413,7 +414,21 @@ export function liveCustomerApi(api: ApiClient, options: Options = {}): Customer
         throw err;
       }
     },
-    formOptions: () => api.get<FormOptions>('/me/form-options'),
+    // The server names a trade's usual pay marketSalaryMin/MaxPaise and sends no id; the screens read
+    // salaryMin/MaxPaise and id (17 Nov: "Usual pay ₹NaN" on Add a vacancy).
+    formOptions: async () => {
+      const raw = await api.get<Omit<FormOptions, 'trades'> & { trades?: (Partial<Trade> & { name: string; marketSalaryMinPaise?: number; marketSalaryMaxPaise?: number })[] }>('/me/form-options');
+      return {
+        ...raw,
+        trades: (raw.trades ?? []).map((t) => ({
+          ...t,
+          id: t.id ?? t.name,
+          salaryMinPaise: t.salaryMinPaise ?? t.marketSalaryMinPaise ?? 0,
+          salaryMaxPaise: t.salaryMaxPaise ?? t.marketSalaryMaxPaise ?? 0,
+          legalMinimumPaise: t.legalMinimumPaise ?? 0,
+        })),
+      };
+    },
     ageCheck: async (dateOfBirth) => {
       try {
         await api.post('/me/register/age-check', { dateOfBirth });

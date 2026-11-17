@@ -151,6 +151,14 @@ describe('the real API calls', () => {
     expect(calls[4].body).toEqual({ refundLossAcknowledged: true });
   });
 
+  it('17 Nov: form options map the server\'s marketSalaryMin/MaxPaise onto the trade\'s usual pay (no more ₹NaN)', async () => {
+    const { api } = live({
+      'GET /me/form-options': { body: { languages: {}, areas: [], trades: [{ name: 'Cook', marketSalaryMinPaise: 1800000, marketSalaryMaxPaise: 3000000, minimumWageLevel: 'skilled', legalMinimumPaise: 2828547, legalMinimumPaiseByZone: { 1: 2828547 } }] } },
+    });
+    const options = await api.formOptions();
+    expect(options.trades[0]).toMatchObject({ id: 'Cook', name: 'Cook', salaryMinPaise: 1800000, salaryMaxPaise: 3000000, legalMinimumPaise: 2828547 });
+  });
+
   it('17 Nov: the business\'s shifts — list, add, remove on my own profile', async () => {
     const shift = { id: 'sh-1', name: 'Morning', startTime: '07:00', endTime: '15:00', label: 'Morning 07:00–15:00', category: 'day' };
     const { api, calls } = live({

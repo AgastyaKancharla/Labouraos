@@ -217,7 +217,7 @@ export default function AddVacancy() {
             />
             <MoneyField label={t('vacancy.salaryMin')} valuePaise={form.salaryMinPaise} onChange={(v) => set('salaryMinPaise', v)} required error={err('salaryMinPaise')} testID="vacancy-salary-min" />
             <MoneyField label={t('vacancy.salaryMax')} valuePaise={form.salaryMaxPaise} onChange={(v) => set('salaryMaxPaise', v)} error={err('salaryMaxPaise')} testID="vacancy-salary-max" />
-            {trade ? (
+            {trade && trade.salaryMinPaise > 0 && trade.salaryMaxPaise > 0 ? (
               <Text variant="muted" testID="vacancy-range">
                 {t('vacancy.marketRange', { min: rupees(trade.salaryMinPaise), max: rupees(trade.salaryMaxPaise) })}
               </Text>
