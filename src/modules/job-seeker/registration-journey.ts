@@ -88,6 +88,8 @@ export interface JourneyStatus {
   jobSeekerCode: string;
   currentStep: RegistrationStep;
   steps: { consent: boolean; selfie: boolean; idCheck: boolean; payment: boolean };
+  /** Consent items already given and not withdrawn: the consent page does not ask them again (17 Nov). */
+  consentGiven: string[];
   idCheck: {
     /** Another ID is waiting for the Team Lead's check (rev 154): no payment until it is approved. */
     waitingForTeamLead: boolean;
@@ -152,6 +154,7 @@ export function buildJourneyStatus(input: JourneyInput): JourneyStatus {
     jobSeekerCode: seeker.code,
     currentStep,
     steps: { consent, selfie, idCheck, payment: paid },
+    consentGiven: [...new Set(input.grantedPurposes)],
     idCheck: { waitingForTeamLead: lastResult === 'pending', lastResult },
     stopped: seeker.isUnder18ByDateOfBirth || input.under18Stop ? 'under_18' : null,
     waitingForTrade: seeker.guaranteeFloorPaise === null,

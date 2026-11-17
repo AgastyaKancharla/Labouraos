@@ -233,22 +233,54 @@ describe('Phase 12 Task 1 — Consent table and service', () => {
       method: 'sms_link',
     });
 
+    const firstGrantedAt = clock.current;
+    clock.current = new Date(firstGrantedAt.getTime() + 60 * 60 * 1000);
     const second = await consentService.grant({
       subjectType: 'job_seeker',
       subjectId: seekerId,
       purpose: 'job_matching',
       noticeVersion: '1.0',
-      language: 'hi', // updated language
-      method: 'sms_link',
+      language: 'hi',
+      method: 'in_app',
     });
 
     expect(second.id).toBe(first.id);
 
+    // 17 Nov: an item already given is not stored again — the row and the time it was first given stay as they were.
     const rows = await prisma.consent.findMany({
       where: { subjectType: 'job_seeker', subjectId: seekerId, purpose: 'job_matching' },
     });
     expect(rows).toHaveLength(1);
-    expect(rows[0].language).toBe('hi');
+    expect(rows[0]).toMatchObject({ language: 'en', method: 'sms_link', grantedAt: firstGrantedAt });
+    clock.current = firstGrantedAt;
+  });
+
+  it('giving an item again after a withdrawal is a new row; the withdrawn row stays as history (17 Nov)', async () => {
+    const seekerId = await createTestSeeker('consented');
+    const first = await consentService.grant({ subjectType: 'job_seeker', subjectId: seekerId, purpose: 'promotions', noticeVersion: '1.2', language: 'en', method: 'sms_link' });
+    await consentService.withdraw({ subjectType: 'job_seeker', subjectId: seekerId, purpose: 'promotions', withdrawnMethod: 'in_app' });
+    const again = await consentService.grant({ subjectType: 'job_seeker', subjectId: seekerId, purpose: 'promotions', noticeVersion: '1.2', language: 'en', method: 'sms_link' });
+    expect(again.id).not.toBe(first.id);
+    const rows = await prisma.consent.findMany({ where: { subjectType: 'job_seeker', subjectId: seekerId, purpose: 'promotions' }, orderBy: { createdAt: 'asc' } });
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ id: first.id, granted: false, withdrawnMethod: 'in_app' });
+    expect(rows[0].withdrawnAt).not.toBeNull();
+    expect(rows[1]).toMatchObject({ id: again.id, granted: true, withdrawnAt: null });
+    // And a third grant while it stands stores nothing.
+    await consentService.grant({ subjectType: 'job_seeker', subjectId: seekerId, purpose: 'promotions', noticeVersion: '1.2', language: 'en', method: 'sms_link' });
+    expect(await prisma.consent.count({ where: { subjectType: 'job_seeker', subjectId: seekerId, purpose: 'promotions' } })).toBe(2);
+  });
+
+  it('two grants at the same moment store the item once (one live row per item in the database)', async () => {
+    const seekerId = await createTestSeeker('consented');
+    const dto = { subjectType: 'job_seeker', subjectId: seekerId, purpose: 'job_updates', noticeVersion: '1.2', language: 'en', method: 'sms_link' };
+    const rows = await Promise.all([consentService.grant(dto), consentService.grant(dto), consentService.grant(dto)]);
+    expect(new Set(rows.map((r) => r.id)).size).toBe(1);
+    expect(await prisma.consent.count({ where: { subjectType: 'job_seeker', subjectId: seekerId, purpose: 'job_updates' } })).toBe(1);
+    // The database itself refuses a second live row.
+    await expect(
+      prisma.consent.create({ data: { subjectType: 'job_seeker', subjectId: seekerId, purpose: 'job_updates', noticeVersion: '1.2', granted: true, language: 'en', method: 'sms_link', grantedAt: new Date() } }),
+    ).rejects.toMatchObject({ code: 'P2002' });
   });
 
   it('granting a new noticeVersion after a notice change creates a new row rather than overwriting the old one', async () => {

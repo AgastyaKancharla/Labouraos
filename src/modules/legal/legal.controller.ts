@@ -6,6 +6,7 @@ import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { isLegalDocumentKey } from './legal-documents';
 import { isLegalLanguage, LegalLanguage } from './legal-document.types';
 import { LegalDocumentService, LegalSubjectType } from './legal-document.service';
+import { latestAcceptances } from './acceptance-list';
 
 function languageOf(value: string | undefined): LegalLanguage {
   return isLegalLanguage(value) ? value : 'en';
@@ -43,7 +44,8 @@ export class LegalController {
     if (!(SUBJECTS as readonly string[]).includes(subjectType)) throw new BadRequestException('subjectType must be job_seeker, business or referral');
     const type = subjectType as LegalSubjectType;
     const [status, acceptances] = await Promise.all([this.legal.status(type, subjectId), this.legal.acceptances(type, subjectId)]);
-    return { status, acceptances };
+    // A job seeker's repeated acceptance of the same text (two links, a retried payment step) is listed once (17 Nov).
+    return { status, acceptances: type === 'job_seeker' ? latestAcceptances(acceptances) : acceptances };
   }
 
   /** The exact text someone accepted (the signed copy): "View signed copy" on the staff screens. */

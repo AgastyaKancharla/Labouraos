@@ -1,5 +1,5 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
-import { CustomerNotificationSetting } from '@prisma/client';
+import { CustomerNotificationSetting, Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { DEFAULT_NOTICE_VERSION } from '../consent/consent.constants';
 import { CustomerNotificationClock } from './customer-notification.clock';
@@ -217,15 +217,28 @@ export class CustomerNotificationSettingsService {
    * it again through a consent link, as the withdrawal SMS tells them.
    */
   private async grant(subject: ProfileSubject, purpose: 'promotions' | 'job_updates', language: string): Promise<void> {
-    const now = this.clock.now();
-    const key = { subjectType: subject.subjectType, subjectId: subject.subjectId, purpose, noticeVersion: DEFAULT_NOTICE_VERSION };
-    const existing = await this.prisma.consent.findUnique({ where: { subjectType_subjectId_purpose_noticeVersion: key } });
-    if (existing?.withdrawnByStaffId) return;
-    await this.prisma.consent.upsert({
-      where: { subjectType_subjectId_purpose_noticeVersion: key },
-      create: { ...key, granted: true, language, method: 'in_app', grantedAt: now },
-      update: { granted: true, language, method: 'in_app', grantedAt: now, withdrawnAt: null, withdrawnMethod: null },
-    });
+    const where = { subjectType: subject.subjectType, subjectId: subject.subjectId, purpose, noticeVersion: DEFAULT_NOTICE_VERSION };
+    const latest = await this.prisma.consent.findFirst({ where, orderBy: { createdAt: 'desc' } });
+    if (latest?.withdrawnByStaffId) return;
+    // Already given and not withdrawn: not stored again. Given again after a withdrawal: a new row (17 Nov).
+    if (latest && latest.granted && !latest.withdrawnAt) return;
+    try {
+      await this.prisma.consent.create({
+        data: {
+          subjectType: subject.subjectType,
+          subjectId: subject.subjectId,
+          purpose,
+          noticeVersion: DEFAULT_NOTICE_VERSION,
+          granted: true,
+          language,
+          method: 'in_app',
+          grantedAt: this.clock.now(),
+        },
+      });
+    } catch (error) {
+      // Given at the same moment by another request (one live row per purpose).
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')) throw error;
+    }
   }
 
   private async withdraw(subject: ProfileSubject, purpose: 'promotions'): Promise<void> {

@@ -297,8 +297,9 @@ describe("Phase 13 Task 1 — agent consent withdrawal", () => {
     expect(
       await prisma.jobSeeker.findUniqueOrThrow({ where: { id: seeker.id } }),
     ).toMatchObject({ status: "active", pausedAt: null });
+    // 17 Nov: given again by OTP is a new row; the agent's withdrawal stays in its own row.
     const regranted = await prisma.consent.findFirstOrThrow({
-      where: { subjectId: seeker.id, purpose: "call_recording" },
+      where: { subjectId: seeker.id, purpose: "call_recording", withdrawnAt: null },
     });
     expect(regranted).toMatchObject({
       granted: true,
@@ -306,6 +307,15 @@ describe("Phase 13 Task 1 — agent consent withdrawal", () => {
       withdrawnMethod: null,
       withdrawnByStaffId: null,
       withdrawnCallRecordId: null,
+    });
+    expect(regranted.id).not.toBe(withdrawn.id);
+    expect(
+      await prisma.consent.findUniqueOrThrow({ where: { id: withdrawn.id } }),
+    ).toMatchObject({
+      granted: false,
+      withdrawnMethod: "agent_call",
+      withdrawnByStaffId: agent.id,
+      withdrawnCallRecordId: call.id,
     });
     const preserved = await prisma.auditLog.findFirstOrThrow({
       where: {

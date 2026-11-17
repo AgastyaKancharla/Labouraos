@@ -2045,7 +2045,9 @@ model Consent {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  @@unique([subjectType, subjectId, purpose, noticeVersion])
+  // One LIVE (not withdrawn) row per subject, purpose and notice version: a partial unique index in the
+  // migration (SQL only). Giving an item again after a withdrawal adds a new row; the withdrawn one stays.
+  @@index([subjectType, subjectId, purpose, noticeVersion])
   @@index([subjectType, subjectId])
 }
 

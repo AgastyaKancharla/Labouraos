@@ -38,6 +38,13 @@ describe('Registration link journey (P00 → P02b)', () => {
     expect(atPayment.steps).toEqual({ consent: true, selfie: true, idCheck: true, payment: false });
   });
 
+  it('lists each consent item already given once, so the consent page does not ask it again (17 Nov)', () => {
+    const status = buildJourneyStatus(input({ grantedPurposes: ['job_matching', 'profile_sharing', 'job_matching', 'promotions'] }));
+    expect(status.currentStep).toBe('consent');
+    expect(status.consentGiven).toEqual(['job_matching', 'profile_sharing', 'promotions']);
+    expect(buildJourneyStatus(input({ grantedPurposes: REQUIRED })).consentGiven).toEqual(REQUIRED);
+  });
+
   it('keeps him at the ID step on a name mismatch and stops before payment when he is under 18', () => {
     const mismatch = buildJourneyStatus(input({
       grantedPurposes: REQUIRED,

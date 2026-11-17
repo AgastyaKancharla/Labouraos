@@ -16,7 +16,7 @@ import { ConsentService } from './consent.service';
 import { MessagingService } from '../message/messaging.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
-import { DEFAULT_NOTICE_VERSION, JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } from './consent.constants';
+import { DEFAULT_NOTICE_VERSION, JOB_SEEKER_CONSENT_PURPOSES, JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } from './consent.constants';
 import { PricingService } from '../pricing/pricing.service';
 import {
   AgreementLanguage,
@@ -798,7 +798,7 @@ export class ConsentLinkService {
       throw new BadRequestException('This code has already been used. Ask for a new code.');
     }
 
-    // Grant each selected purpose
+    // Grant each selected purpose: one already given (and not withdrawn) is not stored again (17 Nov).
     for (const purpose of purposes) {
       await this.consentService.grant({
         subjectType: 'job_seeker',
@@ -817,12 +817,18 @@ export class ConsentLinkService {
     // Move a lead forward after first consent, or reactivate a paused seeker once all required purposes are restored.
     const hasAll = await this.consentService.hasAllRequired('job_seeker', seeker.id);
     if (hasAll) {
-      // The terms and notice version, language, OTP and exact text he accepted (P01, rev 176).
+      // The terms and notice version, language, OTP and exact text he accepted (P01, rev 176), with every
+      // item he has given — also those given earlier and not asked again on this page (17 Nov).
+      const given = await this.prisma.consent.findMany({
+        where: { subjectType: 'job_seeker', subjectId: seeker.id, granted: true, grantedAt: { not: null }, withdrawnAt: null },
+        select: { purpose: true },
+      });
+      const allGiven = JOB_SEEKER_CONSENT_PURPOSES.filter((p) => purposes.includes(p) || given.some((g) => g.purpose === p));
       await this.legal.recordAcceptance({
         subjectType: 'job_seeker', subjectId: seeker.id,
         rendered,
         context: 'registration', method: consentMethodFor(record), otpRequestId: dto.otpRequestId,
-        noticeVersion: DEFAULT_NOTICE_VERSION, purposes, acceptedAt: this.clock.now(),
+        noticeVersion: DEFAULT_NOTICE_VERSION, purposes: allGiven, acceptedAt: this.clock.now(),
       });
     }
     let finalStatus = seeker.status;

@@ -1,6 +1,10 @@
 /* Strings of the call agent registration screens (CA08–CA15). Kept in their
    own file so parallel screen work never collides in en.ts; spread into it. */
 export const registrationEn = {
+  // P01-Consent (17 Nov): an item already given is shown as given, not asked again.
+  "pub.consent.given": "Already given",
+  "pub.consent.givenNote": "You already gave the items marked “Already given” — they are not asked again.",
+  "pub.consent.needRest": "Tick the remaining required boxes to continue.",
   "reg.area.choose": "Choose the area",
   "reg.area.label": "Area (from the list)",
   "reg.area.fromPin": "Filled in from the map pin (an area centre within {distance}) — change it if it is wrong",

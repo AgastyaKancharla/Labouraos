@@ -34,22 +34,27 @@ export class ConsentService {
   ) {}
 
   /**
-   * Records or updates a consent grant for (subjectType, subjectId, purpose, noticeVersion).
-   * Idempotent: repeated grant of the same purpose and notice version updates the existing row.
-   * A new noticeVersion creates a new row rather than overwriting the prior version.
+   * Records a consent grant for (subjectType, subjectId, purpose, noticeVersion) — once (17 Nov, rev 198):
+   * - already given under this notice version and not withdrawn: nothing is stored again, the row (and the
+   *   time it was first given) stays as it is;
+   * - given again after a withdrawal: a NEW row; the withdrawn row stays untouched as history;
+   * - a new noticeVersion is a new row (re-consent), the older version's row is kept.
+   * The database allows one live (not withdrawn) row per key (partial unique index), so two submits at
+   * the same moment still store it once.
    */
   async grant(dto: GrantConsentDto, client: Prisma.TransactionClient | PrismaService = this.prisma) {
-    const now = this.clock.now();
-
-    const previous = await client.consent.findUnique({
-      where: {
-        subjectType_subjectId_purpose_noticeVersion: {
-          subjectType: dto.subjectType,
-          subjectId: dto.subjectId,
-          purpose: dto.purpose,
-          noticeVersion: dto.noticeVersion,
-        },
-      },
+    const key = { subjectType: dto.subjectType, subjectId: dto.subjectId, purpose: dto.purpose, noticeVersion: dto.noticeVersion };
+    const live = () =>
+      client.consent.findFirst({
+        where: { subjectType: key.subjectType, subjectId: key.subjectId, purpose: key.purpose, noticeVersion: key.noticeVersion, granted: true, grantedAt: { not: null }, withdrawnAt: null },
+        orderBy: { grantedAt: 'desc' },
+      });
+    const existing = await live();
+    if (existing) return existing;
+    // Given again after an agent withdrew it on a call: the withdrawal stays in its own row; the audit log says so.
+    const previous = await client.consent.findFirst({
+      where: { subjectType: key.subjectType, subjectId: key.subjectId, purpose: key.purpose, noticeVersion: key.noticeVersion },
+      orderBy: { createdAt: 'desc' },
     });
     if (previous?.withdrawnAt && previous.withdrawnByStaffId) {
       await this.auditService.log({
@@ -63,48 +68,33 @@ export class ConsentService {
           withdrawnByStaffId: previous.withdrawnByStaffId,
           withdrawnCallRecordId: previous.withdrawnCallRecordId,
         },
-        after: { consentRegranted: true },
-        changedFields: ['withdrawnAt', 'withdrawnMethod', 'withdrawnByStaffId', 'withdrawnCallRecordId'],
-        reason: 'Prior agent withdrawal retained before consent was re-granted by OTP',
+        after: { consentRegranted: true, newRow: true },
+        changedFields: [],
+        reason: 'Consent given again by OTP after an agent withdrawal; the withdrawn row is kept and a new row records the grant',
       });
     }
-
-    return client.consent.upsert({
-      where: {
-        subjectType_subjectId_purpose_noticeVersion: {
-          subjectType: dto.subjectType,
-          subjectId: dto.subjectId,
-          purpose: dto.purpose,
-          noticeVersion: dto.noticeVersion,
+    try {
+      return await client.consent.create({
+        data: {
+          subjectType: key.subjectType,
+          subjectId: key.subjectId,
+          purpose: key.purpose,
+          noticeVersion: key.noticeVersion,
+          granted: true,
+          language: dto.language,
+          method: dto.method,
+          otpRequestId: dto.otpRequestId ?? null,
+          grantedAt: this.clock.now(),
         },
-      },
-      create: {
-        subjectType: dto.subjectType,
-        subjectId: dto.subjectId,
-        purpose: dto.purpose,
-        noticeVersion: dto.noticeVersion,
-        granted: true,
-        language: dto.language,
-        method: dto.method,
-        otpRequestId: dto.otpRequestId ?? null,
-        grantedAt: now,
-        withdrawnAt: null,
-        withdrawnMethod: null,
-        withdrawnByStaffId: null,
-        withdrawnCallRecordId: null,
-      },
-      update: {
-        granted: true,
-        language: dto.language,
-        method: dto.method,
-        otpRequestId: dto.otpRequestId ?? null,
-        grantedAt: now,
-        withdrawnAt: null,
-        withdrawnMethod: null,
-        withdrawnByStaffId: null,
-        withdrawnCallRecordId: null,
-      },
-    });
+      });
+    } catch (error) {
+      // Given at the same moment by another request: that row is the one.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const row = await live();
+        if (row) return row;
+      }
+      throw error;
+    }
   }
 
   /**

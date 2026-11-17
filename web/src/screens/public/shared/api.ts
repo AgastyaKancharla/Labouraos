@@ -32,6 +32,8 @@ export interface RegistrationOpen {
   jobSeekerCode: string;
   currentStep: RegistrationStep;
   steps: { consent: boolean; selfie: boolean; idCheck: boolean; payment: boolean };
+  /** Consent items already given and not withdrawn: not asked again (17 Nov). */
+  consentGiven?: string[];
   /** Another ID waits for the Team Lead's check (rev 154): no payment until it is approved. */
   idCheck: { waitingForTeamLead: boolean; lastResult: IdLastResult };
   stopped: 'under_18' | null;
