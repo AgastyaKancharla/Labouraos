@@ -142,7 +142,39 @@ export default function TeamLeadTargets() {
           <ErrorState error={planQ.error} onRetry={() => void planQ.refetch()} />
         ) : p ? (
           <>
-            <TeamTargetsTable rows={teamRows} month={p.month} daysInMonth={p.daysInMonth} />
+            <div className="lb-split-wide">
+              <TeamTargetsTable rows={teamRows} month={p.month} daysInMonth={p.daysInMonth} />
+            </div>
+            {/* Phones: one block per number, no sideways scroll. */}
+            <ul className="lb-split-stack" aria-label="Team targets">
+              {teamRows.map((row) => (
+                <li key={row.key}>
+                  <div className="lb-split-stack__head">
+                    <b>{row.label}</b>
+                    <Verdict row={row} />
+                  </div>
+                  <div className="tl-sub">{row.hint}</div>
+                  <dl>
+                    <div>
+                      <dt>Target</dt>
+                      <dd>{row.target ?? '—'}</dd>
+                    </div>
+                    <div>
+                      <dt>Done</dt>
+                      <dd>{row.done}</dd>
+                    </div>
+                    <div>
+                      <dt>Still to do</dt>
+                      <dd>{row.stillToDo ?? '—'}</dd>
+                    </div>
+                    <div>
+                      <dt>At this speed</dt>
+                      <dd>{row.projection}</dd>
+                    </div>
+                  </dl>
+                </li>
+              ))}
+            </ul>
             {p.flags.length > 0 && (
               <ul className="lb-split-flags" aria-label="Split warnings">
                 {p.flags.map((f) => (

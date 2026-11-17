@@ -49,9 +49,10 @@ describe('T-Targets with the automatic split', () => {
     });
     signInAs('team_lead');
     renderScreen(<TeamLeadTargets />, { portal: 'team-lead', path: '/team-lead/targets', now: NOW });
-    expect(await screen.findByText('Label leftWithin30')).toBeInTheDocument();
-    for (const key of KEYS) expect(screen.getByText(`Label ${key}`)).toBeInTheDocument();
-    expect(screen.getByText('Hint placed · set by hand by Priya (Manager)')).toBeInTheDocument();
+    // The table (wide screens) and the stacked blocks (phones) both carry the eight numbers.
+    expect((await screen.findAllByText('Label leftWithin30')).length).toBe(2);
+    for (const key of KEYS) expect(within(screen.getByRole('list', { name: 'Team targets' })).getByText(`Label ${key}`)).toBeInTheDocument();
+    expect(screen.getAllByText('Hint placed · set by hand by Priya (Manager)')).toHaveLength(2);
     expect(screen.getByText('Set by hand')).toBeInTheDocument();
     expect(screen.getAllByText('Automatic').length).toBe(5);
     // A field agent has no paid or vacancies input; a call agent no placements.

@@ -1648,3 +1648,14 @@ img.lb-staffphoto {
 .lb-split-help { margin: 0 0 12px; font-size: 13px; color: var(--text-soft); }
 .lb-split-pick { display: grid; gap: 6px; font-size: 13px; font-weight: 600; }
 .lb-split-pick select { min-height: 44px; padding: 8px 10px; border: 1px solid var(--line-strong, #c3ceea); border-radius: 8px; font: inherit; background: var(--panel); color: var(--text); }
+/* T-Targets: on phones the team's numbers stack, one block per number. */
+.lb-split-stack { display: none; margin: 0; padding: 0; list-style: none; }
+@media (max-width: 760px) {
+  .lb-split-wide { display: none; }
+  .lb-split-stack { display: grid; gap: 10px; }
+  .lb-split-stack > li { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+  .lb-split-stack__head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .lb-split-stack dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 8px 0 0; }
+  .lb-split-stack dt { font-size: 11px; color: var(--text-faint); }
+  .lb-split-stack dd { margin: 2px 0 0; font-weight: 600; font-size: 13.5px; }
+}

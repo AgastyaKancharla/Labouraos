@@ -18,7 +18,7 @@ import { ResetLink, SplitTag, TransferDialog, type TransferPerson } from '../../
 
 type Key = 'candidatesActivated' | 'vacanciesCaptured' | 'placementsClosed' | 'repeatBusinesses';
 const COLUMNS: { key: Key; label: string; roles: string[] }[] = [
-  { key: 'candidatesActivated', label: 'Paid registrations', roles: ['call_agent', 'field_agent'] },
+  { key: 'candidatesActivated', label: 'Paid registrations', roles: ['call_agent'] },
   { key: 'vacanciesCaptured', label: 'Vacancies', roles: ['call_agent'] },
   { key: 'placementsClosed', label: 'Placements', roles: ['field_agent'] },
   { key: 'repeatBusinesses', label: 'Repeat businesses', roles: ['field_agent'] },
