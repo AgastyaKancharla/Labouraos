@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
-import { ATT_NOW, balanceFixture, monthFixture, openToday, requestsFixture } from '../../../attendance/fixtures';
+import { ATT_NOW, balanceFixture, monthFixture, notStartedToday, openToday, requestsFixture } from '../../../attendance/fixtures';
 import { apiError, mockApi, renderScreen, signInAs } from '../../../test/utils';
 import MyAttendance from './index';
 
@@ -80,5 +80,44 @@ describe('My attendance (CA14e)', () => {
     signInAs('call_agent');
     renderScreen(<MyAttendance />, path);
     expect(await screen.findByRole('button', { name: 'Try again' })).toBeInTheDocument();
+  });
+
+  it('starts with Today: logged in, still working, productive and unproductive (breaks + idle), late and the status now', async () => {
+    mockApi({
+      'GET /attendance/today': openToday({ idleSeconds: 6 * 60, lateMinutes: 1 }),
+      'GET /attendance/month': monthFixture(),
+      'GET /attendance/leave/balance': balanceFixture,
+      'GET /attendance/requests/mine': [],
+    });
+    signInAs('team_lead');
+    renderScreen(<MyAttendance />, { portal: 'team-lead', path: '/team-lead/my-attendance/month', now: ATT_NOW });
+    const today = await screen.findByTestId('att-today');
+    expect(within(today).getByText('Today')).toBeInTheDocument();
+    expect(await within(today).findByText('9:31 AM')).toBeInTheDocument();
+    expect(within(today).getByText('Still working')).toBeInTheDocument();
+    expect(within(today).getByText('3h 34m')).toBeInTheDocument();
+    expect(within(today).getByText('0h 21m')).toBeInTheDocument();
+    expect(within(today).getByText('Breaks 15m · idle 6m')).toBeInTheDocument();
+    expect(within(today).getByText('1 min')).toBeInTheDocument();
+    expect(within(today).getByText(/Available/)).toBeInTheDocument();
+    // The month is still below it.
+    expect(screen.getByRole('table', { name: 'Each day this month' })).toBeInTheDocument();
+  });
+
+  it('says "Not logged in yet today" with the way to start, and shows no Today on an earlier month', async () => {
+    mockApi({
+      'GET /attendance/today': notStartedToday(),
+      'GET /attendance/month': ({ url }: { url: URL }) => monthFixture({ month: url.searchParams.get('month')!, days: [] }),
+      'GET /attendance/leave/balance': balanceFixture,
+      'GET /attendance/requests/mine': [],
+    });
+    signInAs('team_lead');
+    renderScreen(<MyAttendance />, { portal: 'team-lead', path: '/team-lead/my-attendance/month', now: ATT_NOW });
+    const today = await screen.findByTestId('att-today');
+    expect(within(today).getByText('Not logged in yet today')).toBeInTheDocument();
+    expect(within(today).getByRole('link', { name: 'Start my day' })).toHaveAttribute('href', '/team-lead/my-attendance');
+    await userEvent.click(screen.getByRole('button', { name: 'Previous month' }));
+    expect(await screen.findByRole('heading', { name: 'My attendance · October' })).toBeInTheDocument();
+    expect(screen.queryByTestId('att-today')).toBeNull();
   });
 });
