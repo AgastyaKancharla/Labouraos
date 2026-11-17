@@ -5,7 +5,11 @@ describe('business shifts (17 Nov): times, day / night, label', () => {
     expect(normaliseTime('7:00')).toBe('07:00');
     expect(normaliseTime('7')).toBe('07:00');
     expect(normaliseTime('23:59')).toBe('23:59');
-    for (const bad of ['24:00', '7:60', '7am', '', null, 7]) expect(normaliseTime(bad)).toBeNull();
+    expect(normaliseTime('7 AM')).toBe('07:00');
+    expect(normaliseTime('7:30 pm')).toBe('19:30');
+    expect(normaliseTime('12 am')).toBe('00:00');
+    expect(normaliseTime('12pm')).toBe('12:00');
+    for (const bad of ['24:00', '7:60', '13 pm', '0 am', 'seven', '', null, 7]) expect(normaliseTime(bad)).toBeNull();
   });
 
   it('checks a shift from a form: a name, a start and an end that differ', () => {

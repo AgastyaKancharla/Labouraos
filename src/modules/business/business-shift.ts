@@ -14,12 +14,17 @@ export interface ShiftInput {
   endTime: string;
 }
 
-/** "7:00", "07:00", "7" → "07:00"; anything else → null. */
+/** "7:00", "07:00", "7", "7 AM", "7:30 pm" → "HH:MM" (24-hour); anything else → null. */
 export function normaliseTime(value: unknown): string | null {
   if (typeof value !== 'string') return null;
-  const m = value.trim().match(/^(\d{1,2})(?::(\d{2}))?$/);
+  const m = value.trim().toLowerCase().replace(/\./g, '').match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/);
   if (!m) return null;
-  const text = `${m[1].padStart(2, '0')}:${m[2] ?? '00'}`;
+  let h = Number(m[1]);
+  if (m[3]) {
+    if (h < 1 || h > 12) return null;
+    h = (h % 12) + (m[3] === 'pm' ? 12 : 0);
+  }
+  const text = `${String(h).padStart(2, '0')}:${m[2] ?? '00'}`;
   return HHMM.test(text) ? text : null;
 }
 
