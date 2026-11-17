@@ -11,6 +11,7 @@ import { istDateKey } from '../../../lib/format/date';
 import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { dayChips, expectedDays, requestChip, requestTitle } from './chips';
+import { TodayCard } from './TodayCard';
 import '../../../attendance/attendance.css';
 
 /** The current month and the five before it. */
@@ -72,6 +73,9 @@ export default function MyAttendance() {
       </div>
 
       {summary.error && <ErrorState error={summary.error} onRetry={() => void summary.refetch()} />}
+
+      {/* Today first (rev 194), only on the current month; the month below is unchanged. */}
+      {month === current && <TodayCard />}
 
       <div className="lb-att-grid3">
         <div className="card lb-att-stat">

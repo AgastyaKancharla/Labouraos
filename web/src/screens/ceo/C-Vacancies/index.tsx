@@ -6,7 +6,8 @@ import { StatGrid, StatTile } from '../../../components/StatTile';
 import { StatusPill } from '../../../components/Badge';
 import { TopBar } from '../../../components/TopBar';
 import { formatINR } from '../../../lib/format/money';
-import { homeBack, useRecordsPortal } from '../_kit/records';
+import { homeBack, useInitialParam, useInitialPeriod, useRecordsPortal } from '../_kit/records';
+import { SectionSwitch, sectionQuery, useSection } from '../_kit/assign';
 import { DateFilter, FilterPanel, HBar, Kv, OpenLink, PagedTable, SearchField, SelectFilter, facetOptions, humanize, rangeQuery, useCeoList, useDebounced, type ListPeriod } from '../_kit/kit';
 import { VACANCY_STATUS } from '../_kit/labels';
 
@@ -58,17 +59,18 @@ function statusPill(r: Row) {
 }
 
 export default function VacanciesList() {
-  const { api: base, link, to } = useRecordsPortal();
+  const { api: base, sections, link, to } = useRecordsPortal();
+  const [section, setSection] = useSection();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   // "All" by default (owner, testing 16 Nov): nothing is hidden until a filter or tile is chosen.
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState(useInitialParam('status'));
   const [trade, setTrade] = useState('');
   const [area, setArea] = useState('');
   const [age, setAge] = useState('');
-  const [period, setPeriod] = useState<ListPeriod>(null);
+  const [period, setPeriod] = useState<ListPeriod>(useInitialPeriod());
   const q = useDebounced(search);
-  const list = useCeoList<Row, Extra, Summary>(`${base}/vacancies`, { search: q, status: status || 'all', trade, area, age, ...rangeQuery(period) });
+  const list = useCeoList<Row, Extra, Summary>(`${base}/vacancies`, { search: q, status: status || 'all', trade, area, age, ...rangeQuery(period), ...sectionQuery(sections, section) });
   const d = list.query.data;
   const s = d?.summary;
   const loading = list.query.isPending;
@@ -113,6 +115,7 @@ export default function VacanciesList() {
   return (
     <div className="lb-page">
       <TopBar back={homeBack(link)} title="Vacancies" subtitle="Every job, how long it has been open and how close it is to being filled." />
+      {sections && <SectionSwitch value={section} onChange={setSection} noun="vacancies" />}
       <StatGrid>
         <StatTile label={`Open · ${s?.openPositions ?? 0} positions`} value={s?.open ?? '—'} tone="gold" loading={loading} onClick={tile('open')} active={tileKey === 'open|'} />
         <StatTile label="Open more than 15 days" value={s?.openOver15Days ?? '—'} tone="orange" loading={loading} onClick={tile('open', 'over_15')} active={tileKey === 'open|over_15'} />

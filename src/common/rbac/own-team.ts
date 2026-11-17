@@ -110,3 +110,25 @@ export function businessesOwnedBy(staffIds: string[]): Prisma.BusinessWhereInput
     ],
   };
 }
+
+export interface PersonOwnerFields {
+  registeredByStaffId?: string | null;
+  assignedStaffId?: string | null;
+}
+
+/**
+ * Who owns a job seeker or a referral partner (Team Lead portal, Master Guide
+ * rev 194, 17 Nov): the agent who registered them and, once a Team Lead has
+ * assigned them, the assigned agent too. Assigning never changes
+ * registeredByStaffId (registration credit and "nobody approves an ID of
+ * someone they registered" stay with the registering agent). With neither the
+ * record belongs to no team.
+ */
+export function personOwners(record: PersonOwnerFields): string[] {
+  return [record.registeredByStaffId, record.assignedStaffId].filter((id): id is string => Boolean(id));
+}
+
+/** The same rule as a filter, for job seekers and referral partners: owned by any of these staff ids. */
+export function peopleOwnedBy(staffIds: string[]): { OR: [{ registeredByStaffId: { in: string[] } }, { assignedStaffId: { in: string[] } }] } {
+  return { OR: [{ registeredByStaffId: { in: staffIds } }, { assignedStaffId: { in: staffIds } }] };
+}

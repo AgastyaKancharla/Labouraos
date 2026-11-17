@@ -1,5 +1,5 @@
 import { PRODUCT_LANGUAGE } from '../../common/language/english-only';
-import { OwnTeam } from '../../common/rbac/own-team';
+import { OwnTeam, peopleOwnedBy } from '../../common/rbac/own-team';
 import { assertNotBanned } from '../conduct/permanent-ban.check';
 import {
   BadRequestException,
@@ -329,7 +329,8 @@ export class ReferralService {
   private async readScope(viewer?: { id: string; role: string }): Promise<Prisma.ReferralWhereInput> {
     if (viewer?.role !== 'team_lead') return {};
     // The same team every Team Lead check uses (OwnTeam).
-    return { registeredByStaffId: { in: await new OwnTeam(this.prisma).memberIds(viewer.id) } };
+    // Registered by the team or assigned to it by the Team Lead (peopleOwnedBy, rev 194).
+    return peopleOwnedBy(await new OwnTeam(this.prisma).memberIds(viewer.id));
   }
 
   /** The registering agent: the signed-in staff member (the only caller), never 'system'. */
