@@ -12,6 +12,7 @@ import { formatINR } from '../../../lib/format/money';
 import { formatMobile } from '../../../lib/format/phone';
 import type { ReactNode } from 'react';
 import { useRecordsPortal } from '../_kit/records';
+import { AssignmentLine, type Assignment } from '../_kit/assign';
 import { ActionButton } from '../_kit/actions';
 import { useAuth } from '../../../auth/AuthProvider';
 import { BanButton, LegalAcceptanceCard } from '../_kit/legal';
@@ -20,6 +21,8 @@ import { PAYMENT_STATUS, SEEKER_STATUS } from '../_kit/labels';
 
 /** Referral partner page — design C-Partner.dc.html. */
 interface Detail {
+  /** Team Lead and Manager only: the record's section and who holds it (rev 194). */
+  assignment?: Assignment;
   paused?: { at: string; reason: string | null } | null;
   id: string;
   code: string;
@@ -42,7 +45,7 @@ interface Detail {
 
 export default function PartnerDetail() {
   const { id = '' } = useParams();
-  const { api: base, ceo, to } = useRecordsPortal();
+  const { api: base, ceo, teamLead, to } = useRecordsPortal();
   const query = useQuery({ queryKey: [base, 'partner', id], queryFn: () => api.get<Detail>(`${base}/referrals/${id}`) });
   const d = query.data;
   const role = useAuth().session?.staff.role;
@@ -83,8 +86,9 @@ export default function PartnerDetail() {
         }
         actions={
           <>
+          <AssignmentLine assignment={d.assignment} kind="referral" id={d.id} name={d.name} />
           {(role === 'ceo' || role === 'manager') && <BanButton subjectType="referral" subjectId={d.id} name={d.name} />}
-          {d.paused ? (
+          {teamLead ? null : d.paused ? (
             <ActionButton
               label="Unpause partner"
               title={`Unpause ${d.name}`}

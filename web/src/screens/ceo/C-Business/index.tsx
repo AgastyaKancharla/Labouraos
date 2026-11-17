@@ -15,6 +15,8 @@ import { formatINR } from '../../../lib/format/money';
 import { formatMobile } from '../../../lib/format/phone';
 import type { ReactNode } from 'react';
 import { useRecordsPortal } from '../_kit/records';
+import { AssignmentLine, type Assignment } from '../_kit/assign';
+import { VisitPhotos } from '../_kit/photos';
 import { ActionButton } from '../_kit/actions';
 import { Kv, Timeline, dateOrDash, humanize } from '../_kit/kit';
 import { BUSINESS_STATUS, VACANCY_STATUS } from '../_kit/labels';
@@ -53,7 +55,9 @@ interface Detail {
   callRecordingConsent: boolean | null;
   vacancies: { id: string; code: string; role: string; headcount: number; salaryMinPaise: number | null; salaryMaxPaise: number | null; belowLegalMinimum: boolean; confirmed: boolean; confirmationMethod: string | null; openDays: number; status: string; interviews: number }[];
   introductions: { at: string; jobSeeker: { id: string; code: string; name: string }; shownBy: string; channel: string; outcome: string }[];
-  visits: { at: string; by: string | null; purpose: string | null; geofenceFlag: boolean; hasSelfie: boolean; photoLive: boolean | null }[];
+  visits: { id?: string; at: string; by: string | null; purpose: string | null; geofenceFlag: boolean; hasSelfie: boolean; hasBoardPhoto?: boolean; photoLive: boolean | null }[];
+  /** Team Lead and Manager only: the record's section and who holds it (rev 194). */
+  assignment?: Assignment;
   history: { at: string; status: string; by: string | null; reason: string | null }[];
 }
 
@@ -74,11 +78,13 @@ function outcomeLabel(o: string): { label: string; tone: 'good' | 'info' | 'mute
 
 export default function BusinessDetail() {
   const { id = '' } = useParams();
-  const { api: base, ceo, to } = useRecordsPortal();
+  const { api: base, ceo, teamLead, to } = useRecordsPortal();
   const toast = useToast();
   const query = useQuery({ queryKey: [base, 'business', id], queryFn: () => api.get<Detail>(`${base}/businesses/${id}`) });
   const agents = useQuery({
     queryKey: ['staff', 'field-agents'],
+    // The Team Lead moves a business with Assign (his own team only) instead.
+    enabled: !teamLead,
     queryFn: async () => {
       const res = await api.get<{ id: string; name: string; role: string; status?: string }[] | { rows: { id: string; name: string; role: string; status?: string }[] }>('/staff', { query: { role: 'field_agent' } });
       const list = Array.isArray(res) ? res : res.rows;
@@ -135,15 +141,16 @@ export default function BusinessDetail() {
         }
         actions={
           <div className="ceo-actions">
-            <ActionButton
+            <AssignmentLine assignment={d.assignment} kind="business" id={d.id} name={d.name} />
+            {!teamLead && <ActionButton
               label="Move to another agent"
               title="Move to another account agent"
               description="Their open vacancies and follow-ups move with the business. The move is recorded in the history."
               choice={{ label: 'New account agent', options: (agents.data ?? []).filter((a) => a.id !== d.accountAgent?.id).map((a) => ({ value: a.id, label: a.name })) }}
               run={({ choice }) => api.post(`/businesses/${d.id}/account-agent`, { accountAgentId: choice })}
               success="Account agent changed"
-            />
-            {d.status === 'paused' ? (
+            />}
+            {teamLead ? null : d.status === 'paused' ? (
               <ActionButton label="Unpause business" title="Unpause the business" reason run={({ reason }) => api.post(`/businesses/${d.id}/unpause`, { reason })} success="Business unpaused" />
             ) : (
               <ActionButton
@@ -314,11 +321,9 @@ export default function BusinessDetail() {
         </Card>
         <Card title="Visits (proof)">
           <div className="grid4">
+            {/* The shop's name board and the agent's selfie for the latest visits (private links, tap to enlarge). */}
             {d.visits.slice(0, 4).map((v, i) => (
-              <div className="ceo-ph" key={i}>
-                {v.hasSelfie ? 'Selfie' : 'Visit'} · {formatDateIST(v.at)}
-                {v.geofenceFlag ? ' · outside pin' : ''}
-              </div>
+              <VisitPhotos key={v.id ?? i} businessId={d.id} businessName={d.name} visit={v} />
             ))}
           </div>
           <Kv rows={d.visits.map((v) => [dateOrDash(v.at), `${v.by ?? '—'} · ${humanize(v.purpose)}${v.geofenceFlag ? ' · GPS outside the pin' : ' · GPS at the pin'}${v.photoLive === false ? ' · photo not live' : ''}`] as [string, string])} />

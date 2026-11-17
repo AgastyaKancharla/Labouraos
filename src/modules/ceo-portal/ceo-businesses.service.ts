@@ -305,11 +305,14 @@ export class CeoBusinessesService {
         };
       }),
       visits: b.visits.map((v) => ({
+        // The id opens the visit's photos (GET .../businesses/:id/visits/:visitId/photos, signed links only).
+        id: v.id,
         at: v.visitedAt.toISOString(),
         by: v.staff?.name ?? null,
         purpose: v.purpose,
         geofenceFlag: v.geofenceFlag,
         hasSelfie: Boolean(v.selfieUrl),
+        hasBoardPhoto: Boolean(v.boardPhotoPath),
         photoLive: v.photoLive,
       })),
       history: history.map((h) => ({ at: h.changedAt.toISOString(), status: h.toStatus, by: h.changedByStaff?.name ?? null, reason: h.reason })),

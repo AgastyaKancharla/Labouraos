@@ -412,6 +412,41 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
     test: 'modules/screens-team-lead/team-lead.e2e.spec.ts',
     proof: "get(otherLead, `/team-lead/visits/${visit.id}/photos`)).status).toBe(404)",
   },
+  'TeamLeadRecordsController.jobSeeker': {
+    reason: "Team Lead portal records (rev 194): only his team's records or unowned ones in his city (RecordSectionsService viewable filter); anything else is 404.",
+    test: 'modules/screens-team-lead/team-lead-records.e2e.spec.ts',
+    proof: '// TL records: job seeker profile',
+  },
+  'TeamLeadRecordsController.jobSeekerSelfie': {
+    reason: "Team Lead portal records (rev 194): only his team's records or unowned ones in his city (RecordSectionsService viewable filter); anything else is 404.",
+    test: 'modules/screens-team-lead/team-lead-records.e2e.spec.ts',
+    proof: '// TL records: job seeker selfie',
+  },
+  'TeamLeadRecordsController.business': {
+    reason: "Team Lead portal records (rev 194): only his team's records or unowned ones in his city (RecordSectionsService viewable filter); anything else is 404.",
+    test: 'modules/screens-team-lead/team-lead-records.e2e.spec.ts',
+    proof: '// TL records: business profile',
+  },
+  'TeamLeadRecordsController.visitPhotos': {
+    reason: "Team Lead portal records (rev 194): only his team's records or unowned ones in his city (RecordSectionsService viewable filter); anything else is 404.",
+    test: 'modules/screens-team-lead/team-lead-records.e2e.spec.ts',
+    proof: '// TL records: visit photos',
+  },
+  'TeamLeadRecordsController.vacancy': {
+    reason: "Team Lead portal records (rev 194): only his team's records or unowned ones in his city (RecordSectionsService viewable filter); anything else is 404.",
+    test: 'modules/screens-team-lead/team-lead-records.e2e.spec.ts',
+    proof: '// TL records: vacancy profile',
+  },
+  'TeamLeadRecordsController.placement': {
+    reason: "Team Lead portal records (rev 194): only his team's records or unowned ones in his city (RecordSectionsService viewable filter); anything else is 404.",
+    test: 'modules/screens-team-lead/team-lead-records.e2e.spec.ts',
+    proof: '// TL records: placement profile',
+  },
+  'TeamLeadRecordsController.partner': {
+    reason: "Team Lead portal records (rev 194): only his team's records or unowned ones in his city (RecordSectionsService viewable filter); anything else is 404.",
+    test: 'modules/screens-team-lead/team-lead-records.e2e.spec.ts',
+    proof: '// TL records: partner profile',
+  },
   'TeamLeadController.checkVisit': {
     reason: "Only a visit by the Team Lead's own team.",
     test: 'common/rbac/service-scoped-routes.e2e.spec.ts',

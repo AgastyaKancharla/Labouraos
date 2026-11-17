@@ -9,7 +9,8 @@ import { TopBar } from '../../../components/TopBar';
 import { formatINR } from '../../../lib/format/money';
 import { formatMobile } from '../../../lib/format/phone';
 import { SEEKER_STATUS, guaranteePill } from '../_kit/labels';
-import { homeBack, useRecordsPortal } from '../_kit/records';
+import { homeBack, useInitialParam, useRecordsPortal } from '../_kit/records';
+import { AssignButton, SectionSwitch, sectionQuery, useSection } from '../_kit/assign';
 import {
   DateFilter,
   FilterPanel,
@@ -68,17 +69,18 @@ function salary(r: { salaryMinPaise: number; salaryMaxPaise: number }) {
 }
 
 export default function JobSeekersList() {
-  const { api: base, ceo, link, to } = useRecordsPortal();
+  const { api: base, ceo, sections, teamLead, link, to } = useRecordsPortal();
+  const [section, setSection] = useSection();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   // "All" first (owner, testing 16 Nov): a just-registered, unpaid job seeker must not be hidden.
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState(useInitialParam('status'));
   const [trade, setTrade] = useState('');
   const [kyc, setKyc] = useState('');
   const [sort, setSort] = useState('soonest');
   const [period, setPeriod] = useState<ListPeriod>(null);
   const q = useDebounced(search);
-  const list = useCeoList<JobSeekerRow, { trades: string[] }, Summary>(`${base}/job-seekers`, { search: q, status, trade, kyc, sort, ...rangeQuery(period) });
+  const list = useCeoList<JobSeekerRow, { trades: string[] }, Summary>(`${base}/job-seekers`, { search: q, status, trade, kyc, sort, ...rangeQuery(period), ...sectionQuery(sections, section) });
   const s = list.query.data?.summary;
   const loading = list.query.isPending;
   /** A tile sets the Status filter to its own rows (click it again to show all). */
@@ -114,6 +116,9 @@ export default function JobSeekersList() {
     { key: 'hits', header: 'Hits', cell: (r) => <Hits count={r.hits} max={r.maxHits} />, csv: (r) => r.hits },
     { key: 'kyc', header: 'KYC', cell: (r) => <StatusPill tone={KYC[r.kyc].tone}>{KYC[r.kyc].label}</StatusPill>, csv: (r) => KYC[r.kyc].label, hideOnPhone: true },
     { key: 'guarantee', header: 'Refund guarantee', cell: (r) => guaranteePill(r.guaranteeDaysLeft), csv: (r) => r.guaranteeDaysLeft },
+    ...(sections && section === 'unassigned'
+      ? [{ key: 'assign', header: '', cell: (r: JobSeekerRow) => <AssignButton kind="job_seeker" id={r.id} name={r.name} /> } satisfies Column<JobSeekerRow>]
+      : []),
     { key: 'open', header: '', cell: (r) => <OpenLink to={to('C-JobSeeker', { id: r.id })} /> },
   ];
 
@@ -138,6 +143,7 @@ export default function JobSeekersList() {
           </>
         }
       />
+      {sections && <SectionSwitch value={section} onChange={setSection} noun="job seekers" />}
       <StatGrid>
         <StatTile label="Active in pool" value={s?.activeInPool ?? '—'} tone="cyan" loading={loading} onClick={tile('active')} active={status === 'active'} />
         <StatTile label="Registered, not paid" value={s?.registeredNotPaid ?? '—'} tone="royal" loading={loading} onClick={tile('not_paid')} active={status === 'not_paid'} />
@@ -206,7 +212,11 @@ export default function JobSeekersList() {
         note={
           ceo
             ? 'Full phone numbers are shown only to the CEO; every view is logged.'
-            : 'Phone numbers show the last 4 digits. Your teams’ job seekers, and those registered without an agent.'
+            : section === 'unassigned'
+              ? 'Phone numbers show the last 4 digits. Job seekers nobody registered or was given yet.'
+              : teamLead
+                ? 'Phone numbers show the last 4 digits. Job seekers you or your agents registered or were given.'
+                : 'Phone numbers show the last 4 digits. Job seekers your teams registered or were given.'
         }
       />
     </div>

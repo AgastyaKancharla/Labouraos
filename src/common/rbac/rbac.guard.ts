@@ -24,7 +24,7 @@ import {
   TargetKind,
   TargetSource,
 } from './permissions.decorator';
-import { OwnTeam } from './own-team';
+import { OwnTeam, personOwners } from './own-team';
 import { ROLES_METADATA_KEY } from './roles.decorator';
 
 @Injectable()
@@ -263,7 +263,8 @@ export class RbacGuard implements CanActivate {
       if (!seeker) {
         throw new NotFoundException(kind === 'job_seeker' ? `Job seeker '${ref}' not found` : `Job seeker hit '${ref}' not found`);
       }
-      if (scope !== 'own_team' || !(await team.includes(user.sub, seeker.registeredByStaffId))) {
+      // The registering agent or, once a Team Lead assigned it, the assigned agent (personOwners, rev 194).
+      if (scope !== 'own_team' || !(await team.includesAny(user.sub, personOwners(seeker)))) {
         throw new ForbiddenException('Access denied: job seeker is outside your own team');
       }
       return;
@@ -271,11 +272,11 @@ export class RbacGuard implements CanActivate {
     if (kind === 'referral') {
       const partner = await this.prisma.referral.findFirst({
         where: { OR: [{ id: ref }, { code: ref }] },
-        select: { registeredByStaffId: true },
+        select: { registeredByStaffId: true, assignedStaffId: true },
       });
       // The partner read answers 404 for a partner outside the team, so
       // every other action on it does too.
-      if (!partner || scope !== 'own_team' || !(await team.includes(user.sub, partner.registeredByStaffId))) {
+      if (!partner || scope !== 'own_team' || !(await team.includesAny(user.sub, personOwners(partner)))) {
         throw new NotFoundException(`Referral partner '${ref}' not found`);
       }
       return;
@@ -325,8 +326,8 @@ export class RbacGuard implements CanActivate {
   private async loadJobSeeker(
     kind: 'job_seeker' | 'job_seeker_hit',
     ref: string,
-  ): Promise<{ id: string; registeredByStaffId: string | null } | null> {
-    const select = { id: true, registeredByStaffId: true } as const;
+  ): Promise<{ id: string; registeredByStaffId: string | null; assignedStaffId: string | null } | null> {
+    const select = { id: true, registeredByStaffId: true, assignedStaffId: true } as const;
     if (kind === 'job_seeker') {
       return this.prisma.jobSeeker.findFirst({ where: { OR: [{ id: ref }, { code: ref }] }, select });
     }

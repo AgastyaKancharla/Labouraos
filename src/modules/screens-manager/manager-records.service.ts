@@ -1,19 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { DateRange, PageRequest } from '../ceo-portal/ceo-common';
 import { CeoBusinessesService } from '../ceo-portal/ceo-businesses.service';
 import { CeoJobSeekersService } from '../ceo-portal/ceo-job-seekers.service';
 import { CeoMoneyService } from '../ceo-portal/ceo-money.service';
 import { CeoPlacementsService } from '../ceo-portal/ceo-placements.service';
-import {
-  RecordScope,
-  businessScope,
-  interviewScope,
-  placementScope,
-  referralScope,
-  seekerScope,
-  vacancyScope,
-} from '../ceo-portal/record-scope';
+import { RecordScope } from '../ceo-portal/record-scope';
+import { SectionScope, sectionScope } from './record-section-scope';
 import { ManagerTreeService } from './manager-tree.service';
 
 type Obj = Record<string, unknown>;
@@ -78,20 +72,35 @@ export class ManagerRecordsService {
     return { staffIds: [managerId, ...tree.ids.filter((id) => id !== managerId)] };
   }
 
+  /**
+   * The Manager's sections (rev 196): "My team" is everything his reporting
+   * tree owns; "Not assigned" is unowned records in his teams' cities (every
+   * Staff.city in the tree, his own included). He can assign to anyone active
+   * in the tree, himself included (RecordSectionsService.assign).
+   */
+  async sectionScope(manager: { id: string; role: string }): Promise<SectionScope> {
+    const { staffIds } = await this.scope(manager.id);
+    const people = await this.prisma.staff.findMany({ where: { id: { in: staffIds } }, select: { id: true, city: true, status: true } });
+    const cities = [...new Set(people.map((p) => p.city))];
+    const assignees = people.filter((p) => p.status === 'active').map((p) => p.id);
+    return sectionScope(manager, staffIds, cities, assignees);
+  }
+
   private async assertFound(count: Promise<number>, what: string, id: string): Promise<void> {
     if ((await count) === 0) throw new NotFoundException(`${what} '${id}' not found`);
   }
 
+  // The lists and profiles below take the viewer's filter: the Manager's and the
+  // Team Lead's "My team" / "Not assigned" sections (RecordSectionsService).
+
   // Job seekers ------------------------------------------------------------
 
-  async jobSeekers(managerId: string, q: ManagerListQuery) {
-    const scope = await this.scope(managerId);
-    return this.seekers.list({ range: q.range, page: q.page, search: q.search, status: q.status, trade: q.trade, kyc: q.kyc, sort: q.sort, scope: seekerScope(scope) });
+  async jobSeekersIn(scope: Prisma.JobSeekerWhereInput, q: ManagerListQuery) {
+    return this.seekers.list({ range: q.range, page: q.page, search: q.search, status: q.status, trade: q.trade, kyc: q.kyc, sort: q.sort, scope });
   }
 
-  async jobSeeker(managerId: string, id: string) {
-    const scope = await this.scope(managerId);
-    await this.assertFound(this.prisma.jobSeeker.count({ where: { AND: [{ OR: [{ id }, { code: id }] }, seekerScope(scope)] } }), 'Job seeker', id);
+  async jobSeekerIn(scope: Prisma.JobSeekerWhereInput, id: string) {
+    await this.assertFound(this.prisma.jobSeeker.count({ where: { AND: [{ OR: [{ id }, { code: id }] }, scope] } }), 'Job seeker', id);
     const detail = await this.seekers.detail(id);
     drop(detail, ['activation', 'refunds']);
     detail.history = detail.history.filter((e) => !e.kind.startsWith('payment_'));
@@ -100,50 +109,43 @@ export class ManagerRecordsService {
 
   // Businesses, vacancies, interviews ---------------------------------------
 
-  async businessList(managerId: string, q: ManagerListQuery) {
-    const scope = await this.scope(managerId);
-    return this.businesses.listBusinesses({ range: q.range, page: q.page, search: q.search, status: q.status, agent: q.agent, area: q.area, type: q.type, businessScope: businessScope(scope) });
+  async businessListIn(businessScope: Prisma.BusinessWhereInput, q: ManagerListQuery) {
+    return this.businesses.listBusinesses({ range: q.range, page: q.page, search: q.search, status: q.status, agent: q.agent, area: q.area, type: q.type, businessScope });
   }
 
-  async business(managerId: string, id: string) {
-    const scope = await this.scope(managerId);
-    await this.assertFound(this.prisma.business.count({ where: { AND: [{ OR: [{ id }, { code: id }] }, businessScope(scope)] } }), 'Business', id);
+  async businessIn(scope: Prisma.BusinessWhereInput, id: string) {
+    await this.assertFound(this.prisma.business.count({ where: { AND: [{ OR: [{ id }, { code: id }] }, scope] } }), 'Business', id);
     const detail = await this.businesses.businessDetail(id);
     // Pricing terms of the agreement are money (fee and GST percentages, the no-bypass charge).
     drop(detail, ['agreement.feePercent', 'agreement.gstPercent', 'agreement.noBypassPenaltyPercent']);
     return detail;
   }
 
-  async vacancies(managerId: string, q: ManagerListQuery) {
-    const scope = await this.scope(managerId);
+  async vacanciesIn(vacancyScope: Prisma.VacancyWhereInput, q: ManagerListQuery) {
     // No status (or "all") means every vacancy, as on the Manager's list (the CEO service's own default is open).
-    return this.businesses.listVacancies({ range: q.range, page: q.page, search: q.search, status: q.status ?? 'all', trade: q.trade, area: q.area, age: q.age, vacancyScope: vacancyScope(scope) });
+    return this.businesses.listVacancies({ range: q.range, page: q.page, search: q.search, status: q.status ?? 'all', trade: q.trade, area: q.area, age: q.age, vacancyScope });
   }
 
-  async vacancy(managerId: string, id: string) {
-    const scope = await this.scope(managerId);
-    await this.assertFound(this.prisma.vacancy.count({ where: { AND: [{ OR: [{ id }, { code: id }] }, vacancyScope(scope)] } }), 'Vacancy', id);
+  async vacancyIn(scope: Prisma.VacancyWhereInput, id: string) {
+    await this.assertFound(this.prisma.vacancy.count({ where: { AND: [{ OR: [{ id }, { code: id }] }, scope] } }), 'Vacancy', id);
     return this.businesses.vacancyDetail(id);
   }
 
-  async interviews(managerId: string, range: DateRange, now: Date) {
-    const scope = await this.scope(managerId);
-    return this.businesses.interviews(range, now, interviewScope(scope));
+  async interviewsIn(scope: Prisma.InterviewWhereInput, range: DateRange, now: Date) {
+    return this.businesses.interviews(range, now, scope);
   }
 
   // Placements -------------------------------------------------------------
 
-  async placementList(managerId: string, q: ManagerListQuery) {
-    const scope = await this.scope(managerId);
-    const answer = await this.placements.list({ range: q.range, page: q.page, search: q.search, stage: q.stage, trade: q.trade, scope: placementScope(scope) });
+  async placementListIn(scope: Prisma.PlacementWhereInput, q: ManagerListQuery) {
+    const answer = await this.placements.list({ range: q.range, page: q.page, search: q.search, stage: q.stage, trade: q.trade, scope });
     drop(answer, ['summary.feePercent', 'summary.gstPercent', 'replacements.refundsAfterSearchThisMonth']);
     dropInRows(answer, 'rows', ['paidAt', 'invoiceCode']);
     return answer;
   }
 
-  async placement(managerId: string, id: string) {
-    const scope = await this.scope(managerId);
-    await this.assertFound(this.prisma.placement.count({ where: { AND: [{ OR: [{ id }, { code: id }] }, placementScope(scope)] } }), 'Placement', id);
+  async placementIn(scope: Prisma.PlacementWhereInput, id: string) {
+    await this.assertFound(this.prisma.placement.count({ where: { AND: [{ OR: [{ id }, { code: id }] }, scope] } }), 'Placement', id);
     const detail = await this.placements.detail(id);
     drop(detail, ['paidAt', 'invoiceCode', 'feePayment', 'joiningReward', 'refund', 'referral.payment']);
     // The fee payment (with its invoice) and any refund are money: left out of the timeline too.
@@ -153,18 +155,16 @@ export class ManagerRecordsService {
 
   // Referral partners --------------------------------------------------------
 
-  async referrals(managerId: string, q: ManagerListQuery) {
-    const scope = await this.scope(managerId);
+  async referralsIn(scope: Prisma.ReferralWhereInput, q: ManagerListQuery) {
     // The payout filter is money: never applied for a Manager.
-    const answer = await this.money.referrals(q.range, q.page, { search: q.search, type: q.type, checks: q.checks, scope: referralScope(scope) });
+    const answer = await this.money.referrals(q.range, q.page, { search: q.search, type: q.type, checks: q.checks, scope });
     drop(answer, ['summary.payoutsDuePaise', 'summary.payoutsDueCount', 'summary.payoutsFailed', 'fraud']);
     dropInRows(answer, 'rows', ['payout']);
     return answer;
   }
 
-  async partner(managerId: string, id: string) {
-    const scope = await this.scope(managerId);
-    await this.assertFound(this.prisma.referral.count({ where: { AND: [{ OR: [{ id }, { code: id }] }, referralScope(scope)] } }), 'Referral partner', id);
+  async partnerIn(scope: Prisma.ReferralWhereInput, id: string) {
+    await this.assertFound(this.prisma.referral.count({ where: { AND: [{ OR: [{ id }, { code: id }] }, scope] } }), 'Referral partner', id);
     const detail = await this.money.partner(id);
     drop(detail, ['payoutAccount', 'payouts']);
     return detail;

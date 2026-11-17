@@ -16,6 +16,7 @@ import { CeoOpsService } from './ceo-ops.service';
 import { CeoAdminService } from './ceo-admin.service';
 import { CeoBreachService } from './ceo-breach.service';
 import { cleanOption, cleanSearch, parseOptionalRange, parsePage, parseRange } from './ceo-common';
+import { RecordPhotosService } from './record-photos.service';
 
 type AuthedRequest = Request & { user: JwtPayload };
 type Q = Record<string, string | undefined>;
@@ -43,6 +44,7 @@ export class CeoPortalController {
     private readonly ops: CeoOpsService,
     private readonly admin: CeoAdminService,
     private readonly breaches: CeoBreachService,
+    private readonly recordPhotos: RecordPhotosService,
   ) {}
 
   // Command Center and reports ------------------------------------------
@@ -123,6 +125,13 @@ export class CeoPortalController {
     return this.seekers.detail(id);
   }
 
+  /** C-JobSeeker: the live selfie through a short-lived private link (audited), or kept: false. */
+  @Get('job-seekers/:id/selfie')
+  @RequireRoles('ceo')
+  jobSeekerSelfie(@Req() req: AuthedRequest, @Param('id') id: string) {
+    return this.recordPhotos.seekerSelfie({ id: req.user.sub, role: req.user.role }, null, id);
+  }
+
   // Businesses, vacancies, interviews, introductions ---------------------
 
   @Get('businesses')
@@ -160,6 +169,13 @@ export class CeoPortalController {
   @RequireRoles('ceo')
   business(@Param('id') id: string) {
     return this.businesses.businessDetail(id);
+  }
+
+  /** C-Business: one visit's name-board photo and the agent's selfie, through short-lived private links (audited). */
+  @Get('businesses/:id/visits/:visitId/photos')
+  @RequireRoles('ceo')
+  visitPhotos(@Req() req: AuthedRequest, @Param('id') id: string, @Param('visitId') visitId: string) {
+    return this.recordPhotos.visitPhotos({ id: req.user.sub, role: req.user.role }, null, id, visitId);
   }
 
   @Get('vacancies')

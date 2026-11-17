@@ -7,7 +7,8 @@ import { StatGrid, StatTile } from '../../../components/StatTile';
 import { StatusPill, type StatusTone } from '../../../components/Badge';
 import { TopBar } from '../../../components/TopBar';
 import { formatINR } from '../../../lib/format/money';
-import { homeBack, useRecordsPortal } from '../_kit/records';
+import { homeBack, useInitialParam, useRecordsPortal } from '../_kit/records';
+import { AssignButton, SectionSwitch, sectionQuery, useSection } from '../_kit/assign';
 import { DateFilter, FilterPanel, HBar, Kv, OpenLink, PagedTable, SearchField, SelectFilter, humanize, rangeQuery, useCeoList, useDebounced, type ListPeriod } from '../_kit/kit';
 
 /** Referral partners — design C-Referrals.dc.html. */
@@ -56,15 +57,16 @@ function payout(r: Row) {
 }
 
 export default function Referrals() {
-  const { api: base, ceo, link, to } = useRecordsPortal();
+  const { api: base, ceo, sections, link, to } = useRecordsPortal();
+  const [section, setSection] = useSection();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [type, setType] = useState('');
   const [payoutF, setPayout] = useState('');
-  const [checks, setChecks] = useState('');
+  const [checks, setChecks] = useState(useInitialParam('checks'));
   const [period, setPeriod] = useState<ListPeriod>(null);
   const q = useDebounced(search);
-  const list = useCeoList<Row, Extra, Summary>(`${base}/referrals`, { search: q, type, payout: ceo ? payoutF : '', checks, ...rangeQuery(period) });
+  const list = useCeoList<Row, Extra, Summary>(`${base}/referrals`, { search: q, type, payout: ceo ? payoutF : '', checks, ...rangeQuery(period), ...sectionQuery(sections, section) });
   const showAll = () => {
     setType('');
     setPayout('');
@@ -105,6 +107,7 @@ export default function Referrals() {
         ]
       : []),
     { key: 'checks', header: 'Checks', cell: (r) => <StatusPill tone={CHECKS[r.checks]?.tone ?? 'muted'}>{CHECKS[r.checks]?.label ?? r.checks}</StatusPill>, csv: (r) => CHECKS[r.checks]?.label, hideOnPhone: true },
+    ...(sections && section === 'unassigned' ? [{ key: 'assign', header: '', cell: (r: Row) => <AssignButton kind="referral" id={r.id} name={r.name} /> } satisfies Column<Row>] : []),
     { key: 'go', header: '', cell: (r) => <OpenLink to={to('C-Partner', { id: r.id })} /> },
   ];
 
@@ -117,6 +120,7 @@ export default function Referrals() {
         title="Referral partners"
         subtitle={ceo ? 'Who sends Laboura job seekers, how many join, and what we owe them.' : 'Who sends your teams job seekers, and how many join.'}
       />
+      {sections && <SectionSwitch value={section} onChange={setSection} noun="referral partners" />}
       <StatGrid>
         <StatTile label="Partners" value={s?.partners ?? '—'} tone="orange" loading={loading} onClick={showAll} active={!type && !payoutF && !checks} />
         <StatTile label="Individual / business" value={s ? `${s.individual} / ${s.business}` : '—'} tone="royal" loading={loading} />

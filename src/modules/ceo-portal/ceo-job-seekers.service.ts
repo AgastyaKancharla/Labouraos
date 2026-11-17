@@ -417,6 +417,8 @@ export class CeoJobSeekersService {
         consentsAsked: askedPurposes.size,
         consentAt: consentAt?.toISOString() ?? null,
         selfieAt: seeker.photoTakenAt?.toISOString() ?? null,
+        // The picture itself comes from GET .../job-seekers/:id/selfie (a short-lived private link).
+        hasSelfie: Boolean(seeker.photoStoragePath),
         idCheck: verified
           ? { method: verified.method, last4: verified.last4, adult: verified.isAdult, nameMatches: verified.nameMatches, at: verified.verifiedAt?.toISOString() ?? null }
           : seeker.identityVerifications[0]

@@ -2,6 +2,7 @@ import { HttpStatus, Injectable, Logger, NotFoundException } from '@nestjs/commo
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { peopleOwnedBy } from '../../common/rbac/own-team';
 import { codedError } from '../../common/http/coded-error';
 import { phoneLast4 } from '../../common/phone/indian-mobile';
 import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
@@ -1082,7 +1083,8 @@ export class FieldRedesignService {
 
   async myJobSeekers(actor: Actor, q?: string) {
     const query = (q ?? '').trim();
-    const filters: Prisma.JobSeekerWhereInput[] = [{ registeredByStaffId: actor.sub }, { anonymisedAt: null }];
+    // His own: registered by him, or assigned to him by his Team Lead (peopleOwnedBy, rev 194).
+    const filters: Prisma.JobSeekerWhereInput[] = [peopleOwnedBy([actor.sub]), { anonymisedAt: null }];
     if (query) {
       // Own records only; a phone matches by exactly its last 4 digits (never a longer run, AC-2).
       filters.push({

@@ -12,6 +12,7 @@ import { periodFor, periodRangeLabel, periodToUtcRange, type Period } from '../.
 import { useNow } from '../../../lib/useNow';
 import { OpenLink, humanize } from '../_kit/kit';
 import { homeBack, useRecordsPortal } from '../_kit/records';
+import { SectionSwitch, sectionQuery, useSection } from '../_kit/assign';
 
 /** Interviews — design C-Interviews.dc.html. */
 interface Row {
@@ -113,13 +114,17 @@ function SmallTable({ title, rows, headers, cells, empty }: { title: string; row
 }
 
 export default function Interviews() {
-  const { api: base, link, to } = useRecordsPortal();
+  const { api: base, sections, link, to } = useRecordsPortal();
+  const [section, setSection] = useSection();
   const navigate = useNavigate();
   const now = useNow(60_000);
   const [period, setPeriod] = useState<Period>(() => periodFor('today', now));
   // Which rows the main table shows: every interview in the period, or a tile's own rows.
   const [view, setView] = useState<View>('all');
-  const query = useQuery({ queryKey: [base, 'interviews', period.from, period.to], queryFn: () => api.get<Response>(`${base}/interviews`, { query: periodToUtcRange(period) }) });
+  const query = useQuery({
+    queryKey: [base, 'interviews', period.from, period.to, section],
+    queryFn: () => api.get<Response>(`${base}/interviews`, { query: { ...periodToUtcRange(period), ...sectionQuery(sections, section) } }),
+  });
   const d = query.data;
   const s = d?.summary;
   const loading = query.isPending;
@@ -200,6 +205,7 @@ export default function Interviews() {
           if (view === 'today') setView('all');
         }}
       />
+      {sections && <SectionSwitch value={section} onChange={setSection} noun="interviews" />}
       <StatGrid>
         <StatTile label="Interviews today" value={s?.today ?? '—'} tone="cyan" loading={loading} onClick={tile('today', 'today')} active={view === 'today'} />
         <StatTile label="Results due by 8 PM" value={s?.resultsDueToday ?? '—'} tone="gold" loading={loading} onClick={tile('due_today')} active={view === 'due_today'} />
