@@ -437,7 +437,7 @@ export const en = {
   'fa07.belowMinimumBody': 'The legal minimum for this work is about ₹{amount} a month. You can still save. Tell the owner, and tick below. The business is the employer and is responsible for wages, PF and ESI.',
   'fa07.ownerTold': 'Owner told about the legal minimum wage',
   'fa07.addRole': '+ Add another role',
-  'fa07.s6': 'Explain Laboura — read this to them · in their language',
+  'fa07.s6': 'Explain Laboura — read this to them',
   'fa07.ownerAgrees': 'The contact person agrees on their own phone by OTP, ticking that they accept the terms for the business. You never agree for them.',
   'fa07.required': 'Required',
   'fa07.fixErrors': 'Some required fields are missing or wrong — they are marked in red.',
