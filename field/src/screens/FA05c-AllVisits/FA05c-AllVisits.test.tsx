@@ -1,6 +1,7 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { router } from '@/test/expo-router-mock';
 import { kiran, renderWithApp } from '@/test/render';
+import { todayKeyIst } from '@/components/form';
 import AllVisitsScreen from '.';
 
 jest.mock('expo-router', () => require('@/test/expo-router-mock'));
@@ -20,7 +21,7 @@ describe('FA05c All visits', () => {
         if (!url.includes('/field-work/visits/all')) return undefined;
         const u = new URL(url);
         asked.push(u.search);
-        if (u.searchParams.get('before') === 'c1') return { status: 200, body: { items: [row('v-3', 'Old Bakery', '2026-03-01T06:00:00Z')], nextBefore: null } };
+        if (u.searchParams.get('before') === 'c1') return { status: 200, body: { items: [row('v-3', 'Old Bakery', `${Number(todayKeyIst().slice(0, 4)) - 1}-03-01T06:00:00Z`)], nextBefore: null } };
         if (u.searchParams.get('q') === 'tiff') return { status: 200, body: { items: [row('v-2', 'Lakshmi Tiffins', '2026-11-08T06:00:00Z')], nextBefore: null } };
         return {
           status: 200,
@@ -39,6 +40,9 @@ describe('FA05c All visits', () => {
     expect(screen.getByTestId('all-visit-v-2')).toHaveTextContent(/Lakshmi Tiffins.*Not finished/);
     await fireEvent.press(screen.getByTestId('all-visits-more'));
     await waitFor(() => screen.getByTestId('all-visit-v-3'));
+    // An earlier year shows the year; this year's rows do not.
+    expect(screen.getByTestId('all-visit-v-3')).toHaveTextContent(new RegExp(`1 Mar ${Number(todayKeyIst().slice(0, 4)) - 1} `));
+    expect(screen.getByTestId('all-visit-v-1')).not.toHaveTextContent(/20\d\d /);
     expect(screen.queryByTestId('all-visits-more')).toBeNull();
     await fireEvent.press(screen.getByTestId('all-visit-v-3'));
     expect(router.push).toHaveBeenCalledWith('/visit/details/v-3');

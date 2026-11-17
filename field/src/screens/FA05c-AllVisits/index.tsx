@@ -87,7 +87,10 @@ export default function AllVisitsScreen() {
 function VisitRow({ v, today, last }: { v: AllVisitRow; today: string; last: boolean }) {
   const { t } = useI18n();
   const m = minutesOf(v.durationSeconds);
-  const when = istDateKey(v.at) === today ? `${t('date.today')} ${formatTimeIst(v.at)}` : `${formatDayIst(v.at)} ${formatTimeIst(v.at)}`;
+  // A visit from an earlier year shows its year ("Sun 1 Mar 2025"): the list goes back without limit.
+  const day = istDateKey(v.at);
+  const year = day.slice(0, 4) !== today.slice(0, 4) ? ` ${day.slice(0, 4)}` : '';
+  const when = day === today ? `${t('date.today')} ${formatTimeIst(v.at)}` : `${formatDayIst(v.at)}${year} ${formatTimeIst(v.at)}`;
   const unfinished = v.status === 'unfinished';
   return (
     <ListRow
