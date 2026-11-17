@@ -49,3 +49,20 @@ export function rupeeRange(minPaise: number | null, maxPaise: number | null): st
   if (maxPaise === null || maxPaise === minPaise) return formatINR(minPaise);
   return `${formatINR(minPaise)}–${formatINR(maxPaise).replace('₹', '')}`;
 }
+
+const SHIFT_WORDS: Record<string, 'pub.shift.day' | 'pub.shift.night' | 'pub.shift.rotational' | 'pub.shift.any'> = {
+  day: 'pub.shift.day',
+  night: 'pub.shift.night',
+  rotational: 'pub.shift.rotational',
+  any: 'pub.shift.any',
+};
+
+/**
+ * A vacancy's shift for the public pages (17 Nov): a day / night / rotational
+ * word translated, a business shift's own label ("Morning 07:00–15:00") or
+ * older free text exactly as it was written.
+ */
+export function shiftText(shift: string, t: (key: 'pub.shift.day' | 'pub.shift.night' | 'pub.shift.rotational' | 'pub.shift.any') => string): string {
+  const key = SHIFT_WORDS[shift.trim().toLowerCase()];
+  return key ? t(key) : shift;
+}
