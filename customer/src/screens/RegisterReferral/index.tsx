@@ -14,14 +14,14 @@ import { clearDraft, useDraft } from '@/lib/drafts';
 import { rupees } from '@/lib/money';
 import { RegisterOtpStep } from '../shared/RegisterOtpStep';
 import { SavedNextSteps } from '../shared/SavedNextSteps';
-import { businessTypeChoices, messageLanguageChoices } from '../shared/choices';
+import { businessTypeChoices } from '../shared/choices';
 import { emptyReferral, toReferralForm, validateReferral, type ReferralErrors } from './form';
 
 const REWARD_PAISE = 20_000;
 
 /**
  * Referral partner registration, native (proposal 2.3): individual or
- * business, area, language. Then terms and call-recording consent, selfie,
+ * business, area. Then terms and call-recording consent, selfie,
  * ID check and UPI (checked against the name on the ID) in the secure sheet.
  * ₹200 is earned when a referred job seeker JOINS a job, never for
  * referring yourself.
@@ -150,7 +150,6 @@ export default function RegisterReferral() {
             />
             <TextField label={t('form.pincode')} value={draft.pincode} onChangeText={(v) => set('pincode', v.replace(/\D/g, '').slice(0, 6))} keyboardType="number-pad" error={err('pincode')} testID="ref-pincode" />
             <PinField label={t('referral.pin')} value={draft.pin} onChange={(v) => set('pin', v)} testID="ref-pin" />
-            <SelectField label={t('jobSeeker.messageLanguage')} value={draft.messageLanguage} choices={messageLanguageChoices(t)} onChange={(v) => set('messageLanguage', v)} required testID="ref-msg-lang" />
             <Checkbox label={t('referral.whatsappSame')} checked={draft.whatsappSame} onChange={(v) => set('whatsappSame', v)} testID="ref-wa-same" />
             {!draft.whatsappSame ? (
               <MobileField label={t('referral.whatsapp')} value={draft.whatsappPhone} onChange={(v) => set('whatsappPhone', v)} required error={err('whatsappPhone')} testID="ref-wa" />

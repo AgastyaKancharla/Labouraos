@@ -1,20 +1,11 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { secureStorage, type KeyValueStore } from '@/lib/storage';
+import { createContext, useContext, useMemo, type ReactNode } from 'react';
+import type { KeyValueStore } from '@/lib/storage';
 import type { MessageKey } from './en';
-import {
-  DEFAULT_LANGUAGE,
-  isLanguage,
-  LANGUAGE_STORAGE_KEY,
-  translate,
-  translatePlural,
-  type Language,
-  type Params,
-  type PluralKey,
-} from './translate';
+import { DEFAULT_LANGUAGE, translate, translatePlural, type Language, type Params, type PluralKey } from './translate';
 
 interface I18nValue {
+  /** Always "en" (English only, rev 193). */
   language: Language;
-  setLanguage: (language: Language) => void;
   t: (key: MessageKey, params?: Params) => string;
   tn: (key: PluralKey, count: number, params?: Params) => string;
 }
@@ -23,47 +14,21 @@ const I18nContext = createContext<I18nValue | null>(null);
 
 interface Props {
   children: ReactNode;
-  /** Tests pass a memory store and a starting language. */
+  /** Kept so existing callers and tests compile; there is no saved language any more. */
   storage?: KeyValueStore;
   initialLanguage?: Language;
 }
 
-/**
- * Holds the app language and remembers the person's choice on the phone.
- * The saved choice is read once at start; until then English shows.
- */
-export function I18nProvider({ children, storage = secureStorage, initialLanguage }: Props) {
-  const [language, setLanguageState] = useState<Language>(initialLanguage ?? DEFAULT_LANGUAGE);
-
-  useEffect(() => {
-    if (initialLanguage) return;
-    let cancelled = false;
-    void storage.getItem(LANGUAGE_STORAGE_KEY).then((saved) => {
-      if (!cancelled && isLanguage(saved)) setLanguageState(saved);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [storage, initialLanguage]);
-
-  const setLanguage = useCallback(
-    (next: Language) => {
-      setLanguageState(next);
-      void storage.setItem(LANGUAGE_STORAGE_KEY, next);
-    },
-    [storage],
-  );
-
+/** English only (Master Guide rev 193): no language choice, nothing saved. */
+export function I18nProvider({ children }: Props) {
   const value = useMemo<I18nValue>(
     () => ({
-      language,
-      setLanguage,
-      t: (key, params) => translate(language, key, params),
-      tn: (key, count, params) => translatePlural(language, key, count, params),
+      language: DEFAULT_LANGUAGE,
+      t: (key, params) => translate(DEFAULT_LANGUAGE, key, params),
+      tn: (key, count, params) => translatePlural(DEFAULT_LANGUAGE, key, count, params),
     }),
-    [language, setLanguage],
+    [],
   );
-
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 

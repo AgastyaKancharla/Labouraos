@@ -1,3 +1,4 @@
+import { ProductLanguage, productLanguage } from '../../common/language/english-only';
 import { ID_PHOTO_EXPIRED_REASON } from '../aadhaar-qr/id-check-photo.service';
 import { refundGuaranteeDeadline } from '../../common/money/money';
 import { JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } from '../consent/consent.constants';
@@ -21,18 +22,12 @@ export type RegistrationStep = 'consent' | 'selfie' | 'id_check' | 'payment' | '
  */
 export type RegistrationPaymentState = 'not_started' | 'pending' | 'confirming' | 'failed' | 'confirmed';
 
-export type PublicLanguage = 'kn' | 'hi' | 'en';
+/** English only (Master Guide rev 193). */
+export type PublicLanguage = ProductLanguage;
 
-const LANGUAGE_NAMES: Record<string, PublicLanguage> = {
-  kn: 'kn', kannada: 'kn', 'ಕನ್ನಡ': 'kn',
-  hi: 'hi', hindi: 'hi', 'हिंदी': 'hi', 'हिन्दी': 'hi',
-  en: 'en', english: 'en',
-};
-
-/** The person's language for the public pages; null when it isn't one of the three. */
-export function publicLanguage(value: string | null | undefined): PublicLanguage | null {
-  if (!value) return null;
-  return LANGUAGE_NAMES[value.trim().toLowerCase()] ?? null;
+/** The language of the public pages: always English, whatever an old record says (rev 193). */
+export function publicLanguage(value?: string | null): PublicLanguage {
+  return productLanguage(value);
 }
 
 export function maskPublicPhone(phone: string): string {

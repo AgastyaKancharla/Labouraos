@@ -5,7 +5,7 @@ import { useI18n } from '../../../i18n/I18nProvider';
 import { useNow } from '../../../lib/useNow';
 import { paymentOnlyApi, type PaymentOnlyDetails } from '../shared/api';
 import { rupees } from '../shared/format';
-import { ActionError, LinkProblem, Loading, Muted, OtpBlock, PageTitle, PaidConfirming, UpiQr, usePersonLanguage, Warn } from '../shared/ui';
+import { ActionError, LinkProblem, Loading, Muted, OtpBlock, PageTitle, PaidConfirming, UpiQr, Warn } from '../shared/ui';
 
 /**
  * P02s-OtherPayer: someone else pays the ₹499 for a job seeker. The code goes
@@ -24,7 +24,6 @@ export default function OtherPayer() {
   const [error, setError] = useState<unknown>(null);
   const [details, setDetails] = useState<PaymentOnlyDetails | null>(null);
   const [tapped, setTapped] = useState(false);
-  usePersonLanguage(info.data?.language ?? details?.language, token);
 
   const expiresAt = details?.linkExpiresAt ?? info.data?.expiresAt;
   const secondsLeft = expiresAt ? Math.max(0, Math.floor((new Date(expiresAt).getTime() - now.getTime()) / 1000)) : null;

@@ -30,7 +30,7 @@ describe('FA08 the one business page', () => {
     expect(screen.getByTestId('fa08-check-tl')).toHaveTextContent(/Team Lead check.*Not yet/);
     await fireEvent.press(screen.getByTestId('fa08-resend'));
     await waitFor(() => expect(screen.getByTestId('fa08-resend')).toHaveTextContent('Sent again to ******4321'));
-    expect(calls).toContainEqual({ method: 'POST', path: '/field-work/businesses/b-1/agreement-link', body: { language: 'kn' } });
+    expect(calls).toContainEqual({ method: 'POST', path: '/field-work/businesses/b-1/agreement-link', body: {} });
     // Vacancies: draft → Check and send to owner (then the owner's code), waiting → code or link, confirmed → candidates.
     expect(screen.getByTestId('vacancy-vac-1')).toHaveTextContent(/Cook × 2 · ₹15,000–18,000.*Draft.*Check and send to owner/);
     expect(screen.getByTestId('vacancy-vac-2')).toHaveTextContent(/Helper.*Waiting for owner.*Enter owner’s code.*Resend link/);

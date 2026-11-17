@@ -249,7 +249,7 @@ describe('UpiCollectionService', () => {
       findUnique.mockResolvedValue(placementPayment);
       const summary = await service.getPublicSummary(payment.upiReference);
       expect(summary).toMatchObject({
-        type: 'placement_fee', state: 'pending', amountPaise: 944000, language: 'kn',
+        type: 'placement_fee', state: 'pending', amountPaise: 944000, language: 'en',
         placement: {
           candidateFirstName: 'Ramesh', businessName: 'Sri Sai Hotel', agreedSalaryPaise: 1600000,
           feePercent: 50, placementFeePaise: 800000, gstPercent: 18, gstPaise: 144000,

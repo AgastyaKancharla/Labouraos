@@ -9,7 +9,6 @@ import { routes } from '@/navigation/routes';
 import { colors, fonts, headerGradient, radius, touch } from '@/theme';
 import { Button } from './Button';
 import { Icon } from './Icon';
-import { LanguageSwitcher } from './LanguageSwitcher';
 import { Swoosh } from './Swoosh';
 import { Text } from './Text';
 
@@ -27,7 +26,7 @@ interface Props {
 
 /**
  * The blue header on every screen (`.hdr`): the back arrow (inner screens),
- * logo, title and subtitle, the language switcher and the avatar that opens
+ * logo, title and subtitle and the avatar that opens
  * "Log out". Followed by the swoosh stripe.
  */
 export function TopBar({ title, subtitle, personName, onLogout, onBack }: Props) {
@@ -76,7 +75,6 @@ export function TopBar({ title, subtitle, personName, onLogout, onBack }: Props)
           </View>
         </View>
         <View style={styles.right}>
-          <LanguageSwitcher />
           {personName ? (
             <Pressable
               accessibilityRole="button"

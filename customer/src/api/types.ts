@@ -21,6 +21,9 @@ export type SalaryPeriod = 'monthly' | 'daily';
 export type Shift = 'day' | 'night' | 'rotational' | 'any';
 export type HeardFrom = 'missed_call' | 'ad' | 'referral_partner' | 'field_visit' | 'social_media' | 'walk_in' | 'laboura_app';
 
+/** Legal minimum wage zone of a business (Karnataka notification of 22 May 2026). */
+export type MinimumWageZone = 1 | 2 | 3;
+
 // ---------------------------------------------------------------- account
 
 export interface ProfileSummary {
@@ -35,6 +38,8 @@ export interface ProfileSummary {
   businessRole?: BusinessContactRole | null;
   /** Business only: a manager limited to one branch. */
   branchName?: string | null;
+  /** Business only: its legal minimum wage zone (1 Greater Bengaluru, 2 other city / district HQ, 3 rest of Karnataka). */
+  minimumWageZone?: MinimumWageZone | null;
   /** Where the sign-up stands, when the server says (proposal 4.1). */
   stage?: 'details' | 'verifying' | 'payment' | 'active' | 'paused' | 'closed';
 }
@@ -121,8 +126,15 @@ export interface Trade {
   /** Typical Bengaluru range, paise per month (the hint under salary boxes). */
   salaryMinPaise: number;
   salaryMaxPaise: number;
-  /** Legal minimum wage for this trade, paise per month. */
+  /** Legal minimum wage for this trade, paise per month (Zone 1, Greater Bengaluru). */
   legalMinimumPaise: number;
+  /** The same for each zone (rev 193): the business's zone picks one (legalMinimumOf). */
+  legalMinimumPaiseByZone?: Partial<Record<'1' | '2' | '3', number>>;
+}
+
+/** The legal minimum for a trade in a business's minimum wage zone (Zone 1 when not known). */
+export function legalMinimumOf(trade: Trade, zone?: MinimumWageZone | null): number {
+  return (zone ? trade.legalMinimumPaiseByZone?.[String(zone) as '1' | '2' | '3'] : undefined) ?? trade.legalMinimumPaise;
 }
 
 export interface FormOptions {

@@ -8,17 +8,16 @@ const locked = { otpRequired: true, maskedPhone: '******2345', language: 'kn', r
 const render = () => renderScreen(<RegistrationOpen />, { portal: 'public', path: `/p/register/${TOKEN}`, route: '/p/register/:token' });
 
 describe('P00-Open / P02r-Resume', () => {
-  it('shows nothing about him before the code, starts in his language, and needs the code typed', async () => {
+  it('shows nothing about him before the code, is in English (rev 193), and needs the code typed', async () => {
     const api = mockApi({
       [`GET /registration/${TOKEN}/status`]: locked,
       'POST /consent/send-otp': { requestId: 'req-1', phone: '******2345' },
       [`POST /registration/${TOKEN}/verify-otp`]: openStatus(),
     });
     render();
-    expect(await screen.findByRole('heading', { name: 'ನಿಮ್ಮ ನೋಂದಣಿ ಪೂರ್ಣಗೊಳಿಸಿ' })).toBeInTheDocument();
-    // The page language is set by an effect after the first paint; wait for it rather than race it.
-    await waitFor(() => expect(document.documentElement.lang).toBe('kn'));
-    await userEvent.click(screen.getByRole('button', { name: 'EN' }));
+    // The link was sent when he had Kannada saved: the page is English all the same.
+    expect(await screen.findByRole('heading', { name: 'Complete your registration' })).toBeInTheDocument();
+    await waitFor(() => expect(document.documentElement.lang).toBe('en'));
     expect(screen.getByText('4. Pay ₹499')).toBeInTheDocument();
     expect(screen.queryByText(/Kavya/)).not.toBeInTheDocument();
 

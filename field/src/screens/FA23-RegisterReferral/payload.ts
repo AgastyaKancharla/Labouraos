@@ -2,7 +2,6 @@
  * The referral partner form (FA23, the field version of the office CA15) and
  * its mapping onto CreateReferralDto (src/modules/referral/dto/create-referral.dto.ts).
  */
-export const MESSAGE_LANGUAGES = ['kn', 'hi', 'en'] as const;
 export const INDIVIDUAL_ROLES = ['auto_driver', 'shop_staff', 'shop_owner', 'security_guard', 'existing_worker', 'other'] as const;
 export const HEARD_FROM = ['toll_free_missed_call', 'ad', 'referral_partner', 'field_visit', 'social_media', 'walk_in', 'other'] as const;
 export const PARTNER_BUSINESS_TYPES = [
@@ -19,8 +18,6 @@ export interface ReferralForm {
   verifiedAt: string | null;
   whatsappSame: boolean;
   whatsapp: string;
-  /** The partner's message language (SMS), not the app's. */
-  language: string;
   type: 'individual' | 'business';
   individualRole: string;
   partnerBusinessName: string;
@@ -39,7 +36,6 @@ export const EMPTY_REFERRAL: ReferralForm = {
   verifiedAt: null,
   whatsappSame: true,
   whatsapp: '',
-  language: '',
   type: 'individual',
   individualRole: '',
   partnerBusinessName: '',
@@ -56,7 +52,6 @@ export function referralErrors(form: ReferralForm): string[] {
   const e: string[] = [];
   if (!form.name.trim()) e.push('name');
   if (!form.verifiedAt || !form.requestId) e.push('mobile');
-  if (!form.language) e.push('language');
   if (!form.whatsappSame && !MOBILE.test(form.whatsapp)) e.push('whatsapp');
   if (form.type === 'individual' && !form.individualRole) e.push('individualRole');
   if (form.type === 'business' && (!form.partnerBusinessName.trim() || !form.partnerBusinessType)) e.push('business');
@@ -74,7 +69,6 @@ export function referralBody(form: ReferralForm): Record<string, unknown> {
     otpRequestId: form.requestId,
     type: form.type,
     whatsappPhone: form.whatsappSame ? form.mobile : form.whatsapp,
-    language: form.language,
     ...(form.type === 'individual'
       ? { individualRole: form.individualRole }
       : { partnerBusinessName: form.partnerBusinessName.trim(), partnerBusinessType: form.partnerBusinessType }),

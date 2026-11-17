@@ -1,7 +1,6 @@
 import { deviceInfo, installationId } from '@/auth/installation';
 import type { SessionStore } from '@/auth/session';
-import { isLanguage, LANGUAGE_STORAGE_KEY } from '@/i18n/translate';
-import { secureStorage } from '@/lib/storage';
+import { isLanguage } from '@/i18n/translate';
 import type { ApiClient } from './client';
 import type { CustomerApi } from './customerApi';
 import { isApiError } from './errors';
@@ -50,6 +49,7 @@ interface WireProfile {
   code?: string | null;
   title?: string | null;
   branchName?: string | null;
+  minimumWageZone?: number | null;
 }
 interface WireAccount {
   id: string;
@@ -91,6 +91,7 @@ function toProfile(p: WireProfile): ProfileSummary {
     displayName: p.title || p.code || '',
     businessRole: kind === 'business' && p.role && p.role !== 'self' ? (p.role as ProfileSummary['businessRole']) : null,
     branchName: p.branchName ?? null,
+    ...(kind === 'business' ? { minimumWageZone: p.minimumWageZone === 1 || p.minimumWageZone === 2 || p.minimumWageZone === 3 ? p.minimumWageZone : null } : {}),
   };
 }
 
@@ -324,14 +325,13 @@ export async function refreshSession(baseUrl: string, store: SessionStore, fetch
 // ------------------------------------------------------------ the API
 
 interface Options {
-  /** The app language, sent at sign-in (defaults to the saved choice). */
+  /** The app language sent at sign-in: always English (rev 193). */
   language?: () => Promise<Language>;
   device?: typeof deviceInfo;
 }
 
 async function savedLanguage(): Promise<Language> {
-  const saved = await secureStorage.getItem(LANGUAGE_STORAGE_KEY);
-  return isLanguage(saved) ? saved : 'en';
+  return 'en';
 }
 
 export function liveCustomerApi(api: ApiClient, options: Options = {}): CustomerApi {

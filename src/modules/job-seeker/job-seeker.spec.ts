@@ -282,7 +282,6 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
 
   it.each([
     ['name', { name: '' }, 'name is required'],
-    ['message language', { messageLanguage: 'ta' }, 'messageLanguage'],
     ['call window', { bestTimeToCall: '08-12' }, 'bestTimeToCall'],
     ['date of birth', { dateOfBirth: '2010-01-01' }, 'at least 18'],
     ['gender', { gender: '' }, 'gender is required'],
@@ -320,7 +319,8 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
       salaryMinPaise: 1600000,
       salaryMaxPaise: 2300000,
       minimumWageLevel: 'unskilled',
-      legalMinimumPaise: 2337600,
+      legalMinimumPaise: 2337643,
+      legalMinimumPaiseByZone: { '1': 2337643, '2': 2125130, '3': 1931936 },
     });
     expect(response.body[0].effectiveFrom).toContain('2026-05-22');
   });

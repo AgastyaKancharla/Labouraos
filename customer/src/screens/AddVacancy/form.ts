@@ -1,4 +1,4 @@
-import type { SalaryPeriod, Trade, VacancyDraft } from '@/api/types';
+import { legalMinimumOf, type MinimumWageZone, type SalaryPeriod, type Shift, type Trade, type VacancyDraft } from '@/api/types';
 import type { MessageKey } from '@/i18n';
 import { monthlyPaise } from '@/lib/validate';
 
@@ -32,16 +32,17 @@ export const emptyVacancy = (): VacancyFormState => ({
 /**
  * Below the legal minimum wage is ALLOWED BUT WARNED (guide, decided 9 Nov):
  * the form shows the legal minimum and the owner ticks "I know the legal
- * minimum wage" before saving. Daily wages are compared over 26 days.
+ * minimum wage" before saving. Daily wages are compared over 26 days. The
+ * figure is the one for the business's zone and the trade's level (rev 193).
  */
-export function belowLegalMinimum(trade: Trade | undefined, v: Pick<VacancyFormState, 'salaryMinPaise' | 'salaryPeriod'>): boolean {
+export function belowLegalMinimum(trade: Trade | undefined, v: Pick<VacancyFormState, 'salaryMinPaise' | 'salaryPeriod'>, zone?: MinimumWageZone | null): boolean {
   if (!trade || !v.salaryMinPaise) return false;
-  return monthlyPaise(v.salaryMinPaise, v.salaryPeriod) < trade.legalMinimumPaise;
+  return monthlyPaise(v.salaryMinPaise, v.salaryPeriod) < legalMinimumOf(trade, zone);
 }
 
 export type VacancyErrors = Partial<Record<keyof VacancyFormState, MessageKey>>;
 
-export function validateVacancy(v: VacancyFormState, trade: Trade | undefined): VacancyErrors {
+export function validateVacancy(v: VacancyFormState, trade: Trade | undefined, zone?: MinimumWageZone | null): VacancyErrors {
   const e: VacancyErrors = {};
   if (!v.trade) e.trade = 'form.required';
   if (!v.openings || v.openings < 1) e.openings = 'form.required';
@@ -49,7 +50,7 @@ export function validateVacancy(v: VacancyFormState, trade: Trade | undefined): 
   if (v.salaryMinPaise && v.salaryMaxPaise && v.salaryMaxPaise < v.salaryMinPaise) e.salaryMaxPaise = 'jobSeeker.maxBelowMin';
   if (!v.businessShiftId) e.businessShiftId = 'form.required';
   if (!v.startDate) e.startDate = 'form.required';
-  if (belowLegalMinimum(trade, v) && !v.legalMinimumAcknowledged) e.legalMinimumAcknowledged = 'vacancy.tickLegalMinimum';
+  if (belowLegalMinimum(trade, v, zone) && !v.legalMinimumAcknowledged) e.legalMinimumAcknowledged = 'vacancy.tickLegalMinimum';
   return e;
 }
 

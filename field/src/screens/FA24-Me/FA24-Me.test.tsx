@@ -6,7 +6,7 @@ import MeScreen from '.';
 jest.mock('expo-router', () => require('@/test/expo-router-mock'));
 
 describe('FA24 Me', () => {
-  it('targets and leaderboard, my attendance, leave, corrections, payslips, language (Kannada / English) and log out', async () => {
+  it('targets and leaderboard, my attendance, leave, corrections, payslips and log out; no language choice (rev 193)', async () => {
     const { store } = await renderWithApp(<MeScreen />, {
       signedInAs: kiran,
       route: (url) => (url.endsWith('/auth/logout') ? { status: 200, body: { success: true } } : undefined),
@@ -25,9 +25,8 @@ describe('FA24 Me', () => {
       await fireEvent.press(screen.getByTestId(id));
       expect(router.push).toHaveBeenLastCalledWith(href);
     }
-    expect(screen.queryByTestId('me-lang-hi')).toBeNull();
-    await fireEvent.press(screen.getByTestId('me-lang-kn'));
-    await waitFor(() => expect(screen.getByTestId('me-targets')).toHaveTextContent('ಗುರಿಗಳು ಮತ್ತು ಲೀಡರ್‌ಬೋರ್ಡ್'));
+    expect(screen.queryByTestId('me-language')).toBeNull();
+    expect(screen.queryByTestId('me-lang-kn')).toBeNull();
     await fireEvent.press(screen.getByTestId('me-logout'));
     await waitFor(() => expect(store.get()).toBeNull());
   });

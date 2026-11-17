@@ -330,7 +330,8 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
       pincode: '560038', heardFrom: 'field_visit', otpRequestId,
     };
     const missingFields: Array<keyof typeof valid> = [
-      'name', 'phone', 'whatsappPhone', 'language', 'type', 'individualRole', 'locality', 'pincode', 'heardFrom',
+      // No 'language': English only (rev 193), the partner's message language is no longer asked.
+      'name', 'phone', 'whatsappPhone', 'type', 'individualRole', 'locality', 'pincode', 'heardFrom',
     ];
     for (const field of missingFields) {
       const payload = { ...valid } as Record<string, unknown>;
@@ -526,9 +527,9 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
     expect(String(smsCall?.[0].variables?.link)).toMatch(/^https?:\/\/[^/]+\/p\/partner\//);
     expect(old.headers.location).toMatch(/^https?:\/\/[^/]+\/p\/partner\//);
 
-    // Before the code: only the masked number and the language.
+    // Before the code: only the masked number and the language (always English, rev 193).
     const locked = await request(server).get(`/referral-registration/${token}/status`).expect(200);
-    expect(locked.body).toEqual({ valid: true, otpRequired: true, maskedPhone: `******${phone.slice(-4)}`, language: 'kn', registrationComplete: false });
+    expect(locked.body).toEqual({ valid: true, otpRequired: true, maskedPhone: `******${phone.slice(-4)}`, language: 'en', registrationComplete: false });
     await request(server).get(`/referral-registration/${token}/terms`).expect(400);
 
     const sent = await request(server).post('/consent/send-otp').send({ token }).expect(201);
@@ -537,13 +538,13 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
     await request(server).post(`/referral-registration/${token}/verify-otp`).send({ requestId: sent.body.requestId, code: code === '000000' ? '111111' : '000000' }).expect(400);
     const opened = await request(server).post(`/referral-registration/${token}/verify-otp`).send({ requestId: sent.body.requestId, code }).expect(201);
     const requestId = sent.body.requestId as string;
-    expect(opened.body).toMatchObject({ otpRequired: false, currentStep: 'terms', referralCode: created.body.code, firstName: 'Partner K.', language: 'kn', payout: null });
+    expect(opened.body).toMatchObject({ otpRequired: false, currentStep: 'terms', referralCode: created.body.code, firstName: 'Partner K.', language: 'en', payout: null });
     expect(JSON.stringify(opened.body)).not.toContain(phone);
 
     const terms = await request(server).get(`/referral-registration/${token}/terms`).query({ requestId }).expect(200);
     expect(terms.body.referralPayoutPaise).toBeGreaterThan(0);
     expect(terms.body.termsHtml.length).toBeGreaterThan(50);
-    expect(terms.body.language).toBe('kn');
+    expect(terms.body.language).toBe('en'); // an old client asked for Kannada: English only (rev 193)
 
     // Every step uses the code verified on opening, as on the job seeker link.
     await request(server).post('/consent/submit').send({ token, otpRequestId: requestId, purposes: ['agreement_terms', 'call_recording', 'aadhaar_verification'], language: 'kn' }).expect(201);

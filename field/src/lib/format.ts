@@ -7,34 +7,14 @@ const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-/**
- * Day and month names in the app language (fix list A8: dates stayed in
- * English in Kannada). Kannada uses the short names phones show (CLDR kn).
- * Photo stamps stay in English: they are proof, read the same by everyone.
- */
-const DATE_NAMES = {
-  en: { months: MONTHS, days: DAYS },
-  kn: {
-    months: ['ಜನವರಿ', 'ಫೆಬ್ರವರಿ', 'ಮಾರ್ಚ್', 'ಏಪ್ರಿ', 'ಮೇ', 'ಜೂನ್', 'ಜುಲೈ', 'ಆಗ', 'ಸೆಪ್ಟೆಂ', 'ಅಕ್ಟೋ', 'ನವೆಂ', 'ಡಿಸೆಂ'],
-    days: ['ಭಾನು', 'ಸೋಮ', 'ಮಂಗಳ', 'ಬುಧ', 'ಗುರು', 'ಶುಕ್ರ', 'ಶನಿ'],
-  },
-} as const;
-type DateLanguage = keyof typeof DATE_NAMES;
-let dateLanguage: DateLanguage = 'en';
-
-/** Set by the I18nProvider whenever the app language changes (Hindi is hidden in Laboura Field: English names). */
-export function setDateLanguage(language: string): void {
-  dateLanguage = language === 'kn' ? 'kn' : 'en';
-}
-
-/** Short month name (0 = January) in the app language. */
+/** Short month name (0 = January). English only (Master Guide rev 193). */
 export function monthName(index: number): string {
-  return DATE_NAMES[dateLanguage].months[index] ?? '';
+  return MONTHS[index] ?? '';
 }
 
-/** Short weekday name (0 = Sunday) in the app language. */
+/** Short weekday name (0 = Sunday). */
 export function weekdayName(index: number): string {
-  return DATE_NAMES[dateLanguage].days[index] ?? '';
+  return DAYS[index] ?? '';
 }
 
 function toIst(input: Date | string | number): Date {
@@ -54,7 +34,7 @@ export function formatTimeIst(input: Date | string | number): string {
   return clock12(d.getUTCHours(), d.getUTCMinutes());
 }
 
-/** "Mon 9 Nov" in IST, in the app language. */
+/** "Mon 9 Nov" in IST. */
 export function formatDayIst(input: Date | string | number): string {
   const d = toIst(input);
   return `${weekdayName(d.getUTCDay())} ${d.getUTCDate()} ${monthName(d.getUTCMonth())}`;

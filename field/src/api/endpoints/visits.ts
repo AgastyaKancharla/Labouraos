@@ -67,8 +67,9 @@ export const visitsApi = (api: ApiClient) => ({
       `/businesses/${encodeURIComponent(businessId)}/visit-assignments/${encodeURIComponent(assignmentId)}/owner-otp`,
     ),
   /** The business form's first agreement link; `smsSent: false` when the SMS did not go (show Resend). */
-  sendAgreementLink: (businessId: string, language?: string) =>
-    api.post<{ success?: boolean; smsSent?: boolean } | null>(`/businesses/${encodeURIComponent(businessId)}/agreement-links`, language ? { language } : {}),
+  /** The agreement link, in English (rev 193). */
+  sendAgreementLink: (businessId: string) =>
+    api.post<{ success?: boolean; smsSent?: boolean } | null>(`/businesses/${encodeURIComponent(businessId)}/agreement-links`, {}),
   checkIn: (body: { latitude: number; longitude: number; accuracyMeters: number }) => api.post<unknown>('/field-agent/check-in', body),
   leaderboard: () =>
     api.get<{ leaderboard: { position: number; staffId: string; staffCode: string; name: string; placementsClosed: number }[] }>(

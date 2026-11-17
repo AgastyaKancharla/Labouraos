@@ -19,7 +19,7 @@ server change on the branch.
   needed. No rupee totals (fees, GST, invoices) are sent. Vacancy salaries are sent (job details).
 - **Days are IST** (UTC+05:30) calendar days. Dates are `YYYY-MM-DD` (IST); instants are ISO 8601 UTC.
 - `title` / `subtitle` in lists are **data** (a business name, a person's first name, a trade, an area), never
-  sentences. The app writes the words for each `kind` / `type` in the agent's language (Kannada / English).
+  sentences. The app writes the words for each `kind` / `type` in English (rev 193).
 - **Errors** (rev 192 S5: the shape as the server really sends it). Every error goes through the global error
   filter, so the stable **`code` is at `details.code`**, never at the top:
 
@@ -31,7 +31,7 @@ server change on the branch.
 
   Switch on `details.code`; the extra fields of an error (`currentOutcome`, `retryAt`, `missing`,
   `legalMinimumPaise`, …) are next to it in `details`. `message` is English, for logs only: the app shows its own
-  Kannada / English words for each code and never the raw `message`. A `5xx` error says only
+  English words for each code and never the raw `message`. A `5xx` error says only
   `"message": "Internal server error"`; a coded one keeps its code (`"details": { "code": "AGREEMENT_SMS_FAILED" }`)
   and nothing else. Older errors with no code: `details` is `{ statusCode, message, error }` (no `code`); for a
   validation error `message` can be a list. `429` from a public page's "Send code" carries `details.retryAfterSeconds`.
@@ -204,7 +204,7 @@ that the Onboarded number counts for that day (its first onboarding; the visit w
 | business form | `POST /businesses` with `fieldVisitId` (unchanged). **Saving it marks the visit `onboarded` on the server** (existing). `staffNeededRows` may be empty or left out (verified). |
 | verification visit | `POST /businesses/:businessId/visit-assignments/:assignmentId/owner-otp`, `POST /field-visits/:id/verify` — **CHANGED:** completing it now also sets the visit result to `onboarded` (B19). **Rev 192 S1:** if the business has no account agent, the verifying agent becomes it (recorded in the audit log as `business.account_agent_assigned`, like every account-agent change); a business that already has one keeps it. The answer gains `isAccountAgent` (he is its account agent now) and `becameAccountAgent` (this visit made him so; show "You are now its account agent" only then). The next step (agreement) then works for him. |
 
-**Visit results** (`outcome`) and their meaning (the app writes the label in Kannada / English):
+**Visit results** (`outcome`) and their meaning (the app writes the label in English):
 
 | value | label (English) | counts in Onboarded | Change result |
 | --- | --- | --- | --- |
@@ -442,9 +442,9 @@ Links the owner opens himself in the Laboura app send no SMS and are not limited
 
 **Owner's page to confirm by link (rev 192 S3).** The SMS link is `https://app.laboura.com/p/vacancy-confirm/<token>`
 (web app page P07-VacancyConfirm, built like the agreement page P04: no login, the token in the link is the key,
-Kannada / Hindi / English starting in the language the link was sent in). It shows the job (role / trade), how many
-people, the salary range, shift, start date and the business name, then "Send code" → the code the owner gets on the
-number the link went to → **Confirm vacancy** → "Confirmed, thank you". A used, expired or replaced link, or a
+in English, rev 193). It shows the job (role / trade), how many
+people, the salary range, shift, start date and the business name, then one button **Send code to confirm** → the
+code the owner gets on the number the link went to → typing it confirms (rev 193: no second button) → "Confirmed, thank you". A used, expired or replaced link, or a
 vacancy already confirmed (by code on the visit), shows its own message. Links sent before (`/vacancy-confirm/<token>`)
 open the same page in a browser. The page calls the public API (no staff login):
 `GET /vacancy-confirm/:token` → `{vacancyCode, status, maskedPhone, sentToLast4, expiresAt, preferredLanguage, business,
@@ -517,7 +517,7 @@ Reused: `+ Job seeker` = `POST /otp/send {purpose:'job_seeker'}`, `POST /otp/ver
 ## 5. Referral partners (new screen in the app; server unchanged)
 
 `POST /otp/send {purpose:'referral', phone}` → `POST /otp/verify` → `POST /referrals` (field agents allowed):
-`{name, phone, otpRequestId, type:'individual'|'business', whatsappPhone, language:'kn'|'hi'|'en', locality,
+`{name, phone, otpRequestId, type:'individual'|'business', whatsappPhone, locality,
 pincode, heardFrom, individualRole? | (businessId? | partnerBusinessType + partnerBusinessName), latitude?, longitude?}`
 (see `docs/api/phase-20.md` "POST /referrals"). Resend the registration link: `POST /referrals/:id/terms-links`.
 Options for the form: `GET /screens/call-registration/options`.

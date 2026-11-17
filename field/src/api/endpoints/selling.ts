@@ -365,7 +365,8 @@ export const sellingApi = (api: ApiClient) => ({
   confirmVacancy: (vacancyId: string, otpRequestId: string, code: string) =>
     api.post(`/vacancies/${enc(vacancyId)}/confirm`, { otpRequestId, code, method: 'code_on_visit' }),
   vacancyLink: (vacancyId: string) => api.post<{ expiresAt: string; sentToLast4: string }>(`/vacancies/${enc(vacancyId)}/confirmation-link`),
-  trades: () => api.get<Trade[]>('/trades'),
+  /** With a business, each trade's legal minimum is the one for that business's zone (rev 193); else Zone 1's. */
+  trades: (businessId?: string) => api.get<Trade[]>('/trades', businessId ? { query: { businessId } } : undefined),
   vacancy: (id: string) =>
     api.get<{ id: string; code: string; businessId: string; status: string; confirmedAt: string | null; confirmedByName: string | null }>(`/vacancies/${enc(id)}`),
   createVacancy: (body: Record<string, unknown>) => api.post<CreatedVacancy>('/vacancies', body),

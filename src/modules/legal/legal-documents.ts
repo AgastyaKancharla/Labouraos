@@ -3,22 +3,14 @@ import { calculateGst, calculatePlacementFee, formatINR } from '../../common/mon
 import { escapeHtml, renderInline, renderMarkdown } from './legal-markdown';
 import { LegalDocumentSource, LegalLanguage } from './legal-document.types';
 import { JOB_SEEKER_TERMS_EN } from './content/job-seeker-terms.en';
-import { JOB_SEEKER_TERMS_KN } from './content/job-seeker-terms.kn';
-import { JOB_SEEKER_TERMS_HI } from './content/job-seeker-terms.hi';
 import { BUSINESS_AGREEMENT_EN } from './content/business-agreement.en';
-import { BUSINESS_AGREEMENT_KN } from './content/business-agreement.kn';
-import { BUSINESS_AGREEMENT_HI } from './content/business-agreement.hi';
 import { REFERRAL_TERMS_EN } from './content/referral-terms.en';
-import { REFERRAL_TERMS_KN } from './content/referral-terms.kn';
-import { REFERRAL_TERMS_HI } from './content/referral-terms.hi';
 
 /**
  * The three legal documents (Master Guide rev 176, decided 15 Nov), as
- * versioned content in Kannada, Hindi and English.
- *
- * The English is the owner-approved text. The Kannada and Hindi are MACHINE
- * DRAFTS written for the test setup: they must be reviewed by a native
- * speaker (and the lawyer) before launch.
+ * versioned content in English, the owner-approved text (English only,
+ * rev 193). Acceptances recorded earlier in Kannada or Hindi keep the exact
+ * text they accepted in LegalDocumentText (by its hash).
  *
  * Raising a version here makes everyone who accepted an older one accept the
  * new one the next time they open their link, Laboura Field or the app
@@ -43,9 +35,9 @@ export const LEGAL_DOCUMENT_FOR_SUBJECT: Record<'job_seeker' | 'business' | 'ref
 };
 
 const SOURCES: Record<LegalDocumentKey, Record<LegalLanguage, LegalDocumentSource>> = {
-  job_seeker_terms: { en: JOB_SEEKER_TERMS_EN, kn: JOB_SEEKER_TERMS_KN, hi: JOB_SEEKER_TERMS_HI },
-  business_agreement: { en: BUSINESS_AGREEMENT_EN, kn: BUSINESS_AGREEMENT_KN, hi: BUSINESS_AGREEMENT_HI },
-  referral_terms: { en: REFERRAL_TERMS_EN, kn: REFERRAL_TERMS_KN, hi: REFERRAL_TERMS_HI },
+  job_seeker_terms: { en: JOB_SEEKER_TERMS_EN },
+  business_agreement: { en: BUSINESS_AGREEMENT_EN },
+  referral_terms: { en: REFERRAL_TERMS_EN },
 };
 
 export function isLegalDocumentKey(value: unknown): value is LegalDocumentKey {
@@ -95,16 +87,12 @@ export interface LegalNumbers {
 
 const NOT_YET: Record<LegalLanguage, string> = {
   en: 'to be added after registration',
-  kn: 'ನೋಂದಣಿಯ ನಂತರ ಸೇರಿಸಲಾಗುವುದು',
-  hi: 'पंजीकरण के बाद जोड़ा जाएगा',
 };
 const EFFECTIVE: Record<LegalLanguage, string> = {
   en: 'from the day you accept it',
-  kn: 'ನೀವು ಒಪ್ಪಿದ ದಿನದಿಂದ',
-  hi: 'आपके स्वीकार करने के दिन से',
 };
-const IN_SHORT: Record<LegalLanguage, string> = { en: 'In short', kn: 'ಸಂಕ್ಷಿಪ್ತವಾಗಿ', hi: 'संक्षेप में' };
-const VERSION_WORD: Record<LegalLanguage, string> = { en: 'Version', kn: 'ಆವೃತ್ತಿ', hi: 'संस्करण' };
+const IN_SHORT: Record<LegalLanguage, string> = { en: 'In short' };
+const VERSION_WORD: Record<LegalLanguage, string> = { en: 'Version' };
 
 /**
  * A Settings value as one line of text: company details sit in the terms

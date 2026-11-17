@@ -442,6 +442,11 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
  * Keyed 'Controller.handler query:name' (or 'body:name'); same fields as above.
  */
 export const SERVICE_SCOPED_INPUTS: Record<string, ServiceScopedRoute> = {
+  'TradeController.listActive query:businessId': {
+    reason: "Only picks which zone's legal minimum wage the trade list shows (rev 193); it reads the business's zone and nothing else, and any staff member may add a vacancy to any business by phone.",
+    test: 'modules/trade/minimum-wage-zones.e2e.spec.ts',
+    proof: "get('/trades').query({ businessId: mysuru.id }).set(as(callAgentToken)).expect(200)",
+  },
   'TargetController.getOverview query:staffId': {
     reason: 'A Team Lead only their own team\'s agents, an agent only themselves (TargetOverviewService).',
     test: 'modules/target/target-overview.spec.ts',

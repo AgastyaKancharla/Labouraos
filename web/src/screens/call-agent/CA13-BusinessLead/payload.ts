@@ -23,7 +23,6 @@ export interface BranchRow {
   contactName: string;
   contactRole: string;
   mobile: string;
-  language: string;
 }
 
 export interface BusinessForm {
@@ -32,7 +31,6 @@ export interface BusinessForm {
   mobile: string;
   whatsappSame: boolean;
   whatsapp: string;
-  language: string;
   billingEmail: string;
   heardFrom: string;
   boardName: string;
@@ -80,7 +78,6 @@ export const EMPTY_BRANCH: BranchRow = {
   contactName: '',
   contactRole: '',
   mobile: '',
-  language: '',
 };
 
 export const EMPTY_BUSINESS: BusinessForm = {
@@ -89,7 +86,6 @@ export const EMPTY_BUSINESS: BusinessForm = {
   mobile: '',
   whatsappSame: true,
   whatsapp: '',
-  language: '',
   billingEmail: '',
   heardFrom: '',
   boardName: '',
@@ -136,7 +132,6 @@ export function businessErrors(
   const household = form.businessType === 'household';
   if (!form.contactName.trim()) e.push('contactName');
   if (!form.contactRole) e.push('contactRole');
-  if (!form.language) e.push('language');
   if (!form.heardFrom) e.push('heardFrom');
   if (!form.whatsappSame && !/^[6-9]\d{9}$/.test(form.whatsapp)) e.push('whatsapp');
   if (form.billingEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.billingEmail.trim())) e.push('billingEmail');
@@ -178,7 +173,6 @@ export function businessBody(form: BusinessForm, otpRequestId: string, branchOtp
     phone: form.mobile,
     otpRequestId,
     contactWhatsAppPhone: form.whatsappSame ? form.mobile : form.whatsapp,
-    contactLanguage: form.language,
     ...(form.billingEmail.trim() ? { billingEmail: form.billingEmail.trim() } : {}),
     heardFrom: form.heardFrom,
     businessType: form.businessType,
@@ -219,7 +213,6 @@ export function businessBody(form: BusinessForm, otpRequestId: string, branchOtp
             contactPersonName: b.contactName.trim(),
             contactPersonRole: b.contactRole,
             contactPersonPhone: b.mobile,
-            contactLanguage: b.language || undefined,
             otpRequestId: branchOtps[i],
           })),
         }

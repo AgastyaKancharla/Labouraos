@@ -1,3 +1,4 @@
+import { legalMinimumOf } from '@/api/types';
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { todayKeyIst } from '@/components/form';
@@ -27,6 +28,16 @@ describe('legal minimum wage', () => {
     expect(belowLegalMinimum(cook, { salaryMinPaise: 2_000_000, salaryPeriod: 'monthly' })).toBe(true);
     expect(belowLegalMinimum(cook, { salaryMinPaise: 2_600_000, salaryPeriod: 'monthly' })).toBe(false);
     expect(belowLegalMinimum(cook, { salaryMinPaise: 100_000, salaryPeriod: 'daily' })).toBe(false); // ₹1,000 × 26 = ₹26,000
+  });
+
+  it('uses the figure for the business\'s minimum wage zone (rev 193), Zone 1 when not known', () => {
+    const zoned = { ...cook, legalMinimumPaise: 2_828_547, legalMinimumPaiseByZone: { '1': 2_828_547, '2': 2_571_407, '3': 2_337_643 } };
+    const pay = { salaryMinPaise: 2_600_000, salaryPeriod: 'monthly' as const };
+    expect(legalMinimumOf(zoned, 2)).toBe(2_571_407);
+    expect(legalMinimumOf(zoned, null)).toBe(2_828_547);
+    expect(belowLegalMinimum(zoned, pay, 1)).toBe(true);
+    expect(belowLegalMinimum(zoned, pay, 2)).toBe(false);
+    expect(belowLegalMinimum(zoned, pay)).toBe(true);
   });
 });
 
@@ -92,6 +103,8 @@ describe('Add a vacancy', () => {
     const api = fakeApi({ sendStepUp: async () => ({ requestId: 'r' }), confirmVacancy });
     await renderWithApp(<AddVacancy />, { api, account: owner });
     await fireEvent.press(await screen.findByTestId('vacancy-otp-card-send'));
+    // One button (rev 193): no separate confirm button; typing the code confirms.
+    expect(screen.queryByTestId('vacancy-otp-card-verify')).toBeNull();
     await fireEvent.changeText(await screen.findByTestId('vacancy-otp-card-code'), '123456');
     expect(await screen.findByTestId('vacancy-tick-needed')).toHaveTextContent(/about ₹23,400 a month/);
     expect(screen.getByTestId('vacancy-confirm-after-tick')).toBeDisabled();

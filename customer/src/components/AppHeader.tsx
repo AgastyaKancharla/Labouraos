@@ -8,7 +8,6 @@ import { useI18n, type MessageKey } from '@/i18n';
 import { routes } from '@/navigation/routes';
 import { colors, fonts, headerGradient, radius, touch } from '@/theme';
 import { Icon } from './Icon';
-import { LanguageSwitcher } from './LanguageSwitcher';
 import { Swoosh } from './Swoosh';
 import { Text } from './Text';
 
@@ -32,7 +31,7 @@ const MENU: { key: MessageKey; href: string; testID: string }[] = [
 
 /**
  * The blue Laboura header (copied from Laboura Field's TopBar and adapted):
- * logo or back arrow, title, the language switcher, and for signed-in
+ * logo or back arrow, title, and for signed-in
  * customers the inbox bell and a menu (My profiles, Help, Privacy, Settings,
  * Sign out). Followed by the colour swoosh.
  */
@@ -64,7 +63,6 @@ export function AppHeader({ title, subtitle, onBack, showAccountActions = false 
           </View>
         </View>
         <View style={styles.right}>
-          <LanguageSwitcher />
           {showAccountActions ? (
             <>
               <Pressable

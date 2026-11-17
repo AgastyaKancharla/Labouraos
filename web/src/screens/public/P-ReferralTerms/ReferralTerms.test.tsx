@@ -1,5 +1,4 @@
 import { screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { apiError, mockApi, renderScreen } from '../../../test/utils';
 import ReferralTerms from './index';
@@ -32,14 +31,12 @@ describe('Referral partner terms (public)', () => {
     expect(screen.getByText(/then a 72-hour wait/)).toBeInTheDocument();
   });
 
-  it('opens in the partner’s language from ?lang= and switches between Kannada, Hindi and English', async () => {
+  it('is English even from an old ?lang= link, with no language switcher (rev 193)', async () => {
     mockApi({ 'GET /referral-terms': TERMS });
     renderTerms('/p/referral-terms?lang=hi');
-    expect(await screen.findByRole('heading', { name: 'रेफ़रल पार्टनर की शर्तें', level: 1 })).toBeInTheDocument();
-    expect(screen.getByText(/आपको ₹200 मिलते हैं/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'ಕನ್ನಡ' }));
-    expect(await screen.findByRole('heading', { name: 'ರೆಫರಲ್ ಪಾಲುದಾರರ ನಿಯಮಗಳು', level: 1 })).toBeInTheDocument();
-    expect(screen.getByText(/ನಿಮಗೆ ₹200 ಸಿಗುತ್ತದೆ/)).toBeInTheDocument();
+    expect(await screen.findByText(/when a job seeker you referred joins a job through Laboura/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'EN' })).not.toBeInTheDocument();
+    expect(document.documentElement.lang).toBe('en');
   });
 
   it('a failed load offers to try again', async () => {

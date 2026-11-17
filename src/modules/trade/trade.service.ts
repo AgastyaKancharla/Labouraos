@@ -8,6 +8,16 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { PricingService } from '../pricing/pricing.service';
+import {
+  DEFAULT_MINIMUM_WAGE_ZONE,
+  isMinimumWageZone,
+  legalMinimumByZone,
+  legalMinimumFor,
+  MINIMUM_WAGE_LEVELS,
+  MinimumWageLevel,
+  MinimumWagePolicy,
+  MinimumWageZone,
+} from './minimum-wage';
 
 type GuaranteeFloorChange = {
   id: string;
@@ -17,7 +27,7 @@ type GuaranteeFloorChange = {
   afterPaise: number | null;
 };
 
-export type MinimumWageLevel = 'unskilled' | 'semi_skilled' | 'skilled' | 'highly_skilled';
+export type { MinimumWageLevel } from './minimum-wage';
 
 export interface CreateTradeInput {
   name: string;
@@ -26,8 +36,6 @@ export interface CreateTradeInput {
   minimumWageLevel?: MinimumWageLevel;
   sortOrder?: number;
 }
-
-const MINIMUM_WAGE_LEVELS: MinimumWageLevel[] = ['unskilled', 'semi_skilled', 'skilled', 'highly_skilled'];
 
 export function normalizeTradeName(value: string): string {
   return value.trim().replace(/\s+/g, ' ');
@@ -45,19 +53,14 @@ export class TradeService {
     private readonly pricingService: PricingService,
   ) {}
 
-  async listActive(policy: {
-    legalMinimumWageUnskilledPaise: number;
-    legalMinimumWageSemiSkilledPaise: number;
-    legalMinimumWageSkilledPaise: number;
-    legalMinimumWageHighlySkilledPaise: number;
-    legalMinimumWageEffectiveFrom: Date;
-  }) {
-    const wages: Record<MinimumWageLevel, number> = {
-      unskilled: policy.legalMinimumWageUnskilledPaise,
-      semi_skilled: policy.legalMinimumWageSemiSkilledPaise,
-      skilled: policy.legalMinimumWageSkilledPaise,
-      highly_skilled: policy.legalMinimumWageHighlySkilledPaise,
-    };
+  /**
+   * The active trades with the legal minimum for their skill level. With a
+   * zone (the business's, rev 193) `legalMinimumPaise` is that zone's figure;
+   * without one it is Zone 1's (the default when unsure). Every trade also
+   * carries all three zones' figures (`legalMinimumPaiseByZone`).
+   */
+  async listActive(policy: MinimumWagePolicy & { legalMinimumWageEffectiveFrom: Date }, zone?: MinimumWageZone | null) {
+    const forZone = isMinimumWageZone(zone) ? zone : DEFAULT_MINIMUM_WAGE_ZONE;
     const trades = await this.prisma.trade.findMany({
       where: { active: true },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
@@ -68,7 +71,9 @@ export class TradeService {
       salaryMinPaise: trade.salaryMinPaise,
       salaryMaxPaise: trade.salaryMaxPaise,
       minimumWageLevel: trade.minimumWageLevel,
-      legalMinimumPaise: wages[trade.minimumWageLevel as MinimumWageLevel],
+      zone: forZone,
+      legalMinimumPaise: legalMinimumFor(policy, forZone, trade.minimumWageLevel),
+      legalMinimumPaiseByZone: legalMinimumByZone(policy, trade.minimumWageLevel),
       effectiveFrom: policy.legalMinimumWageEffectiveFrom,
     }));
   }

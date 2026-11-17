@@ -143,7 +143,8 @@ describe('Customer app API', () => {
       expect(session.next).toBe('choose_role');
       expect(session.refreshToken).toEqual(expect.any(String));
       const me = await auth(http().get(`${API}/me`), session.accessToken).expect(200);
-      expect(me.body).toEqual(expect.objectContaining({ phone: `+91${phone}`, phoneVerified: true, language: 'kn', profiles: [] }));
+      // English only (rev 193): the app sent 'kn' (an older version); the account is English.
+      expect(me.body).toEqual(expect.objectContaining({ phone: `+91${phone}`, phoneVerified: true, language: 'en', profiles: [] }));
       const stored = await prisma.customerSession.findFirstOrThrow({ where: { accountId: me.body.id } });
       expect(stored.refreshTokenHash).not.toContain(session.refreshToken);
       expect(stored.expiresAt.getTime() - Date.now()).toBeGreaterThan(89 * 86_400_000);

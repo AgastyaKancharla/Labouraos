@@ -400,7 +400,7 @@ describe('Phase 20 gate end-to-end proof', () => {
       .set('Authorization', `Bearer ${fieldAgentToken}`)
       .send({})
       .expect(400);
-    expect(refusedWage.body.legalMinimumPaise).toBe(2337600);
+    expect(refusedWage.body.legalMinimumPaise).toBe(2337643);
     const submitted = await request(server())
       .post(`/vacancies/${housekeeping.id}/submit-for-confirmation`)
       .set('Authorization', `Bearer ${fieldAgentToken}`)
@@ -409,7 +409,7 @@ describe('Phase 20 gate end-to-end proof', () => {
     expect(submitted.body).toMatchObject({
       status: 'awaiting_confirmation',
       belowLegalMinimum: true,
-      legalMinimumPaise: 2337600,
+      legalMinimumPaise: 2337643,
     });
     expect(submitted.body.confirmation.sentToLast4).toBe(branchPhone.slice(-4));
     await request(server())

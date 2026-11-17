@@ -6,8 +6,7 @@ import { accessEn } from './access.en';
 import { redesignEn } from './redesign.en';
 import { fixes17En } from './fixes17.en';
 /**
- * English — the reference language. Every key here must exist in kn.ts and
- * hi.ts (TypeScript and i18n.test.ts both check). Keys are grouped by the
+ * English — the only language of Laboura Field (Master Guide rev 193). Keys are grouped by the
  * screen that owns them: `fa03.*` belongs to FA03-Home, and so on. Shared
  * words live under `common.*`, `status.*`, `tabs.*`, `device.*`.
  *
@@ -53,7 +52,6 @@ export const en = {
   'common.placeholderValue': '—',
   'common.notAvailableYet': 'Not counted yet — these numbers arrive with the visit screens.',
   'common.search': 'Search name, mobile or ID',
-  'common.languageLabel': 'App language',
   'common.accountMenu': '{name}, account menu',
 
   'tabs.home': 'Home',
@@ -217,9 +215,6 @@ export const en = {
   'role.hr': 'HR',
   'role.supervisor': 'Supervisor',
   'role.other': 'Other',
-  'lang.kn': 'Kannada',
-  'lang.hi': 'Hindi',
-  'lang.en': 'English',
   'heard.toll_free_missed_call': 'Toll-free missed call',
   'heard.ad': 'Ad (newspaper / poster)',
   'heard.referral_partner': 'Referral partner',
@@ -387,7 +382,6 @@ export const en = {
   'fa07.alreadyRegistered': 'Already registered — open it ({code}).',
   'fa07.whatsappSame': 'WhatsApp number same as mobile',
   'fa07.whatsapp': 'WhatsApp number',
-  'fa07.language': 'Language for messages *',
   'fa07.billingEmail': 'Billing email (for the GST invoice and agreement copy)',
   'fa07.emailInvalid': 'Check the email address.',
   'fa07.heardFrom': 'How did they hear about Laboura? *',
@@ -534,10 +528,4 @@ export const en = {
 } as const;
 
 export type MessageKey = keyof typeof en;
-/** Keys added on 17 Nov (fixes17.en.ts): English only, so Kannada and Hindi have no copy (English shows). */
-export type EnglishOnlyKey = keyof typeof fixes17En;
-export type Messages = Record<Exclude<MessageKey, EnglishOnlyKey>, string> & Partial<Record<EnglishOnlyKey, string>>;
-/** Keys added by the Laboura Field redesign (16 Nov): Kannada and English only; Hindi is hidden and falls back to English. */
-export type RedesignKey = keyof typeof redesignEn;
-/** Hindi keeps every key it had; the redesign's new keys are optional (English shows). */
-export type HindiMessages = Record<Exclude<MessageKey, RedesignKey | EnglishOnlyKey>, string> & Partial<Record<RedesignKey | EnglishOnlyKey, string>>;
+export type Messages = Record<MessageKey, string>;

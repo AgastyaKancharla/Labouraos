@@ -17,7 +17,7 @@ import { pageRoutes } from '@/navigation/routes';
 import { colors } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { Script } from '../_selling';
-import { referralBody, referralErrors, EMPTY_REFERRAL, HEARD_FROM, INDIVIDUAL_ROLES, MESSAGE_LANGUAGES, PARTNER_BUSINESS_TYPES, type ReferralForm } from './payload';
+import { referralBody, referralErrors, EMPTY_REFERRAL, HEARD_FROM, INDIVIDUAL_ROLES, PARTNER_BUSINESS_TYPES, type ReferralForm } from './payload';
 
 const MOBILE = /^[6-9]\d{9}$/;
 
@@ -25,7 +25,7 @@ const MOBILE = /^[6-9]\d{9}$/;
  * FA23 — Register a referral partner (redesign, 16 Nov: field agents register
  * them too; the server already allowed it). The same steps and rules as the
  * office call agent's CA15: mobile checked by OTP, individual or business,
- * area and pincode, the partner's message language, how they heard; the
+ * area and pincode, how they heard; the
  * Referral Partner Terms "In short" is read aloud. Saving creates the RF- ID,
  * sends it by SMS with the one registration link (terms → selfie → ID → UPI),
  * then FA23b shows the steps.
@@ -47,10 +47,9 @@ export default function RegisterReferralScreen() {
     const id = setInterval(() => setNow(Date.now()), 5000);
     return () => clearInterval(id);
   }, []);
-  const scriptLang = (form.language || 'kn') as 'kn' | 'hi' | 'en';
   const inShort = useQuery({
-    queryKey: ['legal-document', 'referral_terms', scriptLang],
-    queryFn: () => legal.document('referral_terms', scriptLang),
+    queryKey: ['legal-document', 'referral_terms', 'en'],
+    queryFn: () => legal.document('referral_terms'),
     staleTime: 3_600_000,
   });
   const errors = referralErrors(form);
@@ -151,7 +150,6 @@ export default function RegisterReferralScreen() {
           {!form.whatsappSame ? (
             <MobileField label={t('fa07.whatsapp')} value={form.whatsapp} onChange={(v) => set({ whatsapp: v })} error={err('whatsapp') ? t('fa07.mobileInvalid') : null} testID="fa23-whatsapp" />
           ) : null}
-          <SelectField label={t('fa23.language')} value={form.language} choices={choice(MESSAGE_LANGUAGES, 'lang')} onChange={(v) => set({ language: v })} error={err('language')} testID="fa23-language" />
         </Card>
 
         <Card stripe accent="cyan" style={styles.card}>

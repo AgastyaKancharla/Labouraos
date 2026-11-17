@@ -36,6 +36,10 @@ interface Detail {
   employeeCountBand: string | null;
   address: string | null;
   hasPin: boolean;
+  /** Rev 193: legal minimum wage zone (1 Greater Bengaluru, 2 other corporations / district HQs, 3 rest of Karnataka). */
+  minimumWageZone?: 1 | 2 | 3;
+  /** "auto" = from the address; "staff" = set by office staff. */
+  minimumWageZoneSource?: 'auto' | 'staff';
   contact: { name: string | null; role: string | null; phone: string; verified: boolean };
   branches: { id: string; name: string; locality: string | null; contact: string }[];
   accountAgent: { id: string; name: string | null; since: string | null } | null;
@@ -56,6 +60,12 @@ interface Detail {
   visits: { at: string; by: string | null; purpose: string | null; geofenceFlag: boolean; hasSelfie: boolean; photoLive: boolean | null }[];
   history: { at: string; status: string; by: string | null; reason: string | null }[];
 }
+
+const ZONE_NAMES: Record<string, string> = {
+  '1': 'Zone 1 · Greater Bengaluru',
+  '2': 'Zone 2 · other city corporation or district HQ',
+  '3': 'Zone 3 · rest of Karnataka',
+};
 
 function money(min: number | null, max: number | null) {
   if (min === null && max === null) return '—';
@@ -186,6 +196,25 @@ export default function BusinessDetail() {
               ['Legal name', `${d.legalName ?? d.name}${d.gstNumber ? ` · GSTIN ${d.gstNumber}${d.gstVerified ? ' (checked)' : ''}` : d.noDocuments ? ' · No documents' : ''}`],
               ['Type', [humanize(d.type), d.employeeCount ? `${d.employeeCount} staff` : d.employeeCountBand].filter((x) => x && x !== '—').join(' · ') || '—'],
               ['Address', `${d.address ?? '—'}${d.hasPin ? ' · map pin set' : ' · no map pin'}`],
+              [
+                'Minimum wage zone',
+                d.minimumWageZone ? (
+                  <span className="ceo-actions">
+                    <span data-testid="minimum-wage-zone">{`${ZONE_NAMES[String(d.minimumWageZone)]}${d.minimumWageZoneSource === 'staff' ? ' (set by staff)' : ' (from the address)'}`}</span>
+                    <ActionButton
+                      label="Change zone"
+                      title="Change the minimum wage zone"
+                      description="Vacancies of this business are checked against this zone's legal minimum wage. The change is recorded in the history."
+                      choice={{ label: 'Zone', options: Object.entries(ZONE_NAMES).map(([value, label]) => ({ value, label })), initial: String(d.minimumWageZone) }}
+                      reason
+                      run={({ choice, reason }) => api.patch(`/businesses/${d.id}/minimum-wage-zone`, { zone: Number(choice), reason })}
+                      success="Minimum wage zone changed"
+                    />
+                  </span>
+                ) : (
+                  '—'
+                ),
+              ],
               ['Contact', `${d.contact.name ?? '—'}${d.contact.role ? ` · ${humanize(d.contact.role).toLowerCase()}` : ''} · ${d.contact.phone.includes('*') ? d.contact.phone : formatMobile(d.contact.phone.replace(/^\+91/, ''))}${d.contact.verified ? ' (OTP verified)' : ''}`],
               ['Branches', d.branches.length ? `${d.branches.length} · ${d.branches.map((b) => `${b.locality ?? b.name} (contact: ${b.contact})`).join(', ')}` : 'None'],
               ['Account agent', d.accountAgent ? `${d.accountAgent.name ?? '—'}${d.accountAgent.since ? ` · since ${formatDateIST(d.accountAgent.since)}` : ''}` : 'Not assigned'],

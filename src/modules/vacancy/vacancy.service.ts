@@ -195,6 +195,7 @@ export class VacancyService {
         salaryMin,
         effective<string | null>('salaryPeriod'),
         ownerToldMinimumWage,
+        { businessId: record.businessId as string },
       ));
     }
 
@@ -424,6 +425,7 @@ export class VacancyService {
       dto.salaryMinPaise,
       dto.salaryPeriod,
       dto.ownerToldMinimumWage,
+      { businessId: business.id },
     );
 
     const policy = await this.pricingService.current();
@@ -558,6 +560,7 @@ export class VacancyService {
       vacancy.salaryMinPaise!,
       vacancy.salaryPeriod,
       body?.ownerToldMinimumWage,
+      { businessId: vacancy.businessId },
     );
     const updated = await this.prisma.$transaction(async (tx) => {
       // M2-R1: only the draft that was checked above (an edit since then changes updatedAt).

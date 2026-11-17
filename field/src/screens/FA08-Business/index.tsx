@@ -235,7 +235,7 @@ function Checklist({ b }: { b: BusinessPage }) {
   const client = useQueryClient();
   const a = b.checklist.agreement;
   const resend = useMutation({
-    mutationFn: () => queue.live(() => redesign.resendAgreement(b.id, b.contact?.language === 'en' ? 'en' : b.contact?.language === 'kn' ? 'kn' : undefined)),
+    mutationFn: () => queue.live(() => redesign.resendAgreement(b.id)),
     onSettled: () => void client.invalidateQueries({ queryKey: ['field-work'] }),
   });
   const tl = b.checklist.teamLeadCheck.state;

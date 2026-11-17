@@ -2,11 +2,11 @@ import type { Language } from '../../../i18n/I18nProvider';
 import { formatINR } from '../../../lib/format/money';
 
 /**
- * Dates and money on the phone pages, in the reader's language and always
+ * Dates and money on the phone pages, in English (rev 193) and always
  * in India time (the API sends UTC). Money arrives as integer paise and is
  * shown in rupees.
  */
-const LOCALE: Record<Language, string> = { en: 'en-IN', kn: 'kn-IN', hi: 'hi-IN' };
+const LOCALE: Record<Language, string> = { en: 'en-IN' };
 const TZ = 'Asia/Kolkata';
 
 function fmt(value: string | Date, language: Language, options: Intl.DateTimeFormatOptions): string {

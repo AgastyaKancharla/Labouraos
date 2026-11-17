@@ -43,7 +43,7 @@ describe('validateJobSeekerRegistration', () => {
 
   it.each([
     ['identity and contact', { phone: '' }],
-    ['communication and call window', { messageLanguage: 'ta' }],
+    ['call window', { bestTimeToCall: '08-12' }],
     ['location and travel', { latitude: 91 }],
     ['availability and salary', { salaryPeriod: 'weekly' }],
     ['trade list', { trades: [] }],

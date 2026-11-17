@@ -41,6 +41,8 @@ describe('Add a vacancy (CA09)', () => {
     sessionStorage.setItem('laboura.draft.vacancy.staff-ca', JSON.stringify(form));
     renderScreen(<AddVacancy />, { portal: 'call-agent', path: '/call-agent/vacancies/new', now: NOW });
     expect(await screen.findByText('Below the legal minimum wage.')).toBeInTheDocument();
+    // Rev 193: the legal minimum shown is the one for the chosen business's zone.
+    expect(api.calls('GET /trades').some((c) => c.query.get('businessId') === 'b1')).toBe(true);
     await user.click(screen.getByRole('button', { name: 'Save vacancy' }));
     expect(screen.getByText('Tick this after telling the owner.')).toBeInTheDocument();
     expect(api.calls('POST /vacancies')).toHaveLength(0);

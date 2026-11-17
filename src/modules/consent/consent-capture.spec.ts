@@ -267,7 +267,7 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
           'promotions',
         ],
         language: 'kn',
-        textHash: await jobSeekerTermsHash(app, 'kn'),
+        textHash: await jobSeekerTermsHash(app),
       });
 
     expect(submitRes.status).toBe(201);
@@ -316,7 +316,7 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
         otpCode: code,
         purposes: ['job_matching', 'profile_sharing', 'call_recording', 'job_updates'],
         language: 'kn',
-        textHash: await jobSeekerTermsHash(app, 'kn'),
+        textHash: await jobSeekerTermsHash(app),
       });
 
     expect(submitRes.status).toBe(201);

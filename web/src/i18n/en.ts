@@ -1,5 +1,5 @@
-/* English — the source of every key. Add new keys here first, then to kn.ts and hi.ts
-   (TypeScript refuses to build until all three have the same keys). */
+/* English — the source of every word on screen (English only, Master Guide rev 193).
+   Screens read them through t('key'). */
 import { aadhaarQrEn } from './aadhaarQr';
 import { payslipEn } from '../screens/call-agent/CA14g-Payslip/i18n';
 import { attendanceEn } from '../attendance/i18n';
@@ -48,7 +48,6 @@ export const en = {
   "common.reference": "Reference: {id}",
   "common.twoFactorOn": "2FA on",
   "common.mainNav": "Main",
-  "lang.label": "Language",
   "subtitle.ceo": "Command Center",
   "subtitle.manager": "Manager",
   "subtitle.teamLead": "Team Lead",
@@ -229,7 +228,10 @@ export const en = {
   "pub.agree.name": "Your full name",
   "pub.agree.agreeTerms": "I agree to these terms",
   "pub.agree.agreeRecording": "I agree my calls with Laboura are recorded",
-  "pub.agree.sign": "Sign agreement",
+  "pub.agree.sendToSign": "Send code to sign",
+  "pub.agree.codeSigns": "Type the code we send to your phone. That signs the agreement.",
+  "pub.agree.fillFirst": "Write your name and tick the three boxes first.",
+  "pub.agree.signing": "Signing…",
   "pub.agree.signed": "Agreement signed, {name}",
   "pub.agree.signedAt": "Signed",
   "pub.agree.copy": "A copy",
@@ -264,7 +266,9 @@ export const en = {
   "pub.vac.start": "Start date",
   "pub.vac.wrong": "Something not right? Don't confirm. Call your Laboura agent to change it.",
   "pub.vac.expires": "This link works until {when}.",
-  "pub.vac.confirm": "Confirm vacancy",
+  "pub.vac.sendToConfirm": "Send code to confirm",
+  "pub.vac.codeConfirms": "Type the code we send to your phone. That confirms the vacancy.",
+  "pub.vac.confirming": "Confirming…",
   "pub.vac.confirmed": "Confirmed, thank you",
   "pub.vac.confirmedText": "We'll start finding {count} people for {job}. Your Laboura agent will be in touch.",
   "pub.vac.already": "This vacancy is already confirmed. Thank you.",

@@ -267,7 +267,7 @@ describe('FA04g Payslips', () => {
 
   it('says so when Finance has not paid any salary yet', async () => {
     const { route } = routeTable({ '/payroll/my-payslips': { months: [] } });
-    await renderWithApp(<PayslipScreen />, { signedInAs: kiran, route, language: 'kn' });
-    await waitFor(() => screen.getByText('ಇನ್ನೂ ಸಂಬಳ ಚೀಟಿ ಇಲ್ಲ. ಹಣಕಾಸು ವಿಭಾಗ ನಿಮ್ಮ ಸಂಬಳ ಪಾವತಿಸಿದ ನಂತರ ಇಲ್ಲಿ ಕಾಣಿಸುತ್ತದೆ.'));
+    await renderWithApp(<PayslipScreen />, { signedInAs: kiran, route });
+    await waitFor(() => screen.getByText('No payslip yet. Your payslip appears here once Finance pays your salary.'));
   });
 });

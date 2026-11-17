@@ -1,93 +1,48 @@
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { en } from './en';
-import { fixes17En } from './fixes17';
-import { hi } from './hi';
-import { I18nProvider, interpolate, translate, useT } from './I18nProvider';
-import { kn } from './kn';
-import { LanguageSwitcher } from './LanguageSwitcher';
+import { I18nProvider, interpolate, LANGUAGES, translate, useT } from './I18nProvider';
 
-describe('i18n', () => {
-  it('Kannada and Hindi have exactly the English keys and placeholders', () => {
-    // Keys added on 17 Nov are English only (the software is English only from 17 Nov).
-    const englishOnly = new Set(Object.keys(fixes17En));
-    const keys = Object.keys(en).filter((k) => !englishOnly.has(k)).sort();
-    const knAll = kn as Record<string, string>;
-    const hiAll = hi as Record<string, string>;
-    expect(Object.keys(kn).sort()).toEqual(keys);
-    expect(Object.keys(hi).sort()).toEqual(keys);
-    const vars = (s: string) => (s.match(/\{\w+\}/g) ?? []).sort();
-    for (const key of keys as (keyof typeof en)[]) {
-      expect(vars(knAll[key]), `kn ${key}`).toEqual(vars(en[key]));
-      expect(vars(hiAll[key]), `hi ${key}`).toEqual(vars(en[key]));
-      expect(knAll[key].trim(), `kn ${key}`).not.toBe('');
-      expect(hiAll[key].trim(), `hi ${key}`).not.toBe('');
-    }
+/** Kannada (U+0C80–U+0CFF) or Devanagari (U+0900–U+097F) letters. */
+const INDIC = /\p{Script=Kannada}|\p{Script=Devanagari}/u;
+
+/** Every source file of the web app (screens, portals, public pages), as text. */
+const SOURCES = import.meta.glob(['../**/*.ts', '../**/*.tsx', '!../**/*.test.ts', '!../**/*.test.tsx'], { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+
+describe('i18n — English only (Master Guide rev 193)', () => {
+  it('offers English and nothing else', () => {
+    expect(LANGUAGES).toEqual(['en']);
   });
 
-  // Kannada, English and Hindi stay everywhere they are offered (owner decision,
-  // 11 Nov): a Kannada or Hindi string may equal the English one only when it is
-  // a brand name, a code or a number. Anything else is an untranslated copy.
-  const SAME_AS_ENGLISH_ALLOWED = new Set<string>([
-    'app.name', // Laboura (brand)
-    'pub.fee.gst', // "GST {percent}%" (tax code)
-    'reg.qual.iti', // ITI (qualification code)
-    'reg.role.hr', // HR
-    'reg.extra.pf_esi', // PF / ESI
-    'reg.biz.pan', // PAN
-    'payslip.esi', // ESI (state insurance code)
-  ]);
-  /** Nothing to translate: only {placeholders}, digits, signs and punctuation. */
-  const hasNoWords = (s: string) => !/\p{L}/u.test(s.replace(/\{\w+\}/g, ''));
-
-  it('never leaves a Kannada or Hindi string as a copy of the English one', () => {
-    const copies: string[] = [];
-    for (const key of Object.keys(en) as (keyof typeof en)[]) {
-      if (SAME_AS_ENGLISH_ALLOWED.has(key) || hasNoWords(en[key])) continue;
-      if (kn[key] === en[key]) copies.push(`kn ${key}`);
-      if (hi[key] === en[key]) copies.push(`hi ${key}`);
-    }
-    expect(copies).toEqual([]);
+  it('every English string is filled in', () => {
+    for (const [key, value] of Object.entries(en)) expect(value.trim(), key).not.toBe('');
   });
 
-  it('keeps the allow-list honest (every allowed key exists and has letters)', () => {
-    for (const key of SAME_AS_ENGLISH_ALLOWED) {
-      expect(en, key).toHaveProperty([key]);
-      expect(hasNoWords(en[key as keyof typeof en]), key).toBe(false);
-    }
-  });
-
-  it('translates the call agent console into Hindi', () => {
-    expect(translate('hi', 'ca.callNextNone')).toBe('☎ अगली कॉल');
-    expect(translate('hi', 'ca.book.send')).toBe('ऑफ़र भेजें');
-    expect(translate('kn', 'ca.call.heard')).not.toBe(translate('en', 'ca.call.heard'));
+  it('no screen, portal or public page carries Kannada or Hindi text', () => {
+    expect(Object.keys(SOURCES).length).toBeGreaterThan(100);
+    const offenders = Object.entries(SOURCES).filter(([, text]) => INDIC.test(text)).map(([file]) => file);
+    expect(offenders).toEqual([]);
   });
 
   it('interpolates variables', () => {
     expect(interpolate('Hello {name}, {n} new', { name: 'Ravi', n: 3 })).toBe('Hello Ravi, 3 new');
     expect(interpolate('Keep {unknown}', {})).toBe('Keep {unknown}');
-    expect(translate('hi', 'common.notificationsCount', { count: 2 })).toBe('सूचनाएँ, 2 नई');
+    expect(translate('en', 'common.logout')).toBe('Log out');
   });
 
-  it('switches language with ಕನ್ನಡ · हिंदी · EN and remembers it', async () => {
+  it('renders English and sets <html lang="en">, whatever an old saved choice says', () => {
+    localStorage.setItem('laboura_lang', 'kn');
     function Probe() {
       const t = useT();
       return <p>{t('common.logout')}</p>;
     }
     render(
       <I18nProvider>
-        <LanguageSwitcher />
         <Probe />
       </I18nProvider>,
     );
     expect(screen.getByText('Log out')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'ಕನ್ನಡ' }));
-    expect(screen.getByText('ಲಾಗ್ ಔಟ್')).toBeInTheDocument();
-    expect(document.documentElement.lang).toBe('kn');
-    expect(localStorage.getItem('laboura_lang')).toBe('kn');
-    await userEvent.click(screen.getByRole('button', { name: 'हिंदी' }));
-    expect(screen.getByText('लॉग आउट')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'हिंदी' })).toHaveAttribute('aria-pressed', 'true');
+    expect(document.documentElement.lang).toBe('en');
+    expect(screen.queryByRole('group', { name: 'Language' })).toBeNull();
   });
 });

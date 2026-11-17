@@ -1,3 +1,4 @@
+import { PRODUCT_LANGUAGE, productLanguage } from '../../common/language/english-only';
 import { OwnTeam } from '../../common/rbac/own-team';
 import { assertNoOpenBanReview, assertNotBanned, BANNED_MESSAGE } from '../conduct/permanent-ban.check';
 import { Prisma } from '@prisma/client';
@@ -328,7 +329,8 @@ export class JobSeekerService {
           city: dto.city ?? 'Bengaluru',
           status,
           dateOfBirth: form.dateOfBirth,
-          messageLanguage: dto.messageLanguage,
+          // English only (rev 193): every message to him is in English.
+          messageLanguage: PRODUCT_LANGUAGE,
           heardFrom: dto.heardFrom,
           gender: dto.gender.trim(),
           locality: dto.locality.trim(),
@@ -591,7 +593,7 @@ export class JobSeekerService {
     // Terms versioning (rev 176): the version, language and sha256 of the exact text shown. A guarantee
     // already paid keeps the version it was paid under, so nothing changes once the ₹499 is in; coming
     // back after deactivation, closing or a refund is a fresh guarantee, so the current version is recorded.
-    const language = (['kn', 'hi', 'en'].includes(options.language ?? '') ? options.language : 'en') as 'kn' | 'hi' | 'en';
+    const language = productLanguage(options.language);
     const rendered = this.legalDocuments ? await this.legalDocuments.render('job_seeker_terms', language) : null;
     const changed = await this.prisma.jobSeeker.updateMany({
       where: { id: jobSeekerId, OR: [{ paymentReceivedAt: null }, { status: { in: [...REACTIVATABLE_STATUSES] } }] },
@@ -1692,7 +1694,7 @@ export class JobSeekerService {
       subjectType: 'job_seeker',
       subjectId: seeker.id,
       phone,
-      language: seeker.messageLanguage ?? 'en',
+      language: PRODUCT_LANGUAGE,
       expiresAt,
       createdByStaffId: actorId,
       metadata: { paymentId: payment.id, ...(relation ? { relation } : {}) },

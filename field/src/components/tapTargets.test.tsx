@@ -21,14 +21,14 @@ const tall = (s: Record<string, number | undefined>) => Math.max(s.height ?? 0, 
 const wide = (s: Record<string, number | undefined>) => Math.max(s.width ?? 0, s.minWidth ?? 0);
 
 describe('tap targets of at least 44 px (A8)', () => {
-  it('the header: logo, language and account', async () => {
+  it('the header: logo and account (no language switcher, rev 193)', async () => {
     await renderWithApp(<TopBar title="Today" personName="Kiran Kumar" onLogout={() => undefined} />, { signedInAs: kiran });
     for (const id of ['logo-home', 'account-menu']) {
       const s = size(screen.getByTestId(id));
       expect(tall(s)).toBeGreaterThanOrEqual(MIN);
       expect(wide(s)).toBeGreaterThanOrEqual(MIN);
     }
-    expect(tall(size(screen.getByTestId('language-switcher')))).toBeGreaterThanOrEqual(MIN);
+    expect(screen.queryByTestId('language-switcher')).toBeNull();
   });
 
   it('the candidates page: "Change", the vacancy chips and "+ Vacancy"', async () => {

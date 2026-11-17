@@ -17,17 +17,15 @@ describe('FA14 Pitch and fee calculator', () => {
     expect(screen.getByTestId('total')).toHaveTextContent('₹8,850');
   });
 
-  it('changes with Settings (never hard-coded) and shows the pitch in the owner\'s language', async () => {
+  it('changes with Settings (never hard-coded) and shows the pitch in English (rev 193)', async () => {
     const { route } = routeTable({ '/screens/field-selling/settings': { ...settings, feePercent: 40 } });
     await renderWithApp(<PitchScreen />, { signedInAs: kiran, route });
     await waitFor(() => screen.getByTestId('pitch'));
     await fireEvent.changeText(screen.getByTestId('salary'), '15000');
     expect(screen.getByTestId('fee')).toHaveTextContent('Laboura fee (40%)₹6,000');
     expect(screen.getByTestId('pitch')).toHaveTextContent(/40% of their first month’s salary \+ 18% GST/);
-    await fireEvent.press(screen.getByTestId('pitch-language-hi'));
-    expect(screen.getByTestId('pitch')).toHaveTextContent(/हम आपको जाँचे हुए कर्मचारी भेजते हैं/);
-    await fireEvent.press(screen.getByTestId('pitch-language-kn'));
-    expect(screen.getByTestId('pitch')).toHaveTextContent(/ಪರಿಶೀಲಿಸಿದ ಸಿಬ್ಬಂದಿ/);
+    expect(screen.getByTestId('pitch')).toHaveTextContent(/We send you verified staff/);
+    expect(screen.queryByTestId('pitch-language')).toBeNull();
   });
 
   it('opened during a visit, it goes back to the visit instead of starting a second one', async () => {

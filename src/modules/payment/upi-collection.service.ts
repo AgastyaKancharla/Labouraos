@@ -1,3 +1,4 @@
+import { productLanguage } from '../../common/language/english-only';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { Payment, Prisma } from '@prisma/client';
@@ -13,12 +14,9 @@ import { ensurePayPageToken, payPageExpired, payPageTokenFor, payPageTokenHash }
 import { assertNoOpenBanReview, openBanReview, UNDER_REVIEW_MESSAGE } from '../conduct/permanent-ban.check';
 import { assertIdReadyForPayment, PAYMENT_STOPPED_MESSAGE, PAYMENT_STOPPED_REASON, stopActivationIfIdGateFails } from '../job-seeker/id-payment-gate';
 
-const PUBLIC_LANGUAGES: Record<string, 'kn' | 'hi' | 'en'> = {
-  kn: 'kn', kannada: 'kn', hi: 'hi', hindi: 'hi', en: 'en', english: 'en',
-};
-
-function publicLanguageOf(value: string | null | undefined): 'kn' | 'hi' | 'en' | null {
-  return value ? PUBLIC_LANGUAGES[value.trim().toLowerCase()] ?? null : null;
+/** The payment page's language: English only (Master Guide rev 193). */
+function publicLanguageOf(_value?: string | null): 'en' {
+  return productLanguage(_value);
 }
 
 export type PublicPaymentState = 'pending' | 'confirming' | 'received' | 'closed';

@@ -15,7 +15,6 @@ const filled: JobSeekerForm = {
   mobile: '9845012345',
   dateOfBirth: '1998-03-14',
   gender: 'female',
-  messageLanguage: 'kn',
   bestTime: '15-18',
   heardFrom: 'toll_free_missed_call',
   place: { area: 'BTM Layout 2nd Stage', pincode: '560076', latitude: 12.9166, longitude: 77.6101 },
@@ -94,7 +93,6 @@ describe('Register a job seeker (CA08)', () => {
       name: 'Kavya Reddy',
       phone: '9845012345',
       otpRequestId: 'otp-1',
-      messageLanguage: 'kn',
       bestTimeToCall: '15-18',
       dateOfBirth: '1998-03-14',
       gender: 'female',
@@ -206,7 +204,7 @@ describe('Register a job seeker (CA08)', () => {
 describe('job seeker payload', () => {
   it('lists every missing required field', () => {
     expect(validate(EMPTY_FORM)).toEqual(
-      expect.arrayContaining(['name', 'dateOfBirth', 'gender', 'messageLanguage', 'bestTime', 'heardFrom', 'area', 'pincode', 'pin', 'travelKm', 'trade', 'lookingSince', 'minSalary', 'maxSalary', 'availableFrom', 'shift', 'jobType', 'spoken']),
+      expect.arrayContaining(['name', 'dateOfBirth', 'gender', 'bestTime', 'heardFrom', 'area', 'pincode', 'pin', 'travelKm', 'trade', 'lookingSince', 'minSalary', 'maxSalary', 'availableFrom', 'shift', 'jobType', 'spoken']),
     );
     expect(validate(filled)).toEqual([]);
     expect(validate({ ...filled, minSalaryPaise: 2000000, maxSalaryPaise: 1000000 })).toContain('salaryOrder');

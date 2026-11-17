@@ -1,3 +1,4 @@
+import { productLanguage } from '../../common/language/english-only';
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -8,7 +9,6 @@ import { parseIndianMobile } from '../../common/phone/indian-mobile';
 import { CustomerAuthClock } from '../../common/customer-auth/customer-auth.clock';
 import { CustomerTokenService } from '../../common/customer-auth/customer-token.service';
 import {
-  CUSTOMER_LANGUAGES,
   CUSTOMER_SESSION_DAYS,
   CUSTOMER_STEP_UP_MINUTES,
   CUSTOMER_STEP_UP_PURPOSES,
@@ -62,8 +62,9 @@ function optionalText(value: unknown, max: number): string | null {
   return typeof value === 'string' && value.trim() ? value.trim().slice(0, max) : null;
 }
 
-function language(value: unknown): string | null {
-  return typeof value === 'string' && (CUSTOMER_LANGUAGES as readonly string[]).includes(value) ? value : null;
+/** English only (rev 193): a language an older app sends is stored as English. */
+function language(_value: unknown): string {
+  return productLanguage(_value);
 }
 
 function ipHash(ip: string | null | undefined): string | null {

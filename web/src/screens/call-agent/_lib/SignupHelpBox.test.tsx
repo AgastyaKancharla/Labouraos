@@ -5,7 +5,6 @@ import { en } from '../../../i18n/en';
 import { workItem } from './fixtures';
 import { SignupHelpBox } from './SignupHelpBox';
 import { reasonTag, whyText } from './format';
-import { signupHi, signupKn } from './i18n.signup';
 
 const t = (key: string, vars: Record<string, string | number> = {}) =>
   String((en as Record<string, string>)[key] ?? key).replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ''));
@@ -43,10 +42,5 @@ describe('Sign-up help in the call agent console', () => {
   it('renders nothing for other kinds of work', () => {
     renderScreen(<SignupHelpBox item={workItem({ kind: 'callback' })} />);
     expect(screen.queryByTestId('signup-help')).toBeNull();
-  });
-
-  it('Kannada and Hindi are translations, never copies of the English', () => {
-    for (const [key, value] of Object.entries(signupKn)) expect(value, key).not.toBe((en as Record<string, string>)[key]);
-    for (const [key, value] of Object.entries(signupHi)) expect(value, key).not.toBe((en as Record<string, string>)[key]);
   });
 });

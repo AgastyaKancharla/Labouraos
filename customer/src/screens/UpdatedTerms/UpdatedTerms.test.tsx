@@ -36,6 +36,7 @@ describe('We have updated our terms (legal documents v1.1)', () => {
     expect(screen.getByTestId('terms-otp-send')).toBeDisabled();
     await fireEvent.press(screen.getByTestId('terms-tick-job_matching'));
     await fireEvent.press(screen.getByTestId('terms-otp-send'));
+    expect(screen.queryByTestId('terms-otp-verify')).toBeNull(); // one button (rev 193): typing the code accepts
     expect(api.sendStepUp).toHaveBeenCalledWith('accept_terms', undefined);
     await fireEvent.changeText(await screen.findByTestId('terms-otp-code'), '123456');
     await waitFor(() =>

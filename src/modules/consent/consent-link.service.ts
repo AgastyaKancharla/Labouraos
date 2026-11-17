@@ -1,3 +1,4 @@
+import { PRODUCT_LANGUAGE, productLanguage } from '../../common/language/english-only';
 import {
   BadRequestException,
   HttpStatus,
@@ -313,10 +314,9 @@ export class ConsentLinkService {
     };
   }
 
-  async createAgreementLink(businessId: string, staffId: string | null, language: string = 'en', options: { sms?: boolean; issuedTo?: string } = {}) {
-    if (!['kn', 'hi', 'en'].includes(language)) {
-      throw new BadRequestException('language must be kn, hi, or en');
-    }
+  /** The agreement link, in English (rev 193; a language an older client sends is ignored). */
+  async createAgreementLink(businessId: string, staffId: string | null, _requestedLanguage?: string, options: { sms?: boolean; issuedTo?: string } = {}) {
+    const language = productLanguage(_requestedLanguage);
     const business = await this.prisma.business.findUnique({ where: { id: businessId } });
     if (!business) throw new NotFoundException(`Business '${businessId}' not found`);
 
@@ -327,7 +327,7 @@ export class ConsentLinkService {
       feePercent: policy.placementFeePercent,
       gstPercent: policy.gstPercent,
     };
-    const agreementLanguage = language as AgreementLanguage;
+    const agreementLanguage: AgreementLanguage = language;
     // The FULL v1.1 agreement (S1), with the numbers frozen as of today.
     const rendered = await this.legal.render('business_agreement', agreementLanguage, {
       placementFeePercent: numbers.feePercent,
@@ -402,16 +402,15 @@ export class ConsentLinkService {
     );
   }
 
-  async createReferralTermsLink(referralId: string, staffId: string | null, language: string = 'en', options: { sms?: boolean; issuedTo?: string; revokeOthers?: boolean } = {}) {
-    if (!['kn', 'hi', 'en'].includes(language)) {
-      throw new BadRequestException('language must be kn, hi, or en');
-    }
+  /** The referral partner terms link, in English (rev 193; a language an older client sends is ignored). */
+  async createReferralTermsLink(referralId: string, staffId: string | null, _requestedLanguage?: string, options: { sms?: boolean; issuedTo?: string; revokeOthers?: boolean } = {}) {
+    const language = productLanguage(_requestedLanguage);
     const referral = await this.prisma.referral.findUnique({ where: { id: referralId } });
     if (!referral) throw new NotFoundException(`Referral '${referralId}' not found`);
 
     const policy = await this.pricingService.current();
     const referralPayoutPaise = policy.referralPayoutPaise;
-    const agreementLanguage = language as AgreementLanguage;
+    const agreementLanguage: AgreementLanguage = language;
     // Referral Partner Terms v1.0, the full text (rev 176), with today's reward.
     const rendered = await this.legal.render('referral_terms', agreementLanguage, { referralPayoutPaise }, policy);
     const termsHtml = rendered.html;
@@ -647,13 +646,8 @@ export class ConsentLinkService {
       throw new NotFoundException('Job seeker not found');
     }
 
-    const firstLang = await this.prisma.jobSeekerLanguage.findFirst({
-      where: { jobSeekerId: seeker.id },
-    });
-    const candidateLang = firstLang?.language?.toLowerCase() || 'kn';
-    const preferredLanguage = ['kn', 'hi', 'en'].includes(candidateLang)
-      ? candidateLang
-      : 'kn';
+    // English only (rev 193): the page and the terms are in English.
+    const preferredLanguage = PRODUCT_LANGUAGE;
     if (!(await this.otpService.isVerifiedForPage(requestId, seeker.phone, token))) {
       return {
         valid: true,
@@ -789,16 +783,10 @@ export class ConsentLinkService {
       }
     }
 
-    let language = dto.language;
-    if (!language) {
-      const firstLang = await this.prisma.jobSeekerLanguage.findFirst({
-        where: { jobSeekerId: seeker.id },
-      });
-      const candidateLang = firstLang?.language?.toLowerCase() || 'kn';
-      language = ['kn', 'hi', 'en'].includes(candidateLang) ? candidateLang : 'kn';
-    }
+    // English only (rev 193): what he accepted is the English text, whatever an older page sends.
+    const language = productLanguage(dto.language);
     const purposes = Array.isArray(dto.purposes) ? dto.purposes : [];
-    const legalLanguage = (['kn', 'hi', 'en'].includes(language) ? language : 'en') as AgreementLanguage;
+    const legalLanguage: AgreementLanguage = language;
     const rendered = await this.legal.render('job_seeker_terms', legalLanguage);
     // The exact text he read: the page sends the hash of the terms it showed (required).
     if (!dto.textHash) throw new BadRequestException('textHash is required: send the hash of the terms text the page showed');
@@ -1092,7 +1080,7 @@ export class ConsentLinkService {
       ? (await this.otpService.verifyOtp(dto.otpRequestId, dto.otpCode)) && (await this.otpService.isVerifiedForPage(dto.otpRequestId, phone, record.token))
       : await this.otpService.isVerifiedForPage(dto.otpRequestId, phone, record.token);
     if (!otpOk) throw new BadRequestException('OTP verification is required before submission');
-    const language = (['kn', 'hi', 'en'].includes(dto.language ?? '') ? dto.language : 'en') as AgreementLanguage;
+    const language: AgreementLanguage = productLanguage(dto.language);
     const subjectId = record.subjectType === 'referral' ? record.referralId : record.jobSeekerId;
     return this.recordReconsent(record.subjectType, subjectId, {
       purposes: Array.isArray(dto.purposes) ? dto.purposes : [],

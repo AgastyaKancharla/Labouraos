@@ -1,7 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it } from 'vitest';
-import { LANGUAGE_STORAGE_KEY } from '../i18n/I18nProvider';
+import { describe, expect, it } from 'vitest';
 import { apiError, mockApi, renderScreen, signInAs } from '../test/utils';
 import PlacementDetail from '../screens/ceo/C-Placement';
 import ManagerRequests from '../screens/manager/MG-Requests';
@@ -67,10 +66,6 @@ const openPlacement = (routes: Record<string, unknown>, d = detail()) => {
   renderScreen(<PlacementDetail />, { portal: 'ceo', path: '/ceo/placements/pl42', route: '/ceo/placements/:id', now: NOW });
   return api;
 };
-
-afterEach(() => {
-  localStorage.removeItem(LANGUAGE_STORAGE_KEY);
-});
 
 describe('Report worker left — CEO placement page (C-Placement)', () => {
   it('reports the claim on the answered owner call, with the date and a reason from the agreed list', async () => {
@@ -239,14 +234,12 @@ describe('Report worker left — call agent console (search results)', () => {
     results: [{ type: 'placement', id: 'pl42', code: 'PL-00042', name: 'Ravi Kumar · Lakshmi Tiffins', maskedPhone: null, status, trade: 'Cook', locality: null, openRef: 'JS-00101', extra: {} }],
   });
 
-  it('an active placement offers it to the call agent, in Kannada too', async () => {
-    localStorage.setItem(LANGUAGE_STORAGE_KEY, 'kn');
+  it('an active placement offers it to the call agent', async () => {
     mockApi({ 'GET /search': result('active'), 'GET /placements/pl42/worker-left': form() });
     signInAs('call_agent');
     renderScreen(<Search />, { portal: 'call-agent', path: '/call-agent/search?q=PL-00042' });
-    await userEvent.click(await screen.findByRole('button', { name: 'ಕೆಲಸಗಾರ ಬಿಟ್ಟು ಹೋದರು ಎಂದು ತಿಳಿಸಿ' }));
-    expect(await screen.findByRole('dialog', { name: 'Ravi Kumar ಬಿಟ್ಟು ಹೋದರು ಎಂದು ತಿಳಿಸಿ' })).toBeInTheDocument();
-    expect(await screen.findByText(/ಮಾಲೀಕರು ಉತ್ತರಿಸಿದ ಕರೆಯಲ್ಲಿ/)).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: 'Report worker left' }));
+    expect(await screen.findByRole('dialog', { name: 'Report that Ravi Kumar left' })).toBeInTheDocument();
   });
 
   it('is not offered on a placement that is not active, nor to Finance', async () => {

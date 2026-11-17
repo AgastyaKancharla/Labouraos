@@ -134,12 +134,12 @@ describe('routes and guards', () => {
     expect(await screen.findByText('You have signed out.')).toBeInTheDocument();
   });
 
-  it('public pages need no sign-in and show the language switcher', async () => {
-    mockApi({ 'GET /registration/abc123/status': { otpRequired: true, maskedPhone: '******2345', language: null, registrationComplete: false } });
+  it('public pages need no sign-in, are in English and have no language switcher (rev 193)', async () => {
+    mockApi({ 'GET /registration/abc123/status': { otpRequired: true, maskedPhone: '******2345', language: 'kn', registrationComplete: false } });
     renderAt('/p/register/abc123');
     expect(await screen.findByRole('heading', { name: 'Complete your registration' })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'ಕನ್ನಡ' }));
-    expect(screen.getByRole('heading', { name: 'ನಿಮ್ಮ ನೋಂದಣಿ ಪೂರ್ಣಗೊಳಿಸಿ' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'EN' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Language' })).not.toBeInTheDocument();
   });
 
   it('field agents are pointed to Laboura Field', async () => {

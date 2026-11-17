@@ -243,7 +243,7 @@ export function RadioGroup<V extends string>({
   );
 }
 
-/** Two or three buttons side by side (List | Map, ಕನ್ನಡ | हिंदी | English). */
+/** Two or three buttons side by side (List | Map). */
 export function Segmented<V extends string>({ value, options, onChange, testID }: {
   value: V;
   options: readonly Choice<V>[];
@@ -328,7 +328,7 @@ export function ChipPicker({ label, values, choices, onChange, required, error, 
 
 // ------------------------------------------------------------- date & time
 
-/** "2026-11-16" → "Mon 16 Nov 2026", in the app language. */
+/** "2026-11-16" → "Mon 16 Nov 2026". */
 export function formatDateKey(key: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
   if (!m) return key;
@@ -365,7 +365,7 @@ export function DateField({
   hint?: string;
   testID?: string;
 }) {
-  const { t, language } = useI18n();
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const start = value || (max && (!min || max < todayKeyIst()) ? max : min && min > todayKeyIst() ? min : todayKeyIst());
   const [cursor, setCursor] = useState(start.slice(0, 7));
@@ -438,7 +438,7 @@ export function DateField({
             <View style={styles.calGrid}>
               {[0, 1, 2, 3, 4, 5, 6].map((d) => (
                 <Text key={d} variant="tiny" style={styles.calCell}>
-                  {language === 'kn' ? weekdayName(d) : weekdayName(d).slice(0, 2)}
+                  {weekdayName(d).slice(0, 2)}
                 </Text>
               ))}
               {days.map((day, i) => {

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useInShortScripts } from '../../public/shared/legal';
+import { useInShortScript } from '../../public/shared/legal';
 import { useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import { Button } from '../../../components/Button';
@@ -35,7 +35,6 @@ import {
   HEARD_FROM,
   JOB_TYPES,
   LICENCES,
-  MESSAGE_LANGUAGES,
   OTHER_TRADE,
   QUALIFICATIONS,
   SHIFT_PREFERENCES,
@@ -58,7 +57,6 @@ const ERROR_TEXT: Record<FieldError, MessageKey> = {
   name: 'reg.err.name',
   dateOfBirth: 'reg.err.dateOfBirth',
   gender: 'reg.err.required',
-  messageLanguage: 'reg.err.required',
   bestTime: 'reg.err.required',
   heardFrom: 'reg.err.required',
   area: 'reg.err.area',
@@ -82,7 +80,7 @@ const ERROR_TEXT: Record<FieldError, MessageKey> = {
 export default function RegisterJobSeeker() {
   const t = useT();
   const scriptTerms = useScriptTerms();
-  const inShort = useInShortScripts('job_seeker_terms');
+  const inShort = useInShortScript('job_seeker_terms');
   const to = useScreenPath();
   const navigate = useNavigate();
   const toast = useToast();
@@ -205,7 +203,6 @@ export default function RegisterJobSeeker() {
               error={err('dateOfBirth')}
             />
             <SelectField label={t('reg.js.gender')} required value={form.gender} onChange={(v) => set('gender', v)} options={choiceOptions(t, GENDERS)} error={err('gender')} hint={t('reg.js.genderHint')} />
-            <SelectField label={t('reg.messageLanguage')} required value={form.messageLanguage} onChange={(v) => set('messageLanguage', v)} options={choiceOptions(t, MESSAGE_LANGUAGES)} error={err('messageLanguage')} />
             <SelectField label={t('reg.js.bestTime')} required value={form.bestTime} onChange={(v) => set('bestTime', v)} options={choiceOptions(t, BEST_TIME)} error={err('bestTime')} />
             <SelectField label={t('reg.heardFrom')} required value={form.referredBy ? 'referral_partner' : form.heardFrom} onChange={(v) => set('heardFrom', v)} options={choiceOptions(t, HEARD_FROM)} error={err('heardFrom')} disabled={Boolean(form.referredBy)} />
           </div>
@@ -409,9 +406,8 @@ export default function RegisterJobSeeker() {
         <ExplainScript
           n={7}
           title={t(`reg.js.explain.${pronoun}`)}
-          // Job Seeker Terms v1.1 "In short", read aloud in their language (rev 176); the older script until it loads.
-          scripts={inShort ?? (scriptTerms ? jobSeekerConsentScript(scriptTerms) : null)}
-          language={form.messageLanguage}
+          // Job Seeker Terms v1.1 "In short", read aloud (rev 176; English, rev 193); the older script until it loads.
+          script={inShort ?? (scriptTerms ? jobSeekerConsentScript(scriptTerms) : null)}
           note={t('reg.js.explainNote')}
         />
 

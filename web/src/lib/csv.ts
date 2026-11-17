@@ -1,7 +1,7 @@
 /**
  * List downloads. The designs label them "Download (Excel)"; the file is a
  * UTF-8 CSV with a byte-order mark, which Excel opens directly with ₹ and
- * Kannada/Hindi text intact.
+ * any other non-ASCII text intact.
  *
  * Only the CEO, Managers and Finance may download lists (guide: "nobody below
  * Manager can download or export lists"). The API enforces it; the UI hides

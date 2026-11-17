@@ -1,3 +1,4 @@
+import { PRODUCT_LANGUAGE } from '../../common/language/english-only';
 import { OwnTeam, businessesOwnedBy } from '../../common/rbac/own-team';
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { CustomerNotificationHooks } from '../customer-notification/customer-notification-hooks.service';
@@ -12,7 +13,8 @@ import { publicPageLink } from '../../common/public-pages';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { MessagingService } from '../message/messaging.service';
 import { PricingService } from '../pricing/pricing.service';
-import { MinimumWageLevel, tradeNameKey } from '../trade/trade.service';
+import { tradeNameKey } from '../trade/trade.service';
+import { DEFAULT_MINIMUM_WAGE_ZONE, isMinimumWageZone, legalMinimumFor, MinimumWageLevel, MinimumWageZone } from '../trade/minimum-wage';
 import { testModeFields } from '../../common/otp/otp-test-mode';
 
 /** A vacancy may only be matched, introduced or interviewed for once it is `open`. */
@@ -40,8 +42,15 @@ export interface LegalMinimumCheck {
   monthlySalaryFromPaise: number;
   legalMinimumPaise: number;
   level: MinimumWageLevel;
+  zone: MinimumWageZone;
   below: boolean;
 }
+
+/**
+ * Where the job is, for the legal minimum (rev 193): the business (its
+ * `minimumWageZone`) or a zone already known (a business not saved yet).
+ */
+export type WagePlace = { businessId: string } | { zone: MinimumWageZone };
 
 export function isUnconfirmedVacancyStatus(status: string | null | undefined): boolean {
   return (UNCONFIRMED_VACANCY_STATUSES as readonly string[]).includes(status ?? '');
@@ -65,32 +74,34 @@ export class VacancyConfirmationService {
   ) {}
 
   /**
-   * Compares the vacancy's salary *from* with the legal minimum for the trade's level.
-   * An unlisted trade is checked against the unskilled minimum (the lowest figure).
+   * Compares the vacancy's salary *from* with the legal minimum for the
+   * business's zone and the trade's skill level (rev 193). An unlisted trade
+   * is checked against the unskilled figure of that zone.
    */
-  async checkLegalMinimum(tradeSkill: string, salaryMinPaise: number, salaryPeriod: string | null | undefined): Promise<LegalMinimumCheck> {
+  async checkLegalMinimum(tradeSkill: string, salaryMinPaise: number, salaryPeriod: string | null | undefined, place: WagePlace): Promise<LegalMinimumCheck> {
     const policy = await this.pricingService.current();
     const trade = await this.prisma.trade.findFirst({
       where: { active: true, nameKey: tradeNameKey(tradeSkill) },
       select: { minimumWageLevel: true },
     });
     const level = (trade?.minimumWageLevel ?? 'unskilled') as MinimumWageLevel;
-    const wages: Record<MinimumWageLevel, number> = {
-      unskilled: policy.legalMinimumWageUnskilledPaise,
-      semi_skilled: policy.legalMinimumWageSemiSkilledPaise,
-      skilled: policy.legalMinimumWageSkilledPaise,
-      highly_skilled: policy.legalMinimumWageHighlySkilledPaise,
-    };
+    const zone = await this.zoneOf(place);
     const monthlySalaryFromPaise = salaryPeriod === 'daily'
       ? salaryMinPaise * policy.salaryDaysPerMonth
       : salaryMinPaise;
-    const legalMinimumPaise = wages[level];
-    return { monthlySalaryFromPaise, legalMinimumPaise, level, below: monthlySalaryFromPaise < legalMinimumPaise };
+    const legalMinimumPaise = legalMinimumFor(policy, zone, level);
+    return { monthlySalaryFromPaise, legalMinimumPaise, level, zone, below: monthlySalaryFromPaise < legalMinimumPaise };
+  }
+
+  private async zoneOf(place: WagePlace): Promise<MinimumWageZone> {
+    if ('zone' in place) return isMinimumWageZone(place.zone) ? place.zone : DEFAULT_MINIMUM_WAGE_ZONE;
+    const business = await this.prisma.business.findUnique({ where: { id: place.businessId }, select: { minimumWageZone: true } });
+    return isMinimumWageZone(business?.minimumWageZone) ? business!.minimumWageZone as MinimumWageZone : DEFAULT_MINIMUM_WAGE_ZONE;
   }
 
   /** Throws unless an owner-told tick accompanies a below-minimum salary; returns the fields to store. */
-  async legalMinimumFields(tradeSkill: string, salaryMinPaise: number, salaryPeriod: string | null | undefined, ownerTold: unknown) {
-    const check = await this.checkLegalMinimum(tradeSkill, salaryMinPaise, salaryPeriod);
+  async legalMinimumFields(tradeSkill: string, salaryMinPaise: number, salaryPeriod: string | null | undefined, ownerTold: unknown, place: WagePlace) {
+    const check = await this.checkLegalMinimum(tradeSkill, salaryMinPaise, salaryPeriod, place);
     if (check.below && ownerTold !== true) {
       throw new BadRequestException({
         statusCode: 400,
@@ -100,6 +111,7 @@ export class VacancyConfirmationService {
         legalMinimumPaise: check.legalMinimumPaise,
         monthlySalaryFromPaise: check.monthlySalaryFromPaise,
         level: check.level,
+        zone: check.zone,
       });
     }
     return {
@@ -127,7 +139,7 @@ export class VacancyConfirmationService {
         name: vacancy.branch.contactPersonName,
         role: vacancy.branch.contactPersonRole,
         phone: vacancy.branch.contactPersonPhone,
-        language: vacancy.branch.contactLanguage ?? vacancy.business.contactLanguage ?? 'en',
+        language: PRODUCT_LANGUAGE,
         branchId: vacancy.branch.id,
       };
     }
@@ -135,7 +147,7 @@ export class VacancyConfirmationService {
       name: vacancy.business.additionalContactName ?? vacancy.business.ownerName,
       role: vacancy.business.contactRole,
       phone: vacancy.business.phone,
-      language: vacancy.business.contactLanguage ?? 'en',
+      language: PRODUCT_LANGUAGE,
       branchId: null,
     };
   }
@@ -303,7 +315,7 @@ export class VacancyConfirmationService {
   /**
    * What the contact person sees when they open the link: the vacancy details only, never personal data.
    * The phone page (P07-VacancyConfirm) shows role, how many people, salary range, shift, start date and
-   * the business name, in the language the link was sent in.
+   * the business name, in English (rev 193).
    */
   async linkDetails(token: string) {
     const link = await this.requireLink(token);
@@ -314,7 +326,7 @@ export class VacancyConfirmationService {
       sentToLast4: last4(link.phone!),
       maskedPhone: `******${last4(link.phone!)}`,
       expiresAt: link.expiresAt,
-      preferredLanguage: link.language ?? null,
+      preferredLanguage: PRODUCT_LANGUAGE,
       roleTitle: vacancy.roleTitle ?? null,
       headcountCount: vacancy.headcount,
       salaryMinPaise: vacancy.salaryMinPaise ?? null,

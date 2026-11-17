@@ -1,7 +1,6 @@
 /**
  * The staff photo (guide, login codes, 14 Nov): asked before going on when an
- * agent has none yet or the CEO asked for a new one. Spread into en.ts; kn and
- * hi in staffPhoto.kn.ts and staffPhoto.hi.ts (drafts — a native speaker checks them).
+ * agent has none yet or the CEO asked for a new one. Spread into en.ts (English only, Master Guide rev 193).
  */
 export const staffPhotoEn = {
   'staffPhoto.title': 'Your staff photo',

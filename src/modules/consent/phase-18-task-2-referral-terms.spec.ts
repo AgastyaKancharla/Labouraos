@@ -305,13 +305,16 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
       );
     });
 
-    it('rejects unsupported language', async () => {
-      const res = await request(app.getHttpServer())
-        .post(`/referrals/${referralId}/terms-links`)
-        .send({ language: 'fr' });
-
-      expect(res.status).toBe(400);
-      expect(res.body.message).toContain('language must be kn, hi, or en');
+    it('ignores a requested language: the link is always English (rev 193)', async () => {
+      for (const language of ['fr', 'kn']) {
+        const res = await request(app.getHttpServer())
+          .post(`/referrals/${referralId}/terms-links`)
+          .send({ language });
+        expect(res.status).toBe(201);
+      }
+      const links = [...publicLinks.values()].filter((l) => l.subjectId === referralId);
+      expect(links.length).toBeGreaterThan(0);
+      expect(new Set(links.map((l) => l.language))).toEqual(new Set(['en']));
     });
 
     it('throws 404 if referral partner does not exist', async () => {
