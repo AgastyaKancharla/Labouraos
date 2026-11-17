@@ -42,6 +42,7 @@ type MockPrismaService = {
     findFirst: jest.Mock;
     findMany: jest.Mock;
     upsert: jest.Mock;
+    create: jest.Mock;
     updateMany: jest.Mock;
   };
   payment: { findUnique: jest.Mock; update: jest.Mock };
@@ -85,6 +86,10 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
 
   beforeEach(async () => {
     publicLinks.clear();
+    // The consent rows this test stores (17 Nov: an item already given is found and not stored again).
+    const consentRows: Record<string, unknown>[] = [];
+    const matches = (row: Record<string, unknown>, where: Record<string, unknown> = {}) =>
+      Object.entries(where).every(([k, v]) => (v !== null && typeof v === 'object') || row[k] === v || (v === null && row[k] == null));
     mockPrisma = {
       referral: {
         findUnique: jest.fn().mockImplementation(({ where }: { where: { id: string } }) => {
@@ -103,9 +108,14 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
       },
       consent: {
         findUnique: jest.fn().mockResolvedValue(null),
-        findFirst: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockImplementation(({ where }: { where?: Record<string, unknown> } = {}) => Promise.resolve(consentRows.find((r) => matches(r, where)) ?? null)),
         findMany: jest.fn().mockResolvedValue([]),
         upsert: jest.fn().mockImplementation(({ create }) => Promise.resolve({ id: 'c-1', ...create })),
+        create: jest.fn().mockImplementation(({ data }) => {
+          const row = { id: `c-${consentRows.length + 1}`, withdrawnAt: null, ...data };
+          consentRows.push(row);
+          return Promise.resolve(row);
+        }),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       payment: {
@@ -468,11 +478,12 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
       expect(res.body.grantedPurposes).toEqual(['agreement_terms', 'call_recording', 'aadhaar_verification']);
 
       // Three Consent rows (terms, recording, the separate ID-check consent S2) sharing the same otpRequestId
-      expect(mockPrisma.consent.upsert).toHaveBeenCalledTimes(3);
+      // (17 Nov: a new row only for an item not already given).
+      expect(mockPrisma.consent.create).toHaveBeenCalledTimes(3);
 
-      const calls = mockPrisma.consent.upsert.mock.calls;
-      const firstCreate = calls[0][0].create;
-      const secondCreate = calls[1][0].create;
+      const calls = mockPrisma.consent.create.mock.calls;
+      const firstCreate = calls[0][0].data;
+      const secondCreate = calls[1][0].data;
 
       expect(firstCreate.subjectType).toBe('referral');
       expect(firstCreate.subjectId).toBe(referralId);
@@ -485,7 +496,7 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
       expect(secondCreate.purpose).toBe('call_recording');
       expect(secondCreate.method).toBe('sms_link');
       expect(secondCreate.otpRequestId).toBe('otp-req-999');
-      expect(calls[2][0].create.purpose).toBe('aadhaar_verification');
+      expect(calls[2][0].data.purpose).toBe('aadhaar_verification');
 
       // The signed copy: the exact text shown on the link, version 1.0, with the OTP.
       expect(mockPrisma.legalAcceptance.create).toHaveBeenCalledWith({
@@ -504,7 +515,8 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
         });
       expect(repeatRes.status).toBe(201);
       expect(repeatRes.body.grantedPurposes).toEqual(['agreement_terms', 'call_recording', 'aadhaar_verification']);
-      expect(mockPrisma.consent.upsert).toHaveBeenCalledTimes(6);
+      // Already given: nothing is stored again (17 Nov).
+      expect(mockPrisma.consent.create).toHaveBeenCalledTimes(3);
     });
   });
 
