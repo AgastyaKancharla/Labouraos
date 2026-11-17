@@ -467,11 +467,26 @@ export class TargetSplitService implements OnModuleInit, OnApplicationBootstrap,
   }
 
   /** Re-spread a Manager's share (the sum of their teams' numbers) over their teams that are not hand-set, then each team over its agents. */
-  private async respreadGroupIn(tx: Prisma.TransactionClient, state: MonthState, groupKey: string, metrics: PlanMetricKey[], achieved: Achieved, actorId: string, trigger: string): Promise<SplitRunSummary> {
+  private groupShare(state: MonthState, groupKey: string, metric: PlanMetricKey): number | null {
+    if (typeof state.company?.[metric] !== 'number') return null;
+    return state.teams.filter((t) => t.groupKey === groupKey).reduce((sum, t) => sum + (numberOrNull(t.plan?.[metric]) ?? 0), 0);
+  }
+
+  /** `shares`: the Manager's share per metric as it was before a hand change (default: the sum of the teams' numbers now). */
+  private async respreadGroupIn(
+    tx: Prisma.TransactionClient,
+    state: MonthState,
+    groupKey: string,
+    metrics: PlanMetricKey[],
+    achieved: Achieved,
+    actorId: string,
+    trigger: string,
+    shares?: Partial<Record<PlanMetricKey, number | null>>,
+  ): Promise<SplitRunSummary> {
     const result = emptyResult();
     const teams = groupTeams(this.splitTeams(state, achieved).filter((t) => t.groupKey === groupKey)).get(groupKey) ?? [];
     for (const metric of metrics) {
-      const total = typeof state.company?.[metric] === 'number' ? teams.reduce((sum, t) => sum + (numberOrNull(state.teams.find((x) => x.id === t.id)?.plan?.[metric]) ?? 0), 0) : null;
+      const total = shares && metric in shares ? (shares[metric] ?? null) : this.groupShare(state, groupKey, metric);
       spreadGroupMetric(groupKey, total, teams, metric, result);
     }
     // Keep the metrics not re-spread as they are.
@@ -632,10 +647,12 @@ export class TargetSplitService implements OnModuleInit, OnApplicationBootstrap,
         next.set(row.teamLeadId, { values, hand, changed });
       }
       // Hand-set numbers may not add up to more than the Manager's share.
+      const shares: Partial<Record<PlanMetricKey, number | null>> = {};
       for (const k of touched) {
+        shares[k] = this.groupShare(state, groupKey, k);
         if (!company || company[k] === null) continue;
         const group = state.teams.filter((t) => t.groupKey === groupKey);
-        const share = group.reduce((sum, t) => sum + (numberOrNull(t.plan?.[k]) ?? 0), 0);
+        const share = shares[k] ?? 0;
         const handSum = group.reduce((sum, t) => {
           const n = next.get(t.id);
           if (n) return sum + (n.hand.has(k) ? (n.values[k] ?? 0) : 0);
@@ -708,9 +725,10 @@ export class TargetSplitService implements OnModuleInit, OnApplicationBootstrap,
           tx,
         );
       }
-      if (touched.size) {
+      // Without a CEO plan there is nothing automatic: the numbers typed stay as they are.
+      if (touched.size && state.company) {
         const reloaded = await this.loadState(tx, year, month, now, outside.workingDays);
-        await this.respreadGroupIn(tx, reloaded, groupKey, [...touched], achieved, actor.id, 'team_hand_set');
+        await this.respreadGroupIn(tx, reloaded, groupKey, [...touched], achieved, actor.id, 'team_hand_set', shares);
       }
       return { created, updated, unchanged };
     });
