@@ -58,6 +58,8 @@ export function CompanyPlan({ month, editable }: { month: string; editable: bool
       toast.success(res.split ? `Plan saved and split to ${res.split.teams} ${res.split.teams === 1 ? 'team' : 'teams'}` : `${monthName(month, false)} plan saved`);
       setDraft({});
       void qc.invalidateQueries({ queryKey: ['plans'] });
+      // The agents' targets below changed too: the plan was split to them.
+      void qc.invalidateQueries({ queryKey: ['ceo'] });
     },
     onError: (e) => toast.error(e instanceof ApiError ? e.message : 'Could not save the plan. Try again.'),
   });
