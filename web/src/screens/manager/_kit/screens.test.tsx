@@ -118,7 +118,7 @@ describe('Agents and one agent', () => {
     mockApi({ ...common, 'GET /manager/agents': { month: { year: 2026, month: 11, dayOfMonth: 9, daysInMonth: 30 }, rows: [agentRow] } });
     render(<Agents />, '/manager/agents');
     expect(await screen.findByText('20% · 9 of 45')).toBeInTheDocument();
-    expect(screen.getByText('5 · 74 min')).toBeInTheDocument();
+    expect(screen.getByText('5 · 1 h 14 min')).toBeInTheDocument();
     expect(screen.getAllByText('Behind').length).toBeGreaterThan(0);
   });
 

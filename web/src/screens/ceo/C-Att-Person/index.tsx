@@ -14,6 +14,7 @@ import { AttendanceTabs as ManagerAttendanceTabs } from '../../manager/_kit/tabs
 import { ActionButton } from '../_kit/actions';
 import { hm, roleLabel, timeOrDash } from '../_kit/format';
 import { AttendanceTabs } from '../_kit/tabs';
+import { formatLateMinutes } from '../../../lib/format/late';
 
 /** Attendance · one person — design C-Att-Person.dc.html. Any person, any dates (up to 92 days). */
 interface Day {
@@ -87,7 +88,7 @@ export default function AttendancePerson() {
   const columns: Column<Day>[] = [
     { key: 'day', header: 'Day', cell: (d) => dayLabel(d.date), sortValue: (d) => d.date, csv: (d) => d.date },
     { key: 'login', header: 'Login', cell: (d) => timeOrDash(d.loginAt), csv: (d) => d.loginAt },
-    { key: 'late', header: 'Late login', cell: (d) => (d.lateMinutes ? `${d.lateMinutes} min` : '—'), csv: (d) => d.lateMinutes },
+    { key: 'late', header: 'Late login', cell: (d) => (d.lateMinutes ? formatLateMinutes(d.lateMinutes) : '—'), csv: (d) => d.lateMinutes },
     { key: 'prod', header: 'Production', cell: (d) => (d.loginAt ? hm(d.productionSeconds) : '—'), sortValue: (d) => d.productionSeconds, csv: (d) => Math.round(d.productionSeconds / 60) },
     {
       key: 'breakCount',
@@ -156,7 +157,7 @@ export default function AttendancePerson() {
       ) : (
         <>
           <StatGrid>
-            <StatTile label="Late logins" value={r ? `${r.lateLogins.count} days · ${lateMinutes} min` : '—'} tone="gold" loading={report.isPending} />
+            <StatTile label="Late logins" value={r ? `${r.lateLogins.count} days · ${formatLateMinutes(lateMinutes)}` : '—'} tone="gold" loading={report.isPending} />
             <StatTile label={`Production of ${worked * 8}h`} value={r ? hm(r.totals.productionSeconds) : '—'} tone="royal" loading={report.isPending} detail={r && worked ? `${Math.round((r.totals.productionSeconds * 100) / (worked * FULL_DAY_SECONDS))}%` : undefined} />
             <StatTile label="Production lost" value={r ? hm(r.totals.hoursLostSeconds) : '—'} tone="orange" loading={report.isPending} />
             <StatTile label="Leave balance" value={balance.data ? `${balance.data.casual.left + balance.data.emergency.left} days` : '—'} tone="good" loading={balance.isPending} detail={balance.data ? `${balance.data.casual.left} casual · ${balance.data.emergency.left} emergency` : undefined} />

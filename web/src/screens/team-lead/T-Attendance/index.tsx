@@ -17,6 +17,7 @@ import { hm } from '../../ceo/_kit/format';
 import { FilterPanel, SelectFilter } from '../../ceo/_kit/kit';
 import { firstName, STATUS_LABEL, statusTone, useTeam, type Brief } from '../_kit/api';
 import { AttendanceTabs } from './tabs';
+import { formatLateMinutes } from '../../../lib/format/late';
 
 /** Attendance · today — design T-Attendance.dc.html. Change day goes through the requests backend (a 3rd change in a month goes to the Manager). */
 interface Row {
@@ -55,7 +56,7 @@ export default function TeamLeadAttendance() {
     { key: 'role', header: 'Role', cell: (r) => (r.staff.role === 'field_agent' ? 'Field' : 'Call') },
     { key: 'login', header: 'Login', cell: (r) => (r.loginAt ? formatTimeIST(r.loginAt) : '—'), sortValue: (r) => r.loginAt ?? '' },
     { key: 'work', header: 'Work time', cell: (r) => (r.loginAt ? hm(r.productionSeconds) : '—'), sortValue: (r) => r.productionSeconds },
-    { key: 'late', header: 'Late', cell: (r) => (r.loginAt ? (r.lateMinutes ? <span className="tl-alert">{r.lateMinutes} min late</span> : 'On time') : '—') },
+    { key: 'late', header: 'Late', cell: (r) => (r.loginAt ? (r.lateMinutes ? <span className="tl-alert">{formatLateMinutes(r.lateMinutes)} late</span> : 'On time') : '—') },
     { key: 'breaks', header: 'Breaks', cell: (r) => (r.loginAt ? `${hm(r.breakSeconds)}${r.overBreak ? ' · over' : ''}` : '—'), hideOnPhone: true },
     {
       key: 'now',

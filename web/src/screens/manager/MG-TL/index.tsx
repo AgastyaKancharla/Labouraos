@@ -11,6 +11,7 @@ import { useScreenPath } from '../../../portals/PortalContext';
 import { hm } from '../../ceo/_kit/format';
 import { hoursText, paceText, paceTone, type Forecast } from '../_kit/kit';
 import { NoteActions, NotesList, type CoachingNote } from '../_kit/Notes';
+import { formatLateMinutes } from '../../../lib/format/late';
 
 interface TeamResponse {
   teamLead: { id: string; code: string; name: string };
@@ -95,7 +96,7 @@ export default function TeamLeadScorecard() {
                       <td>
                         <StatusPill tone={paceTone(m.pace)}>{paceText(m.pace)}</StatusPill>
                       </td>
-                      <td>{m.lateLogins ? `${m.lateLogins} late · ${m.lateMinutes} min` : '—'}</td>
+                      <td>{m.lateLogins ? `${m.lateLogins} late · ${formatLateMinutes(m.lateMinutes)}` : '—'}</td>
                       <td>{m.leaveLeft}</td>
                     </tr>
                   ))}

@@ -12,6 +12,7 @@ import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { hm, roleLabel, timeOrDash } from '../_kit/format';
 import { AttendanceTabs } from '../_kit/tabs';
+import { formatLateMinutes } from '../../../lib/format/late';
 
 /** Attendance — design C-Team-Attendance.dc.html. One day shows each person's day; a longer period shows totals. */
 interface Row {
@@ -67,7 +68,7 @@ export default function TeamAttendance() {
     { key: 'logout', header: 'Logout', cell: (r) => timeOrDash(r.logoutAt), csv: (r) => r.logoutAt, hideOnPhone: true },
     { key: 'prod', header: 'Production', cell: (r) => (r.loginAt ? hm(r.productionSeconds) : '—'), sortValue: (r) => r.productionSeconds, csv: (r) => Math.round(r.productionSeconds / 60) },
     { key: 'breaks', header: 'Breaks', cell: (r) => (r.loginAt ? hm(r.breakSeconds) : '—'), csv: (r) => Math.round(r.breakSeconds / 60), hideOnPhone: true },
-    { key: 'late', header: 'Late login', cell: (r) => (r.lateMinutes ? `${r.lateMinutes} min` : '—'), sortValue: (r) => r.lateMinutes, csv: (r) => r.lateMinutes },
+    { key: 'late', header: 'Late login', cell: (r) => (r.lateMinutes ? formatLateMinutes(r.lateMinutes) : '—'), sortValue: (r) => r.lateMinutes, csv: (r) => r.lateMinutes },
     { key: 'counts', header: 'Counts as', cell: (r) => <StatusPill tone={countsTone(r.countsAs)}>{r.countsAs ?? '—'}</StatusPill>, filter: 'select', filterValue: (r) => r.countsAs ?? '—', csv: (r) => r.countsAs },
   ];
   const rangeColumns: Column<Row>[] = [
@@ -75,7 +76,7 @@ export default function TeamAttendance() {
     team,
     { key: 'days', header: 'Full · half', cell: (r) => `${r.fullDays} · ${r.halfDays}`, sortValue: (r) => r.fullDays + r.halfDays / 2, csv: (r) => `${r.fullDays} full, ${r.halfDays} half` },
     { key: 'prod', header: 'Production', cell: (r) => hm(r.productionSeconds), sortValue: (r) => r.productionSeconds, csv: (r) => Math.round(r.productionSeconds / 60) },
-    { key: 'late', header: 'Late logins', cell: (r) => (r.lateDays ? `${r.lateDays} · ${r.lateMinutes} min` : '—'), sortValue: (r) => r.lateMinutes, csv: (r) => r.lateMinutes },
+    { key: 'late', header: 'Late logins', cell: (r) => (r.lateDays ? `${r.lateDays} · ${formatLateMinutes(r.lateMinutes)}` : '—'), sortValue: (r) => r.lateMinutes, csv: (r) => r.lateMinutes },
     { key: 'short', header: 'Shortfall owed', cell: (r) => (r.shortfallSeconds ? hm(r.shortfallSeconds) : '—'), sortValue: (r) => r.shortfallSeconds, csv: (r) => Math.round(r.shortfallSeconds / 60) },
     { key: 'leave', header: 'Leave', cell: (r) => r.leaveDays || '—', csv: (r) => r.leaveDays, hideOnPhone: true },
     { key: 'absent', header: 'Absent', cell: (r) => (r.absentDays ? <StatusPill tone="danger">{`${r.absentDays} absent`}</StatusPill> : '—'), sortValue: (r) => r.absentDays, csv: (r) => r.absentDays },
