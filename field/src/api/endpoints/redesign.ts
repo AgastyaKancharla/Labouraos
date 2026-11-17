@@ -132,6 +132,23 @@ export interface AllVisitsPage {
   nextBefore: string | null;
 }
 
+/** POST /maps-link/resolve (17 Nov): the pin from a Google Maps link and its address from OpenStreetMap. */
+export interface ResolvedMapsLink {
+  latitude: number;
+  longitude: number;
+  placeName: string | null;
+  address: {
+    shopNumber: string | null;
+    street: string | null;
+    area: string | null;
+    city: string | null;
+    state: string | null;
+    pincode: string | null;
+    displayName: string | null;
+  } | null;
+  shortLink: boolean;
+}
+
 /** GET /field-work/day?date= (Today's work) */
 export interface DayView {
   date: string;
@@ -372,6 +389,7 @@ export const redesignApi = (api: ApiClient) => ({
   allVisits: (query: AllVisitsQuery) =>
     api.get<AllVisitsPage>('/field-work/visits/all', { query: { q: query.q || undefined, from: query.from, to: query.to, before: query.before } }),
   visit: (id: string) => api.get<VisitDetails>(`/field-visits/${enc(id)}`),
+  resolveMapsLink: (url: string) => api.post<ResolvedMapsLink>('/maps-link/resolve', { url }),
   changeResult: (id: string, body: ChangeResultBody) => api.post<VisitDetails>(`/field-visits/${enc(id)}/change-result`, body),
   myBusinesses: (q?: string) => api.get<{ query: string; results: MyBusinessRow[] }>('/field-work/businesses', { query: { q: q || undefined } }),
   businessPage: (ref: string) => api.get<BusinessPage>(`/field-work/businesses/${enc(ref)}/page`),

@@ -45,6 +45,47 @@ async function fillRequired() {
 }
 
 describe('FA07 Register a business', () => {
+  it('17 Nov: "Paste Google Maps link" fills the pin and the empty address fields, which stay editable', async () => {
+    searchParams.current = {};
+    const sent: unknown[] = [];
+    await renderWithApp(<RegisterBusinessScreen />, {
+      signedInAs: kiran,
+      route: (url, init) => {
+        if (url.endsWith('/screens/call-registration/options')) return { status: 200, body: { city: 'Bengaluru', areas: [{ name: 'JP Nagar', pincode: '560078', latitude: 12.9116, longitude: 77.6101 }] } };
+        if (url.endsWith('/trades')) return { status: 200, body: trades };
+        if (url.endsWith('/maps-link/resolve')) {
+          const body = JSON.parse(String(init.body)) as { url: string };
+          sent.push(body);
+          if (body.url.includes('bing')) return { status: 400, body: { statusCode: 400, message: 'Paste a Google Maps link', details: { code: 'MAPS_LINK_INVALID' } } };
+          return {
+            status: 200,
+            body: { latitude: 12.9116, longitude: 77.6101, placeName: 'Sri Sai Bakery', shortLink: true, address: { shopNumber: '12', street: '24th Main Road, JP Nagar 6th Phase', area: 'JP Nagar', city: 'Bengaluru', state: 'Karnataka', pincode: '560078', displayName: 'x' } },
+          };
+        }
+        return undefined;
+      },
+    });
+    await waitFor(() => screen.getByTestId('fa07-maps-link'));
+    await fireEvent.changeText(screen.getByTestId('fa07-maps-link'), 'https://www.bing.com/maps?cp=12.9~77.6');
+    await fireEvent.press(screen.getByTestId('fa07-maps-fill'));
+    await waitFor(() => expect(screen.getByTestId('fa07-maps-note')).toHaveTextContent(/not a Google Maps link/));
+
+    await fireEvent.changeText(screen.getByLabelText('Shop / building number *'), 'No. 7');
+    await fireEvent.changeText(screen.getByTestId('fa07-maps-link'), 'Sri Sai Bakery https://maps.app.goo.gl/AbCdEf');
+    await fireEvent.press(screen.getByTestId('fa07-maps-fill'));
+    await waitFor(() => expect(screen.getByTestId('fa07-maps-note')).toHaveTextContent(/filled from the link/));
+    expect(sent.at(-1)).toEqual({ url: 'Sri Sai Bakery https://maps.app.goo.gl/AbCdEf' });
+    // What the agent typed stays; empty fields are filled; the pin comes from the link; the area follows the pin.
+    expect(screen.getByLabelText('Shop / building number *').props.value).toBe('No. 7');
+    expect(screen.getByLabelText('Street *').props.value).toBe('24th Main Road, JP Nagar 6th Phase');
+    expect(screen.getByText(/Pin: 12.91160, 77.61010/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('fa07-area')).toHaveTextContent(/JP Nagar/));
+    // Editable afterwards.
+    await fireEvent.changeText(screen.getByLabelText('Street *'), '24th Main');
+    expect(screen.getByLabelText('Street *').props.value).toBe('24th Main');
+  });
+
+
   it('starts from the visit (board name, map pin), checks the mobile by OTP, warns below the minimum wage, and registers from the visit', async () => {
     saveDraft({
       id: 'v-7', startedAt: '2026-11-09T06:00:00Z', latitude: 12.9116, longitude: 77.6101, accuracy: 8, shopName: 'Annapoorna Mess', businessId: null,
