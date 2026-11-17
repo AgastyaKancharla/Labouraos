@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ForbiddenException,
+  HttpStatus,
   Injectable,
   Logger,
   NotFoundException,
@@ -25,6 +26,7 @@ import {
 import { dayResultFor, lateMinutesFor, productionTargetSeconds } from './day-rules';
 import { WorkingDaysService } from './working-days.service';
 import { isOwnerAccount } from '../staff/owner-account';
+import { codedError } from '../../common/http/coded-error';
 
 const AGENT_ROLES = ['call_agent', 'field_agent'];
 
@@ -159,7 +161,8 @@ export class AttendanceService {
       // An owner account has no attendance: ending the day only stops the live
       // status, so starting again reopens it (owner decision 14 Nov).
       if (owner) return this.reopenOwnerDay(existing.id, staffId, now);
-      throw new BadRequestException('This day is already closed');
+      // Log in once a day (17 Nov): the day ended with Log out (or was closed at night).
+      throw codedError(HttpStatus.BAD_REQUEST, 'DAY_ALREADY_ENDED', 'This day is already closed: log in again tomorrow');
     }
     if (existing?.loginAt) {
       return this.today(staffId);
@@ -205,6 +208,26 @@ export class AttendanceService {
       this.announce(staffId, 'available', now);
       return this.today(staffId);
     }
+    try {
+      await this.createLoginDay(staffId, date, now, loginLat, loginLng, lateMinutes);
+    } catch (error) {
+      // Log in tapped twice (or from two screens) at the same moment: the other request
+      // started the day, so this one simply shows it (17 Nov: Log in never errors on a double tap).
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') return this.today(staffId);
+      throw error;
+    }
+    this.announce(staffId, 'available', now);
+    return this.today(staffId);
+  }
+
+  private async createLoginDay(
+    staffId: string,
+    date: Date,
+    now: Date,
+    loginLat: number | null,
+    loginLng: number | null,
+    lateMinutes: number,
+  ): Promise<void> {
     await this.prisma.attendanceDay.create({
       data: {
         staffId,
@@ -225,13 +248,24 @@ export class AttendanceService {
         },
       },
     });
-    this.announce(staffId, 'available', now);
-    return this.today(staffId);
   }
 
+  /**
+   * Log out ends the working day (17 Nov: the old "End my day"). Tapping it
+   * again, from a second screen, or after the night job already closed the
+   * day is not an error: the ended day is shown as it is.
+   */
   async logout(staffId: string): Promise<TodayView> {
     const now = this.clock.now();
-    const day = await this.openDay(staffId, now);
+    const day = await this.findOpenDay(staffId, now);
+    if (!day) {
+      const ended = await this.prisma.attendanceDay.findUnique({
+        where: { staffId_date: { staffId, date: this.istDate(now) } },
+        select: { loginAt: true, logoutAt: true },
+      });
+      if (ended?.loginAt && ended.logoutAt) return this.today(staffId);
+      throw codedError(HttpStatus.BAD_REQUEST, 'DAY_NOT_STARTED', 'Log in before logging out');
+    }
     await this.finishDay(day.id, now, 'logout', false);
     return this.today(staffId);
   }
@@ -743,10 +777,22 @@ export class AttendanceService {
     };
   }
 
+  /**
+   * Today's open day, or a coded 400 the apps understand (17 Nov): DAY_ENDED
+   * after Log out (or the night job), DAY_NOT_STARTED before Log in. The apps
+   * then show the day as it is instead of an error.
+   */
   private async openDay(staffId: string, now: Date): Promise<AttendanceDay> {
     const day = await this.findOpenDay(staffId, now);
-    if (!day) throw new BadRequestException('Log in before changing status');
-    return day;
+    if (day) return day;
+    const today = await this.prisma.attendanceDay.findUnique({
+      where: { staffId_date: { staffId, date: this.istDate(now) } },
+      select: { loginAt: true, logoutAt: true },
+    });
+    if (today?.loginAt && today.logoutAt) {
+      throw codedError(HttpStatus.BAD_REQUEST, 'DAY_ENDED', 'Your working day has ended: log in before changing status');
+    }
+    throw codedError(HttpStatus.BAD_REQUEST, 'DAY_NOT_STARTED', 'Log in before changing status');
   }
 
   private findOpenDay(staffId: string, now: Date): Promise<AttendanceDay | null> {

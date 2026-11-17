@@ -4,6 +4,7 @@ import { searchEn } from './search.en';
 import { staffPhotoEn } from './staffPhoto.en';
 import { accessEn } from './access.en';
 import { redesignEn } from './redesign.en';
+import { fixes17En } from './fixes17.en';
 /**
  * English — the reference language. Every key here must exist in kn.ts and
  * hi.ts (TypeScript and i18n.test.ts both check). Keys are grouped by the
@@ -20,6 +21,7 @@ export const en = {
   ...staffPhotoEn,
   ...accessEn,
   ...redesignEn,
+  ...fixes17En,
   'common.appName': 'Laboura Field',
   'common.brand': 'Laboura',
   'common.logoHome': 'Laboura — go to Home',
@@ -532,8 +534,10 @@ export const en = {
 } as const;
 
 export type MessageKey = keyof typeof en;
-export type Messages = Record<MessageKey, string>;
+/** Keys added on 17 Nov (fixes17.en.ts): English only, so Kannada and Hindi have no copy (English shows). */
+export type EnglishOnlyKey = keyof typeof fixes17En;
+export type Messages = Record<Exclude<MessageKey, EnglishOnlyKey>, string> & Partial<Record<EnglishOnlyKey, string>>;
 /** Keys added by the Laboura Field redesign (16 Nov): Kannada and English only; Hindi is hidden and falls back to English. */
 export type RedesignKey = keyof typeof redesignEn;
 /** Hindi keeps every key it had; the redesign's new keys are optional (English shows). */
-export type HindiMessages = Record<Exclude<MessageKey, RedesignKey>, string> & Partial<Record<RedesignKey, string>>;
+export type HindiMessages = Record<Exclude<MessageKey, RedesignKey | EnglishOnlyKey>, string> & Partial<Record<RedesignKey | EnglishOnlyKey, string>>;

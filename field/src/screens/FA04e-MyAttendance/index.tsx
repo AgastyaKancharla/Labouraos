@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import type { AttendanceDayRow, MyRequest } from '@/api/endpoints';
@@ -13,6 +13,7 @@ import { formatTimeIst } from '@/lib/format';
 import { routes } from '@/navigation/routes';
 import { colors, fonts, radius, toneAccent, tones, touch } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
+import { DayControls } from '../_attendance/DayControls';
 import { useNow } from '../_selling';
 import { formatDateKey } from '../_visits/format';
 import {
@@ -43,6 +44,7 @@ export default function MyAttendanceScreen() {
   const { t } = useI18n();
   const { session } = useAuth();
   const { myAttendance } = useEndpoints();
+  const client = useQueryClient();
   const now = useNow(60_000);
   const current = todayKeyIst(now).slice(0, 7);
   const [month, setMonth] = useState(current);
@@ -54,6 +56,7 @@ export default function MyAttendanceScreen() {
   const oldest = shiftMonth(current, -MONTHS_BACK);
 
   const refresh = () => {
+    void client.invalidateQueries({ queryKey: queryKeys.attendanceToday });
     void summary.refetch();
     void balance.refetch();
     void requests.refetch();
@@ -63,6 +66,8 @@ export default function MyAttendanceScreen() {
     <View style={styles.flex} testID="screen-FA04e">
       <AppHeader title={t('fa04e.title')} subtitle={session?.staff.name} />
       <Screen onRefresh={refresh} refreshing={summary.isRefetching}>
+        {/* Today's Log in / Log out, the same as on Today (17 Nov). */}
+        <DayControls testID="fa04e-today" />
         <View style={styles.monthRow}>
           <Pressable
             accessibilityRole="button"

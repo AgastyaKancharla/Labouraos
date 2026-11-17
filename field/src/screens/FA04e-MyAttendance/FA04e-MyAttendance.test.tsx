@@ -41,7 +41,41 @@ const requests = [
   { kind: 'leave', id: 'lv-1', status: 'approved', reason: 'Wedding', where: 'decided', routeReason: 'over_limit', createdAt: '2026-11-02T10:00:00Z', decided: { at: '2026-11-02T11:00:00Z', by: { ...ravi, name: 'Priya Sharma', role: 'manager' }, role: 'manager', reason: 'Busy week' }, leaveKind: 'casual', fromDate: '2026-11-23', toDate: '2026-11-27', days: 5, approvedFromDate: '2026-11-23', approvedToDate: '2026-11-25', approvedDays: 3 },
 ];
 
+const notLoggedIn = {
+  date: '2026-11-09', status: null, loginAt: null, logoutAt: null, lateMinutes: 0, productionSeconds: 0, breakSeconds: 0, idleSeconds: 0,
+  shortfallSeconds: 28800, clocks: { shiftStart: '09:30', shiftEnd: '18:30', now: '2026-11-09T03:54:00Z' }, flagged: false, closedReason: null, dayType: 'open',
+};
+
 describe('FA04e My attendance', () => {
+  it('has Log in, then Log out for today, the same as Today (17 Nov)', async () => {
+    let today: Record<string, unknown> = notLoggedIn;
+    const { route } = routeTable({ '/attendance/month': month, '/attendance/leave/balance': balance, '/attendance/requests/mine': requests });
+    await renderWithApp(<MyAttendanceScreen />, {
+      signedInAs: kiran,
+      route: (url, init) => {
+        if (url.endsWith('/attendance/today')) return { status: 200, body: today };
+        if (url.endsWith('/attendance/login')) {
+          today = { ...notLoggedIn, loginAt: '2026-11-09T03:42:00Z', status: 'available' };
+          return { status: 200, body: today };
+        }
+        if (url.endsWith('/attendance/logout')) {
+          today = { ...today, logoutAt: '2026-11-09T12:40:00Z', status: null };
+          return { status: 200, body: today };
+        }
+        return route(url, init);
+      },
+    });
+    await waitFor(() => screen.getByTestId('fa04e-today-login'));
+    expect(screen.getByTestId('fa04e-today-login')).toHaveTextContent('Log in');
+    await fireEvent.press(screen.getByTestId('fa04e-today-login'));
+    await waitFor(() => screen.getByTestId('fa04e-today-logout'));
+    expect(screen.getByTestId('fa04e-today-logged-in')).toHaveTextContent(/Logged in at 9:12 AM/);
+    await fireEvent.press(screen.getByTestId('fa04e-today-logout'));
+    await fireEvent.press(screen.getByTestId('fa04e-today-logout-confirm'));
+    await waitFor(() => screen.getByTestId('fa04e-today-ended'));
+    expect(screen.queryByTestId('fa04e-today-login')).toBeNull();
+  });
+
   it('shows the month, make-up owed, leave left, my requests with where they are, and each day with what it counts as', async () => {
     const { route, calls } = routeTable({ '/attendance/month': month, '/attendance/leave/balance': balance, '/attendance/requests/mine': requests });
     await renderWithApp(<MyAttendanceScreen />, { signedInAs: kiran, route });

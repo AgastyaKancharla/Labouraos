@@ -4,6 +4,7 @@ import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { createMemoryStore } from '@/lib/storage';
 import { en } from './en';
 import { redesignEn } from './redesign.en';
+import { fixes17En } from './fixes17.en';
 import { hi } from './hi';
 import { I18nProvider, useI18n } from './I18nProvider';
 import { kn } from './kn';
@@ -13,19 +14,23 @@ const placeholders = (s: string) => (s.match(/\{\w+\}/g) ?? []).sort();
 
 /** Keys added by the redesign (16 Nov): Laboura Field requires English and Kannada; Hindi is optional (hidden, English shows). */
 const REDESIGN_KEYS = new Set(Object.keys(redesignEn));
+/** Keys added on 17 Nov: English only (the software is English only from 17 Nov), so kn and hi have none. */
+const ENGLISH_ONLY_KEYS = new Set(Object.keys(fixes17En));
 
 describe('translations', () => {
   it('kn has exactly the English keys, none empty, with the same {slots}', () => {
-    expect(Object.keys(kn).sort()).toEqual(Object.keys(en).sort());
-    for (const key of Object.keys(en) as (keyof typeof en)[]) {
-      expect(kn[key].trim()).not.toBe('');
-      expect(placeholders(kn[key])).toEqual(placeholders(en[key]));
+    const knMessages = kn as Record<string, string>;
+    const enKeys = Object.keys(en).filter((k) => !ENGLISH_ONLY_KEYS.has(k));
+    expect(Object.keys(kn).sort()).toEqual(enKeys.sort());
+    for (const key of enKeys as (keyof typeof en)[]) {
+      expect(knMessages[key].trim()).not.toBe('');
+      expect(placeholders(knMessages[key])).toEqual(placeholders(en[key]));
     }
   });
 
   it('hi keeps every key it had (the redesign keys are optional), none empty, with the same {slots}', () => {
     const hiMessages = hi as Record<string, string | undefined>;
-    const required = Object.keys(en).filter((k) => !REDESIGN_KEYS.has(k));
+    const required = Object.keys(en).filter((k) => !REDESIGN_KEYS.has(k) && !ENGLISH_ONLY_KEYS.has(k));
     expect(required.filter((k) => !(k in hiMessages))).toEqual([]);
     expect(Object.keys(hiMessages).filter((k) => !(k in en))).toEqual([]);
     for (const key of Object.keys(hiMessages) as (keyof typeof en)[]) {

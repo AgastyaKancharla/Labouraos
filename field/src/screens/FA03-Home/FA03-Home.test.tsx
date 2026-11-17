@@ -195,7 +195,7 @@ describe('FA03 Today', () => {
     expect(screen.getByTestId('attendance-error')).not.toHaveTextContent(/set automatically/);
   });
 
-  it('End my day asks first, then logs the day out', async () => {
+  it('Log out asks first, then ends the day: no Log in again today (17 Nov)', async () => {
     let ended = false;
     await renderWithApp(<HomeScreen />, {
       signedInAs: kiran,
@@ -207,13 +207,56 @@ describe('FA03 Today', () => {
         return undefined;
       }),
     });
-    await waitFor(() => screen.getByTestId('attendance-end'));
-    await fireEvent.press(screen.getByTestId('attendance-end'));
+    await waitFor(() => screen.getByTestId('attendance-logout'));
+    expect(screen.getByTestId('attendance-logout')).toHaveTextContent('Log out');
+    await fireEvent.press(screen.getByTestId('attendance-logout'));
     expect(ended).toBe(false);
-    await fireEvent.press(screen.getByTestId('attendance-end-confirm'));
+    await fireEvent.press(screen.getByTestId('attendance-logout-confirm'));
     await waitFor(() => screen.getByTestId('attendance-ended'));
     expect(ended).toBe(true);
-    expect(screen.getByTestId('attendance-ended')).toHaveTextContent(/6:30 PM/);
+    expect(screen.getByTestId('attendance-ended')).toHaveTextContent(/Logged in 9:12 AM · logged out 6:30 PM.*log in again tomorrow/);
+    expect(screen.queryByTestId('attendance-login')).toBeNull();
+    expect(screen.queryByTestId('attendance-status')).toBeNull();
+  });
+
+  it('the Log in button says Log in, and a second Log in on an ended day shows the day, not an error', async () => {
+    let closed = false;
+    await renderWithApp(<HomeScreen />, {
+      signedInAs: kiran,
+      route: (url) => {
+        if (url.endsWith('/attendance/today')) return { status: 200, body: closed ? { ...loggedIn, logoutAt: '2026-11-09T08:00:00Z' } : notLoggedIn };
+        if (url.endsWith('/attendance/login')) {
+          closed = true;
+          return { status: 400, body: { statusCode: 400, message: 'This day is already closed', details: { code: 'DAY_ALREADY_ENDED' } } };
+        }
+        return undefined;
+      },
+    });
+    await waitFor(() => screen.getByTestId('attendance-login'));
+    expect(screen.getByTestId('attendance-login')).toHaveTextContent('Log in');
+    await fireEvent.press(screen.getByTestId('attendance-login'));
+    await waitFor(() => screen.getByTestId('attendance-ended'));
+    expect(screen.queryByTestId('attendance-login-error')).toBeNull();
+  });
+
+  it('Log out refused because the day already ended elsewhere shows the ended day, never an error', async () => {
+    let closed = false;
+    await renderWithApp(<HomeScreen />, {
+      signedInAs: kiran,
+      route: (url) => {
+        if (url.endsWith('/attendance/today')) return { status: 200, body: closed ? { ...loggedIn, logoutAt: '2026-11-09T08:00:00Z' } : loggedIn };
+        if (url.endsWith('/attendance/logout')) {
+          closed = true;
+          return { status: 400, body: { statusCode: 400, message: 'Log in before logging out', details: { code: 'DAY_NOT_STARTED' } } };
+        }
+        return undefined;
+      },
+    });
+    await waitFor(() => screen.getByTestId('attendance-logout'));
+    await fireEvent.press(screen.getByTestId('attendance-logout'));
+    await fireEvent.press(screen.getByTestId('attendance-logout-confirm'));
+    await waitFor(() => screen.getByTestId('attendance-ended'));
+    expect(screen.queryByTestId('attendance-error')).toBeNull();
   });
 
   it('shows "Saved on phone, sends when signal returns" with the photo count', async () => {

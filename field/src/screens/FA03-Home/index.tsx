@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Modal, Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useI18n, type MessageKey } from '@/i18n';
 import {
   Banner, Button, Card, EmptyState, ErrorState, HeroCard, HeroPill, Icon, IconTile, ListRow, LoadingState, ProgressBar, Screen, SearchBar,
@@ -11,30 +11,18 @@ import { useAuth } from '@/auth/AuthProvider';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { useOfflineQueue } from '@/device/offline-queue';
-import { LOCATION_ERROR_KEYS } from '@/device/location/useLocation';
-import type { AttendanceToday, NeedsItem, TodayView } from '@/api/endpoints';
+import type { NeedsItem, TodayView } from '@/api/endpoints';
 import type { DayKind } from '../_visits/DayWork';
-import { formatDayIst, formatStampIst, formatShiftTime, formatTimeIst } from '@/lib/format';
+import { formatDayIst, formatStampIst, formatTimeIst } from '@/lib/format';
 import { pageRoutes, routes, sellingRoutes } from '@/navigation/routes';
-import { type Accent, colors, fonts, fontSize, radius, touch } from '@/theme';
+import { type Accent, colors, fonts, fontSize } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
-import { ChoiceList } from '../_visits/ChoiceList';
 import { formatDateKey } from '../_visits/format';
-import { isLocationError, useAttendanceLogin, useAttendanceToday } from './useHome';
+import { useAttendanceToday } from './useHome';
+import { DayControls } from '../_attendance/DayControls';
 import { needsTarget } from './needsTarget';
-import { attendanceErrorText, isPickableStatus, PICKABLE_STATUSES, statusLabel, type PickableStatus } from '@/lib/status';
 
-/** The statuses the agent taps to change: exactly the ones a person may pick (fix list A2, lib/status). */
-export const STATUS_CHOICES = PICKABLE_STATUSES;
-const STATUS_ICON: Record<PickableStatus, { icon: IconName; accent: Accent }> = {
-  available: { icon: 'check', accent: 'green' },
-  team_meeting: { icon: 'users', accent: 'cyan' },
-  training: { icon: 'document', accent: 'royal' },
-  one_to_one: { icon: 'user', accent: 'navy' },
-  system_problem: { icon: 'wifi-off', accent: 'red' },
-  short_break: { icon: 'clock', accent: 'orange' },
-  lunch: { icon: 'clock', accent: 'gold' },
-};
+export { STATUS_CHOICES } from '../_attendance/DayControls';
 
 /** Today's numbers: each opens Today's work filtered on what it counts. */
 const NUMBERS: { key: keyof TodayView['numbers']; label: MessageKey; accent: Accent; kind: DayKind }[] = [
@@ -58,9 +46,9 @@ const NEEDS_LOOK: Record<NeedsItem['kind'], { icon: IconName; accent: Accent }> 
 };
 
 /**
- * FA03 — Today, the first tab (redesign, 16 Nov): the attendance bar (login
- * time, on time or late, the current status — tap to change — and End my
- * day); today's numbers, each opening Today's work; a small targets bar; the
+ * FA03 — Today, the first tab (redesign, 16 Nov): Log in / Log out and the
+ * status (DayControls, 17 Nov: login time, on time or late, the current
+ * status — tap to change — and Log out, which ends the day); today's numbers, each opening Today's work; a small targets bar; the
  * quick buttons; and Needs you now: one list of everything waiting on the
  * agent, each opening the exact step of its job.
  *
@@ -74,7 +62,6 @@ export default function TodayScreen() {
   const { redesign } = useEndpoints();
   const attendance = useAttendanceToday();
   const today = useQuery<TodayView>({ queryKey: queryKeys.today, queryFn: () => redesign.today(), enabled: session?.staff.role === 'field_agent' });
-  const login = useAttendanceLogin();
   const queue = useOfflineQueue();
 
   const [openedAt] = useState(() => Date.now());
@@ -89,12 +76,6 @@ export default function TodayScreen() {
     void today.refetch();
     void queue.flush();
   }
-
-  const loginErrorMessage = login.error
-    ? isLocationError(login.error)
-      ? `${t('fa03.loginNeedsLocation')} ${t(LOCATION_ERROR_KEYS[login.error.code])}`
-      : attendanceErrorText(login.error, 'today.loginFailed', t)
-    : null;
 
   return (
     <View style={styles.flex}>
@@ -111,36 +92,7 @@ export default function TodayScreen() {
           />
         ) : null}
 
-        {attendance.isPending ? (
-          <LoadingState compact />
-        ) : attendance.isError ? (
-          <ErrorState error={attendance.error} onRetry={() => void attendance.refetch()} compact />
-        ) : !attendance.data.loginAt ? (
-          <Banner
-            tone="warn"
-            icon="clock"
-            title={t('fa03.notLoggedIn')}
-            message={t('fa03.shift', {
-              start: formatShiftTime(attendance.data.clocks.shiftStart),
-              end: formatShiftTime(attendance.data.clocks.shiftEnd),
-            })}
-            testID="attendance-not-logged-in"
-            action={
-              <Button
-                label={login.isPending ? t('fa03.loggingIn') : t('fa03.login')}
-                variant="success"
-                loading={login.isPending}
-                onPress={() => login.mutate()}
-                testID="attendance-login"
-              />
-            }
-          />
-        ) : attendance.data.logoutAt ? (
-          <Banner tone="info" icon="clock" title={t('fa03.dayEndedAt', { time: formatTimeIst(attendance.data.logoutAt) })} testID="attendance-ended" />
-        ) : (
-          <AttendanceBar day={attendance.data} />
-        )}
-        {loginErrorMessage ? <Banner tone="error" message={loginErrorMessage} testID="attendance-login-error" /> : null}
+        <DayControls />
 
         <SearchBar onPress={() => router.push(routes.search)} />
 
@@ -208,73 +160,6 @@ export default function TodayScreen() {
   );
 }
 
-/** Logged in at …, on time or late, the status chip (tap to change) and End my day. */
-function AttendanceBar({ day }: { day: AttendanceToday }) {
-  const { t } = useI18n();
-  const { attendance } = useEndpoints();
-  const client = useQueryClient();
-  const [picking, setPicking] = useState(false);
-  const [ending, setEnding] = useState(false);
-  const after = (data: AttendanceToday) => {
-    client.setQueryData(queryKeys.attendanceToday, data);
-    void client.invalidateQueries({ queryKey: ['field-work'] });
-  };
-  const change = useMutation<AttendanceToday, Error, string>({ mutationFn: (status) => attendance.setStatus(status), onSuccess: after });
-  const end = useMutation<AttendanceToday, Error>({ mutationFn: () => attendance.logout(), onSuccess: (d) => (after(d), setEnding(false)) });
-  const status = day.status;
-  return (
-    <View style={styles.bar} testID="attendance-logged-in">
-      <View style={styles.barTop}>
-        <IconTile icon="clock" accent="green" size={34} />
-        <View style={styles.flex1}>
-          <Text variant="bodyStrong">{t('fa03.loggedInAt', { time: formatTimeIst(day.loginAt!) })}</Text>
-          <Text variant="small" color={day.lateMinutes > 0 ? colors.tomato : colors.greenText}>
-            {day.lateMinutes > 0 ? t('fa03.lateBy', { minutes: day.lateMinutes }) : t('fa03.onTime')}
-          </Text>
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t('today.changeStatus')}
-          onPress={() => setPicking(true)}
-          style={styles.statusTap}
-          testID="attendance-status"
-        >
-          <StatusChip label={status ? statusLabel(status, t) : t('today.pickStatus')} tone="green" dot />
-          <Icon name="chevron-right" size={14} color={colors.greenText} />
-        </Pressable>
-      </View>
-      <Button label={t('today.endDay')} variant="secondary" onPress={() => setEnding(true)} testID="attendance-end" />
-      {change.error || end.error ? (
-        <Banner
-          tone="error"
-          message={change.error ? attendanceErrorText(change.error, 'today.statusFailed', t)! : attendanceErrorText(end.error, 'today.endDayFailed', t)!}
-          testID="attendance-error"
-        />
-      ) : null}
-
-      <Sheet open={picking} onClose={() => setPicking(false)} title={t('today.changeStatus')}>
-        {status && !isPickableStatus(status) ? (
-          <Text variant="muted" testID="status-automatic">{t('today.statusAutomatic', { status: statusLabel(status, t) })}</Text>
-        ) : null}
-        <ChoiceList
-          choices={STATUS_CHOICES.map((s) => ({ value: s, label: statusLabel(s, t), ...STATUS_ICON[s] }))}
-          value={isPickableStatus(status) ? status : null}
-          onChange={(s) => {
-            setPicking(false);
-            if (s !== status) change.mutate(s);
-          }}
-          testID="status-choice"
-        />
-      </Sheet>
-      <Sheet open={ending} onClose={() => setEnding(false)} title={t('today.endDayTitle')}>
-        <Text variant="muted">{t('today.endDayBody')}</Text>
-        <Button label={t('today.endDay')} variant="danger" loading={end.isPending} onPress={() => end.mutate()} testID="attendance-end-confirm" />
-        <Button label={t('common.cancel')} variant="secondary" onPress={() => setEnding(false)} />
-      </Sheet>
-    </View>
-  );
-}
-
 /** One item of Needs you now: what it is (in the agent's language), when, and where it opens. */
 function NeedsRow({ item, last }: { item: NeedsItem; last: boolean }) {
   const { t } = useI18n();
@@ -318,20 +203,6 @@ function NeedsRow({ item, last }: { item: NeedsItem; last: boolean }) {
   );
 }
 
-/** A bottom sheet with a title. */
-function Sheet({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode }) {
-  return (
-    <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={() => undefined}>
-          <Text variant="h2">{title}</Text>
-          {children}
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-}
-
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
   flex1: { flex: 1 },
@@ -342,9 +213,4 @@ const styles = StyleSheet.create({
   targetsHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   onBlueLabel: { fontFamily: fonts.body700, fontSize: fontSize.label, letterSpacing: 0.6, textTransform: 'uppercase', color: colors.onBlueSoft, flex: 1 },
   onBlueStrong: { fontFamily: fonts.display700, fontSize: 18, color: colors.white, fontVariant: ['tabular-nums'] },
-  bar: { gap: 10, padding: 12, borderRadius: radius.card, backgroundColor: colors.green100, borderLeftWidth: 4, borderLeftColor: colors.green },
-  barTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  statusTap: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: touch.min, paddingLeft: 6 },
-  backdrop: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },
-  sheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.card, borderTopRightRadius: radius.card, padding: 16, paddingBottom: 32, gap: 12 },
 });
