@@ -17,7 +17,7 @@ import { useClock, useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { errorDetail, findTrade, useTrades, type BusinessHit } from '../_registration/api';
 import { choiceOptions, DraftNote, SectionHead } from '../_registration/kit';
-import { EXPERIENCE_NEEDED, HEADCOUNTS, OTHER_TRADE, VACANCY_EXTRAS, VACANCY_SHIFTS, WEEKLY_OFF } from '../_registration/options';
+import { EXPERIENCE_NEEDED, HEADCOUNTS, OTHER_TRADE, VACANCY_EXTRAS, WEEKLY_OFF } from '../_registration/options';
 import { isAboveMarket, isBelowLegalMinimum } from '../_registration/salary';
 import { useDraft } from '../_registration/useDraft';
 import { draftPatchBody, vacancyBody, vacancyErrors, EMPTY_VACANCY, type VacancyForm } from './payload';
@@ -169,7 +169,7 @@ export default function AddVacancy() {
         <fieldset className="sec">
           <SectionHead title={t('reg.vac.whatNeeded')} />
           <div className="fg">
-            <BusinessPicker value={form.business} onChange={(b) => setForm((f) => ({ ...f, business: b, branchId: '' }))} error={err('business')} locked={Boolean(draftId)} />
+            <BusinessPicker value={form.business} onChange={(b) => setForm((f) => ({ ...f, business: b, branchId: '', businessShiftId: '' }))} error={err('business')} locked={Boolean(draftId)} />
             {form.business && form.business.branches.length > 0 && (
               <SelectField
                 label={t('reg.vac.branch')}
@@ -224,7 +224,13 @@ export default function AddVacancy() {
         <fieldset className="sec">
           <SectionHead title={t('reg.vac.hours')} />
           <div className="fg">
-            <SelectField label={t('reg.js.shift')} required value={form.shift} onChange={(v) => set('shift', v)} options={choiceOptions(t, VACANCY_SHIFTS)} error={err('shift')} />
+            <BusinessShiftField
+              businessId={form.business?.id ?? null}
+              value={form.businessShiftId}
+              oldShift={form.shift}
+              onPick={(shift) => setForm((f) => ({ ...f, businessShiftId: shift.id, startsAt: f.startsAt || shift.startTime, endsAt: f.endsAt || shift.endTime }))}
+              error={err('shift')}
+            />
             <TimeField label={t('reg.vac.starts')} value={form.startsAt} onChange={(v) => set('startsAt', v)} required error={err('startsAt')} />
             <TimeField label={t('reg.vac.ends')} value={form.endsAt} onChange={(v) => set('endsAt', v)} required error={err('endsAt')} />
             <SelectField label={t('reg.vac.weeklyOff')} required value={form.weeklyOff} onChange={(v) => set('weeklyOff', v)} options={choiceOptions(t, WEEKLY_OFF)} error={err('weeklyOff')} />
@@ -305,6 +311,100 @@ export default function AddVacancy() {
           <span className="sub">{t('reg.vac.saveNote')}</span>
         </div>
       </Card>
+    </div>
+  );
+}
+
+interface BusinessShift {
+  id: string;
+  name: string;
+  startTime: string;
+  endTime: string;
+  label: string;
+  category: 'day' | 'night';
+}
+
+const ADD_SHIFT = '__add__';
+
+/**
+ * The vacancy's shift (17 Nov): one of the business's own shifts, or add one
+ * here. Picking one fills the working hours when they are empty.
+ */
+function BusinessShiftField({ businessId, value, oldShift, onPick, error }: {
+  businessId: string | null;
+  value: string;
+  oldShift: string;
+  onPick: (shift: BusinessShift) => void;
+  error?: string;
+}) {
+  const t = useT();
+  const shifts = useQuery({
+    queryKey: ['businesses', businessId, 'shifts'],
+    queryFn: () => api.get<BusinessShift[]>(`/businesses/${encodeURIComponent(businessId!)}/shifts`),
+    enabled: Boolean(businessId),
+  });
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState('');
+  const [start, setStart] = useState('');
+  const [end, setEnd] = useState('');
+  const [problem, setProblem] = useState<string | null>(null);
+  const add = useMutation({
+    mutationFn: () => api.post<BusinessShift>(`/businesses/${encodeURIComponent(businessId!)}/shifts`, { name: name.trim(), startTime: start, endTime: end }),
+    onSuccess: (shift) => {
+      void shifts.refetch();
+      setAdding(false);
+      setName('');
+      setStart('');
+      setEnd('');
+      setProblem(null);
+      onPick(shift);
+    },
+    onError: (e) => setProblem(isApiError(e) ? e.message : t('error.server')),
+  });
+  if (!businessId) {
+    return <SelectField label={t('reg.vac.shiftPick')} required value="" onChange={() => undefined} options={[]} placeholder={t('reg.vac.shiftPickFirst')} disabled error={error} />;
+  }
+  const list = shifts.data ?? [];
+  const showForm = adding || (shifts.isSuccess && list.length === 0);
+  return (
+    <div className="reg-full">
+      {list.length > 0 && (
+        <SelectField
+          label={t('reg.vac.shiftPick')}
+          required
+          value={value}
+          onChange={(v) => {
+            if (v === ADD_SHIFT) return setAdding(true);
+            const picked = list.find((s) => s.id === v);
+            if (picked) onPick(picked);
+          }}
+          options={[...list.map((s) => ({ value: s.id, label: s.label })), { value: ADD_SHIFT, label: t('reg.vac.shiftAddOption') }]}
+          hint={oldShift && !value ? t('reg.vac.shiftOld', { shift: oldShift }) : undefined}
+          error={showForm ? undefined : error}
+          data-testid="vacancy-shift"
+        />
+      )}
+      {shifts.isSuccess && list.length === 0 && <p className="sub" data-testid="vacancy-shift-none">{t('reg.vac.shiftNone')}</p>}
+      {showForm && (
+        <div className="fg" data-testid="vacancy-shift-add">
+          <TextField label={t('reg.vac.shiftName')} value={name} onChange={setName} maxLength={40} required />
+          <TimeField label={t('reg.vac.shiftStarts')} value={start} onChange={setStart} required />
+          <TimeField label={t('reg.vac.shiftEnds')} value={end} onChange={setEnd} required />
+          <div className="fld">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                if (!name.trim() || !start || !end || start === end) return setProblem(t('reg.vac.shiftInvalid'));
+                add.mutate();
+              }}
+              disabled={add.isPending}
+            >
+              {t('reg.vac.shiftSave')}
+            </Button>
+          </div>
+          {(problem || (showForm && error)) && <div className="warn" role="alert">{problem ?? error}</div>}
+        </div>
+      )}
     </div>
   );
 }

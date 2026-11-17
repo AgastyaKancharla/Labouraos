@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { en } from './en';
+import { fixes17En } from './fixes17';
 import { hi } from './hi';
 import { I18nProvider, interpolate, translate, useT } from './I18nProvider';
 import { kn } from './kn';
@@ -9,15 +10,19 @@ import { LanguageSwitcher } from './LanguageSwitcher';
 
 describe('i18n', () => {
   it('Kannada and Hindi have exactly the English keys and placeholders', () => {
-    const keys = Object.keys(en).sort();
+    // Keys added on 17 Nov are English only (the software is English only from 17 Nov).
+    const englishOnly = new Set(Object.keys(fixes17En));
+    const keys = Object.keys(en).filter((k) => !englishOnly.has(k)).sort();
+    const knAll = kn as Record<string, string>;
+    const hiAll = hi as Record<string, string>;
     expect(Object.keys(kn).sort()).toEqual(keys);
     expect(Object.keys(hi).sort()).toEqual(keys);
     const vars = (s: string) => (s.match(/\{\w+\}/g) ?? []).sort();
     for (const key of keys as (keyof typeof en)[]) {
-      expect(vars(kn[key]), `kn ${key}`).toEqual(vars(en[key]));
-      expect(vars(hi[key]), `hi ${key}`).toEqual(vars(en[key]));
-      expect(kn[key].trim(), `kn ${key}`).not.toBe('');
-      expect(hi[key].trim(), `hi ${key}`).not.toBe('');
+      expect(vars(knAll[key]), `kn ${key}`).toEqual(vars(en[key]));
+      expect(vars(hiAll[key]), `hi ${key}`).toEqual(vars(en[key]));
+      expect(knAll[key].trim(), `kn ${key}`).not.toBe('');
+      expect(hiAll[key].trim(), `hi ${key}`).not.toBe('');
     }
   });
 

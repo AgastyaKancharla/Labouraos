@@ -17,6 +17,7 @@ import { AppHeader } from '../_shared/AppHeader';
 import { istDateKey, minutesOf } from '../_visits/format';
 import { outcomeKey, verificationKey } from '../_visits/labels';
 import { VacancyStep } from '../_business/VacancyStep';
+import { ShiftsCard } from '../_business/Shifts';
 
 const HIDDEN_KEYS: Record<string, MessageKey> = {
   suspended: 'biz.hidden.suspended',
@@ -128,6 +129,8 @@ function Page({ b }: { b: BusinessPage }) {
           <Button label={t('fa03.addVacancy')} variant="secondary" onPress={() => router.push(sr.addVacancy(b.id))} testID="fa08-vacancy" />
         ) : null}
       </Card>
+
+      <ShiftsCard businessId={b.id} canEdit={b.canAct} />
 
       <Card title={t('biz.candidates')} icon="users" accent="cyan" testID="fa08-candidates">
         {!b.status.canShowCandidates && b.status.candidatesHiddenReason ? (

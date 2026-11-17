@@ -22,7 +22,7 @@ export function fakeApi(overrides: Partial<CustomerApi> = {}): jest.Mocked<Custo
   const names: (keyof CustomerApi)[] = [
     'config', 'sendSignInOtp', 'verifySignInOtp', 'signInWithGoogle', 'signInWithApple', 'signOut', 'me', 'updateMe', 'setLastProfile',
     'sendPhoneOtp', 'verifyPhoneOtp', 'sendStepUp', 'startSignup', 'formOptions', 'ageCheck', 'registerJobSeeker', 'registerBusiness',
-    'registerReferralPartner', 'sheetLink', 'home', 'createVacancy', 'confirmVacancy', 'requestCallback', 'deletionInfo', 'requestDeletion',
+    'registerReferralPartner', 'sheetLink', 'home', 'shifts', 'addShift', 'removeShift', 'createVacancy', 'confirmVacancy', 'requestCallback', 'deletionInfo', 'requestDeletion',
   ];
   const api = Object.fromEntries(names.map((n) => [n, unexpected(n)])) as unknown as jest.Mocked<CustomerApi>;
   // Harmless defaults most screens touch.

@@ -139,8 +139,8 @@ describe('the real API calls', () => {
       'POST /me/profiles/p-3/vacancy-drafts/d-9/confirm': { status: 201, body: { vacancy: { code: 'VC-9', status: 'open' } } },
       'POST /me/deletion': { status: 201, body: { id: 'del', status: 'requested' } },
     });
-    const draft = await api.createVacancy('p-3', { trade: 'Helper', roleTitle: null, openings: 2, salaryMinPaise: 2_000_000, salaryMaxPaise: null, salaryPeriod: 'monthly', shift: 'day', startDate: '2026-12-01', description: '', legalMinimumAcknowledged: true });
-    expect(calls[0].body).toEqual({ form: { tradeSkill: 'Helper', headcount: 2, salaryMinPaise: 2_000_000, salaryPeriod: 'monthly', shift: 'day', startDate: '2026-12-01', ownerToldMinimumWage: true } });
+    const draft = await api.createVacancy('p-3', { trade: 'Helper', roleTitle: null, openings: 2, salaryMinPaise: 2_000_000, salaryMaxPaise: null, salaryPeriod: 'monthly', businessShiftId: 'sh-1', startDate: '2026-12-01', description: '', legalMinimumAcknowledged: true });
+    expect(calls[0].body).toEqual({ form: { tradeSkill: 'Helper', headcount: 2, salaryMinPaise: 2_000_000, salaryPeriod: 'monthly', businessShiftId: 'sh-1', startDate: '2026-12-01', ownerToldMinimumWage: true } });
     expect(draft).toMatchObject({ id: 'd-9', belowLegalMinimum: true, legalMinimumPaise: 2340000 });
     const confirmed = await api.confirmVacancy('p-3', 'd-9', { otp: { requestId: 'otp_v', code: '123456' }, ownerToldMinimumWage: true });
     expect(calls[1].body).toEqual({ purpose: 'confirm_vacancy', requestId: 'otp_v', code: '123456' });
@@ -149,6 +149,20 @@ describe('the real API calls', () => {
     await api.requestDeletion({ otp: { requestId: 'otp_d', code: '654321' }, acceptGuaranteeLoss: true });
     expect(calls[3].body).toEqual({ purpose: 'delete_account', requestId: 'otp_d', code: '654321' });
     expect(calls[4].body).toEqual({ refundLossAcknowledged: true });
+  });
+
+  it('17 Nov: the business\'s shifts — list, add, remove on my own profile', async () => {
+    const shift = { id: 'sh-1', name: 'Morning', startTime: '07:00', endTime: '15:00', label: 'Morning 07:00–15:00', category: 'day' };
+    const { api, calls } = live({
+      'GET /me/profiles/p-3/shifts': { body: { shifts: [shift] } },
+      'POST /me/profiles/p-3/shifts': { status: 201, body: shift },
+      'DELETE /me/profiles/p-3/shifts/sh-1': { status: 204 },
+    });
+    expect(await api.shifts('p-3')).toEqual([shift]);
+    expect(await api.addShift('p-3', { name: 'Morning', startTime: '07:00', endTime: '15:00' })).toEqual(shift);
+    expect(calls[1].body).toEqual({ name: 'Morning', startTime: '07:00', endTime: '15:00' });
+    await api.removeShift('p-3', 'sh-1');
+    expect(calls.map((c) => `${c.method} ${new URL(c.url).pathname.replace('/customer-api/v1', '')}`)).toEqual(['GET /me/profiles/p-3/shifts', 'POST /me/profiles/p-3/shifts', 'DELETE /me/profiles/p-3/shifts/sh-1']);
   });
 
   it('links, home and callback paths name only my own profile ids', async () => {

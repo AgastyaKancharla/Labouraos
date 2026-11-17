@@ -16,13 +16,14 @@ import { clearDraft, useDraft } from '@/lib/drafts';
 import { rupees } from '@/lib/money';
 import { routes } from '@/navigation/routes';
 import { OtpCodeCard } from '../shared/OtpCodeCard';
-import { shiftChoices } from '../shared/choices';
+import { AddShiftForm, useShifts } from '../shared/Shifts';
 import { belowLegalMinimum, emptyVacancy, toVacancyDraft, validateVacancy, type VacancyErrors } from './form';
 
 type Step = 'form' | 'otp' | 'done';
 
 /**
- * Add a vacancy (proposal 2.2, C8): saved as a DRAFT, then confirmed by the
+ * Add a vacancy (proposal 2.2, C8): the shift is one of the business's own
+ * shifts (17 Nov; add one right here). Saved as a DRAFT, then confirmed by the
  * contact person's fresh OTP — the same proof as an agent's vacancy. Below
  * the legal minimum wage is allowed but warned, with a tick. No age or
  * gender requirements in the app form (only where legally allowed and
@@ -229,7 +230,7 @@ export default function AddVacancy() {
                 ) : null}
               </View>
             ) : null}
-            <SelectField label={t('form.shift')} value={form.shift} choices={shiftChoices(t)} onChange={(v) => set('shift', v)} required error={err('shift')} testID="vacancy-shift" />
+            <ShiftPicker profileId={profileId} value={form.businessShiftId} onChange={(id) => set('businessShiftId', id)} error={err('businessShiftId')} />
             <DateField label={t('vacancy.startDate')} value={form.startDate} onChange={(v) => set('startDate', v)} min={today} max={addDays(today, 180)} required error={err('startDate')} testID="vacancy-start" />
             <TextField label={t('vacancy.description')} value={form.description} onChangeText={(v) => set('description', v)} multiline numberOfLines={3} testID="vacancy-description" />
           </View>
@@ -239,6 +240,47 @@ export default function AddVacancy() {
         {problem ? <Banner tone="error" message={problem} /> : null}
         <Button label={t('vacancy.saveDraft')} onPress={() => void saveDraft()} loading={busy} testID="vacancy-save" />
       </Screen>
+    </View>
+  );
+}
+
+const ADD_SHIFT = '__add__';
+
+/** The vacancy's shift: one of the business's own shifts, or add one here (17 Nov). */
+function ShiftPicker({ profileId, value, onChange, error }: { profileId: string; value: string; onChange: (id: string) => void; error: string | null }) {
+  const { t } = useI18n();
+  const shifts = useShifts(profileId);
+  const list = shifts.data ?? [];
+  const [adding, setAdding] = useState(false);
+  const showForm = adding || (shifts.isSuccess && list.length === 0);
+  return (
+    <View style={styles.gap} testID="vacancy-shift-picker">
+      {list.length > 0 ? (
+        <SelectField
+          label={t('shifts.pick')}
+          value={value}
+          choices={[...list.map((s) => ({ value: s.id, label: s.label })), { value: ADD_SHIFT, label: t('shifts.addHere') }]}
+          onChange={(v) => (v === ADD_SHIFT ? setAdding(true) : onChange(v))}
+          required
+          error={showForm ? null : error}
+          testID="vacancy-shift"
+        />
+      ) : (
+        <Text variant="small">{t('shifts.pick')} *</Text>
+      )}
+      {shifts.isSuccess && list.length === 0 ? <Text variant="muted">{t('shifts.none')}</Text> : null}
+      {showForm ? (
+        <AddShiftForm
+          profileId={profileId}
+          onAdded={(shift) => {
+            onChange(shift.id);
+            setAdding(false);
+          }}
+          onCancel={list.length > 0 ? () => setAdding(false) : undefined}
+          testID="vacancy-add-shift"
+        />
+      ) : null}
+      {showForm && error ? <Text variant="small" style={styles.errorText}>{error}</Text> : null}
     </View>
   );
 }

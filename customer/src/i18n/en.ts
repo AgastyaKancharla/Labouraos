@@ -7,7 +7,10 @@
  * Written for people who read little: short sentences, everyday words.
  * Notification wording is Agent C's (customer/src/push/), not here.
  */
+import { fixes17En } from './fixes17.en';
+
 export const en = {
+  ...fixes17En,
   'common.brand': 'Laboura',
   'common.back': 'Back',
   'common.retry': 'Try again',
@@ -534,4 +537,6 @@ export const en = {
 } as const;
 
 export type MessageKey = keyof typeof en;
-export type Messages = Record<MessageKey, string>;
+/** Keys added on 17 Nov (fixes17.en.ts): English only, so Kannada and Hindi have no copy (English shows). */
+export type EnglishOnlyKey = keyof typeof fixes17En;
+export type Messages = Record<Exclude<MessageKey, EnglishOnlyKey>, string> & Partial<Record<EnglishOnlyKey, string>>;

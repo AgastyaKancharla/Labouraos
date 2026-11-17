@@ -6,6 +6,7 @@ import type { ApiClient } from './client';
 import type { CustomerApi } from './customerApi';
 import { isApiError } from './errors';
 import type {
+  BusinessShift,
   AppConfig,
   AuthResult,
   BusinessHome,
@@ -516,6 +517,11 @@ export function liveCustomerApi(api: ApiClient, options: Options = {}): Customer
       return api.post<{ version: string }>(`${profilePath(profileId)}/legal/accept`, { purposes, language, textHash });
     },
 
+    shifts: async (profileId) => (await api.get<{ shifts: BusinessShift[] }>(`${profilePath(profileId)}/shifts`)).shifts,
+    addShift: (profileId, input) => api.post<BusinessShift>(`${profilePath(profileId)}/shifts`, input),
+    removeShift: async (profileId, shiftId) => {
+      await api.delete<unknown>(`${profilePath(profileId)}/shifts/${enc(shiftId)}`);
+    },
     createVacancy: async (profileId, d) => {
       const r = await api.post<{ id: string; warnings?: { belowLegalMinimum?: boolean; legalMinimumPaise?: number } }>(`${profilePath(profileId)}/vacancy-drafts`, {
         form: {
@@ -525,7 +531,7 @@ export function liveCustomerApi(api: ApiClient, options: Options = {}): Customer
           salaryMinPaise: d.salaryMinPaise,
           ...(d.salaryMaxPaise ? { salaryMaxPaise: d.salaryMaxPaise } : {}),
           salaryPeriod: d.salaryPeriod,
-          shift: d.shift,
+          businessShiftId: d.businessShiftId,
           startDate: d.startDate,
           ...(d.description ? { description: d.description } : {}),
           ownerToldMinimumWage: d.legalMinimumAcknowledged,

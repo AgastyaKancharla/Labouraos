@@ -485,6 +485,8 @@ model Business {
   suspensionReason         String?
   branches      BusinessBranch[]
   vacancies     Vacancy[]
+  /// The business's own shifts (17 Nov): a vacancy picks one of them.
+  shifts        BusinessShift[]
   placements    Placement[]
   payments      Payment[]
   visits        BusinessVisit[]
@@ -584,6 +586,13 @@ model Vacancy {
   extras                      String[]    @default([])
   workingHours                String?
   shift                       String?
+  /// The business shift this vacancy picked (17 Nov). `shift` then holds its label
+  /// ("Morning 07:00–15:00"); older vacancies keep their free-text `shift`.
+  businessShiftId             String?
+  businessShift               BusinessShift? @relation(fields: [businessShiftId], references: [id], onDelete: SetNull)
+  /// The picked shift's times ("HH:MM", IST) when it was picked: matching reads day/night from them.
+  shiftStartTime              String?
+  shiftEndTime                String?
   weeklyOff                   String?
   latitude                    Float?
   longitude                   Float?
@@ -629,6 +638,7 @@ model Vacancy {
   @@index([tradeSkill])
   @@index([belowLegalMinimum])
   @@index([status])
+  @@index([businessShiftId])
 }
 
 model VacancyInterviewSlot {
@@ -3324,4 +3334,26 @@ model PermanentBan {
   // One live (not lifted) ban per profile: a partial unique index in the migration (SQL only).
   @@index([subjectType, subjectId])
   @@index([phoneHash])
+}
+
+/// A business's own shift (17 Nov, Master Guide rev 193): name and IST start /
+/// end time, e.g. "Morning" 07:00–15:00. Set by the field agent, the call team
+/// or the owner in the Laboura app; a vacancy picks one.
+model BusinessShift {
+  id                 String    @id @default(uuid())
+  businessId         String
+  business           Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name               String
+  /// "HH:MM" in IST (24-hour). An end before the start runs past midnight.
+  startTime          String
+  endTime            String
+  createdByStaffId   String?
+  /// The owner's Laboura app account, when he added it there.
+  createdByAccountId String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  vacancies          Vacancy[]
+
+  @@unique([businessId, name])
+  @@index([businessId])
 }

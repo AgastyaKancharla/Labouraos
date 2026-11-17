@@ -14,9 +14,10 @@ import { routes } from '@/navigation/routes';
 import { useSellingRoutes } from '@/navigation/useFlow';
 import { colors } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
-import { BusinessHeader, BusinessTypeAhead, ErrorBanner, formatRupees, QueryView, SHIFT_KEYS, useParam } from '../_selling';
+import { BusinessHeader, BusinessTypeAhead, ErrorBanner, formatRupees, QueryView, useParam } from '../_selling';
+import { AddShiftForm, useBusinessShifts } from '../_business/Shifts';
 import {
-  EMPTY_VACANCY, findTrade, HEADCOUNTS, isBelowLegalMinimum, OTHER_TRADE, QUICK_EXTRAS, tradeNameOf, VACANCY_SHIFTS,
+  EMPTY_VACANCY, findTrade, HEADCOUNTS, isBelowLegalMinimum, OTHER_TRADE, QUICK_EXTRAS, tradeNameOf,
   vacancyBody, vacancyErrors, type QuickVacancy, type VacancyError,
 } from './payload';
 
@@ -33,7 +34,8 @@ const ERROR_KEYS = {
 /**
  * FA17 — Add a vacancy: the quick form on the phone. Role from the CEO's
  * trade list (with the market range as a hint), how many, salary from / up
- * to (₹ boxes), the legal-minimum warning with "Owner told" tick, shift,
+ * to (₹ boxes), the legal-minimum warning with "Owner told" tick, one of
+ * the business's own shifts (17 Nov; "+ Add a shift" right here),
  * needed from (calendar), extras. Saving sends the contact person an OTP
  * (FA17b), so every vacancy is confirmed by the business. Without signal the
  * form is saved on the phone and sent later; the owner then confirms from
@@ -161,15 +163,7 @@ function Form({ business }: { business: BusinessDetail }) {
               {err('ownerTold') ? <Text variant="small" color={colors.tomato}>{err('ownerTold')}</Text> : null}
             </>
           ) : null}
-          <SelectField
-            label={t('fa17.shift')}
-            required
-            value={form.shift}
-            choices={VACANCY_SHIFTS.map((s) => ({ value: s, label: t(SHIFT_KEYS[s]) }))}
-            onChange={(v) => set('shift', v)}
-            error={err('shift')}
-            testID="shift"
-          />
+          <ShiftPicker businessId={business.id} value={form.businessShiftId} onChange={(id) => set('businessShiftId', id)} error={err('shift')} />
           <DateField label={t('fa17.neededFrom')} required value={form.startDate} onChange={(v) => set('startDate', v)} min={todayKeyIst()} error={err('startDate')} testID="start-date" />
           <Text variant="small" style={styles.extrasLabel}>{t('fa17.extras')}</Text>
           <View style={styles.extras}>
@@ -189,6 +183,48 @@ function Form({ business }: { business: BusinessDetail }) {
       <ErrorBanner error={save.error} />
       <Button label={t('fa17.save')} loading={save.isPending} onPress={submit} testID="save-vacancy" />
     </>
+  );
+}
+
+const ADD_SHIFT = '__add__';
+
+/** The vacancy's shift: one of the business's own shifts, or add one here (17 Nov). */
+function ShiftPicker({ businessId, value, onChange, error }: { businessId: string; value: string; onChange: (id: string) => void; error: string | null }) {
+  const { t } = useI18n();
+  const shifts = useBusinessShifts(businessId);
+  const list = shifts.data ?? [];
+  const [adding, setAdding] = useState(false);
+  const showForm = adding || (shifts.isSuccess && list.length === 0);
+  return (
+    <View style={styles.gap} testID="shift-picker">
+      {list.length > 0 ? (
+        <SelectField
+          label={t('shifts.pick')}
+          required
+          value={value}
+          choices={[...list.map((s) => ({ value: s.id, label: s.label })), { value: ADD_SHIFT, label: t('shifts.addForBusiness') }]}
+          onChange={(v) => (v === ADD_SHIFT ? setAdding(true) : onChange(v))}
+          error={showForm ? null : error}
+          hint={t('shifts.pickHint')}
+          testID="shift"
+        />
+      ) : (
+        <Text variant="small" style={styles.extrasLabel}>{t('shifts.pick')} *</Text>
+      )}
+      {shifts.isSuccess && list.length === 0 ? <Text variant="muted">{t('shifts.none')}</Text> : null}
+      {showForm ? (
+        <AddShiftForm
+          businessId={businessId}
+          onAdded={(shift) => {
+            onChange(shift.id);
+            setAdding(false);
+          }}
+          onCancel={list.length > 0 ? () => setAdding(false) : undefined}
+          testID="vacancy-add-shift"
+        />
+      ) : null}
+      {showForm && error ? <Text variant="small" color={colors.tomato}>{error}</Text> : null}
+    </View>
   );
 }
 

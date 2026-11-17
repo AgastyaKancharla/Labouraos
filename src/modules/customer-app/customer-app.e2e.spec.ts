@@ -447,6 +447,52 @@ describe('Customer app API', () => {
       expect(vacancy).toEqual(expect.objectContaining({ belowLegalMinimum: true, ownerToldMinimumWage: true, confirmationMethod: 'in_app', capturedByStaffId: null }));
     });
 
+    it('17 Nov: the owner keeps his business\'s shifts (add, change, remove) and a vacancy draft picks one', async () => {
+      const phone = newPhone();
+      const session = await signIn(phone);
+      const otpCode = await freshOtp(session.accessToken, 'register');
+      const res = await auth(http().post(`${API}/me/register/business`), session.accessToken)
+        .send({
+          name: `Shift Bakery ${seq}`, contactPersonName: 'Lakshmi', contactPersonRole: 'owner', businessType: 'bakery',
+          locality: 'Jayanagar', pincode: '560041', latitude: 12.93, longitude: 77.58, noDocuments: true,
+          visitPreferredAt: new Date(Date.now() + 86_400_000).toISOString(), contactMe: true, otp: otpCode,
+        })
+        .expect(201);
+      const base = `${API}/me/profiles/${res.body.profileId}/shifts`;
+      const added = await auth(http().post(base), session.accessToken).send({ name: 'Morning', startTime: '7:00', endTime: '15:00' }).expect(201);
+      expect(added.body).toEqual(expect.objectContaining({ name: 'Morning', startTime: '07:00', endTime: '15:00', label: 'Morning 07:00–15:00', category: 'day' }));
+      const bad = await auth(http().post(base), session.accessToken).send({ name: 'Night', startTime: '22:00', endTime: '22:00' }).expect(400);
+      expect(bad.body).toEqual(expect.objectContaining({ code: 'VALIDATION_FAILED', field: 'endTime' }));
+      const dup = await auth(http().post(base), session.accessToken).send({ name: 'Morning', startTime: '06:00', endTime: '14:00' }).expect(409);
+      expect(dup.body.code).toBe('VALIDATION_FAILED');
+      const night = await auth(http().post(base), session.accessToken).send({ name: 'Night', startTime: '22:00', endTime: '06:00' }).expect(201);
+      expect(night.body.category).toBe('night');
+      const changed = await auth(http().patch(`${base}/${added.body.id}`), session.accessToken).send({ endTime: '16:00' }).expect(200);
+      expect(changed.body.label).toBe('Morning 07:00–16:00');
+      const list = await auth(http().get(base), session.accessToken).expect(200);
+      expect(list.body.shifts.map((s: { name: string }) => s.name)).toEqual(['Morning', 'Night']);
+
+      // Another person's token cannot touch these shifts.
+      const other = await signIn(newPhone());
+      await auth(http().get(base), other.accessToken).expect(404);
+
+      // A vacancy draft picks the business's shift; the vacancy keeps its label and times.
+      const draft = await auth(http().post(`${API}/me/profiles/${res.body.profileId}/vacancy-drafts`), session.accessToken)
+        .send({ form: { tradeSkill: 'Helper', headcount: 1, salaryMinPaise: 3000000, salaryMaxPaise: 3200000, salaryPeriod: 'monthly', businessShiftId: night.body.id } })
+        .expect(201);
+      expect(draft.body.form.businessShiftId).toBe(night.body.id);
+      await stepUp(session.accessToken, 'confirm_vacancy');
+      const confirmed = await auth(http().post(`${API}/me/profiles/${res.body.profileId}/vacancy-drafts/${draft.body.id}/confirm`), session.accessToken).send({}).expect(201);
+      const vacancy = await prisma.vacancy.findUniqueOrThrow({ where: { code: confirmed.body.vacancy.code } });
+      expect(vacancy).toEqual(expect.objectContaining({ shift: 'Night 22:00–06:00', businessShiftId: night.body.id, shiftStartTime: '22:00', shiftEndTime: '06:00' }));
+
+      // Removing the shift leaves the vacancy's own copy.
+      await auth(http().delete(`${base}/${night.body.id}`), session.accessToken).expect(204);
+      const after = await prisma.vacancy.findUniqueOrThrow({ where: { id: vacancy.id } });
+      expect(after).toEqual(expect.objectContaining({ shift: 'Night 22:00–06:00', businessShiftId: null, shiftStartTime: '22:00' }));
+      await auth(http().delete(`${base}/${night.body.id}`), session.accessToken).expect(404);
+    });
+
     it('registers a referral partner; Home shows referred people by first name and stage only', async () => {
       const phone = newPhone();
       const session = await signIn(phone);

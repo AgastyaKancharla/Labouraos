@@ -9,6 +9,8 @@ export class CreateVacancyDto {
   extras?: string[];
   workingHours?: string;
   shift?: string;
+  /** One of the business's own shifts (17 Nov): the vacancy keeps its label and times. */
+  businessShiftId?: string;
   weeklyOff?: string;
   latitude?: number;
   longitude?: number;

@@ -3,6 +3,7 @@ import { Text } from 'react-native';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { createMemoryStore } from '@/lib/storage';
 import { en } from './en';
+import { fixes17En } from './fixes17.en';
 import { hi } from './hi';
 import { I18nProvider, useI18n } from './I18nProvider';
 import { kn } from './kn';
@@ -15,10 +16,14 @@ describe('translations', () => {
     ['kn', kn],
     ['hi', hi],
   ])('%s has exactly the English keys, none empty, with the same {slots}', (_code, messages) => {
-    expect(Object.keys(messages).sort()).toEqual(Object.keys(en).sort());
-    for (const key of Object.keys(en) as (keyof typeof en)[]) {
-      expect(messages[key].trim()).not.toBe('');
-      expect(placeholders(messages[key])).toEqual(placeholders(en[key]));
+    // Keys added on 17 Nov are English only (the software is English only from 17 Nov).
+    const englishOnly = new Set(Object.keys(fixes17En));
+    const keys = Object.keys(en).filter((k) => !englishOnly.has(k));
+    const all = messages as Record<string, string>;
+    expect(Object.keys(messages).sort()).toEqual(keys.sort());
+    for (const key of keys as (keyof typeof en)[]) {
+      expect(all[key].trim()).not.toBe('');
+      expect(placeholders(all[key])).toEqual(placeholders(en[key]));
     }
   });
 

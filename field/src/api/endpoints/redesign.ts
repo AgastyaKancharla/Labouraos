@@ -149,6 +149,19 @@ export interface ResolvedMapsLink {
   shortLink: boolean;
 }
 
+/** One of a business's own shifts (17 Nov): GET/POST/PATCH/DELETE /businesses/:id/shifts. */
+export interface BusinessShift {
+  id: string;
+  businessId: string;
+  name: string;
+  /** "HH:MM", IST. */
+  startTime: string;
+  endTime: string;
+  /** "Morning 07:00–15:00". */
+  label: string;
+  category: 'day' | 'night';
+}
+
 /** GET /field-work/day?date= (Today's work) */
 export interface DayView {
   date: string;
@@ -389,6 +402,9 @@ export const redesignApi = (api: ApiClient) => ({
   allVisits: (query: AllVisitsQuery) =>
     api.get<AllVisitsPage>('/field-work/visits/all', { query: { q: query.q || undefined, from: query.from, to: query.to, before: query.before } }),
   visit: (id: string) => api.get<VisitDetails>(`/field-visits/${enc(id)}`),
+  shifts: (businessId: string) => api.get<BusinessShift[]>(`/businesses/${enc(businessId)}/shifts`),
+  addShift: (businessId: string, body: { name: string; startTime: string; endTime: string }) => api.post<BusinessShift>(`/businesses/${enc(businessId)}/shifts`, body),
+  removeShift: (businessId: string, shiftId: string) => api.delete<{ removed: true }>(`/businesses/${enc(businessId)}/shifts/${enc(shiftId)}`),
   resolveMapsLink: (url: string) => api.post<ResolvedMapsLink>('/maps-link/resolve', { url }),
   changeResult: (id: string, body: ChangeResultBody) => api.post<VisitDetails>(`/field-visits/${enc(id)}/change-result`, body),
   myBusinesses: (q?: string) => api.get<{ query: string; results: MyBusinessRow[] }>('/field-work/businesses', { query: { q: q || undefined } }),

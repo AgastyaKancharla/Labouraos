@@ -62,6 +62,8 @@ export const queryKeys = {
   // invalidation of ['field-work'] after any step refreshes Today, Visits and the business pages.
   today: ['field-work', 'today'] as const,
   day: (date: string) => ['field-work', 'day', date] as const,
+  /** A business's own shifts (17 Nov). */
+  businessShifts: (businessId: string) => ['business-shifts', businessId] as const,
   /** My visits → All visits (17 Nov). */
   allVisits: (q: string, from: string, to: string) => ['field-work', 'visits', 'all', q, from, to] as const,
   myBusinesses: (q: string) => ['field-work', 'my-businesses', q] as const,
