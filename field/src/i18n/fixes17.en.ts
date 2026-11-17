@@ -60,7 +60,7 @@ export const fixes17En = {
   'fa07.mapsLinkFilled': 'Address and pin filled from the link. Check and correct them if needed.',
   'fa07.mapsLinkPinOnly': 'The pin is filled from the link, but no address was found for it. Type the address.',
   'fa07.mapsLink.err.MAPS_LINK_INVALID': 'This is not a Google Maps link. Copy the link from Google Maps → Share.',
-  'fa07.mapsLink.err.MAPS_LINK_NO_LOCATION': 'No location was found in this link. Open the shop in Google Maps, tap Share and copy that link.',
+  'fa07.mapsLink.err.MAPS_LINK_NO_LOCATION': 'This link has no map pin. In Google Maps, long-press to drop a pin, then share that.',
   'fa07.mapsLink.err.MAPS_LINK_UNREACHABLE': 'The link could not be opened. Check your signal and try again, or type the address.',
   'fa07.mapsLink.err.TOO_MANY': 'Too many links in a short time. Wait a minute and try again.',
   'fa07.mapsPin': 'Pin: {lat}, {lng}',

@@ -12,6 +12,9 @@ describe('Google Maps link (17 Nov): allowlist and the pin', () => {
       'https://maps.app.goo.gl/AbCdEf123',
       'https://goo.gl/maps/AbCdEf123',
       'http://maps.google.com/?q=12.9,77.6',
+      'https://www.google.co.in/maps/place/X/@12.9,77.6,17z',
+      'https://google.co.in/maps?q=12.9,77.6',
+      'https://maps.google.co.in/?ll=12.9,77.6',
     ]) expect([ok, isAllowedMapsUrl(u(ok))]).toEqual([ok, true]);
     for (const bad of [
       'https://evil.com/maps/@12.9,77.6',
@@ -24,6 +27,9 @@ describe('Google Maps link (17 Nov): allowlist and the pin', () => {
       'https://127.0.0.1/maps',
       'https://mapsXgoogle.com/maps',
       'https://maps.app.goo.gl.attacker.net/x',
+      'https://www.google.co.in/search?q=12.9,77.6',
+      'https://www.google.co.uk/maps/@12.9,77.6,15z',
+      'https://google.co.in.evil.net/maps',
     ]) expect([bad, isAllowedMapsUrl(u(bad))]).toEqual([bad, false]);
   });
 
@@ -42,6 +48,12 @@ describe('Google Maps link (17 Nov): allowlist and the pin', () => {
     expect(extractPin(u('https://maps.google.com/?q=12.97,77.59'))).toMatchObject({ latitude: 12.97, longitude: 77.59 });
     expect(extractPin(u('https://maps.google.com/?ll=12.97,77.59&z=16'))).toMatchObject({ latitude: 12.97, longitude: 77.59 });
     expect(extractPin(u('https://www.google.com/maps/search/?api=1&query=12.95%2C77.61'))).toMatchObject({ latitude: 12.95, longitude: 77.61 });
+    // A dropped pin shared as a search, or a place by coordinates.
+    expect(extractPin(u('https://www.google.com/maps/search/12.9716,+77.5946?entry=tts'))).toMatchObject({ latitude: 12.9716, longitude: 77.5946 });
+    expect(extractPin(u('https://www.google.co.in/maps/search/12.9716,77.5946'))).toMatchObject({ latitude: 12.9716, longitude: 77.5946 });
+    expect(extractPin(u('https://www.google.com/maps/place/12.9116,77.6101/@12.9,77.6,17z'))).toMatchObject({ latitude: 12.9116, longitude: 77.6101 });
+    expect(extractPin(u('https://www.google.com/maps/@?api=1&map_action=map&center=12.93,77.62&zoom=15'))).toMatchObject({ latitude: 12.93, longitude: 77.62 });
+    expect(extractPin(u('https://www.google.com/maps/search/Hotel+Kamat'))).toBeNull();
     expect(extractPin(u('https://maps.app.goo.gl/AbCdEf123'))).toBeNull();
     expect(extractPin(u('https://maps.google.com/?q=Hotel+Kamat'))).toBeNull();
     expect(extractPin(u('https://maps.google.com/?q=95,77'))).toBeNull();
@@ -146,9 +158,16 @@ describe('MapsLinkService', () => {
     }
   });
 
-  it('a link with no pin, or not a Maps link, is refused with its code', async () => {
+  it('a link with no pin, or not a Maps link, is refused with its code (the page body is never read)', async () => {
+    const json = jest.fn(async () => ({ lat: 1 }));
     const page = fakeFetch({ 'https://maps.google.com/': { status: 200 } });
-    await expect(new TestMaps(page.fetch, publicDns).resolve('fa-1', 'https://maps.google.com/?q=Hotel+Kamat')).rejects.toMatchObject({ response: { code: 'MAPS_LINK_NO_LOCATION' } });
+    const pageFetch: MapsFetch = async (url, init) => ({ ...(await page.fetch(url, init)), json });
+    await expect(new TestMaps(pageFetch, publicDns).resolve('fa-1', 'https://maps.google.com/?q=Hotel+Kamat')).rejects.toMatchObject({
+      response: { code: 'MAPS_LINK_NO_LOCATION', message: 'This link has no map pin. In Google Maps, long-press to drop a pin, then share that.' },
+    });
+    expect(json).not.toHaveBeenCalled();
+    const short = fakeFetch({ 'https://maps.app.goo.gl/Search': { status: 302, location: 'https://www.google.com/maps/search/Hotel+Kamat?entry=tts' }, 'https://www.google.com/maps/search': { status: 200 } });
+    await expect(new TestMaps(short.fetch, publicDns).resolve('fa-1', 'https://maps.app.goo.gl/Search')).rejects.toMatchObject({ response: { code: 'MAPS_LINK_NO_LOCATION' } });
     await expect(new TestMaps(page.fetch, publicDns).resolve('fa-1', 'https://bing.com/maps?cp=12.9~77.6')).rejects.toMatchObject({ response: { code: 'MAPS_LINK_INVALID' } });
     await expect(new TestMaps(page.fetch, publicDns).resolve('fa-1', 42)).rejects.toMatchObject({ response: { code: 'MAPS_LINK_INVALID' } });
   });

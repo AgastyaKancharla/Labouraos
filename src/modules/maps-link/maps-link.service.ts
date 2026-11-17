@@ -43,6 +43,9 @@ const CACHE_DAYS = 30;
 const CACHE_TTL_MS = CACHE_DAYS * DAY_MS;
 const CACHE_MAX = 5000;
 
+/** A link that opens a search or a place page without coordinates: the page is never read, so ask for a pin. */
+export const NO_PIN_MESSAGE = 'This link has no map pin. In Google Maps, long-press to drop a pin, then share that.';
+
 export interface ResolvedMapsLink {
   latitude: number;
   longitude: number;
@@ -98,11 +101,11 @@ export class MapsLinkService {
   async resolve(staffId: string, text: unknown): Promise<ResolvedMapsLink> {
     this.claim(staffId);
     const url = typeof text === 'string' ? parseMapsUrl(text) : null;
-    if (!url) throw codedError(HttpStatus.BAD_REQUEST, 'MAPS_LINK_INVALID', 'Paste a Google Maps link (google.com/maps, maps.google.com, maps.app.goo.gl or goo.gl/maps)');
+    if (!url) throw codedError(HttpStatus.BAD_REQUEST, 'MAPS_LINK_INVALID', 'Paste a Google Maps link (google.com/maps, google.co.in/maps, maps.google.com, maps.app.goo.gl or goo.gl/maps)');
     const shortLink = isShortMapsUrl(url);
     let pin = extractPin(url);
     if (!pin) pin = await this.follow(url);
-    if (!pin) throw codedError(HttpStatus.UNPROCESSABLE_ENTITY, 'MAPS_LINK_NO_LOCATION', 'No location was found in this link');
+    if (!pin) throw codedError(HttpStatus.UNPROCESSABLE_ENTITY, 'MAPS_LINK_NO_LOCATION', NO_PIN_MESSAGE);
     const address = await this.reverse(pin.latitude, pin.longitude);
     return { latitude: pin.latitude, longitude: pin.longitude, placeName: pin.placeName, address, shortLink };
   }
@@ -162,7 +165,7 @@ export class MapsLinkService {
         if (!location) return null;
         current = new URL(location, current);
       }
-      throw codedError(HttpStatus.UNPROCESSABLE_ENTITY, 'MAPS_LINK_NO_LOCATION', 'Too many redirects');
+      throw codedError(HttpStatus.UNPROCESSABLE_ENTITY, 'MAPS_LINK_NO_LOCATION', NO_PIN_MESSAGE);
     } catch (error) {
       if (error && typeof (error as { getStatus?: unknown }).getStatus === 'function') throw error;
       this.logger.warn(`Maps link not opened: ${(error as Error)?.name ?? 'error'}`);

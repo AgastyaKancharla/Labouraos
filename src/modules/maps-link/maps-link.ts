@@ -3,9 +3,11 @@
  *
  * Only Google's own map addresses are accepted (SSRF-safe: the server never
  * fetches any other host): google.com/maps, www.google.com/maps,
- * maps.google.com, maps.app.goo.gl and goo.gl/maps. The pin is read from
- * "!3d<lat>!4d<lng>" (the place itself), then "@<lat>,<lng>" (the map's
- * centre), then q= / query= / ll= / destination= / center=.
+ * maps.google.com, the same three on google.co.in, maps.app.goo.gl and
+ * goo.gl/maps. The pin is read from "!3d<lat>!4d<lng>" (the place itself),
+ * then a pin in the path (/maps/search/<lat>,+<lng>, /maps/place/<lat>,<lng>),
+ * then "@<lat>,<lng>" (the map's centre), then q= / query= / ll= /
+ * destination= / center=. The page itself is never read.
  */
 
 export interface MapsPin {
@@ -22,6 +24,10 @@ const ALLOWED: Array<{ host: string; pathPrefix: string | null }> = [
   { host: 'maps.google.com', pathPrefix: null },
   { host: 'maps.app.goo.gl', pathPrefix: null },
   { host: 'goo.gl', pathPrefix: '/maps' },
+  // Google Maps for India (exact hosts only; no other country domains).
+  { host: 'google.co.in', pathPrefix: '/maps' },
+  { host: 'www.google.co.in', pathPrefix: '/maps' },
+  { host: 'maps.google.co.in', pathPrefix: null },
 ];
 
 /** Short links that must be opened (followed) to find the pin. */
@@ -104,6 +110,11 @@ export function extractPin(url: URL): MapsPin | null {
     const lat = Number(m[1]);
     const lng = Number(m[2]);
     if (validPin(lat, lng)) return { latitude: lat, longitude: lng, placeName };
+  }
+  // A dropped pin shared as /maps/search/<lat>,+<lng> or /maps/place/<lat>,<lng>.
+  const inPath = decodeSafe(url.pathname).replace(/\+/g, ' ').match(new RegExp(`/maps/(?:search|place|dir)/${NUM}\\s*,\\s*${NUM}(?:/|$)`));
+  if (inPath && validPin(Number(inPath[1]), Number(inPath[2]))) {
+    return { latitude: Number(inPath[1]), longitude: Number(inPath[2]), placeName: null };
   }
   // @<lat>,<lng>[,<zoom>z]: the map's centre.
   const at = text.match(new RegExp(`@${NUM},${NUM}`));
