@@ -81,8 +81,7 @@ export type DayItemType =
   | 'business_registered'
   | 'job_seeker_registered'
   | 'referral_registered'
-  // 'vacancy_added' is no longer a row (17 Nov): a new vacancy shows on the business's history.
-  | 'vacancy_confirmed'
+  // 'vacancy_added' and 'vacancy_confirmed' are no longer rows (17 Nov): both show on the business's history.
   | 'candidates_shown'
   | 'interview_booked'
   | 'interview_attended';

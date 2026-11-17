@@ -38,7 +38,6 @@ export const DAY_TYPES: DayItemType[] = [
   'business_registered',
   'job_seeker_registered',
   'referral_registered',
-  'vacancy_confirmed',
   'candidates_shown',
   'interview_booked',
   'interview_attended',
@@ -49,7 +48,6 @@ const TYPE_LOOK: Record<DayItemType, { icon: IconName; accent: Accent }> = {
   business_registered: { icon: 'check-circle', accent: 'green' },
   job_seeker_registered: { icon: 'user-plus', accent: 'cyan' },
   referral_registered: { icon: 'users', accent: 'orange' },
-  vacancy_confirmed: { icon: 'briefcase', accent: 'green' },
   candidates_shown: { icon: 'users', accent: 'cyan' },
   interview_booked: { icon: 'calendar', accent: 'royal' },
   interview_attended: { icon: 'calendar', accent: 'green' },
@@ -117,9 +115,9 @@ export function useDayWork(date: string) {
 
 /**
  * Today's work (redesign, 16 Nov): every visit with its result, businesses
- * onboarded, job seekers and referral partners registered, vacancies
- * confirmed, candidates shown and interviews attended, for one IST day.
- * Adding a vacancy is not a row (17 Nov): it shows on the business's history.
+ * onboarded, job seekers and referral partners registered, candidates shown
+ * and interviews attended, for one IST day. Adding or confirming a vacancy is
+ * not a row (17 Nov): both show on the business's history.
  * Data: GET /field-work/day?date=.
  */
 export function DayWork({ date, kind, limit, onMore, testID = 'day-work' }: {

@@ -523,7 +523,7 @@ export class FieldRedesignService {
     const window = { gte: start, lt: new Date(start.getTime() + DAY_MS) };
     const staffId = actor.sub;
 
-    const [firsts, visits, businesses, seekers, partners, confirmed, intros, booked, attended] = await Promise.all([
+    const [firsts, visits, businesses, seekers, partners, intros, booked, attended] = await Promise.all([
       firstOnboardingsBy(this.prisma, staffId, window),
       this.prisma.businessVisit.findMany({
         where: { staffId, visitedAt: window },
@@ -540,10 +540,6 @@ export class FieldRedesignService {
       this.prisma.referral.findMany({
         where: { registeredByStaffId: staffId, createdAt: window, anonymisedAt: null },
         select: { id: true, code: true, name: true, locality: true, pausedAt: true, createdAt: true },
-      }),
-      this.prisma.vacancy.findMany({
-        where: { capturedByStaffId: staffId, confirmedAt: window },
-        select: { id: true, code: true, tradeSkill: true, status: true, confirmedAt: true, business: { select: { id: true, name: true } } },
       }),
       this.prisma.candidateIntroduction.findMany({
         where: { shownByStaffId: staffId, shownAt: window },
@@ -590,13 +586,7 @@ export class FieldRedesignService {
         subtitle: r.locality, status: r.pausedAt ? 'paused' : 'active', target: { type: 'referral', id: r.id },
       });
     }
-    // Adding a vacancy is not a row here (17 Nov): it shows on the business page's history.
-    for (const v of confirmed) {
-      items.push({
-        type: 'vacancy_confirmed', id: `vacancy_confirmed:${v.id}`, at: v.confirmedAt!.toISOString(), title: v.business.name,
-        subtitle: v.tradeSkill, status: v.status, target: { type: 'vacancy', id: v.id, businessId: v.business.id },
-      });
-    }
+    // Adding or confirming a vacancy is not a row here (17 Nov): both show on the business page's history.
     const groups = new Map<string, DayItem>();
     for (const i of intros) {
       const id = `candidates_shown:${i.vacancyId}`;
@@ -629,7 +619,7 @@ export class FieldRedesignService {
     items.sort((a, b) => b.at.localeCompare(a.at));
     const counts: Record<string, number> = {
       visit: 0, business_registered: 0, job_seeker_registered: 0, referral_registered: 0,
-      vacancy_confirmed: 0, candidates_shown: 0, interview_booked: 0, interview_attended: 0,
+      candidates_shown: 0, interview_booked: 0, interview_attended: 0,
     };
     for (const item of items) counts[item.type] += 1;
     return { date: key, isToday: key === todayKey, counts, items };

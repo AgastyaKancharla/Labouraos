@@ -108,7 +108,7 @@ describe('FA03 Today', () => {
     await fireEvent.press(screen.getByTestId('stat-shopsVisited'));
     expect(router.push).toHaveBeenLastCalledWith('/visits/work?date=2026-11-16&kind=visit');
     await fireEvent.press(screen.getByTestId('stat-vacanciesConfirmed'));
-    expect(router.push).toHaveBeenLastCalledWith('/visits/work?date=2026-11-16&kind=vacancy_confirmed');
+    expect(router.push).toHaveBeenLastCalledWith('/businesses');
   });
 
   it('Needs you now: one list of everything waiting, each opening the exact step of its job', async () => {

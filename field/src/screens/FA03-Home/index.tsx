@@ -24,11 +24,15 @@ import { needsTarget } from './needsTarget';
 
 export { STATUS_CHOICES } from '../_attendance/DayControls';
 
-/** Today's numbers: each opens Today's work filtered on what it counts. */
-const NUMBERS: { key: keyof TodayView['numbers']; label: MessageKey; accent: Accent; kind: DayKind }[] = [
+/**
+ * Today's numbers: each opens Today's work filtered on what it counts;
+ * vacancies confirmed open My businesses (17 Nov: a confirmed vacancy is on
+ * its business's history, not a row of Today's work).
+ */
+const NUMBERS: { key: keyof TodayView['numbers']; label: MessageKey; accent: Accent; kind?: DayKind }[] = [
   { key: 'shopsVisited', label: 'fa03.shopsVisited', accent: 'royal', kind: 'visit' },
   { key: 'onboarded', label: 'fa03.onboarded', accent: 'green', kind: 'onboarded' },
-  { key: 'vacanciesConfirmed', label: 'today.vacanciesConfirmed', accent: 'gold', kind: 'vacancy_confirmed' },
+  { key: 'vacanciesConfirmed', label: 'today.vacanciesConfirmed', accent: 'gold' },
   { key: 'candidatesShown', label: 'fa03.shown', accent: 'cyan', kind: 'candidates_shown' },
   { key: 'interviewsBooked', label: 'today.interviews', accent: 'orange', kind: 'interview_booked' },
 ];
@@ -106,7 +110,7 @@ export default function TodayScreen() {
                 value={numbers ? String(numbers[n.key]) : placeholder}
                 label={t(n.label)}
                 detail={n.key === 'interviewsBooked' && numbers ? t('today.attended', { count: numbers.interviewsAttended }) : undefined}
-                onPress={() => router.push(pageRoutes.todaysWork(today.data?.date, n.kind))}
+                onPress={() => router.push(n.kind ? pageRoutes.todaysWork(today.data?.date, n.kind) : routes.businesses)}
                 testID={`stat-${n.key}`}
               />
             ))}

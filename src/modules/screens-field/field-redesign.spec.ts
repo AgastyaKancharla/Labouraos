@@ -280,8 +280,9 @@ describe('Laboura Field redesign: Today, Today\'s work, businesses, agreement, j
     expect(today.items.find((i: { id: string }) => i.id === `visit:${early.id}`).status).toBe('unfinished');
     expect(today.items.some((i: { type: string; title: string }) => i.type === 'referral_registered' && i.title === 'Partner One')).toBe(true);
     // 17 Nov: adding a vacancy is not a row of Today's work / My visits (it is on the business's history).
-    expect(today.items.some((i: { type: string }) => i.type === 'vacancy_added')).toBe(false);
+    expect(today.items.some((i: { type: string }) => i.type === 'vacancy_added' || i.type === 'vacancy_confirmed')).toBe(false);
     expect(today.counts).not.toHaveProperty('vacancy_added');
+    expect(today.counts).not.toHaveProperty('vacancy_confirmed');
     const times = today.items.map((i: { at: string }) => i.at);
     expect([...times].sort().reverse()).toEqual(times);
     expect(today.counts.visit).toBeGreaterThanOrEqual(1);

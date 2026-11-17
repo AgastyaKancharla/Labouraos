@@ -135,7 +135,7 @@ export const todayView = (over: Partial<TodayView> = {}): TodayView => ({
 export const dayView = (date = '2026-11-16', over: Partial<DayView> = {}): DayView => ({
   date,
   isToday: date === '2026-11-16',
-  counts: { visit: 2, business_registered: 1, job_seeker_registered: 1, referral_registered: 0, vacancy_confirmed: 0, candidates_shown: 0, interview_booked: 0, interview_attended: 0 },
+  counts: { visit: 2, business_registered: 1, job_seeker_registered: 1, referral_registered: 0, candidates_shown: 0, interview_booked: 0, interview_attended: 0 },
   items: [
     { type: 'visit', id: 'visit:v-1', at: '2026-11-16T05:02:00.000Z', title: 'Sri Sai Bakery', subtitle: 'JP Nagar', status: 'onboarded', target: { type: 'visit', id: 'v-1' } },
     { type: 'business_registered', id: 'business:b-1', at: '2026-11-16T05:20:00.000Z', title: 'Sri Sai Bakery', subtitle: 'JP Nagar', status: 'lead', target: { type: 'business', id: 'b-1' } },
