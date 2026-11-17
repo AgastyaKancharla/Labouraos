@@ -14,6 +14,7 @@ import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { monthLong, roleTeam } from '../_kit/kit';
 import { PlanSplitCard, type PlanSplit } from './Split';
+import { ResetLink, SplitTag, TransferDialog, type TransferPerson } from '../../../components/TargetSplit';
 
 type Key = 'candidatesActivated' | 'vacanciesCaptured' | 'placementsClosed' | 'repeatBusinesses';
 const COLUMNS: { key: Key; label: string; roles: string[] }[] = [
@@ -32,6 +33,12 @@ interface AgentRow {
   target: Sums;
   main: { metric: string; done: number; target: number | null; percent: number | null };
   pace: string;
+  /** Fields set by hand; the rest come from the automatic split. */
+  handSet?: string[];
+}
+interface LeftRow {
+  staff: { id: string; code: string; name: string; role: string };
+  target: Sums;
 }
 interface Board {
   year: number;
@@ -42,6 +49,7 @@ interface Board {
   teams: (Sums & { teamLeadId: string; team: string })[];
   plan: PlanSplit;
   agents: AgentRow[];
+  left?: LeftRow[];
   leaderboard: { position: number; staff: AgentRow['staff']; team: string | null; main: AgentRow['main'] }[];
 }
 
@@ -125,6 +133,28 @@ export default function ManagerTargets() {
     onError: (e) => toast.error(e instanceof ApiError ? e.message : 'Could not copy. Try again.'),
   });
 
+  const [transferFrom, setTransferFrom] = useState<(TransferPerson & { role: string }) | null>(null);
+  const transfer = useMutation({
+    mutationFn: (toStaffId: string) => api.post<{ moved: Record<string, number> }>('/manager/targets/transfer', { year: sel.year, month: sel.month, fromStaffId: transferFrom?.id, toStaffId }),
+    onSuccess: (res) => {
+      const total = Object.values(res.moved).reduce((a, b) => a + b, 0);
+      toast.success(`Target transferred · ${total} moved`);
+      setTransferFrom(null);
+      void qc.invalidateQueries({ queryKey: ['manager'] });
+    },
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : 'Could not transfer the target. Try again.'),
+  });
+  const reset = useMutation({
+    mutationFn: (v: { staffId: string; key: Key }) => api.post('/manager/targets/reset', { year: sel.year, month: sel.month, kind: 'agent', id: v.staffId, key: v.key }),
+    onSuccess: () => {
+      toast.success('Back to automatic');
+      void qc.invalidateQueries({ queryKey: ['manager'] });
+    },
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : 'Could not reset. Try again.'),
+  });
+  const automatic = Boolean(d?.plan.automatic);
+  const candidates = (role: string, except: string): TransferPerson[] => (d?.agents ?? []).filter((a) => a.staff.role === role && a.staff.id !== except).map((a) => ({ id: a.staff.id, name: a.staff.name }));
+
   const badChars = Object.values(draft).some((vals) => Object.values(vals).some((v) => v !== '' && v !== undefined && !/^\d{1,6}$/.test(v)));
 
   return (
@@ -156,6 +186,7 @@ export default function ManagerTargets() {
                     {COLUMNS.map((c) => (
                       <th key={c.key}>{c.label}</th>
                     ))}
+                    {d?.editable && <th>Move</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -168,34 +199,77 @@ export default function ManagerTargets() {
                       {COLUMNS.map((c) => (
                         <td key={c.key}>
                           {c.roles.includes(r.staff.role) ? (
-                            <input
-                              className="mg-target-input"
-                              inputMode="numeric"
-                              aria-label={`${c.label} for ${r.staff.name}`}
-                              value={value(r, c.key)}
-                              disabled={!d.editable}
-                              onChange={(e) => {
-                                const v = e.target.value.replace(/[^\d]/g, '').slice(0, 6);
-                                setDraft((prev) => ({ ...prev, [r.staff.id]: { ...prev[r.staff.id], [c.key]: v } }));
-                              }}
-                            />
+                            <div className="lb-split-cell">
+                              <input
+                                className="mg-target-input"
+                                inputMode="numeric"
+                                aria-label={`${c.label} for ${r.staff.name}`}
+                                value={value(r, c.key)}
+                                disabled={!d.editable}
+                                onChange={(e) => {
+                                  const v = e.target.value.replace(/[^\d]/g, '').slice(0, 6);
+                                  setDraft((prev) => ({ ...prev, [r.staff.id]: { ...prev[r.staff.id], [c.key]: v } }));
+                                }}
+                              />
+                              {automatic && r.target[c.key] !== null && (
+                                <span className="lb-split-cell__meta">
+                                  <SplitTag hand={Boolean(r.handSet?.includes(c.key))} />
+                                  {r.handSet?.includes(c.key) && d.editable && (
+                                    <ResetLink label={`Reset ${c.label} for ${r.staff.name} to automatic`} disabled={reset.isPending} onClick={() => reset.mutate({ staffId: r.staff.id, key: c.key })} />
+                                  )}
+                                </span>
+                              )}
+                            </div>
                           ) : (
                             '—'
                           )}
                         </td>
                       ))}
+                      {d.editable && (
+                        <td>
+                          <Button onClick={() => setTransferFrom({ id: r.staff.id, name: r.staff.name, role: r.staff.role })}>Transfer target</Button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                  {d?.left?.map((l) => (
+                    <tr key={l.staff.id}>
+                      <td>
+                        <b>{l.staff.name}</b>
+                        <div className="mg-agents-sum">Left this month</div>
+                      </td>
+                      <td className="hide-phone">{roleTeam(l.staff.role, null, false)}</td>
+                      {COLUMNS.map((c) => (
+                        <td key={c.key}>{c.roles.includes(l.staff.role) ? (l.target[c.key] ?? '—') : '—'}</td>
+                      ))}
+                      {d.editable && (
+                        <td>
+                          <Button onClick={() => setTransferFrom({ id: l.staff.id, name: l.staff.name, role: l.staff.role })}>Transfer target</Button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                   {d && !d.agents.length && (
                     <tr>
-                      <td colSpan={COLUMNS.length + 2}>No agents in your teams yet.</td>
+                      <td colSpan={COLUMNS.length + 3}>No agents in your teams yet.</td>
                     </tr>
                   )}
                 </tbody>
               </table>
             </div>
-            <div className="mg-note">Interns carry the same numbers as paid agents · Team Leads can ask for a change, you approve it · past months can't be changed</div>
+            <div className="mg-note">
+              {automatic ? "Split automatically from each team's number: paid and vacancies to call agents, placements and repeat businesses to field agents · a number you change is kept (Set by hand) · " : ''}
+              Interns carry the same numbers as paid agents · Team Leads can change their own agents' numbers · past months can't be changed
+            </div>
           </Card>
+          <TransferDialog
+            open={Boolean(transferFrom)}
+            from={transferFrom}
+            candidates={transferFrom ? candidates(transferFrom.role, transferFrom.id) : []}
+            onClose={() => setTransferFrom(null)}
+            onConfirm={(toId) => transfer.mutate(toId)}
+            saving={transfer.isPending}
+          />
           {d?.editable && (
             <div className="ceo-actions">
               <Button variant="primary" onClick={() => save.mutate()} loading={save.isPending} disabled={!dirty || badChars}>

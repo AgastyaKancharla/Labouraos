@@ -507,7 +507,7 @@ describe('Targets and leaderboard', () => {
     render(<Targets />, '/ceo/targets');
     expect(await screen.findByText('Company plan · November')).toBeInTheDocument();
     expect(await screen.findByText('Team South')).toBeInTheDocument();
-    expect(screen.getAllByText('Split by Priya Sharma')).toHaveLength(2);
+    expect(screen.getAllByText('Manager: Priya Sharma')).toHaveLength(2);
     expect(screen.getByText('Adds up')).toBeInTheDocument();
     expect(screen.getByText('5 not split')).toBeInTheDocument();
     expect(screen.getByLabelText('Plan: Paid ₹499')).toHaveValue('320');
@@ -517,6 +517,17 @@ describe('Targets and leaderboard', () => {
     await userEvent.type(screen.getByLabelText('Plan: Vacancies'), '90');
     await userEvent.click(screen.getByRole('button', { name: 'Save plan' }));
     await waitFor(() => expect(api.calls('PUT /plans/company')[0].body).toEqual({ year: 2026, month: 11, placed: 40, vacancies: 90 }));
+  });
+
+  it('after saving, the plan is split automatically and the toast says to how many teams', async () => {
+    mockApi({ ...common, 'GET /ceo/targets': { ...board, leaderboard: board.rows }, 'GET /plans/company': companyPlan, 'PUT /plans/company': { ...companyPlan, split: { teams: 4, agents: 19 } } });
+    render(<Targets />, '/ceo/targets');
+    expect(await screen.findByText('Team South')).toBeInTheDocument();
+    const placed = screen.getByLabelText('Plan: Placements');
+    await userEvent.clear(placed);
+    await userEvent.type(placed, '40');
+    await userEvent.click(screen.getByRole('button', { name: 'Save plan' }));
+    expect(await screen.findByText('Plan saved and split to 4 teams')).toBeInTheDocument();
   });
 
   it('shows progress and pace, sets a target and copies last month', async () => {

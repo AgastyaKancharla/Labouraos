@@ -52,10 +52,10 @@ export function CompanyPlan({ month, editable }: { month: string; editable: bool
     mutationFn: () => {
       const body: Record<string, unknown> = { year, month: mon };
       for (const [k, v] of Object.entries(draft)) body[k] = v === '' ? null : Number(v);
-      return api.put<CompanyPlanBoard>('/plans/company', body);
+      return api.put<CompanyPlanBoard & { split: { teams: number; agents: number } | null }>('/plans/company', body);
     },
-    onSuccess: () => {
-      toast.success(`${monthName(month, false)} plan saved`);
+    onSuccess: (res) => {
+      toast.success(res.split ? `Plan saved and split to ${res.split.teams} ${res.split.teams === 1 ? 'team' : 'teams'}` : `${monthName(month, false)} plan saved`);
       setDraft({});
       void qc.invalidateQueries({ queryKey: ['plans'] });
     },
@@ -105,7 +105,7 @@ export function CompanyPlan({ month, editable }: { month: string; editable: bool
               <tr key={t.teamLeadId}>
                 <td>
                   <div style={{ fontWeight: 600 }}>{t.team}</div>
-                  <div className="ceo-cell-sub">{t.manager ? `Split by ${t.manager.name}` : 'No Manager yet'}</div>
+                  <div className="ceo-cell-sub">{t.manager ? `Manager: ${t.manager.name}` : 'No Manager yet'}</div>
                 </td>
                 {KEYS.map((k) => (
                   <td key={k}>{t.split[k] ?? '—'}</td>
@@ -114,7 +114,7 @@ export function CompanyPlan({ month, editable }: { month: string; editable: bool
             ))}
             <tr>
               <td>
-                <b>Total split by the Managers</b>
+                <b>Total split to the teams</b>
               </td>
               {KEYS.map((k) => {
                 const diff = d?.difference[k];
@@ -133,7 +133,7 @@ export function CompanyPlan({ month, editable }: { month: string; editable: bool
           </tbody>
         </table>
       </div>
-      <div className="ceo-note">You set the month's totals · each Manager splits them into their teams, and the agents' targets add up under each team · empty means no number for that one</div>
+      <div className="ceo-note">You set the month's totals · they are split automatically to each Manager and team by the number of agents, and to the agents by work type · a Manager or Team Lead can change their own numbers · empty means no number for that one</div>
       {editable && (
         <div className="ceo-actions" style={{ marginTop: 12 }}>
           <Button variant="primary" onClick={() => save.mutate()} loading={save.isPending} disabled={!dirty}>

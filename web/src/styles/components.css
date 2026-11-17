@@ -1611,3 +1611,40 @@ img.lb-staffphoto {
   gap: 8px;
   min-width: 0;
 }
+/* Automatic target split (MG-Targets, T-Targets): "Automatic" / "Set by hand" tags, Reset, Transfer. */
+.lb-split-tag {
+  display: inline-block;
+  margin-top: 3px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+  color: var(--text-faint);
+  background: var(--panel-2, rgba(130, 144, 184, 0.12));
+}
+.lb-split-tag--hand {
+  color: var(--amber);
+  background: var(--amber-bg);
+}
+.lb-split-reset {
+  margin-left: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--royal);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.lb-split-reset:disabled { color: var(--text-faint); cursor: default; }
+.lb-split-reset:focus-visible { outline: 2px solid var(--royal); outline-offset: 2px; }
+.lb-split-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.lb-split-cell__meta { display: flex; align-items: center; flex-wrap: wrap; }
+.lb-split-flags { margin: 0; padding: 10px 14px 0 30px; display: grid; gap: 4px; font-size: 12.5px; color: var(--amber); }
+.lb-split-help { margin: 0 0 12px; font-size: 13px; color: var(--text-soft); }
+.lb-split-pick { display: grid; gap: 6px; font-size: 13px; font-weight: 600; }
+.lb-split-pick select { min-height: 44px; padding: 8px 10px; border: 1px solid var(--line-strong, #c3ceea); border-radius: 8px; font: inherit; background: var(--panel); color: var(--text); }
