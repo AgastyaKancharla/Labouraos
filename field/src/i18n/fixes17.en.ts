@@ -48,6 +48,7 @@ export const fixes17En = {
   // Camera (item 4)
   'device.camera.permissionDenied': 'Laboura Field is not allowed to use the camera. Allow the camera for this site (tap the lock or ⓘ next to the address, then Permissions → Camera → Allow) and try again.',
   'device.camera.noCamera': 'No camera was found on this phone.',
+  'device.camera.captureFailed': 'The photo could not be taken. Tap Take photo again.',
   'device.camera.insecure': 'The camera works only on the secure https address of Laboura Field.',
 
   // Address from a Google Maps link (item 5)
