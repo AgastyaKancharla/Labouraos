@@ -44,7 +44,7 @@ export default function AllVisitsScreen() {
       <AppHeader title={t('visits.allTitle')} />
       <Screen onRefresh={() => void list.refetch()} refreshing={list.isRefetching && !list.isFetchingNextPage}>
         <TextField
-          label={t('common.search')}
+          label={t('visits.searchLabel')}
           value={text}
           onChangeText={setText}
           placeholder={t('visits.searchPlaceholder')}

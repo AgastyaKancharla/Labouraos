@@ -24,6 +24,7 @@ export const fixes17En = {
   // All visits (item 2)
   'visits.allVisits': 'All visits',
   'visits.allTitle': 'All visits',
+  'visits.searchLabel': 'Search my visits',
   'visits.searchPlaceholder': 'Shop name, area or BZ- code',
   'visits.from': 'From',
   'visits.to': 'To',

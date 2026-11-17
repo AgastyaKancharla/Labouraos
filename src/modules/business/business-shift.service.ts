@@ -72,14 +72,10 @@ export class BusinessShiftService {
       throw codedError(HttpStatus.CONFLICT, 'SHIFT_LIMIT', `A business keeps at most ${MAX_SHIFTS_PER_BUSINESS} shifts`);
     }
     try {
+      const createdByStaffId = 'staffId' in actor ? actor.staffId : null;
+      const createdByAccountId = 'accountId' in actor ? actor.accountId : null;
       const row = await this.prisma.businessShift.create({
-        data: {
-          businessId,
-          name: value.name!,
-          startTime: value.startTime!,
-          endTime: value.endTime!,
-          ...('staffId' in actor ? { createdByStaffId: actor.staffId } : { createdByAccountId: actor.accountId }),
-        },
+        data: { businessId, name: value.name!, startTime: value.startTime!, endTime: value.endTime!, createdByStaffId, createdByAccountId },
       });
       await this.audit.log({ actorId: this.actorId(actor), action: 'business.shift_added', entityType: 'business', entityCode: code, after: { shiftId: row.id, shiftName: row.name, startTime: row.startTime, endTime: row.endTime } });
       return BusinessShiftService.view(row);
@@ -97,7 +93,10 @@ export class BusinessShiftService {
     if (startTime === endTime && !errors.includes('endTime')) errors.push('endTime');
     if (errors.length) throw codedError(HttpStatus.BAD_REQUEST, 'SHIFT_INVALID', 'Give the shift a name and its start and end as HH:MM', { fields: errors });
     try {
-      const row = await this.prisma.businessShift.update({ where: { id: before.id }, data: value });
+      const row = await this.prisma.businessShift.update({
+        where: { id: before.id },
+        data: { name: value.name, startTime: value.startTime, endTime: value.endTime },
+      });
       await this.audit.log({
         actorId: this.actorId(actor), action: 'business.shift_changed', entityType: 'business', entityCode: code,
         before: { shiftId: before.id, shiftName: before.name, startTime: before.startTime, endTime: before.endTime },

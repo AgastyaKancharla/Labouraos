@@ -37,7 +37,10 @@ export const USER_AGENT = 'Laboura/1.0 (Laboura Field staffing app; business add
 /** Per field agent: links read a minute and a day (in memory, per process). */
 export const LINKS_PER_MINUTE = 10;
 export const LINKS_PER_DAY = 100;
-const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** Addresses and opened links are kept this many days (Nominatim asks callers to cache). */
+const CACHE_DAYS = 30;
+const CACHE_TTL_MS = CACHE_DAYS * DAY_MS;
 const CACHE_MAX = 5000;
 
 export interface ResolvedMapsLink {
@@ -107,18 +110,18 @@ export class MapsLinkService {
   /** At most LINKS_PER_MINUTE a minute and LINKS_PER_DAY a day per agent. */
   private claim(staffId: string): void {
     const now = this.now();
-    const recent = (this.perAgent.get(staffId) ?? []).filter((t) => now - t < 24 * 60 * 60 * 1000);
+    const recent = (this.perAgent.get(staffId) ?? []).filter((t) => now - t < DAY_MS);
     const lastMinute = recent.filter((t) => now - t < 60 * 1000).length;
     if (lastMinute >= LINKS_PER_MINUTE || recent.length >= LINKS_PER_DAY) {
       this.perAgent.set(staffId, recent);
       throw codedError(HttpStatus.TOO_MANY_REQUESTS, 'TOO_MANY', 'Too many links in a short time. Wait a minute and try again.', {
-        retryAfterSeconds: recent.length >= LINKS_PER_DAY ? 24 * 60 * 60 : 60,
+        retryAfterSeconds: recent.length >= LINKS_PER_DAY ? DAY_MS / 1000 : 60,
       });
     }
     recent.push(now);
     this.perAgent.set(staffId, recent);
     if (this.perAgent.size > 10_000) {
-      for (const [id, times] of this.perAgent) if (!times.some((t) => now - t < 24 * 60 * 60 * 1000)) this.perAgent.delete(id);
+      for (const [id, times] of this.perAgent) if (!times.some((t) => now - t < DAY_MS)) this.perAgent.delete(id);
     }
   }
 
