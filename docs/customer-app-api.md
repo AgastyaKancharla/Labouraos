@@ -771,6 +771,21 @@ fresh OTP; if anything fails after that, the half-made vacancy is cancelled and
 the draft stays a draft. Consent given on a link opened from the app is
 recorded with method `in_app`.
 
+### 8.1 The business's shifts (17 Nov, Master Guide rev 193)
+
+| Method and path | Auth |
+| --- | --- |
+| `GET /me/profiles/:profileId/shifts` | 🔒 |
+| `POST /me/profiles/:profileId/shifts` | 🔒 |
+| `PATCH /me/profiles/:profileId/shifts/:shiftId` | 🔒 |
+| `DELETE /me/profiles/:profileId/shifts/:shiftId` | 🔒 → `204` |
+
+The owner's own business only. Body `{ "name": "Morning", "startTime": "07:00", "endTime": "15:00" }`
+(IST, 24-hour; an end before the start runs past midnight) → `{ id, name, startTime, endTime, label: "Morning 07:00–15:00", category: "day" | "night" }`;
+`GET` → `{ "shifts": [ … ] }`. Errors: `400 VALIDATION_FAILED` with `field` (and `fields`), `409 VALIDATION_FAILED` (`field: "name"`, a shift
+with that name exists), `409 LIMIT_REACHED` (12 shifts), `404 VALIDATION_FAILED` (`field: "shiftId"`). A vacancy draft's form takes
+`businessShiftId` (one of these shifts); the posted vacancy keeps the shift's label and times even if the shift is later changed or removed.
+
 ---
 
 ## 9. Inbox, push token and settings (Agent C)
