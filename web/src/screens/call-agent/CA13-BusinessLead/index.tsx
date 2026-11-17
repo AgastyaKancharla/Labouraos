@@ -330,7 +330,7 @@ export default function RegisterBusiness() {
                 {isAboveMarket(trade, row.salaryMinPaise, row.period) && trade && <div className="warn">⚠ {t('reg.vac.aboveMarket', { trade: trade.name, to: formatINR(trade.salaryMaxPaise) })}</div>}
                 {below && trade && (
                   <div className="warn" role="alert">
-                    ⚠ <strong>{t('reg.legal.title')}</strong> {t('reg.legal.body', { amount: formatINR(trade.legalMinimumPaise) })}
+                    ⚠ <strong>{t('reg.legal.title')}</strong> {t('reg.legal.body', { amount: formatINR(trade.legalMinimumPaise), zone: trade.zone ?? 1 })}
                     <label>
                       <input type="checkbox" checked={row.ownerTold} onChange={(e) => setStaff(i, { ownerTold: e.target.checked })} /> {t('reg.legal.tick')}
                     </label>

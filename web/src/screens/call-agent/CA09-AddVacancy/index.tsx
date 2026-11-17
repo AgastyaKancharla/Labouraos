@@ -213,7 +213,7 @@ export default function AddVacancy() {
           {aboveMarket && trade && <div className="warn">⚠ {t('reg.vac.aboveMarket', { trade: trade.name, to: formatINR(trade.salaryMaxPaise) })}</div>}
           {belowLegal && (
             <div className="warn" role="alert">
-              ⚠ <strong>{t('reg.legal.title')}</strong> {legalMinimum ? t('reg.legal.body', { amount: formatINR(legalMinimum) }) : t('reg.legal.bodyNoAmount')}
+              ⚠ <strong>{t('reg.legal.title')}</strong> {legalMinimum ? t('reg.legal.body', { amount: formatINR(legalMinimum), zone: trade?.zone ?? 1 }) : t('reg.legal.bodyNoAmount')}
               <label>
                 <input type="checkbox" checked={form.ownerTold} onChange={(e) => set('ownerTold', e.target.checked)} /> {t('reg.legal.tick')}
               </label>

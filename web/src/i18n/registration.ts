@@ -207,7 +207,7 @@ export const registrationEn = {
   "reg.salary.keep": "Keep {asked} and continue",
   "reg.salary.decideFirst": "The minimum is above the usual range — update it or choose “Keep” first.",
   "reg.legal.title": "Below the legal minimum wage.",
-  "reg.legal.body": "Bengaluru’s legal minimum for this trade is about {amount} a month. You can still save. Tell the owner, and tick below. The business is the employer and is responsible for wages, PF and ESI.",
+  "reg.legal.body": "The legal minimum for this trade in this area (Zone {zone}) is about {amount} a month. You can still save. Tell the owner, and tick below. The business is the employer and is responsible for wages, PF and ESI.",
   "reg.legal.bodyNoAmount": "You can still save. Tell the owner, and tick below. The business is the employer and is responsible for wages, PF and ESI.",
   "reg.legal.tick": "Owner told about the legal minimum wage",
   "reg.legal.tickFirst": "Tick this after telling the owner.",

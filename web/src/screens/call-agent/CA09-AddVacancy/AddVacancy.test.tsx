@@ -132,6 +132,15 @@ describe('Add a vacancy (CA09)', () => {
     expect(api.calls('POST /vacancies')[0].body).toMatchObject({ businessShiftId: 'sh-9' });
   });
 
+  it('the legal minimum warning names the business\'s zone, not Bengaluru, outside Zone 1', async () => {
+    mockApi({ 'GET /trades': [{ ...cook, zone: 2, legalMinimumPaise: 2340000 }], 'GET /businesses/b1/shifts': [morning] });
+    signInAs('call_agent');
+    sessionStorage.setItem('laboura.draft.vacancy.staff-ca', JSON.stringify(form));
+    renderScreen(<AddVacancy />, { portal: 'call-agent', path: '/call-agent/vacancies/new', now: NOW });
+    expect(await screen.findByText(/The legal minimum for this trade in this area \(Zone 2\) is about ₹23,400 a month/)).toBeInTheDocument();
+    expect(screen.queryByText(/Bengaluru’s legal minimum/)).not.toBeInTheDocument();
+  });
+
   it('books a fixed-time interview as one slot in IST', () => {
     const body = vacancyBody({ ...form, interviewType: 'scheduled', slotStart: '11:00', slotEnd: '13:00' }, 'Cook');
     expect(body).toMatchObject({ interviewType: 'scheduled', interviewSlots: [{ startsAt: '2026-11-12T05:30:00.000Z', endsAt: '2026-11-12T07:30:00.000Z' }] });
