@@ -245,8 +245,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
       // In production the global filter puts the extra fields under `details`; in this test app they are at the top.
       const detail = refused.body.details ?? refused.body;
       expect(detail).toMatchObject({ code: 'area_required', maxMeters: 1000 });
-      expect(detail.messages.kn).toContain('ಪ್ರದೇಶ');
-      expect(detail.messages.hi).toContain('इलाक़ा');
+      expect(detail.messages).toEqual({ en: 'Pick the area — no area is within 1 km of this shop' }); // English only (rev 193)
       expect(await prisma.business.count({ where: { phone: { in: [phone, `+91${phone}`] } } })).toBe(0);
 
       // The refusal does not use up the verified OTP: pick an area and save.
