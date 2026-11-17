@@ -10,16 +10,15 @@ describe('P-PartnerDone', () => {
     partnerVerifiedInThisTab();
     mockApi({
       [`GET /referral-registration/${TOKEN}/status`]: partnerStatus({
-        language: 'hi',
         currentStep: 'complete',
         steps: { terms: DONE, selfie: DONE, id: DONE, upi: DONE },
         payout: { method: 'upi', maskedValue: 'ram***@okaxis', status: 'verified', nameMatches: true },
       }),
     });
     render();
-    expect(await screen.findByText('अब आप Laboura रेफ़रल पार्टनर हैं')).toBeInTheDocument();
+    expect(await screen.findByText("You're a Laboura referral partner")).toBeInTheDocument();
     expect(screen.getByText('RF-00031')).toBeInTheDocument();
     expect(screen.getByText('ram***@okaxis')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'रेफ़रल पार्टनर की शर्तें पढ़ें' })).toHaveAttribute('href', '/p/referral-terms?lang=hi');
+    expect(screen.getByRole('link', { name: /referral partner terms/i })).toHaveAttribute('href', '/p/referral-terms');
   });
 });

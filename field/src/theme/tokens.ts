@@ -99,9 +99,7 @@ export const statTones: Record<Accent, { bar: string; number: string; border: st
 
 /**
  * Font family names as registered by `useAppFonts`. Each weight is its own
- * family so Android never fakes bold. On the web the browser falls back to
- * the system font for Kannada and Devanagari letters (IBM Plex Sans has no
- * glyphs for them).
+ * family so Android never fakes bold.
  */
 export const fonts = {
   display600: 'Sora_600SemiBold',

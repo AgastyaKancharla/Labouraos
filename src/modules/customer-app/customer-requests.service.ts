@@ -301,9 +301,10 @@ export class CustomerRequestsService {
     if (!branch) throw validation('branchId must be a branch of this business', { field: 'branchId' });
   }
 
-  private async warnings(form: Record<string, unknown>) {
+  /** The legal minimum for the business's zone and the trade's level (rev 193). */
+  private async warnings(form: Record<string, unknown>, businessId: string) {
     if (typeof form.tradeSkill !== 'string' || typeof form.salaryMinPaise !== 'number') return { belowLegalMinimum: false, legalMinimumPaise: null };
-    const check = await this.vacancyConfirmation.checkLegalMinimum(form.tradeSkill, form.salaryMinPaise, typeof form.salaryPeriod === 'string' ? form.salaryPeriod : null);
+    const check = await this.vacancyConfirmation.checkLegalMinimum(form.tradeSkill, form.salaryMinPaise, typeof form.salaryPeriod === 'string' ? form.salaryPeriod : null, { businessId });
     return { belowLegalMinimum: check.below, legalMinimumPaise: check.legalMinimumPaise };
   }
 
@@ -320,7 +321,7 @@ export class CustomerRequestsService {
       data: { accountId, profileId: profile.id, businessId: profile.businessId!, branchId: (form.branchId as string | undefined) ?? null, form: form as Prisma.InputJsonValue },
       select: { id: true, status: true, form: true, updatedAt: true },
     });
-    return { ...draft, warnings: await this.warnings(form) };
+    return { ...draft, warnings: await this.warnings(form, profile.businessId!) };
   }
 
   private async ownDraft(accountId: string, profileId: string, draftId: string) {
@@ -344,7 +345,7 @@ export class CustomerRequestsService {
       data: { form: form as Prisma.InputJsonValue, branchId: (form.branchId as string | undefined) ?? null },
       select: { id: true, status: true, form: true, updatedAt: true },
     });
-    return { ...updated, warnings: await this.warnings(form) };
+    return { ...updated, warnings: await this.warnings(form, profile.businessId!) };
   }
 
   async discardDraft(accountId: string, profileId: string, draftId: string): Promise<void> {
@@ -363,7 +364,7 @@ export class CustomerRequestsService {
     } catch (error) {
       throw this.asValidation(error);
     }
-    const warnings = await this.warnings(form);
+    const warnings = await this.warnings(form, draft.businessId);
     if (warnings.belowLegalMinimum && body?.ownerToldMinimumWage !== true) {
       throw new CustomerApiError(HttpStatus.CONFLICT, CUSTOMER_ERROR_CODES.BELOW_MINIMUM_WAGE_TICK_REQUIRED,
         'The salary is below the legal minimum wage. Tick that you know the legal minimum wage to post it.', { legalMinimumPaise: warnings.legalMinimumPaise });

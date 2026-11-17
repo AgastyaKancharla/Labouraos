@@ -4,7 +4,6 @@ import { Link, NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { MANAGEMENT_ROLES, ROLE_LABEL } from '../auth/roles';
 import { useT } from '../i18n/I18nProvider';
-import { LanguageSwitcher } from '../i18n/LanguageSwitcher';
 import { formatDayMonthIST } from '../lib/format/date';
 import { useNow } from '../lib/useNow';
 import { useNavBadgeCounts } from '../portals/badges';
@@ -20,7 +19,6 @@ import { IncomingCallWatcher } from '../screens/call-agent/_lib/IncomingCallWatc
 import { AttendanceProvider } from '../attendance/AttendanceProvider';
 import { StatusBanner } from '../attendance/StatusBanner';
 import { StatusMenu } from '../attendance/StatusMenu';
-import { LanguageSelect, usePersonLanguage } from '../i18n/LanguageSwitcher';
 import type { PortalKey } from '../portals';
 
 /**
@@ -217,7 +215,6 @@ function ConsoleShell({ portal, children }: { portal: PortalDef; children: React
   const { session, signOut } = useAuth();
   const now = useNow(60_000);
   const staff = session?.staff;
-  usePersonLanguage(staff?.id);
   return (
     <div className="console lb-console">
       <SkipLink />
@@ -245,7 +242,6 @@ function ConsoleShell({ portal, children }: { portal: PortalDef; children: React
             })}
           </nav>
           <StatusMenu tone="onDark" />
-          <LanguageSelect staffId={staff?.id} />
           {staff && (
             <div className="chip">
               <div className="av" aria-hidden="true">
@@ -283,7 +279,6 @@ function PublicShell({ children }: { children: ReactNode }) {
               <span className="s">{t('subtitle.public')}</span>
             </div>
           </div>
-          <LanguageSwitcher />
         </header>
         <div className="swoosh lb-console__swoosh" />
         <main id="main" className="pb lb-public__main" tabIndex={-1}>

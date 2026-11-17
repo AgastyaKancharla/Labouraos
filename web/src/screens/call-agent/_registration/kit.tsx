@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button, ButtonLink } from '../../../components/Button';
 import { Modal } from '../../../components/Modal';
@@ -11,7 +11,6 @@ import { formatMobile } from '../../../lib/format/phone';
 import { useClock } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { lookupRecord, useFormOptions, type ExistingRecord, type StepState } from './api';
-import { SCRIPT_LANGUAGE_LABELS, type ScriptLanguage } from './scripts';
 import type { Choice } from './options';
 import { DEFAULT_AREA_AUTO_FILL_MAX_METERS, distanceText, nearestArea } from './nearestArea';
 import './registration.css';
@@ -66,42 +65,23 @@ export function StepLegend() {
   return <span className="sub">{t('reg.step.legend')}</span>;
 }
 
-/** "Explain … — read this to them", with ಕನ್ನಡ / हिंदी / English tabs. */
+/** "Explain … — read this to them" (English only, rev 193). */
 export function ExplainScript({
   n,
   title,
-  scripts,
-  language,
+  script,
   note,
 }: {
   n: number;
   title: ReactNode;
   /** null while the Settings values are loading. */
-  scripts: Record<ScriptLanguage, string> | null;
-  language: string;
+  script: string | null;
   note: ReactNode;
 }) {
-  const t = useT();
-  const initial: ScriptLanguage = language === 'hi' || language === 'en' ? language : 'kn';
-  const [lang, setLang] = useState<ScriptLanguage>(initial);
-  useEffect(() => setLang(initial), [initial]);
   return (
     <fieldset className="sec">
-      <SectionHead n={n} title={title} aside={t('reg.script.inTheirLanguage')} />
-      <div className="reg-tabs" role="group" aria-label={t('reg.script.language')}>
-        {(['kn', 'hi', 'en'] as const).map((l) => (
-          <button key={l} type="button" aria-pressed={lang === l} onClick={() => setLang(l)} lang={l}>
-            {SCRIPT_LANGUAGE_LABELS[l]}
-          </button>
-        ))}
-      </div>
-      {scripts ? (
-        <div className="script" lang={lang}>
-          {scripts[lang]}
-        </div>
-      ) : (
-        <Skeleton height={96} />
-      )}
+      <SectionHead n={n} title={title} />
+      {script ? <div className="script">{script}</div> : <Skeleton height={96} />}
       <span className="sub">{note}</span>
     </fieldset>
   );

@@ -35,7 +35,7 @@ export const businessPage = (over: Partial<BusinessPage> = {}): BusinessPage => 
   canAct: true,
   status: { verificationStatus: 'pending_tl_check', paused: false, suspended: false, suspendedUntil: null, canShowCandidates: true, candidatesHiddenReason: null },
   nextStep: { kind: 'vacancy_to_send', vacancyId: 'vac-1' },
-  contact: { name: 'Manjunath', role: 'owner', phoneLast4: '4321', language: 'kn' },
+  contact: { name: 'Manjunath', role: 'owner', phoneLast4: '4321', language: 'en' },
   checklist: {
     registered: { done: true, at: '2026-11-15T10:25:00.000Z' },
     ownerPhoneVerified: { done: true },
@@ -105,8 +105,8 @@ export const legalDoc = (key: string, lang: string) => ({
   key,
   version: '1.1',
   language: lang,
-  title: lang === 'kn' ? 'ವ್ಯಾಪಾರ ಒಪ್ಪಂದ' : 'Business agreement',
-  summary: [lang === 'kn' ? 'ಆಯ್ಕೆ ಮಾಡಿದಾಗ ಮಾತ್ರ ಶುಲ್ಕ' : 'You pay only when you select someone: <strong>50%</strong> of the first month’s salary.'],
+  title: 'Business agreement',
+  summary: ['You pay only when you select someone: <strong>50%</strong> of the first month’s salary.'],
   summaryHtml: '',
   bodyHtml: '',
 });

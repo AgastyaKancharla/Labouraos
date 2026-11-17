@@ -1,7 +1,6 @@
 /**
  * English words of the selling screens (FA10–FA19, FA11, FA14, FA18), kept
- * in their own file and spread into en.ts. kn.ts and hi.ts spread the
- * translations from selling.kn.ts and selling.hi.ts (same keys, same {slots}).
+ * in their own file and spread into en.ts (English only, Master Guide rev 193).
  */
 export const sellingEn = {
   'form.choose': 'Choose',
@@ -423,10 +422,6 @@ export const sellingEn = {
   'fa10.gender.female': 'Female',
   'fa10.gender.male': 'Male',
   'fa10.gender.other': 'Other',
-  'fa10.messageLanguage': 'Language for messages',
-  'fa10.lang.kn': 'Kannada',
-  'fa10.lang.hi': 'Hindi',
-  'fa10.lang.en': 'English',
   'fa10.bestTime': 'Best time to call',
   'fa10.time.09-12': '9 AM – 12 PM',
   'fa10.time.12-15': '12 PM – 3 PM',

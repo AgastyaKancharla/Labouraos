@@ -10,7 +10,7 @@ describe('FA23b Referral partner saved', () => {
   it('shows the RF- ID and his steps on his own phone, with Resend link', async () => {
     searchParams.current = { id: 'rf-1', new: '1' };
     const { route, calls } = routeTable({
-      '/referrals/rf-1': { id: 'rf-1', code: 'RF-00019', name: 'Manju', language: 'kn' },
+      '/referrals/rf-1': { id: 'rf-1', code: 'RF-00019', name: 'Manju', language: 'en' },
       '/referrals/rf-1/registration-status': {
         currentStep: 'selfie',
         steps: { terms: { state: 'done', time: '2026-11-16T05:10:00Z' }, selfie: { state: 'not_started' }, id: { state: 'not_started' }, upi: { state: 'not_started' } },
@@ -24,7 +24,7 @@ describe('FA23b Referral partner saved', () => {
     expect(screen.getByTestId('fa23b-selfie')).toHaveTextContent(/Selfie.*Not yet/);
     await fireEvent.press(screen.getByTestId('fa23b-resend'));
     await waitFor(() => expect(screen.getByTestId('fa23b-resend')).toHaveTextContent('Link sent again'));
-    expect(calls).toContainEqual({ method: 'POST', path: '/referrals/rf-1/terms-links', body: { language: 'kn' } });
+    expect(calls).toContainEqual({ method: 'POST', path: '/referrals/rf-1/terms-links', body: {} });
     await fireEvent.press(screen.getByTestId('fa23b-done'));
     expect(router.dismissTo).toHaveBeenCalledWith('/job-seekers');
   });

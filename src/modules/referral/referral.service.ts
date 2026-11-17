@@ -1,3 +1,4 @@
+import { PRODUCT_LANGUAGE } from '../../common/language/english-only';
 import { OwnTeam } from '../../common/rbac/own-team';
 import { assertNotBanned } from '../conduct/permanent-ban.check';
 import {
@@ -30,7 +31,6 @@ export const ALLOWED_REFERRAL_UPDATE_FIELDS: ReadonlySet<string> = new Set([
   'name',
   'phone',
   'whatsappPhone',
-  'language',
   'individualRole',
   'partnerBusinessType',
   'partnerBusinessName',
@@ -46,9 +46,6 @@ const INDIVIDUAL_ROLES = ['auto_driver', 'shop_staff', 'shop_owner', 'security_g
 function validateReferralValues(updates: Record<string, unknown>) {
   if ('name' in updates && (typeof updates.name !== 'string' || !updates.name.trim())) {
     throw new BadRequestException('Name is required');
-  }
-  if ('language' in updates && !['kn', 'hi', 'en'].includes(updates.language as string)) {
-    throw new BadRequestException('language must be kn, hi, or en');
   }
   if ('pincode' in updates && !/^\d{6}$/.test(String(updates.pincode ?? ''))) {
     throw new BadRequestException('A valid 6-digit pincode is required');
@@ -205,7 +202,6 @@ export class ReferralService {
       throw new BadRequestException("type must be either 'individual' or 'business'");
     }
 
-    if (!['kn', 'hi', 'en'].includes(dto.language)) throw new BadRequestException('language must be kn, hi, or en');
     if (!dto.whatsappPhone?.trim()) throw new BadRequestException('WhatsApp number is required');
     const whatsappPhone = requireIndianMobile(dto.whatsappPhone, 'whatsappPhone');
     if (!dto.locality?.trim()) throw new BadRequestException('Locality is required');
@@ -271,7 +267,8 @@ export class ReferralService {
         type,
         city: dto.city ?? 'Bengaluru',
         whatsappPhone,
-        language: dto.language,
+        // English only (rev 193): the partner's messages are in English.
+        language: PRODUCT_LANGUAGE,
         individualRole: type === 'individual' ? dto.individualRole : null,
         businessId: type === 'business' ? dto.businessId ?? null : null,
         partnerBusinessType: type === 'business' ? dto.partnerBusinessType?.trim() ?? null : null,

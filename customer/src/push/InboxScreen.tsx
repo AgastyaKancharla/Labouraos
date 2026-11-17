@@ -2,7 +2,7 @@
  * The in-app inbox (route /inbox, docs/customer-app-api.md section 9): every
  * notification, newest first, unread ones marked, tap to open (and mark read),
  * "Mark all as read", older pages on request, and the three notification
- * switches (Service, Job updates, Promotions). Kannada, Hindi and English.
+ * switches (Service, Job updates, Promotions). English only (rev 193).
  */
 import { useState } from 'react';
 import { Pressable, StyleSheet, Switch, View } from 'react-native';
@@ -19,7 +19,7 @@ import { defaultPushApi, type InboxMessage, type NotificationSettings, type Push
 import { pushText } from './strings';
 
 const SETTINGS_QUERY_KEY = ['push', 'settings'] as const;
-const LOCALE: Record<Language, string> = { en: 'en-IN', kn: 'kn-IN', hi: 'hi-IN' };
+const LOCALE: Record<Language, string> = { en: 'en-IN' };
 
 function when(iso: string, language: Language): string {
   return new Intl.DateTimeFormat(LOCALE[language], {

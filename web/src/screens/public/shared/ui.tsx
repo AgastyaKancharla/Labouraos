@@ -1,28 +1,10 @@
 import { useEffect, useId, useState, type ReactNode } from 'react';
 import { OtpInput } from '../../../components/fields/OtpInput';
-import { useI18n, useT, type Language } from '../../../i18n/I18nProvider';
+import { useT } from '../../../i18n/I18nProvider';
 import type { MessageKey } from '../../../i18n/en';
 import { isApiError } from '../../../lib/api/errors';
 import type { OtpSent } from './api';
 import './public.css';
-
-/** The ಕನ್ನಡ · हिंदी · EN switcher starts in the person's own language, once per link. */
-export function usePersonLanguage(language: string | null | undefined, token: string | undefined) {
-  const { setLanguage } = useI18n();
-  useEffect(() => {
-    if (!token) return;
-    const lang = language === 'kn' || language === 'hi' || language === 'en' ? (language as Language) : null;
-    if (!lang) return;
-    const key = `laboura_p_lang:${token}`;
-    try {
-      if (sessionStorage.getItem(key)) return;
-      sessionStorage.setItem(key, lang);
-    } catch {
-      /* storage blocked: still default once per page load */
-    }
-    setLanguage(lang);
-  }, [language, token, setLanguage]);
-}
 
 /** "Step 2 of 4 · Selfie" with the four-segment bar (P01…P02). */
 export function StepsBar({ current, label }: { current: 1 | 2 | 3 | 4; label: string }) {
@@ -194,6 +176,14 @@ const MAX_RESENDS = 3;
  * Send → type the code; Resend unlocks after 30 seconds, at most 3 times.
  * The code always goes to the number on record; this page never sees it.
  */
+/**
+ * The owner's OTP on a public page. By default: "Send code to …", then the
+ * code box (the page has its own submit button). With `onComplete` it is the
+ * one-step flow of rev 193 (agreement, vacancy confirmation): a single primary
+ * button (`sendLabel`, e.g. "Send code to sign") sends the code, and typing
+ * the sixth digit submits it — signing or confirming in the same step, with no
+ * second button. `submitting` shows that the code is being checked.
+ */
 export function OtpBlock({
   maskedPhone,
   send,
@@ -203,6 +193,11 @@ export function OtpBlock({
   onCode,
   invalid,
   hint,
+  sendLabel,
+  sendDisabled,
+  onComplete,
+  submitting,
+  submittingLabel,
 }: {
   maskedPhone: string;
   send: () => Promise<OtpSent>;
@@ -212,6 +207,14 @@ export function OtpBlock({
   onCode: (code: string) => void;
   invalid?: boolean;
   hint?: ReactNode;
+  /** The send button's words; default "Send code to {phone}". */
+  sendLabel?: string;
+  /** Keeps the send button off until the page is ready (name, ticks). */
+  sendDisabled?: boolean;
+  /** One-step flow: called with the code when the sixth digit is typed. */
+  onComplete?: (code: string) => void;
+  submitting?: boolean;
+  submittingLabel?: string;
 }) {
   const t = useT();
   const hintId = useId();
@@ -244,11 +247,22 @@ export function OtpBlock({
     }
   };
 
+  const typed = (value: string) => {
+    onCode(value);
+    if (onComplete && value.length === 6 && !submitting) onComplete(value);
+  };
+
   if (!requestId) {
     return (
       <div className="fld">
-        <button type="button" className="btn bs full" disabled={sending} aria-busy={sending || undefined} onClick={() => void doSend(false)}>
-          {t('pub.otp.send', { phone: maskedPhone })}
+        <button
+          type="button"
+          className={`btn ${onComplete ? 'bp' : 'bs'} full`}
+          disabled={sending || sendDisabled}
+          aria-busy={sending || undefined}
+          onClick={() => void doSend(false)}
+        >
+          {sendLabel ?? t('pub.otp.send', { phone: maskedPhone })}
         </button>
         {hint && <span className="sub">{hint}</span>}
         <ActionError error={error} />
@@ -261,14 +275,19 @@ export function OtpBlock({
       <span className="lbl" id={`${hintId}-label`}>
         {t('pub.otp.sentTo', { phone: shownPhone })}
       </span>
-      <OtpInput value={code} onChange={onCode} label={t('pub.otp.label')} autoFocus invalid={invalid} describedBy={hint ? hintId : undefined} />
+      <OtpInput value={code} onChange={typed} label={t('pub.otp.label')} autoFocus invalid={invalid} describedBy={hint ? hintId : undefined} />
       {hint && (
         <span className="sub" id={hintId}>
           {hint}
         </span>
       )}
+      {submitting && (
+        <span className="sub" role="status">
+          {submittingLabel}
+        </span>
+      )}
       {resends < MAX_RESENDS && (
-        <button type="button" className="lb-pub-link" disabled={wait > 0 || sending} onClick={() => void doSend(true)}>
+        <button type="button" className="lb-pub-link" disabled={wait > 0 || sending || submitting} onClick={() => void doSend(true)}>
           {wait > 0 ? t('pub.otp.resendIn', { seconds: wait }) : t('pub.otp.resend')}
         </button>
       )}

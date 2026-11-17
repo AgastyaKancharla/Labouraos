@@ -1,4 +1,4 @@
-import { formatCountdown, formatDayIst, formatShiftTime, formatStampIst, formatTimeIst, initials, monthName, setDateLanguage } from './format';
+import { formatCountdown, formatDayIst, formatShiftTime, formatStampIst, formatTimeIst, initials, monthName } from './format';
 import { formatDateKey } from '@/screens/_visits/format';
 import { formatDateKey as formatFormDate } from '@/components/form';
 
@@ -21,27 +21,12 @@ describe('IST formatting', () => {
   });
 });
 
-describe('dates in the app language (A8)', () => {
-  afterEach(() => setDateLanguage('en'));
-
-  it('Kannada shows Kannada day and month names; English stays as it was', () => {
-    setDateLanguage('kn');
-    expect(formatDayIst('2026-11-16T05:30:00Z')).toBe('ಸೋಮ 16 ನವೆಂ');
-    expect(formatDateKey('2026-11-18')).toBe('ಬುಧ 18 ನವೆಂ');
-    expect(formatFormDate('2026-01-04')).toBe('ಭಾನು 4 ಜನವರಿ 2026');
-    expect(monthName(7)).toBe('ಆಗ');
-    setDateLanguage('en');
+describe('dates are in English (rev 193)', () => {
+  it('day and month names are English everywhere', () => {
     expect(formatDayIst('2026-11-16T05:30:00Z')).toBe('Mon 16 Nov');
     expect(formatDateKey('2026-11-18')).toBe('Wed 18 Nov');
-  });
-
-  it('photo stamps stay in English (they are proof)', () => {
-    setDateLanguage('kn');
+    expect(formatFormDate('2026-01-04')).toBe('Sun 4 Jan 2026');
+    expect(monthName(7)).toBe('Aug');
     expect(formatStampIst('2026-11-11T08:35:00Z')).toBe('11 Nov 2026, 2:05 PM IST');
-  });
-
-  it('Hindi (hidden in Laboura Field) uses the English names', () => {
-    setDateLanguage('hi');
-    expect(formatDayIst('2026-11-16T05:30:00Z')).toBe('Mon 16 Nov');
   });
 });

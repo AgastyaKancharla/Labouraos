@@ -389,7 +389,7 @@ Home opens next time (proposal 3.3).
 
 ```json
 {
-  "languages": { "app": ["kn", "hi", "en"], "spokenSuggestions": ["Kannada", "Hindi", "…"] },
+  "languages": { "app": ["en"], "spokenSuggestions": ["Kannada", "Hindi", "…"] },
   "areas": [{ "name": "Jayanagar", "pincode": "560041", "latitude": 12.93, "longitude": 77.58 }],
   "trades": [{ "name": "Cook", "marketSalaryMinPaise": 1800000, "marketSalaryMaxPaise": 2600000, "minimumWageLevel": "semi_skilled", "legalMinimumPaise": 2571400 }],
   "legalMinimumWagePaise": { "unskilled": 2337600, "semi_skilled": 2571400, "skilled": 2828600, "highly_skilled": 3111400 },

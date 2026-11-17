@@ -1,7 +1,6 @@
 /**
- * English — the reference language for the customer app. Every key here
- * must exist in kn.ts and hi.ts (TypeScript and i18n.test.tsx both check:
- * same keys, same {slots}, not left in English). Keys are grouped by the
+ * English — the only language of the customer app (Master Guide rev 193).
+ * Keys are grouped by the
  * screen that owns them; shared words live under `common.*` and `form.*`.
  *
  * Written for people who read little: short sentences, everyday words.
@@ -18,7 +17,6 @@ export const en = {
   'common.error': 'Something went wrong. Please try again.',
   'common.networkError': 'Could not reach Laboura. Check your internet and try again.',
   'common.empty': 'Nothing here yet.',
-  'common.languageLabel': 'App language',
 
   'menu.open': 'Menu',
   'menu.inbox': 'Messages',
@@ -29,7 +27,7 @@ export const en = {
   'menu.signOut': 'Sign out',
 
   'welcome.tagline': 'Jobs and staff in Bengaluru',
-  'welcome.chooseLanguage': 'Choose your language',
+  'welcome.start': 'Get started',
 
   'signIn.title': 'Sign in',
   'signIn.heading': 'Welcome to Laboura',
@@ -56,6 +54,7 @@ export const en = {
   'otp.enterCode': 'Enter the 6-digit code.',
   'otp.verify': 'Verify',
   'otp.resend': 'Resend code',
+  'otp.checking': 'Checking the code…',
   'otp.resendIn': 'Resend in {time}',
   'otp.noResendsLeft': 'No more resends. Try again later or ask for a call back.',
   'otp.changeNumber': 'Change number',
@@ -135,9 +134,6 @@ export const en = {
   'shift.night': 'Night',
   'shift.rotational': 'Rotating',
   'shift.any': 'Any',
-  'msgLang.kn': 'Kannada',
-  'msgLang.hi': 'Hindi',
-  'msgLang.en': 'English',
   'spoken.kannada': 'Kannada',
   'spoken.hindi': 'Hindi',
   'spoken.english': 'English',
@@ -199,7 +195,6 @@ export const en = {
   'jobSeeker.fullName': 'Full name',
   'jobSeeker.gender': 'Gender',
   'jobSeeker.genderWhy': 'Used only to match jobs that really need it. Never shown to businesses.',
-  'jobSeeker.messageLanguage': 'Language for messages',
   'jobSeeker.bestTime': 'Best time to call you',
   'jobSeeker.languagesSpoken': 'Languages you speak',
   'jobSeeker.sectionWhere': 'Where you live',
@@ -294,7 +289,7 @@ export const en = {
   'vacancy.saveDraft': 'Save as draft',
   'vacancy.draftSaved': 'Draft saved',
   'vacancy.otpWhy': 'Confirm this vacancy with a code sent to your phone. This proves the vacancy is real.',
-  'vacancy.sendOtp': 'Send code to number ending {last4}',
+  'vacancy.sendOtp': 'Send code to confirm (number ending {last4})',
   'vacancy.confirm': 'Confirm vacancy',
   'vacancy.later': 'Confirm later',
   'vacancy.confirmedTitle': 'Vacancy confirmed',
@@ -313,7 +308,7 @@ export const en = {
   'terms.readFull': 'Read the full terms',
   'terms.version': 'Version {version}',
   'terms.needAll': 'Tick every required box to accept.',
-  'terms.sendOtp': 'Send a code to the number ending {last4}',
+  'terms.sendOtp': 'Send code to accept (number ending {last4})',
   'terms.accept': 'Accept the updated terms',
   'terms.failed': 'Could not save. Please try again.',
   'terms.signAgreement': 'Read and sign the updated agreement',
@@ -474,7 +469,6 @@ export const en = {
   'delete.keptTitle': 'What we must keep',
 
   'settings.title': 'Settings',
-  'settings.language': 'App language',
   'settings.about': 'About',
   'settings.version': 'Laboura app version {version}',
   'settings.mockMode': 'Test app with pretend data. Nothing is sent to Laboura.',

@@ -3,7 +3,7 @@ import { useCallback, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { partnerApi, type PartnerOpen, type PartnerStep } from './api';
-import { tabMemory, usePersonLanguage } from './ui';
+import { tabMemory } from './ui';
 
 /**
  * The referral partner's one link that resumes (guide, "Registering a
@@ -41,7 +41,6 @@ export function usePartnerStatus(token: string) {
     enabled: Boolean(token),
     staleTime: 0,
   });
-  usePersonLanguage(query.data?.language, token);
   return { ...query, requestId };
 }
 

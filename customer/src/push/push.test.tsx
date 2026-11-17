@@ -43,8 +43,8 @@ const message = (over: Partial<InboxMessage> = {}): InboxMessage => ({
   kind: 'refund_paid',
   category: 'service',
   priority: 'normal',
-  title: 'ಮರುಪಾವತಿ ಮಾಡಲಾಗಿದೆ',
-  body: 'ನಿಮ್ಮ ಮರುಪಾವತಿ ಮಾಡಲಾಗಿದೆ.',
+  title: 'Refund paid',
+  body: 'Your refund is paid.',
   deepLink: '/home',
   data: {},
   createdAt: '2026-11-20T05:30:00.000Z',
@@ -83,14 +83,9 @@ describe('push: where a tap goes', () => {
     expect(targetFor(null)).toEqual({ route: routes.inbox, profileId: null });
   });
 
-  it('has every push and inbox word in Kannada, Hindi and English', () => {
-    const keys = Object.keys(PUSH_STRINGS.en).sort();
-    expect(Object.keys(PUSH_STRINGS.kn).sort()).toEqual(keys);
-    expect(Object.keys(PUSH_STRINGS.hi).sort()).toEqual(keys);
-    for (const key of keys as (keyof typeof PUSH_STRINGS.en)[]) {
-      expect(PUSH_STRINGS.kn[key]).not.toBe(PUSH_STRINGS.en[key]);
-      expect(PUSH_STRINGS.hi[key]).not.toBe(PUSH_STRINGS.en[key]);
-    }
+  it('has every push and inbox word in English, and only English (rev 193)', () => {
+    expect(Object.keys(PUSH_STRINGS)).toEqual(['en']);
+    for (const value of Object.values(PUSH_STRINGS.en)) expect(value.trim()).not.toBe('');
   });
 });
 
@@ -129,8 +124,8 @@ describe('push: PushBridge', () => {
     (Notifications.getPermissionsAsync as jest.Mock).mockResolvedValue({ status: 'undetermined' });
     const api = fakePushApi();
     const storage = createMemoryStore();
-    await renderWithApp(<PushBridge api={api} storage={storage} />, { account: account({ profiles: [jsProfile] }), language: 'kn' });
-    expect(await screen.findByText(PUSH_STRINGS.kn['prompt.title'])).toBeTruthy();
+    await renderWithApp(<PushBridge api={api} storage={storage} />, { account: account({ profiles: [jsProfile] }) });
+    expect(await screen.findByText(PUSH_STRINGS.en['prompt.title'])).toBeTruthy();
     expect(Notifications.requestPermissionsAsync).not.toHaveBeenCalled();
     fireEvent.press(screen.getByTestId('push-later'));
     await waitFor(async () => expect(await storage.getItem(PROMPT_LATER_KEY)).toBeTruthy());
@@ -161,13 +156,13 @@ describe('push: PushBridge', () => {
 });
 
 describe('push: InboxScreen', () => {
-  it('lists messages in the person\'s language with the unread count, and opens one', async () => {
+  it('lists messages with the unread count, and opens one', async () => {
     const api = fakePushApi({
-      inbox: jest.fn(async () => ({ items: [message(), message({ id: 'm-2', readAt: '2026-11-20T06:00:00.000Z', title: 'ಹಳೆಯದು' })], nextCursor: null, unreadCount: 1 })),
+      inbox: jest.fn(async () => ({ items: [message(), message({ id: 'm-2', readAt: '2026-11-20T06:00:00.000Z', title: 'Older' })], nextCursor: null, unreadCount: 1 })),
     });
-    await renderWithApp(<InboxScreen api={api} />, { account: account({ profiles: [jsProfile] }), language: 'kn' });
-    expect(await screen.findByText('ಮರುಪಾವತಿ ಮಾಡಲಾಗಿದೆ')).toBeTruthy();
-    expect(screen.getByTestId('inbox-unread').props.children).toBe('1 ಓದದವು');
+    await renderWithApp(<InboxScreen api={api} />, { account: account({ profiles: [jsProfile] }) });
+    expect(await screen.findByText('Refund paid')).toBeTruthy();
+    expect(screen.getByTestId('inbox-unread').props.children).toBe(PUSH_STRINGS.en['inbox.unread'].replace('{count}', '1'));
     fireEvent.press(screen.getByTestId('inbox-item-m-1'));
     await waitFor(() => expect(api.markRead).toHaveBeenCalledWith('m-1'));
     expect(router.push).toHaveBeenCalledWith(routes.home);
@@ -190,9 +185,9 @@ describe('push: InboxScreen', () => {
     await waitFor(() => expect(api.markAllRead).toHaveBeenCalled());
   });
 
-  it('shows an empty inbox in Hindi', async () => {
-    await renderWithApp(<InboxScreen api={fakePushApi()} />, { account: account({ profiles: [jsProfile] }), language: 'hi' });
-    expect(await screen.findByText(PUSH_STRINGS.hi['inbox.empty'])).toBeTruthy();
+  it('shows an empty inbox', async () => {
+    await renderWithApp(<InboxScreen api={fakePushApi()} />, { account: account({ profiles: [jsProfile] }) });
+    expect(await screen.findByText(PUSH_STRINGS.en['inbox.empty'])).toBeTruthy();
   });
 
   it('the Service switch is locked while a guarantee runs; Promotions can be turned on', async () => {

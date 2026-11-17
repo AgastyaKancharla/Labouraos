@@ -8,7 +8,12 @@ export interface Area {
   longitude: number;
 }
 
-/** GET /trades — trade list with the usual salary range and legal minimum (paise / month). */
+/**
+ * GET /trades — trade list with the usual salary range and legal minimum
+ * (paise / month). `legalMinimumPaise` is for the business's zone when the
+ * request names a business (rev 193), else Zone 1's (the default when unsure;
+ * the server checks the real zone when the vacancy is sent to the owner).
+ */
 export interface Trade {
   id: string;
   name: string;
@@ -16,6 +21,7 @@ export interface Trade {
   salaryMaxPaise: number;
   minimumWageLevel: string;
   legalMinimumPaise: number;
+  legalMinimumPaiseByZone?: Record<'1' | '2' | '3', number>;
 }
 
 export interface OtpSendResult {

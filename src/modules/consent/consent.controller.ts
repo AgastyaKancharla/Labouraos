@@ -96,7 +96,6 @@ export class ConsentController {
         details.otpRequired ? '' : details.partnerName,
         details.maskedPhone,
         details.otpRequired ? '' : details.termsHtml,
-        details.preferredLanguage as 'kn' | 'hi' | 'en',
       );
     }
 

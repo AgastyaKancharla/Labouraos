@@ -17,7 +17,7 @@ import { useScreenPath } from '../../../portals/PortalContext';
 import { qk, useScriptTerms, type BusinessStatus } from '../_registration/api';
 import { StepLegend, StepRow } from '../_registration/kit';
 import { CONTACT_ROLES } from '../_registration/options';
-import { businessScript, type ScriptLanguage } from '../_registration/scripts';
+import { businessScript } from '../_registration/scripts';
 import '../_registration/registration.css';
 
 /**
@@ -44,7 +44,7 @@ export default function BusinessSaved() {
     refetchInterval: (q) => (q.state.data?.steps.verified.state === 'done' ? false : 15000),
   });
   const resend = useMutation({
-    mutationFn: () => api.post(`/businesses/${business.data!.id}/agreement-links`, { language: business.data!.contactLanguage ?? 'en' }),
+    mutationFn: () => api.post(`/businesses/${business.data!.id}/agreement-links`, {}),
     onSuccess: () => {
       setJustSent(true);
       toast.success(t('reg.biz.agreementResent'));
@@ -163,10 +163,8 @@ export default function BusinessSaved() {
         </div>
       </Card>
       <Modal open={preview} onClose={() => setPreview(false)} title={t('reg.biz.previewAgreement')}>
-        <div className="script" lang={b.contactLanguage ?? 'en'} style={{ whiteSpace: 'pre-line' }}>
-          {scriptTerms
-            ? businessScript(scriptTerms)[(['kn', 'hi', 'en'].includes(b.contactLanguage ?? '') ? b.contactLanguage : 'en') as ScriptLanguage]
-            : t('common.loading')}
+        <div className="script" style={{ whiteSpace: 'pre-line' }}>
+          {scriptTerms ? businessScript(scriptTerms) : t('common.loading')}
         </div>
         <p className="muted">{t('reg.biz.previewNote')}</p>
       </Modal>

@@ -242,6 +242,10 @@ export class CeoBusinessesService {
       employeeCountBand: b.employeeCountBand,
       address: [b.shopNumber, b.street, b.landmark, b.locality, b.pincode].filter(Boolean).join(', ') || b.address,
       hasPin: b.latitude !== null && b.longitude !== null,
+      city: b.city,
+      // Rev 193: legal minimum wage zone (1 Greater Bengaluru, 2 other corporations / district HQs, 3 rest of Karnataka).
+      minimumWageZone: b.minimumWageZone,
+      minimumWageZoneSource: b.minimumWageZoneSource,
       contact: { name: b.ownerName, role: b.contactRole, phone: b.phone, verified: b.phoneVerified },
       branches: b.branches.map((br) => ({ id: br.id, name: br.name, locality: br.locality, contact: br.contactPersonName })),
       accountAgent: b.accountAgentId ? { id: b.accountAgentId, name: names.get(b.accountAgentId) ?? null, since: b.accountAgentAssignedAt?.toISOString() ?? null } : null,

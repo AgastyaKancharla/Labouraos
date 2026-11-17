@@ -245,8 +245,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
       // In production the global filter puts the extra fields under `details`; in this test app they are at the top.
       const detail = refused.body.details ?? refused.body;
       expect(detail).toMatchObject({ code: 'area_required', maxMeters: 1000 });
-      expect(detail.messages.kn).toContain('ಪ್ರದೇಶ');
-      expect(detail.messages.hi).toContain('इलाक़ा');
+      expect(detail.messages).toEqual({ en: 'Pick the area — no area is within 1 km of this shop' }); // English only (rev 193)
       expect(await prisma.business.count({ where: { phone: { in: [phone, `+91${phone}`] } } })).toBe(0);
 
       // The refusal does not use up the verified OTP: pick an area and save.
@@ -585,8 +584,9 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
             salaryMinPaise: 2000000, salaryMaxPaise: 2500000, shift: 'day', startDate: '2026-12-01',
           },
           {
+            // A cook is skilled (rev 193): above Zone 1's skilled minimum (₹28,285.47).
             trade: 'Cook', headcount: 1,
-            salaryMinPaise: 2500000, salaryMaxPaise: 3000000, shift: 'day', startDate: '2026-12-01',
+            salaryMinPaise: 2900000, salaryMaxPaise: 3200000, shift: 'day', startDate: '2026-12-01',
           },
         ],
       })

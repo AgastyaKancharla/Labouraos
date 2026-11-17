@@ -15,13 +15,22 @@ import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { PricingTabs } from '../_kit/tabs';
 
-/** Legal minimum wage — design C-Pricing-MinWage.dc.html. Every vacancy form checks against these. */
-interface MinWage {
-  effectiveFrom: string;
+/**
+ * Legal minimum wage — design C-Pricing-MinWage.dc.html. Every vacancy form
+ * checks against these: the business's zone and the trade's skill level
+ * (Karnataka notification of 22 May 2026; guide rev 193, docs/minimum-wage.md).
+ */
+interface ZoneFigures {
   unskilledPaise: number;
   semiSkilledPaise: number;
   skilledPaise: number;
   highlySkilledPaise: number;
+  businesses?: number;
+}
+interface MinWage extends ZoneFigures {
+  effectiveFrom: string;
+  /** All three zones (rev 193); the top-level figures are Zone 1's. */
+  zones?: Record<'1' | '2' | '3', ZoneFigures>;
   openVacancies: number;
   belowMinimum: number;
   belowMinimumOwnerTold: number;
@@ -32,6 +41,23 @@ const LEVELS = [
   ['skilledPaise', 'Skilled'],
   ['highlySkilledPaise', 'Highly skilled'],
 ] as const;
+type LevelKey = (typeof LEVELS)[number][0];
+export const ZONES = [
+  ['1', 'Zone 1', 'Greater Bengaluru Authority area'],
+  ['2', 'Zone 2', 'Other municipal corporations and district headquarters'],
+  ['3', 'Zone 3', 'Rest of Karnataka'],
+] as const;
+type ZoneKey = (typeof ZONES)[number][0];
+
+function zoneFigures(d: MinWage, zone: ZoneKey): ZoneFigures | null {
+  if (d.zones?.[zone]) return d.zones[zone];
+  return zone === '1' ? d : null;
+}
+
+/** PUT body key for a zone and level: Zone 1 keeps the plain keys, the others are prefixed (zone2UnskilledPaise). */
+function bodyKey(zone: ZoneKey, level: LevelKey): string {
+  return zone === '1' ? level : `zone${zone}${level[0].toUpperCase()}${level.slice(1)}`;
+}
 
 export default function MinimumWage() {
   const to = useScreenPath();
@@ -40,29 +66,37 @@ export default function MinimumWage() {
   const d = q.data;
   return (
     <div className="lb-page">
-      <TopBar icon="salaries" iconTone="good" back={{ to: to('C-Pricing'), label: 'Pricing & policy' }} title="Legal minimum wage" subtitle="Update these when the government revises them; every vacancy form checks against them." actions={<Button variant="primary" onClick={() => setOpen(true)} disabled={!d}>Update figures</Button>} />
+      <TopBar icon="salaries" iconTone="good" back={{ to: to('C-Pricing'), label: 'Pricing & policy' }} title="Legal minimum wage" subtitle="Update these when the government revises them; every vacancy form checks against the business's zone and the trade's skill level." actions={<Button variant="primary" onClick={() => setOpen(true)} disabled={!d}>Update figures</Button>} />
       <PricingTabs />
       {q.error ? (
         <ErrorState error={q.error} onRetry={() => void q.refetch()} />
       ) : (
         <div className="two-col">
-          <Card icon="payments" tone="good" title={d ? `In force · Bengaluru (Zone 1) · from ${formatDateIST(d.effectiveFrom)}` : 'In force'}>
-            <div className="kv">
-              {LEVELS.map(([k, label], i) => (
-                <Pair key={k} k={label} v={d ? `${formatINR(d[k])}${i === 0 ? ' a month basic' : ''}` : '—'} />
-              ))}
-            </div>
-          </Card>
-          <Card icon="reports" tone="cyan" title="How it's used">
-            <div className="kv">
-              <span>Vacancy below the minimum</span>
-              <span>Allowed with a warning · agent ticks "owner told" · marked for TL and Managers</span>
-              <span>Vacancies below minimum now</span>
-              <span>{d ? `${d.belowMinimum} of ${d.openVacancies} open (${d.belowMinimumOwnerTold} with owner told)` : '—'}</span>
-              <span>Agreement</span>
-              <span>The business is the employer and pays at least the legal minimum, PF and ESI</span>
-            </div>
-          </Card>
+            {ZONES.map(([zone, label, area]) => {
+              const z = d ? zoneFigures(d, zone) : null;
+              return (
+                <Card key={zone} icon="payments" tone="good" title={d ? `${label} · ${area} · in force from ${formatDateIST(d.effectiveFrom)}` : `${label} · ${area}`}>
+                  <div className="kv" data-testid={`zone-${zone}`}>
+                    {LEVELS.map(([k, levelLabel], i) => (
+                      <Pair key={k} k={levelLabel} v={z ? `${formatINR(z[k])}${i === 0 ? ' a month basic' : ''}` : '—'} />
+                    ))}
+                    {z?.businesses !== undefined && <Pair k="Businesses in this zone" v={String(z.businesses)} />}
+                  </div>
+                </Card>
+              );
+            })}
+            <Card icon="reports" tone="cyan" title="How it's used">
+              <div className="kv">
+                <span>Which figure</span>
+                <span>The business's zone (from its pin code or city; office staff can change it on the business page) and the trade's skill level (Trades tab)</span>
+                <span>Vacancy below the minimum</span>
+                <span>Allowed with a warning · agent ticks "owner told" · marked for TL and Managers</span>
+                <span>Vacancies below minimum now</span>
+                <span>{d ? `${d.belowMinimum} of ${d.openVacancies} open (${d.belowMinimumOwnerTold} with owner told)` : '—'}</span>
+                <span>Agreement</span>
+                <span>The business is the employer and pays at least the legal minimum, PF and ESI</span>
+              </div>
+            </Card>
         </div>
       )}
       {open && d && <UpdateFigures current={d} onClose={() => setOpen(false)} />}
@@ -72,7 +106,14 @@ export default function MinimumWage() {
 
 function UpdateFigures({ current, onClose }: { current: MinWage; onClose: () => void }) {
   const today = istDateKey(useNow());
-  const [v, setV] = useState<Record<string, number | null>>({ unskilledPaise: current.unskilledPaise, semiSkilledPaise: current.semiSkilledPaise, skilledPaise: current.skilledPaise, highlySkilledPaise: current.highlySkilledPaise });
+  const [v, setV] = useState<Record<string, number | null>>(() => {
+    const start: Record<string, number | null> = {};
+    for (const [zone] of ZONES) {
+      const z = zoneFigures(current, zone);
+      for (const [level] of LEVELS) start[bodyKey(zone, level)] = z ? z[level] : null;
+    }
+    return start;
+  });
   const [from, setFrom] = useState(today);
   const toast = useToast();
   const qc = useQueryClient();
@@ -98,8 +139,16 @@ function UpdateFigures({ current, onClose }: { current: MinWage; onClose: () => 
         </>
       }
     >
-      {LEVELS.map(([k, label]) => (
-        <MoneyField key={k} label={`${label} (a month)`} value={v[k]} onChange={(x) => setV((s) => ({ ...s, [k]: x }))} required />
+      {ZONES.map(([zone, label, area]) => (
+        <div key={zone} role="group" aria-label={`${label} — ${area}`}>
+          <p>
+            <strong>{`${label} — ${area}`}</strong>
+          </p>
+          {LEVELS.map(([level, levelLabel]) => {
+            const key = bodyKey(zone, level);
+            return <MoneyField key={key} label={`${label} · ${levelLabel} (a month)`} value={v[key]} onChange={(x) => setV((s) => ({ ...s, [key]: x }))} required />;
+          })}
+        </div>
       ))}
       <DateField label="In force from (the government's date)" value={from} onChange={(x) => x && setFrom(x)} />
     </Modal>

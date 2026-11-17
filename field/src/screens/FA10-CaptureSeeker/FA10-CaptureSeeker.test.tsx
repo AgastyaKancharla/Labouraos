@@ -36,7 +36,9 @@ describe('FA10 Register a job seeker', () => {
     await fireEvent.press(screen.getByTestId('save-seeker'));
     await waitFor(() => screen.getByTestId('form-errors'));
     expect(calls.some((c) => c.path === '/job-seekers')).toBe(false);
-    expect(screen.getByTestId('consent-script')).toHaveTextContent(/ಈ ಕರೆ ರೆಕಾರ್ಡ್ ಆಗುತ್ತಿದೆ/);
+    expect(screen.getByTestId('consent-script')).toHaveTextContent(/This call is recorded/);
+    expect(screen.queryByTestId('message-language')).toBeNull();
+    expect(screen.queryByTestId('script-language')).toBeNull();
   });
 
   it('a number already registered shows "Already registered — open it" instead of a duplicate', async () => {

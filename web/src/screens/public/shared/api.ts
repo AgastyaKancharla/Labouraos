@@ -9,7 +9,8 @@ import { ApiError, apiErrorFromBody } from '../../../lib/api/errors';
 const PUBLIC = { auth: false } as const;
 const enc = encodeURIComponent;
 
-export type PublicLanguage = 'kn' | 'hi' | 'en';
+/** English only (Master Guide rev 193). */
+export type PublicLanguage = 'en';
 
 // ---- Registration link (RegistrationController, ConsentController) ----
 

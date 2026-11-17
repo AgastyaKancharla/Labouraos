@@ -35,7 +35,6 @@ export interface FormState {
   mobile: MobileState;
   whatsappSame: boolean;
   whatsapp: string;
-  language: string;
   billingEmail: string;
   heardFrom: string;
   boardName: string;
@@ -84,7 +83,6 @@ export function formErrors(form: FormState, findTrade: (row: StaffRow) => Trade 
   if (!form.contactRole) e.push('contactRole');
   if (!form.mobile.verifiedAt) e.push('mobile');
   if (!form.whatsappSame && !/^[6-9]\d{9}$/.test(form.whatsapp)) e.push('whatsapp');
-  if (!form.language) e.push('language');
   if (!form.heardFrom) e.push('heardFrom');
   if (form.billingEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.billingEmail.trim())) e.push('billingEmail');
   if (!form.boardName.trim()) e.push('boardName');
@@ -128,7 +126,6 @@ export function businessBody(form: FormState, visitId: string | null): Record<st
     phone: form.mobile.number,
     otpRequestId: form.mobile.requestId,
     contactWhatsAppPhone: form.whatsappSame ? form.mobile.number : form.whatsapp,
-    contactLanguage: form.language,
     ...(form.billingEmail.trim() ? { billingEmail: form.billingEmail.trim() } : {}),
     heardFrom: form.heardFrom,
     businessType: form.businessType,

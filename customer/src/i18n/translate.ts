@@ -1,30 +1,25 @@
-import { en, type MessageKey, type Messages } from './en';
-import { hi } from './hi';
-import { kn } from './kn';
+import { en, type MessageKey } from './en';
 
-export type Language = 'kn' | 'en' | 'hi';
+/**
+ * English only, everywhere (Master Guide rev 193, decided 17 Nov): the
+ * Laboura app shows English and has no language choice. Words still go
+ * through `t('key')`, so they all live in en.ts.
+ */
+export type Language = 'en';
 
-/** Order and labels of the switcher: ಕನ್ನಡ / हिंदी / EN. */
-export const LANGUAGES: readonly { code: Language; label: string; name: string }[] = [
-  { code: 'kn', label: 'ಕನ್ನಡ', name: 'Kannada' },
-  { code: 'hi', label: 'हिंदी', name: 'Hindi' },
-  { code: 'en', label: 'EN', name: 'English' },
-];
+export const LANGUAGES: readonly { code: Language; label: string; name: string }[] = [{ code: 'en', label: 'EN', name: 'English' }];
 
 export const DEFAULT_LANGUAGE: Language = 'en';
-export const LANGUAGE_STORAGE_KEY = 'laboura_language';
-
-export const MESSAGES: Record<Language, Messages> = { en, kn, hi };
 
 export type Params = Record<string, string | number>;
 
 export function isLanguage(value: unknown): value is Language {
-  return value === 'kn' || value === 'en' || value === 'hi';
+  return value === 'en';
 }
 
-/** Looks a key up (falling back to English, then the key) and fills `{name}` slots. */
-export function translate(language: Language, key: MessageKey, params?: Params): string {
-  const template = MESSAGES[language][key] ?? en[key] ?? key;
+/** Looks a key up (falling back to the key) and fills `{name}` slots. */
+export function translate(_language: Language, key: MessageKey, params?: Params): string {
+  const template = en[key] ?? key;
   if (!params) return template;
   return template.replace(/\{(\w+)\}/g, (match, name: string) =>
     Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : match,
