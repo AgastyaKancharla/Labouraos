@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { zoneForBusiness } from '../src/modules/trade/minimum-wage';
 
 const ALLOWED_ENVIRONMENTS = new Set(['development', 'test']);
 
@@ -344,6 +345,8 @@ export async function seed(prismaClient?: PrismaClient) {
         name: 'Metro Facility Solutions',
         locality: 'Koramangala',
         city: 'Bengaluru',
+        // Legal minimum wage zone from the address, as the app works it out (rev 193).
+        minimumWageZone: zoneForBusiness({ city: 'Bengaluru', locality: 'Koramangala' }).zone,
         phoneVerified: true,
         latitude: 12.9352,
         longitude: 77.6245,
@@ -356,6 +359,8 @@ export async function seed(prismaClient?: PrismaClient) {
         phoneVerified: true,
         locality: 'Koramangala',
         city: 'Bengaluru',
+        // Legal minimum wage zone from the address, as the app works it out (rev 193).
+        minimumWageZone: zoneForBusiness({ city: 'Bengaluru', locality: 'Koramangala' }).zone,
         latitude: 12.9352,
         longitude: 77.6245,
         geofenceFlag: false,
@@ -368,6 +373,8 @@ export async function seed(prismaClient?: PrismaClient) {
         name: 'Indira Retail Mart',
         locality: 'Indiranagar',
         city: 'Bengaluru',
+        // Legal minimum wage zone from the address, as the app works it out (rev 193).
+        minimumWageZone: zoneForBusiness({ city: 'Bengaluru', locality: 'Indiranagar' }).zone,
         phoneVerified: true,
         latitude: 12.9784,
         longitude: 77.6408,
@@ -380,6 +387,8 @@ export async function seed(prismaClient?: PrismaClient) {
         phoneVerified: true,
         locality: 'Indiranagar',
         city: 'Bengaluru',
+        // Legal minimum wage zone from the address, as the app works it out (rev 193).
+        minimumWageZone: zoneForBusiness({ city: 'Bengaluru', locality: 'Indiranagar' }).zone,
         latitude: 12.9784,
         longitude: 77.6408,
         geofenceFlag: false,
@@ -392,6 +401,8 @@ export async function seed(prismaClient?: PrismaClient) {
         name: 'Mysuru Industrial Fabrications',
         locality: 'Hebbal Industrial',
         city: 'Mysuru',
+        // Legal minimum wage zone from the address, as the app works it out (rev 193).
+        minimumWageZone: zoneForBusiness({ city: 'Mysuru', locality: 'Hebbal Industrial' }).zone,
         phoneVerified: true,
         latitude: 12.3051,
         longitude: 76.6551,
@@ -404,6 +415,8 @@ export async function seed(prismaClient?: PrismaClient) {
         phoneVerified: true,
         locality: 'Hebbal Industrial',
         city: 'Mysuru',
+        // Legal minimum wage zone from the address, as the app works it out (rev 193).
+        minimumWageZone: zoneForBusiness({ city: 'Mysuru', locality: 'Hebbal Industrial' }).zone,
         latitude: 12.3051,
         longitude: 76.6551,
         geofenceFlag: true,
