@@ -1,4 +1,5 @@
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, readdirSync } from 'fs';
+import { join } from 'path';
 import { CONSENT_NOTICES } from '../consent/consent-notices';
 import { DEFAULT_NOTICE_VERSION, JOB_SEEKER_CONSENT_PURPOSES, JOB_SEEKER_REQUIRED_CONSENT_PURPOSES, REQUIRED_CONSENT_PURPOSES_BY_SUBJECT } from '../consent/consent.constants';
 import { BUSINESS_AGREEMENT_VERSION } from '../consent/business-agreement.template';
@@ -44,7 +45,6 @@ const NUMBERS: LegalNumbers = {
 const EMPTY_COMPANY: LegalCompanyDetails = legalCompanyFrom({ companyLegalName: 'Laboura Private Limited', companyGstin: null, companyAddress: null });
 
 const text = (html: string) => html.replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
-const placeholders = (s: string) => [...s.matchAll(/\{\{([a-zA-Z0-9.]+)\}\}/g)].map((m) => m[1]).sort();
 
 describe('Legal documents v1.1 (Master Guide rev 176)', () => {
   it('has the approved versions: job seeker terms 1.1, business agreement 1.1, referral partner terms 1.0, consent notice 1.2', () => {
@@ -63,14 +63,15 @@ describe('Legal documents v1.1 (Master Guide rev 176)', () => {
     expect(doc.hash).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it.each(LEGAL_DOCUMENT_KEYS.flatMap((key) => (['kn', 'hi'] as const).map((lang) => [key, lang] as const)))('%s: the %s machine draft uses the same Settings numbers as the English', (key, lang) => {
-    const en = legalDocumentSource(key, 'en');
-    const other = legalDocumentSource(key, lang);
-    expect([...new Set(placeholders(other.body + other.summary.join(' ')))]).toEqual([...new Set(placeholders(en.body + en.summary.join(' ')))]);
-    expect(other.summary).toHaveLength(en.summary.length);
-    // Same clause structure: the same number of headings and tables.
-    expect((other.body.match(/^#{2,3} /gm) ?? []).length).toBe((en.body.match(/^#{2,3} /gm) ?? []).length);
-    expect((other.body.match(/^\| --- /gm) ?? []).length).toBe((en.body.match(/^\| --- /gm) ?? []).length);
+  it('English only (rev 193): every document exists in English and in no other language', () => {
+    expect(LEGAL_LANGUAGES).toEqual(['en']);
+    for (const key of LEGAL_DOCUMENT_KEYS) {
+      const doc = renderLegalDocument(key, 'en', NUMBERS, EMPTY_COMPANY);
+      expect(doc.html).toContain('lang="en"');
+      expect(doc.html).not.toMatch(/\p{Script=Kannada}|\p{Script=Devanagari}/u);
+    }
+    const contentDir = join(__dirname, 'content');
+    expect(readdirSync(contentDir).filter((f) => !f.endsWith('.en.ts'))).toEqual([]);
   });
 
   it('the English is the owner-approved text: every clause of the documents is there, numbers from Settings', () => {
@@ -113,7 +114,7 @@ describe('Legal documents v1.1 (Master Guide rev 176)', () => {
   it('company placeholders read "to be added after registration" until the CEO fills them, then show the Grievance Officer', () => {
     const empty = text(renderLegalDocument('job_seeker_terms', 'en', NUMBERS, EMPTY_COMPANY).html);
     expect(empty).toContain('to be added after registration');
-    expect(grievanceContact(EMPTY_COMPANY, 'kn')).toBe('ನೋಂದಣಿಯ ನಂತರ ಸೇರಿಸಲಾಗುವುದು');
+    expect(grievanceContact(EMPTY_COMPANY)).toBe('to be added after registration');
     const filled: LegalCompanyDetails = {
       ...EMPTY_COMPANY,
       cin: 'U78100KA2026PTC000001',
@@ -123,10 +124,10 @@ describe('Legal documents v1.1 (Master Guide rev 176)', () => {
       grievanceOfficerPhone: '+91 80 0000 0000',
       grievanceOfficerEmail: 'grievance@example.com',
     };
-    const doc = text(renderLegalDocument('referral_terms', 'hi', NUMBERS, filled).html);
+    const doc = text(renderLegalDocument('referral_terms', 'en', NUMBERS, filled).html);
     expect(doc).toContain('U78100KA2026PTC000001');
     expect(doc).toContain('Grievance Officer, +91 80 0000 0000, grievance@example.com');
-    expect(doc).not.toContain('पंजीकरण के बाद जोड़ा जाएगा');
+    expect(doc).not.toContain('to be added after registration');
   });
 
   it('a registered office typed on several lines (or with a "|") stays one safe cell of the header table', () => {
@@ -136,10 +137,10 @@ describe('Legal documents v1.1 (Master Guide rev 176)', () => {
   });
 
   it('the hash is of the exact text shown: same input same hash, any change a new hash', () => {
-    const a = renderLegalDocument('business_agreement', 'kn', NUMBERS, EMPTY_COMPANY);
-    expect(renderLegalDocument('business_agreement', 'kn', NUMBERS, EMPTY_COMPANY).hash).toBe(a.hash);
-    expect(renderLegalDocument('business_agreement', 'hi', NUMBERS, EMPTY_COMPANY).hash).not.toBe(a.hash);
-    expect(renderLegalDocument('business_agreement', 'kn', { ...NUMBERS, noBypassMonths: 6 }, EMPTY_COMPANY).hash).not.toBe(a.hash);
+    const a = renderLegalDocument('business_agreement', 'en', NUMBERS, EMPTY_COMPANY);
+    expect(renderLegalDocument('business_agreement', 'en', NUMBERS, EMPTY_COMPANY).hash).toBe(a.hash);
+    expect(renderLegalDocument('business_agreement', 'en', NUMBERS, { ...EMPTY_COMPANY, cin: 'U78100KA2026PTC000001' }).hash).not.toBe(a.hash);
+    expect(renderLegalDocument('business_agreement', 'en', { ...NUMBERS, noBypassMonths: 6 }, EMPTY_COMPANY).hash).not.toBe(a.hash);
   });
 
   it('the markdown renderer escapes HTML and renders tables, lists and bold', () => {
@@ -159,21 +160,19 @@ describe('Consent ticks (Job Seeker Terms Part B, notice 1.2)', () => {
     expect(ticks.find((t) => t.purpose === 'promotions')?.required).toBe(false);
   });
 
-  it('the notice texts are word for word the document\'s Part B, in three languages', () => {
+  it('the notice texts are word for word the document\'s Part B, in English only', () => {
     const en = text(renderLegalDocument('job_seeker_terms', 'en', NUMBERS, EMPTY_COMPANY).bodyHtml);
     for (const purpose of JOB_SEEKER_CONSENT_PURPOSES) {
       expect(en).toContain(CONSENT_NOTICES[purpose].en.description);
-      for (const lang of ['kn', 'hi'] as const) {
-        expect(CONSENT_NOTICES[purpose][lang].title).not.toBe(CONSENT_NOTICES[purpose].en.title);
-        expect(CONSENT_NOTICES[purpose][lang].withdrawal.length).toBeGreaterThan(10);
-      }
+      expect(Object.keys(CONSENT_NOTICES[purpose])).toEqual(['en']);
+      expect(CONSENT_NOTICES[purpose].en.withdrawal.length).toBeGreaterThan(10);
     }
     expect(CONSENT_NOTICES.promotions.en.description).toBe('I consent to receiving promotional offers and news from Laboura.');
   });
 
   it('partners give a separate ID-check consent (S2); businesses tick terms, authority and recording', () => {
     expect(REQUIRED_CONSENT_PURPOSES_BY_SUBJECT.referral).toEqual(['agreement_terms', 'call_recording', 'aadhaar_verification']);
-    expect(consentTicks('referral_terms', 'kn').map((t) => t.purpose)).toEqual(['agreement_terms', 'call_recording', 'aadhaar_verification']);
-    expect(consentTicks('business_agreement', 'hi').map((t) => t.purpose)).toEqual(['agreement_terms', 'agreement_authority', 'call_recording']);
+    expect(consentTicks('referral_terms', 'en').map((t) => t.purpose)).toEqual(['agreement_terms', 'call_recording', 'aadhaar_verification']);
+    expect(consentTicks('business_agreement', 'en').map((t) => t.purpose)).toEqual(['agreement_terms', 'agreement_authority', 'call_recording']);
   });
 });

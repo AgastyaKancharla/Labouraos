@@ -8,18 +8,16 @@ const locked = { valid: true, otpRequired: true, maskedPhone: '******3210', lang
 const render = () => renderScreen(<PartnerOpenPage />, { portal: 'public', path: `/p/partner/${TOKEN}`, route: '/p/partner/:token' });
 
 describe('P-PartnerOpen (referral partner link, mirrors P00 / P02r)', () => {
-  it('shows nothing about the partner before the code, starts in their language, then goes to the terms', async () => {
+  it('shows nothing about the partner before the code, is in English (rev 193), then goes to the terms', async () => {
     const api = mockApi({
       [`GET /referral-registration/${TOKEN}/status`]: locked,
       'POST /consent/send-otp': { requestId: 'req-1', phone: '******3210' },
       [`POST /referral-registration/${TOKEN}/verify-otp`]: partnerStatus(),
     });
     render();
-    expect(await screen.findByRole('heading', { name: 'Laboura ರೆಫರಲ್ ಪಾಲುದಾರರಾಗಿ' })).toBeInTheDocument();
-    await waitFor(() => expect(document.documentElement.lang).toBe('kn'));
-    await userEvent.click(screen.getByRole('button', { name: 'हिंदी' }));
-    expect(screen.getByRole('heading', { name: 'Laboura रेफ़रल पार्टनर बनें' })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'EN' }));
+    expect(await screen.findByRole('heading', { name: 'Become a Laboura referral partner' })).toBeInTheDocument();
+    await waitFor(() => expect(document.documentElement.lang).toBe('en'));
+    expect(screen.queryByRole('button', { name: 'EN' })).not.toBeInTheDocument();
     expect(screen.getByText('4. UPI for your payouts')).toBeInTheDocument();
     expect(screen.queryByText(/Ramesh/)).not.toBeInTheDocument();
 

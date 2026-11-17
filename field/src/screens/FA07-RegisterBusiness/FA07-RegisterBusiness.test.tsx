@@ -30,8 +30,7 @@ async function fillRequired() {
     await fireEvent.changeText(screen.getByTestId('fa07-mobile-code'), '123456');
     await fireEvent.press(screen.getByTestId('fa07-mobile-verify'));
     await waitFor(() => screen.getByText(/Checked by OTP at/));
-    await fireEvent.press(screen.getByTestId('fa07-language'));
-    await fireEvent.press(screen.getByTestId('fa07-language-kn'));
+    expect(screen.queryByTestId('fa07-language')).toBeNull(); // English only (rev 193): no message language
     await fireEvent.press(screen.getByTestId('fa07-type'));
     await fireEvent.press(screen.getByTestId('fa07-type-restaurant_hotel'));
     await fireEvent.press(screen.getByTestId('fa07-employees'));
@@ -93,7 +92,7 @@ describe('FA07 Register a business', () => {
     await waitFor(() => expect(posted).toHaveLength(1));
     expect(posted[0]).toMatchObject({
       name: 'Annapoorna Mess', contactPersonName: 'Shankar Rao', contactPersonRole: 'owner', phone: '9900054321', otpRequestId: 'otp-9',
-      contactLanguage: 'kn', heardFrom: 'field_visit', businessType: 'restaurant_hotel', locality: 'BTM Layout 2nd Stage', pincode: '560076',
+      heardFrom: 'field_visit', businessType: 'restaurant_hotel', locality: 'BTM Layout 2nd Stage', pincode: '560076',
       latitude: 12.9116, longitude: 77.6101, fieldVisitId: 'v-7',
       staffNeededRows: [{ trade: 'Cook', headcount: 1, salaryMinPaise: 1600000, salaryMaxPaise: 1600000, shift: 'day' }],
     });
@@ -209,7 +208,7 @@ describe('FA07 Register a business', () => {
   it('households have a family name and no documents', () => {
     const form: FormState = {
       contactName: 'Lakshmi', contactRole: 'owner', mobile: { number: '9900054321', requestId: 'r', code: '', verifiedAt: 'x', sentAt: null },
-      whatsappSame: true, whatsapp: '', language: 'kn', billingEmail: '', heardFrom: 'field_visit', boardName: 'Rao home', legalName: '',
+      whatsappSame: true, whatsapp: '', billingEmail: '', heardFrom: 'field_visit', boardName: 'Rao home', legalName: '',
       familyName: 'Rao family', businessType: 'household', employees: '1-5', running: '', hiring: '', opensAt: '', closesAt: '',
       shopNumber: '1', street: 's', landmark: 'l', area: 'JP Nagar', pincode: '560078', pin: { latitude: 1, longitude: 1 }, branches: [],
       gstin: '29ABCDE1234F1Z5', fssai: '', licenceKind: 'udyamNumber', licenceNumber: '', pan: '', noDocuments: false, staff: [],

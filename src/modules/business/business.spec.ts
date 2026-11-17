@@ -585,8 +585,9 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
             salaryMinPaise: 2000000, salaryMaxPaise: 2500000, shift: 'day', startDate: '2026-12-01',
           },
           {
+            // A cook is skilled (rev 193): above Zone 1's skilled minimum (₹28,285.47).
             trade: 'Cook', headcount: 1,
-            salaryMinPaise: 2500000, salaryMaxPaise: 3000000, shift: 'day', startDate: '2026-12-01',
+            salaryMinPaise: 2900000, salaryMaxPaise: 3200000, shift: 'day', startDate: '2026-12-01',
           },
         ],
       })

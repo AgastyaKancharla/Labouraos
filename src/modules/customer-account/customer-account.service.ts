@@ -1,10 +1,10 @@
+import { productLanguage } from '../../common/language/english-only';
 import { Injectable } from '@nestjs/common';
 import { grievanceContact } from '../legal/legal-documents';
 import { legalCompanyFrom } from '../legal/legal-document.service';
 import { HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CUSTOMER_ERROR_CODES, CustomerApiError } from '../../common/customer-auth/customer-auth.errors';
-import { CUSTOMER_LANGUAGES } from '../../common/customer-auth/customer-app.constants';
 import { CustomerAuthClock } from '../../common/customer-auth/customer-auth.clock';
 import { CustomerScopeService } from '../../common/customer-auth/customer-scope.service';
 
@@ -25,15 +25,14 @@ export class CustomerAccountService {
     private readonly scope: CustomerScopeService,
   ) {}
 
-  /** PATCH /me: language, display name, the contact-me tick. */
+  /**
+   * PATCH /me: display name, the contact-me tick. The app is English only
+   * (rev 193): a `language` an older app version sends is accepted and stored
+   * as English.
+   */
   async update(accountId: string, body: Record<string, unknown>) {
     const data: Record<string, unknown> = {};
-    if (body.language !== undefined) {
-      if (typeof body.language !== 'string' || !(CUSTOMER_LANGUAGES as readonly string[]).includes(body.language)) {
-        throw new CustomerApiError(HttpStatus.BAD_REQUEST, CUSTOMER_ERROR_CODES.VALIDATION, 'language must be kn, hi or en', { field: 'language' });
-      }
-      data.language = body.language;
-    }
+    if (body.language !== undefined) data.language = productLanguage(body.language);
     if (body.displayName !== undefined) {
       if (body.displayName !== null && (typeof body.displayName !== 'string' || body.displayName.trim().length > 120)) {
         throw new CustomerApiError(HttpStatus.BAD_REQUEST, CUSTOMER_ERROR_CODES.VALIDATION, 'displayName is too long', { field: 'displayName' });
@@ -97,7 +96,7 @@ export class CustomerAccountService {
             role: true,
             jobSeeker: { select: { code: true, name: true } },
             referral: { select: { code: true, name: true } },
-            business: { select: { code: true, name: true } },
+            business: { select: { code: true, name: true, minimumWageZone: true } },
             branch: { select: { name: true } },
           },
         },
@@ -110,7 +109,7 @@ export class CustomerAccountService {
     const policy = await this.prisma.pricingPolicy
       ?.findFirst({ where: { effectiveFrom: { lte: this.clock.now() } }, orderBy: [{ effectiveFrom: 'desc' }, { createdAt: 'desc' }] })
       .catch(() => null);
-    const legalLanguage = account.language === 'kn' || account.language === 'hi' ? account.language : 'en';
+    const legalLanguage = productLanguage(account.language);
     return {
       id: account.id,
       grievanceContact: policy ? grievanceContact(legalCompanyFrom(policy), legalLanguage) : null,
@@ -134,6 +133,8 @@ export class CustomerAccountService {
           // Their own record: a business shows its name, a person their first name.
           title: p.business ? p.business.name : firstName(record?.name),
           branchName: p.branch?.name ?? null,
+          // Business only: its legal minimum wage zone (rev 193), so the app warns with the right figure.
+          ...(p.business ? { minimumWageZone: p.business.minimumWageZone } : {}),
         };
       }),
     };

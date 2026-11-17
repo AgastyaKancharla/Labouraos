@@ -3,15 +3,17 @@ import * as bcrypt from 'bcrypt';
 
 const ALLOWED_ENVIRONMENTS = new Set(['development', 'test']);
 
+// [name, market min, market max, legal minimum wage level] — levels reviewed against the
+// Karnataka notification of 22 May 2026 (docs/minimum-wage.md, "Trade levels").
 const PHASE_20_TRADES = [
-  ['Housekeeping', 1600000, 2300000], ['Cook', 1800000, 3000000],
-  ['Kitchen helper', 1500000, 2000000], ['Waiter', 1500000, 2200000],
-  ['Driver', 2000000, 3000000], ['Delivery rider', 2200000, 3500000],
-  ['Security guard', 1700000, 2400000], ['Electrician', 2100000, 3200000],
-  ['Plumber', 2000000, 3000000], ['Carpenter', 2000000, 3200000],
-  ['Painter', 1800000, 2800000], ['AC technician', 2000000, 3000000],
-  ['Helper / loader', 1500000, 2200000], ['Warehouse packer', 1900000, 2700000],
-  ['Retail staff', 1500000, 2200000], ['Caretaker / nanny', 1500000, 2300000],
+  ['Housekeeping', 1600000, 2300000, 'unskilled'], ['Cook', 1800000, 3000000, 'skilled'],
+  ['Kitchen helper', 1500000, 2000000, 'unskilled'], ['Waiter', 1500000, 2200000, 'semi_skilled'],
+  ['Driver', 2000000, 3000000, 'skilled'], ['Delivery rider', 2200000, 3500000, 'semi_skilled'],
+  ['Security guard', 1700000, 2400000, 'semi_skilled'], ['Electrician', 2100000, 3200000, 'skilled'],
+  ['Plumber', 2000000, 3000000, 'skilled'], ['Carpenter', 2000000, 3200000, 'skilled'],
+  ['Painter', 1800000, 2800000, 'skilled'], ['AC technician', 2000000, 3000000, 'skilled'],
+  ['Helper / loader', 1500000, 2200000, 'unskilled'], ['Warehouse packer', 1900000, 2700000, 'semi_skilled'],
+  ['Retail staff', 1500000, 2200000, 'semi_skilled'], ['Caretaker / nanny', 1500000, 2300000, 'semi_skilled'],
 ] as const;
 
 /**
@@ -111,12 +113,12 @@ export async function seed(prismaClient?: PrismaClient) {
 
   try {
     // Phase 20 Task 2: seed the managed trade list without overwriting CEO edits.
-    for (const [index, [name, salaryMinPaise, salaryMaxPaise]] of PHASE_20_TRADES.entries()) {
+    for (const [index, [name, salaryMinPaise, salaryMaxPaise, minimumWageLevel]] of PHASE_20_TRADES.entries()) {
       const nameKey = name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-IN');
       await prisma.trade.upsert({
         where: { nameKey },
         update: {},
-        create: { name, nameKey, salaryMinPaise, salaryMaxPaise, sortOrder: index + 1 },
+        create: { name, nameKey, salaryMinPaise, salaryMaxPaise, minimumWageLevel, sortOrder: index + 1 },
       });
     }
 

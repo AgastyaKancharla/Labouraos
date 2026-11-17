@@ -10,12 +10,6 @@ export interface Choice<V extends string = string> {
   label: MessageKey;
 }
 
-export const MESSAGE_LANGUAGES: readonly Choice<'kn' | 'hi' | 'en'>[] = [
-  { value: 'kn', label: 'reg.lang.kn' },
-  { value: 'hi', label: 'reg.lang.hi' },
-  { value: 'en', label: 'reg.lang.en' },
-];
-
 export const HEARD_FROM: readonly Choice[] = [
   { value: 'toll_free_missed_call', label: 'reg.heard.toll_free_missed_call' },
   { value: 'ad', label: 'reg.heard.ad' },

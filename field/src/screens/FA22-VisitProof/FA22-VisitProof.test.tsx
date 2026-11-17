@@ -77,8 +77,8 @@ describe('FA22 Visit a shop · proof', () => {
       businessId: 'b-1', businessName: 'Annapoorna Mess', spokeTo: 'owner', contactPhone: '', endedAt: '2026-11-09T06:12:00.000Z', proofDistance: null, proofAt: null,
     });
     searchParams.current = { id: 'p-3' };
-    await renderWithApp(<VisitProofScreen />, { signedInAs: kiran, language: 'kn' });
+    await renderWithApp(<VisitProofScreen />, { signedInAs: kiran });
     expect(screen.getByTestId('step-counter')).toHaveTextContent(/3.*4/);
-    expect(screen.getByTestId('fa22-continue')).toHaveTextContent('ಭೇಟಿ ಉಳಿಸಲು ಮುಂದುವರಿಯಿರಿ');
+    expect(screen.getByTestId('fa22-continue')).toHaveTextContent('Continue to save the visit');
   });
 });

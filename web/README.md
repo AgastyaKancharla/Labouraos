@@ -185,14 +185,13 @@ For "now" use `useNow()` / `useClock()` so tests can fix the time.
 
 ## Languages
 
-English, Kannada and Hindi. Add every new string to `src/i18n/en.ts` first,
-then the same key to `kn.ts` and `hi.ts` — TypeScript fails the build until
-all three match, and a test checks the `{placeholders}` too. Use it with
+English only, everywhere (Master Guide rev 193, 17 Nov): no language
+switcher, no Kannada or Hindi (a test fails if a screen carries either).
+Add every new string to `src/i18n/en.ts`. Use it with
 `const t = useT(); t('cc.netRevenue')`, `t('greeting.evening', { name })`.
 Keys are grouped by prefix: `common.`, `form.`, `auth.`, `nav.`, `screen.`
 (page titles, one per design id), and one prefix per screen (`cc.` for the
-Command Center). Have a native speaker check new Kannada/Hindi text.
-`<LanguageSwitcher />` is the ಕನ್ನಡ · हिंदी · EN control from the public pages.
+Command Center).
 
 ## Testing
 

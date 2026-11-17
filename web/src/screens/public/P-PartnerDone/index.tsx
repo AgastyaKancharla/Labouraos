@@ -10,7 +10,7 @@ import { LinkProblem, Loading, Muted, Ok, Row } from '../shared/ui';
  * they refer and where payouts go — masked, never the full UPI ID or account.
  */
 export default function PartnerDonePage() {
-  const { t, language } = useI18n();
+  const { t } = useI18n();
   const to = useScreenPath();
   const { status, query } = usePartnerStepGuard('complete');
 
@@ -35,7 +35,7 @@ export default function PartnerDonePage() {
         )}
       </div>
       <Muted>{t('partner.done.body')}</Muted>
-      <Link className="lb-pub-link" to={`${to('P-ReferralTerms')}?lang=${language}`}>
+      <Link className="lb-pub-link" to={to('P-ReferralTerms')}>
         {t('partner.done.terms')}
       </Link>
     </>

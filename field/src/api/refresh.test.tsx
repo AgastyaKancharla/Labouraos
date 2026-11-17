@@ -27,7 +27,6 @@ const filled: JobSeekerForm = {
   mobile: '9845012345',
   dateOfBirth: '1996-04-12',
   gender: 'female',
-  messageLanguage: 'kn',
   bestTime: 'morning',
   place: { area: 'BTM Layout 2nd Stage', pincode: '560076', latitude: 12.91, longitude: 77.61 },
   travelKm: '5',

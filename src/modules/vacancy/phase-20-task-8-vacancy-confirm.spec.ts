@@ -35,7 +35,7 @@ describe('Phase 20 Task 8: every vacancy confirmed by OTP, and the minimum-wage 
   const createVacancy = (body: Record<string, unknown>) => request(server())
     .post(`/businesses/${businessId}/vacancies`)
     .set('Authorization', `Bearer ${callAgentToken}`)
-    .send({ tradeSkill: 'Electrician', salaryMinPaise: 2500000, headcount: 2, shift: 'day', ...body });
+    .send({ tradeSkill: 'Electrician', salaryMinPaise: 2900000, headcount: 2, shift: 'day', ...body });
 
   beforeAll(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -217,15 +217,16 @@ describe('Phase 20 Task 8: every vacancy confirmed by OTP, and the minimum-wage 
 
   it('below the legal minimum needs the owner-told tick; it is marked and listed for Team Leads and Managers', async () => {
     const refused = await createVacancy({ salaryMinPaise: 2000000 }).expect(400);
-    expect(refused.body.legalMinimumPaise).toBe(2337600);
+    // An electrician is skilled (rev 193): Zone 1's skilled minimum is ₹28,285.47.
+    expect(refused.body.legalMinimumPaise).toBe(2828547);
 
     const saved = await createVacancy({ salaryMinPaise: 2000000, ownerToldMinimumWage: true }).expect(201);
-    expect(saved.body).toMatchObject({ belowLegalMinimum: true, ownerToldMinimumWage: true, legalMinimumPaise: 2337600 });
+    expect(saved.body).toMatchObject({ belowLegalMinimum: true, ownerToldMinimumWage: true, legalMinimumPaise: 2828547 });
 
-    // Daily pay is converted with salaryDaysPerMonth (26): ₹900 a day = ₹23,400 a month, at the minimum.
-    const daily = await createVacancy({ salaryMinPaise: 90000, salaryPeriod: 'daily' }).expect(201);
+    // Daily pay is converted with salaryDaysPerMonth (26): ₹1,090 a day = ₹28,340 a month, at the minimum.
+    const daily = await createVacancy({ salaryMinPaise: 109000, salaryPeriod: 'daily' }).expect(201);
     expect(daily.body.belowLegalMinimum).toBe(false);
-    await createVacancy({ salaryMinPaise: 89000, salaryPeriod: 'daily' }).expect(400);
+    await createVacancy({ salaryMinPaise: 108700, salaryPeriod: 'daily' }).expect(400);
 
     const tlList = await request(server()).get('/vacancies/below-legal-minimum')
       .set('Authorization', `Bearer ${teamLeadToken}`).expect(200);

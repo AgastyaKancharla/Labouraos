@@ -9,7 +9,6 @@ const form: ReferralForm = {
   ...EMPTY_REFERRAL,
   name: 'Raju Kumar',
   mobile: '9945670011',
-  language: 'kn',
   individualRole: 'shop_owner',
   place: { area: 'Madiwala', pincode: '560068', latitude: null, longitude: null },
   heardFrom: 'field_visit',
@@ -22,7 +21,7 @@ const routes = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe('Register a referral partner (CA15)', () => {
-  it('sends language, WhatsApp, area, pincode and how they heard, then opens the partner’s steps', async () => {
+  it('sends WhatsApp, area, pincode and how they heard (no message language), then opens the partner’s steps', async () => {
     const user = userEvent.setup();
     const api = mockApi(routes({ 'POST /referrals': { id: 'ref-1', code: 'RF-00043', registrationLinkSent: true } }));
     signInAs('call_agent');
@@ -35,19 +34,19 @@ describe('Register a referral partner (CA15)', () => {
     await user.click(screen.getByRole('button', { name: 'Save and create Partner ID' }));
     await waitFor(() => expect(api.calls('POST /referrals')).toHaveLength(1));
     expect(api.calls('POST /referrals')[0].body).toEqual({
-      name: 'Raju Kumar', phone: '9945670011', otpRequestId: 'otp-r', type: 'individual', whatsappPhone: '9945670011', language: 'kn',
+      name: 'Raju Kumar', phone: '9945670011', otpRequestId: 'otp-r', type: 'individual', whatsappPhone: '9945670011',
       individualRole: 'shop_owner', locality: 'Madiwala', pincode: '560068', heardFrom: 'field_visit', city: 'Bengaluru',
     });
     expect(await screen.findByTestId('navigated-away')).toBeInTheDocument();
   });
 
-  it('links the public referral partner terms in the partner’s language', async () => {
+  it('links the public referral partner terms', async () => {
     mockApi(routes());
     signInAs('call_agent');
     sessionStorage.setItem('laboura.draft.referral.staff-ca', JSON.stringify(form));
     renderScreen(<RegisterReferral />, { portal: 'call-agent', path: '/call-agent/register/referral' });
     const link = await screen.findByRole('link', { name: 'Open the full referral partner terms' });
-    expect(link.getAttribute('href')).toMatch(/\/p\/referral-terms\?lang=kn$/);
+    expect(link.getAttribute('href')).toMatch(/\/p\/referral-terms$/);
     expect(link).toHaveAttribute('target', '_blank');
   });
 

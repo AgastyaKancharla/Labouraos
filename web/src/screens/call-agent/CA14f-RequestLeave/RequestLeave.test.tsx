@@ -69,7 +69,7 @@ describe('Request leave (CA14f)', () => {
     expect(await screen.findByText('Leave request sent · Fri 13 Nov · half day (Second half)')).toBeInTheDocument();
   });
 
-  it('says in the person’s language when the date already has leave (Hindi)', async () => {
+  it('says in English when the date already has leave, even with an old Hindi choice saved (rev 193)', async () => {
     mockApi({
       'GET /attendance/today': openToday(),
       'GET /attendance/leave/balance': balanceFixture,
@@ -79,12 +79,12 @@ describe('Request leave (CA14f)', () => {
     localStorage.setItem('laboura_lang', 'hi');
     try {
       renderScreen(<RequestLeave />, path);
-      await screen.findByRole('radio', { name: 'पूरा दिन' });
+      await screen.findByRole('radio', { name: 'Full day' });
       await userEvent.selectOptions(document.querySelector('form select') as HTMLSelectElement, 'casual');
       fireEvent.change(document.querySelector('form input[type="date"]')!, { target: { value: '2026-11-13' } });
       await userEvent.type(document.querySelector('form textarea') as HTMLTextAreaElement, 'Shaadi');
-      await userEvent.click(screen.getByRole('button', { name: 'अनुरोध भेजें' }));
-      expect(await screen.findByText(/के लिए आप पहले ही छुट्टी माँग चुके हैं/)).toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: 'Send request' }));
+      expect(await screen.findByText(/You already have leave asked for or approved on/)).toBeInTheDocument();
     } finally {
       localStorage.removeItem('laboura_lang');
     }

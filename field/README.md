@@ -101,9 +101,8 @@ if (result.status === 'queued') showToast(t('fa03.waitingToSend')); // sent late
 
 ### 5. Languages
 
-- Every visible word is a key in `src/i18n/en.ts`, named `<design id lower-case>.<thing>` (e.g. `fa05.revisitDue`) or `common.*` / `status.*` / `tabs.*` / `device.*` for shared words. Add the same key to `kn.ts` — TypeScript and `i18n.test.tsx` fail otherwise (same keys, same `{slots}`, not left in English). Laboura Field offers Kannada and English for now (redesign, 16 Nov): Hindi is hidden from the switcher, `hi.ts` keeps its words, and keys added since (`redesign.en.ts` / `redesign.kn.ts`) need no Hindi — English shows.
+- English only, everywhere (Master Guide rev 193, 17 Nov): no language switcher, no Kannada or Hindi. Every visible word is a key in `src/i18n/en.ts`, named `<design id lower-case>.<thing>` (e.g. `fa05.revisitDue`) or `common.*` / `status.*` / `tabs.*` / `device.*` for shared words. `i18n.test.tsx` fails if any screen carries Kannada or Hindi text.
 - In components: `const { t, tn } = useI18n(); t('fa03.lateBy', { minutes: 12 }); tn('queue.photos', count)`.
-- The switcher (ಕನ್ನಡ / हिंदी / EN) is in the header; the choice is remembered on the phone.
 
 ### 6. Tests
 

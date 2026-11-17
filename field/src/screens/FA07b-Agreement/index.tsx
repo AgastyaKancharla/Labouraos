@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -13,7 +12,6 @@ import { formatDayIst, formatTimeIst } from '@/lib/format';
 import { routes } from '@/navigation/routes';
 import { colors } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
-import { ChipChoices } from '../_visits/ChoiceList';
 import { FinishLaterButton } from '../_visits/FinishLater';
 import { StepHeader } from '../_visits/StepHeader';
 import { Script } from '../_selling';
@@ -35,7 +33,7 @@ const HIDDEN_KEYS: Record<string, MessageKey> = {
  * (terms, authority and call-recording ticks, then his OTP): the agent never
  * signs for him. This screen shows where the link is, turns green when he
  * signs (asks every 10 seconds), offers Resend link, and the agreement's
- * "In short" to read aloud in Kannada or English.
+ * "In short" to read aloud (English only, rev 193).
  * Data: GET /field-work/businesses/:id/agreement, POST …/agreement-link,
  * GET /legal/documents/business_agreement.
  */
@@ -76,15 +74,14 @@ function Agreement({ status: a, businessId, visitId, linkFailed }: { status: Agr
   const { redesign, legal } = useEndpoints();
   const queue = useOfflineQueue();
   const client = useQueryClient();
-  const [lang, setLang] = useState<'kn' | 'en'>('kn');
   const signed = a.state === 'signed';
   const resend = useMutation({
-    mutationFn: () => queue.live(() => redesign.resendAgreement(businessId, lang)),
+    mutationFn: () => queue.live(() => redesign.resendAgreement(businessId)),
     onSettled: () => void client.invalidateQueries({ queryKey: ['field-work'] }),
   });
   const inShort = useQuery({
-    queryKey: ['legal-document', 'business_agreement', lang],
-    queryFn: () => legal.document('business_agreement', lang),
+    queryKey: ['legal-document', 'business_agreement', 'en'],
+    queryFn: () => legal.document('business_agreement'),
     staleTime: 3_600_000,
   });
   const resendError = resend.error ? resendErrorText(resend.error, t) : null;
@@ -152,16 +149,6 @@ function Agreement({ status: a, businessId, visitId, linkFailed }: { status: Agr
       ) : null}
 
       <Card title={t('fa07b.readAloud')} icon="chat" accent="cyan" testID="fa07b-summary">
-        <ChipChoices
-          choices={[
-            { value: 'kn', label: 'ಕನ್ನಡ' },
-            { value: 'en', label: 'English' },
-          ]}
-          value={lang}
-          onChange={(v) => setLang(v as 'kn' | 'en')}
-          testID="fa07b-lang"
-        />
-        <View style={styles.gap} />
         {inShort.data ? (
           <Script testID="fa07b-in-short">{inShortText(inShort.data)}</Script>
         ) : inShort.isError ? (

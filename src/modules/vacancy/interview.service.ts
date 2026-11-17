@@ -1,3 +1,4 @@
+import { PRODUCT_LANGUAGE } from '../../common/language/english-only';
 import { OwnTeam } from '../../common/rbac/own-team';
 import { queryText } from '../../common/http/plain-query';
 import { LegalDocumentService } from '../legal/legal-document.service';
@@ -475,7 +476,7 @@ export class InterviewService {
       awaitingReply: interview.status === 'offered' && !interview.candidateRespondedAt,
       /** Saying no to an offer below his guaranteed salary floor is never a hit. */
       belowGuaranteeFloor: await this.offerIsBelowGuaranteeFloor(interview),
-      language: interview.jobSeeker.messageLanguage ?? null,
+      language: PRODUCT_LANGUAGE,
     };
   }
 
@@ -497,7 +498,7 @@ export class InterviewService {
       maskedPhone: `******${link.phone.replace(/\D/g, '').slice(-4)}`,
       awaitingResult: interview.status === 'confirmed' && !interview.resultRecordedAt,
       reasons: NOT_SELECTED_REASONS,
-      language: interview.business.contactLanguage ?? null,
+      language: PRODUCT_LANGUAGE,
     };
   }
 
@@ -513,7 +514,7 @@ export class InterviewService {
       businessName: interview.business.name,
       slotStartsAt: interview.slotStartsAt,
       answered: interview.candidateCheckAnswer === 'offered_yes' || interview.candidateCheckAnswer === 'offered_no',
-      language: interview.jobSeeker.messageLanguage ?? null,
+      language: PRODUCT_LANGUAGE,
     };
   }
 

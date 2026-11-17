@@ -24,11 +24,9 @@ import { DatePicker } from '../_visits/DatePicker';
 import { useVisit } from '../_visits/useVisit';
 import { updateDraft, type VisitDraft } from '../_visits/visitDraft';
 import { StepHeader } from '../_visits/StepHeader';
-import { SCRIPT_LANGUAGE_LABELS, type ScriptLanguage } from './script';
 import { businessBody, formErrors, type FormState, type MobileState, type StaffRow } from './form';
 
 const ROLES = ['owner', 'manager', 'hr', 'supervisor', 'other'] as const;
-const LANGS = ['kn', 'hi', 'en'] as const;
 const HEARD = ['toll_free_missed_call', 'ad', 'referral_partner', 'field_visit', 'social_media', 'walk_in', 'other'] as const;
 const BTYPES = [
   'restaurant_hotel', 'bakery', 'retail_shop', 'supermarket', 'apartment_society', 'household', 'office',
@@ -109,7 +107,6 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
     mobile: emptyMobile(),
     whatsappSame: true,
     whatsapp: '',
-    language: '',
     billingEmail: '',
     heardFrom: 'field_visit',
     boardName: visit?.shopName ?? '',
@@ -261,7 +258,7 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
       void client.invalidateQueries({ queryKey: ['field-visits'] });
       void client.invalidateQueries({ queryKey: ['selling'] });
       const linkSent = await visits
-        .sendAgreementLink(created.id, form.language)
+        .sendAgreementLink(created.id)
         .then((r) => r?.smsSent !== false)
         .catch(() => false);
       router.replace({
@@ -328,12 +325,11 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
   }
 
   const tradeChoices = [...tradeList.map((tr) => ({ value: tr.name, label: tr.name })), { value: OTHER_TRADE, label: t('fa07.otherTrade') }];
-  // "Explain Laboura": the business agreement's "In short" from the server, in the owner's
-  // language, with every number filled from Settings (never a number written in the app).
-  const scriptLang = (form.language || 'kn') as ScriptLanguage;
+  // "Explain Laboura": the business agreement's "In short" from the server, in English
+  // (rev 193), with every number filled from Settings (never a number written in the app).
   const inShort = useQuery({
-    queryKey: ['legal-document', 'business_agreement', scriptLang],
-    queryFn: () => legal.document('business_agreement', scriptLang),
+    queryKey: ['legal-document', 'business_agreement', 'en'],
+    queryFn: () => legal.document('business_agreement', 'en'),
     staleTime: 3_600_000,
   });
 
@@ -358,7 +354,6 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
           {!form.whatsappSame ? (
             <TextField label={t('fa07.whatsapp')} value={form.whatsapp} keyboardType="number-pad" maxLength={10} onChangeText={(v) => set({ whatsapp: v.replace(/\D/g, '') })} error={err('whatsapp') ? t('fa07.mobileInvalid') : null} />
           ) : null}
-          <SelectField label={t('fa07.language')} value={form.language} choices={choice(LANGS, 'lang')} onChange={(v) => set({ language: v })} error={err('language')} testID="fa07-language" />
           <TextField label={t('fa07.billingEmail')} value={form.billingEmail} keyboardType="email-address" autoCapitalize="none" onChangeText={(v) => set({ billingEmail: v })} error={err('billingEmail') ? t('fa07.emailInvalid') : null} />
           <SelectField label={t('fa07.heardFrom')} value={form.heardFrom} choices={choice(HEARD, 'heard')} onChange={(v) => set({ heardFrom: v })} error={err('heardFrom')} />
         </Card>
@@ -492,7 +487,6 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
         <Card style={styles.gapCard} stripe accent={SECTION_ACCENTS[5]}>
           <Section n={6} title={t('fa07.s6')} />
           <View style={styles.script} testID="fa07-script">
-            <Text variant="label">{SCRIPT_LANGUAGE_LABELS[scriptLang]}</Text>
             {inShort.data ? (
               <Text>{inShortText(inShort.data)}</Text>
             ) : inShort.isError ? (

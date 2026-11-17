@@ -29,7 +29,7 @@ Building blocks, API client pattern, theme and language set-up are **copies** of
 
 | Route | Screen | What it does |
 | --- | --- | --- |
-| `/welcome` | Welcome | Kannada / Hindi / English, three large buttons |
+| `/welcome` | Welcome | One large “Get started” button (English only, rev 193) |
 | `/sign-in` | SignIn | Continue with Google · Continue with mobile number · Sign in with Apple (iPhone, once the server supports it). Google is hidden when `GET /config` says it is off |
 | `/sign-in-phone` | SignInPhone | +91 mobile, OTP (resend after 30 s, at most 3), the "Laboura may call me to help me finish" tick |
 | `/verify-phone` | VerifyPhone | After Google/Apple: the mobile + OTP **before any profile**; says "We found your registration JS-…" when an agent already registered that number |

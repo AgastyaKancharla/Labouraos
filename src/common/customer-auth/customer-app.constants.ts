@@ -20,7 +20,8 @@ export type CustomerProfileKind = (typeof CUSTOMER_PROFILE_KINDS)[number];
 /** Business profile roles (proposal 2.2). Job seeker and referral profiles are `self`. */
 export const CUSTOMER_BUSINESS_ROLES = ['owner', 'manager', 'hr', 'supervisor'] as const;
 
-export const CUSTOMER_LANGUAGES = ['kn', 'hi', 'en'] as const;
+/** English only (Master Guide rev 193): the app and its notifications are in English. */
+export const CUSTOMER_LANGUAGES = ['en'] as const;
 
 /** Sign-up tracker stages (proposal 4.1). */
 export const SIGNUP_STAGES = ['A', 'B', 'C', 'D', 'E', 'done'] as const;

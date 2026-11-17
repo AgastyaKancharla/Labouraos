@@ -26,7 +26,7 @@ describe('Registration link journey (P00 → P02b)', () => {
     expect(status.steps).toEqual({ consent: false, selfie: false, idCheck: false, payment: false });
     expect(status.firstName).toBe('Kavya');
     expect(status.maskedPhone).toBe('******2345');
-    expect(status.language).toBe('kn');
+    expect(status.language).toBe('en'); // English only (rev 193), whatever was stored
   });
 
   it('resumes at the first unfinished step, never asking a done step again', () => {
@@ -131,11 +131,11 @@ describe('Registration link journey (P00 → P02b)', () => {
     expect(buildJourneyStatus(input({}, { guaranteeFloorPaise: null })).waitingForTrade).toBe(true);
   });
 
-  it('maps stored language names and shortens names for the payment-only page', () => {
-    expect(publicLanguage('Kannada')).toBe('kn');
-    expect(publicLanguage('hi')).toBe('hi');
-    expect(publicLanguage('Tamil')).toBeNull();
-    expect(publicLanguage(null)).toBeNull();
+  it('reads every stored language as English (rev 193) and shortens names for the payment-only page', () => {
+    expect(publicLanguage('Kannada')).toBe('en');
+    expect(publicLanguage('hi')).toBe('en');
+    expect(publicLanguage('Tamil')).toBe('en');
+    expect(publicLanguage(null)).toBe('en');
     expect(shortNameOf('Kavya Ramesh')).toBe('Kavya R.');
     expect(shortNameOf('Kavya')).toBe('Kavya');
   });

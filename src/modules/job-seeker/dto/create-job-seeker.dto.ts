@@ -2,7 +2,8 @@ export interface CreateJobSeekerDto {
   name: string;
   phone: string;
   otpRequestId: string;
-  messageLanguage: 'kn' | 'hi' | 'en';
+  /** Ignored: English only (rev 193). Older clients may still send it. */
+  messageLanguage?: string;
   bestTimeToCall: '09-12' | '12-15' | '15-18' | '18-21' | '09-21';
   dateOfBirth: string;
   gender: string;

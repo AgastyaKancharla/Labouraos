@@ -5,7 +5,7 @@ import { useI18n } from '../../../i18n/I18nProvider';
 import type { MessageKey } from '../../../i18n/en';
 import { vacancyConfirmApi } from '../shared/api';
 import { dateTimeLabel, dayLabel, rupeeRange } from '../shared/format';
-import { ActionError, LinkProblem, Loading, Muted, Ok, OtpBlock, PageTitle, Row, usePersonLanguage, Warn } from '../shared/ui';
+import { ActionError, LinkProblem, Loading, Muted, Ok, OtpBlock, PageTitle, Row, Warn } from '../shared/ui';
 
 const SHIFT: Record<string, MessageKey> = {
   day: 'pub.shift.day',
@@ -27,7 +27,6 @@ export default function VacancyConfirm() {
   const { t, language } = useI18n();
   const token = useParams<{ token: string }>().token ?? '';
   const details = useQuery({ queryKey: ['vacancy-confirm', token], queryFn: () => vacancyConfirmApi.details(token), enabled: Boolean(token), retry: false });
-  usePersonLanguage(details.data?.preferredLanguage, token);
   const [requestId, setRequestId] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -57,13 +56,13 @@ export default function VacancyConfirm() {
     );
   }
 
-  const canConfirm = Boolean(requestId) && code.length === 6;
-  const confirm = async () => {
-    if (!canConfirm || !requestId) return;
+  // Rev 193: one button. "Send code to confirm" sends the code; typing it confirms in the same step.
+  const confirm = async (typed: string) => {
+    if (!requestId || typed.length !== 6) return;
     setBusy(true);
     setError(null);
     try {
-      await vacancyConfirmApi.confirm(token, requestId, code);
+      await vacancyConfirmApi.confirm(token, requestId, typed);
       setConfirmed(true);
     } catch (e) {
       setError(e);
@@ -103,11 +102,13 @@ export default function VacancyConfirm() {
         code={code}
         onCode={setCode}
         invalid={Boolean(error)}
+        sendLabel={t('pub.vac.sendToConfirm')}
+        hint={t('pub.vac.codeConfirms')}
+        onComplete={(typed) => void confirm(typed)}
+        submitting={busy}
+        submittingLabel={t('pub.vac.confirming')}
       />
       <ActionError error={error} />
-      <button type="button" className="btn bp full" disabled={!canConfirm || busy} aria-busy={busy || undefined} onClick={() => void confirm()}>
-        {t('pub.vac.confirm')}
-      </button>
       <Muted>{t('pub.vac.expires', { when: dateTimeLabel(d.expiresAt, language) })}</Muted>
     </>
   );

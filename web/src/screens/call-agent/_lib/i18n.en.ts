@@ -1,9 +1,7 @@
 import { signupEn } from './i18n.signup';
 /**
  * English strings for the call agent console's daily-work screens and the
- * search bar. Spread into src/i18n/en.ts. Kannada is in i18n.kn.ts and Hindi
- * in i18n.hi.ts: Kannada, English and Hindi stay everywhere they are offered
- * (owner decision, 11 Nov), so both are real translations, never copies.
+ * search bar. Spread into src/i18n/en.ts (English only, Master Guide rev 193).
  */
 export const callAgentEn = {
   'search.suggestions': 'Matches',

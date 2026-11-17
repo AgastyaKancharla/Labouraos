@@ -31,7 +31,7 @@ function legalWith(rows: {
 
 const REQUIRED = ['job_matching', 'profile_sharing', 'call_recording', 'aadhaar_verification', 'job_updates'];
 /** The hash of the text a page would show (the server requires it). */
-const shownHash = (key: 'job_seeker_terms' | 'referral_terms', lang: 'kn' | 'hi' | 'en') =>
+const shownHash = (key: 'job_seeker_terms' | 'referral_terms', lang: 'en') =>
   renderLegalDocument(key, lang, legalNumbersFrom(POLICY as never), legalCompanyFrom(POLICY as never)).hash;
 
 describe('Re-consent (rev 176): who must accept the current version', () => {
@@ -82,10 +82,10 @@ describe('Re-consent (rev 176): who must accept the current version', () => {
 
   it('records an acceptance with version, language, OTP and the exact text (stored once per hash)', async () => {
     const { service, prisma } = legalWith({});
-    const rendered = await service.render('job_seeker_terms', 'hi');
+    const rendered = await service.render('job_seeker_terms', 'en');
     await service.recordAcceptance({ subjectType: 'job_seeker', subjectId: 'js-1', rendered, context: 'reconsent', method: 'sms_link', otpRequestId: 'otp-9', noticeVersion: '1.2', purposes: REQUIRED, acceptedAt: new Date('2026-11-15T10:00:00Z') });
-    expect(prisma.legalDocumentText.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { hash: rendered.hash }, create: expect.objectContaining({ html: rendered.html, version: '1.1', language: 'hi' }) }));
-    expect(prisma.legalAcceptance.create).toHaveBeenCalledWith({ data: expect.objectContaining({ version: '1.1', language: 'hi', textHash: rendered.hash, otpRequestId: 'otp-9', noticeVersion: '1.2', context: 'reconsent' }) });
+    expect(prisma.legalDocumentText.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { hash: rendered.hash }, create: expect.objectContaining({ html: rendered.html, version: '1.1', language: 'en' }) }));
+    expect(prisma.legalAcceptance.create).toHaveBeenCalledWith({ data: expect.objectContaining({ version: '1.1', language: 'en', textHash: rendered.hash, otpRequestId: 'otp-9', noticeVersion: '1.2', context: 'reconsent' }) });
   });
 });
 
@@ -98,7 +98,7 @@ describe('Re-consent on the link (ConsentLinkService.recordReconsent)', () => {
     const consent = { grant: jest.fn(async (dto: unknown) => grants.push(dto)) };
     const legal = {
       status: jest.fn().mockResolvedValue({ ...status, currentVersion: '1.1', noticeVersion: '1.1' }),
-      render: jest.fn(async (key: 'job_seeker_terms' | 'referral_terms', lang: 'kn' | 'hi' | 'en') =>
+      render: jest.fn(async (key: 'job_seeker_terms' | 'referral_terms', lang: 'en') =>
         renderLegalDocument(key, lang, legalNumbersFrom(POLICY as never), legalCompanyFrom(POLICY as never))),
       recordAcceptance: jest.fn(async (input: unknown) => recorded.push(input)),
     };
@@ -112,12 +112,12 @@ describe('Re-consent on the link (ConsentLinkService.recordReconsent)', () => {
 
   it('needs every required tick, then grants them under notice 1.2 and records the acceptance', async () => {
     const { service, grants, recorded, audit } = linkService({ needsReconsent: true, acceptedVersion: null });
-    await expect(service.recordReconsent('job_seeker', 'js-1', { purposes: ['job_matching'], language: 'kn', method: 'sms_link', otpRequestId: 'otp-1', textHash: shownHash('job_seeker_terms', 'kn') })).rejects.toThrow(BadRequestException);
-    const res = await service.recordReconsent('job_seeker', 'js-1', { purposes: [...REQUIRED, 'promotions'], language: 'kn', method: 'sms_link', otpRequestId: 'otp-1', textHash: shownHash('job_seeker_terms', 'kn') });
+    await expect(service.recordReconsent('job_seeker', 'js-1', { purposes: ['job_matching'], language: 'en', method: 'sms_link', otpRequestId: 'otp-1', textHash: shownHash('job_seeker_terms', 'en') })).rejects.toThrow(BadRequestException);
+    const res = await service.recordReconsent('job_seeker', 'js-1', { purposes: [...REQUIRED, 'promotions'], language: 'en', method: 'sms_link', otpRequestId: 'otp-1', textHash: shownHash('job_seeker_terms', 'en') });
     expect(res.version).toBe('1.1');
     expect(grants).toHaveLength(6);
-    expect(grants[0]).toMatchObject({ subjectType: 'job_seeker', noticeVersion: '1.2', language: 'kn', otpRequestId: 'otp-1' });
-    expect(recorded[0]).toMatchObject({ context: 'reconsent', noticeVersion: '1.2', otpRequestId: 'otp-1', rendered: expect.objectContaining({ language: 'kn', version: '1.1' }) });
+    expect(grants[0]).toMatchObject({ subjectType: 'job_seeker', noticeVersion: '1.2', language: 'en', otpRequestId: 'otp-1' });
+    expect(recorded[0]).toMatchObject({ context: 'reconsent', noticeVersion: '1.2', otpRequestId: 'otp-1', rendered: expect.objectContaining({ language: 'en', version: '1.1' }) });
     expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'legal.reconsent_accepted' }));
   });
 
@@ -132,10 +132,10 @@ describe('Re-consent on the link (ConsentLinkService.recordReconsent)', () => {
 
   it('refuses when the text shown is not the text the server would record (hash mismatch)', async () => {
     const { service, grants } = linkService({ needsReconsent: true, acceptedVersion: '1.0' });
-    await expect(service.recordReconsent('job_seeker', 'js-1', { purposes: REQUIRED, language: 'kn', method: 'sms_link', otpRequestId: 'otp-1', textHash: 'f'.repeat(64) })).rejects.toThrow('changed while you were reading');
+    await expect(service.recordReconsent('job_seeker', 'js-1', { purposes: REQUIRED, language: 'en', method: 'sms_link', otpRequestId: 'otp-1', textHash: 'f'.repeat(64) })).rejects.toThrow('changed while you were reading');
     expect(grants).toHaveLength(0);
-    const shown = renderLegalDocument('job_seeker_terms', 'kn', legalNumbersFrom(POLICY as never), legalCompanyFrom(POLICY as never));
-    await service.recordReconsent('job_seeker', 'js-1', { purposes: REQUIRED, language: 'kn', method: 'sms_link', otpRequestId: 'otp-1', textHash: shown.hash });
+    const shown = renderLegalDocument('job_seeker_terms', 'en', legalNumbersFrom(POLICY as never), legalCompanyFrom(POLICY as never));
+    await service.recordReconsent('job_seeker', 'js-1', { purposes: REQUIRED, language: 'en', method: 'sms_link', otpRequestId: 'otp-1', textHash: shown.hash });
     expect(grants).toHaveLength(5);
   });
 

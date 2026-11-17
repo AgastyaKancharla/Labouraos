@@ -53,7 +53,7 @@ describe('Area from GPS within 1 km', () => {
     await expect(service.nearestAreaName(centre.latitude + 0.006, centre.longitude, 500)).resolves.toBeNull();
   });
 
-  it('refuses in Kannada, English and Hindi, with a code the apps translate', () => {
+  it('refuses in English only (rev 193), with a code the apps read', () => {
     const error = areaRequiredError(1000);
     expect(error).toBeInstanceOf(BadRequestException);
     expect(error.getStatus()).toBe(400);
@@ -62,10 +62,7 @@ describe('Area from GPS within 1 km', () => {
     expect(body.maxMeters).toBe(1000);
     expect(body.message).toBe('Pick the area — no area is within 1 km of this shop');
     expect(body.messages.en).toBe(body.message);
-    expect(body.messages.kn).toContain('1 ಕಿ.ಮೀ');
-    expect(body.messages.hi).toContain('1 कि.मी.');
-    expect(body.messages.kn).not.toBe(body.messages.en);
-    expect(body.messages.hi).not.toBe(body.messages.en);
+    expect(Object.keys(body.messages)).toEqual(['en']);
   });
 
   it('labels distances in km or metres', () => {

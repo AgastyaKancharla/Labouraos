@@ -12,7 +12,6 @@ const form: BusinessForm = {
   contactName: 'Shankar Rao',
   contactRole: 'owner',
   mobile: '9900054321',
-  language: 'kn',
   billingEmail: 'annapoornamess@gmail.com',
   heardFrom: 'toll_free_missed_call',
   boardName: 'Annapoorna Mess',
@@ -73,7 +72,6 @@ describe('Register a new business (CA13)', () => {
       phone: '9900054321',
       otpRequestId: 'otp-b',
       contactWhatsAppPhone: '9900054321',
-      contactLanguage: 'kn',
       billingEmail: 'annapoornamess@gmail.com',
       heardFrom: 'toll_free_missed_call',
       businessType: 'restaurant_hotel',
@@ -93,7 +91,7 @@ describe('Register a new business (CA13)', () => {
       fssaiNumber: '11223344556677',
       staffNeededRows: [{ trade: 'Cook', headcount: 2, salaryMinPaise: 1600000, salaryMaxPaise: 2000000, salaryPeriod: 'monthly', shift: 'day', startDate: '2026-11-16' }],
     });
-    await waitFor(() => expect(api.calls('POST /businesses/biz-1/agreement-links')[0]?.body).toEqual({ language: 'kn' }));
+    await waitFor(() => expect(api.calls('POST /businesses/biz-1/agreement-links')[0]?.body).toEqual({}));
     expect(await screen.findByTestId('navigated-away')).toBeInTheDocument();
   });
 

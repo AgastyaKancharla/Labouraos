@@ -52,7 +52,7 @@ export const business: BusinessDetail = {
   contactName: 'Shankar',
   contactRole: 'owner',
   contactPhoneLast4: '3310',
-  contactLanguage: 'kn',
+  contactLanguage: 'en',
   vacancies: [
     {
       id: 'vac-1', code: 'VC-0001', trade: 'Cook', roleTitle: null, headcount: 2, salaryMinPaise: 1600000, salaryMaxPaise: 2000000,

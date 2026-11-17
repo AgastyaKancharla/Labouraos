@@ -17,7 +17,10 @@ export interface Trade {
   salaryMinPaise: number;
   salaryMaxPaise: number;
   minimumWageLevel: string;
+  /** The legal minimum for the business's zone when `useTrades(businessId)` names one, else Zone 1 (rev 193). */
   legalMinimumPaise: number;
+  /** All three zones' figures for this trade's level. */
+  legalMinimumPaiseByZone?: Record<'1' | '2' | '3', number>;
 }
 
 export type StepState = 'done' | 'in_progress' | 'stuck' | 'not_started' | 'confirming';
@@ -36,7 +39,6 @@ export interface JobSeekerStatus {
   gender: string | null;
   phone: string;
   phoneVerifiedAt: string | null;
-  messageLanguage: string | null;
   locality: string | null;
   travelDistanceKm: number | null;
   shiftPreference: string | null;
@@ -164,8 +166,18 @@ export function useScriptTerms(): ScriptTerms | null {
   return useFormOptions().data?.scriptTerms ?? null;
 }
 
-export function useTrades() {
-  return useQuery({ queryKey: qk.trades, queryFn: () => api.get<Trade[]>('/trades'), staleTime: 10 * 60_000 });
+/**
+ * The trade list. With a business, each trade's `legalMinimumPaise` is the
+ * figure for that business's minimum wage zone (rev 193); without one (a
+ * business not saved yet) it is Zone 1's, the default when unsure — the
+ * server checks the real zone when the vacancy is saved.
+ */
+export function useTrades(businessId?: string | null) {
+  return useQuery({
+    queryKey: [...qk.trades, businessId ?? 'zone-1'],
+    queryFn: () => api.get<Trade[]>('/trades', businessId ? { query: { businessId } } : undefined),
+    staleTime: 10 * 60_000,
+  });
 }
 
 export function lookupRecord(code: string) {

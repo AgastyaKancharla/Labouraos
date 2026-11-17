@@ -7,7 +7,7 @@ import { isApiError } from '../../../lib/api/errors';
 import { agreementApi, type SignedAgreement } from '../shared/api';
 import { LegalSummary } from '../shared/legal';
 import { dateTimeLabel } from '../shared/format';
-import { ActionError, Choice, LinkProblem, Loading, Muted, Ok, OtpBlock, PageTitle, Row, usePersonLanguage } from '../shared/ui';
+import { ActionError, Choice, LinkProblem, Loading, Muted, Ok, OtpBlock, PageTitle, Row } from '../shared/ui';
 
 /**
  * P04-Agreement and P04b-Signed. The owner signs on their own phone by OTP —
@@ -31,7 +31,6 @@ export default function Agreement() {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  usePersonLanguage(details.data?.preferredLanguage ?? signedQuery.data?.preferredLanguage, token);
 
   const ownerName = details.data?.ownerName;
   useEffect(() => {
@@ -59,13 +58,15 @@ export default function Agreement() {
   if (details.error || !details.data) return <LinkProblem error={signedQuery.error ?? details.error} onRetry={() => void details.refetch()} />;
   const d = details.data;
 
-  const canSign = name.trim().length >= 2 && agreeTerms && agreeAuthority && agreeRecording && Boolean(requestId) && code.length === 6;
-  const sign = async () => {
-    if (!canSign || !requestId) return;
+  // Rev 193: one button. The name and the three ticks come first; "Send code to sign" sends the
+  // owner's code, and typing it signs in the same step (no separate "Sign agreement" button).
+  const ready = name.trim().length >= 2 && agreeTerms && agreeAuthority && agreeRecording;
+  const sign = async (typed: string) => {
+    if (!ready || !requestId || typed.length !== 6) return;
     setBusy(true);
     setError(null);
     try {
-      const result = await agreementApi.sign(token, requestId, code, name.trim());
+      const result = await agreementApi.sign(token, requestId, typed, name.trim());
       setSigned({ signedAt: result.signedAt, signedName: name.trim(), businessName: d.businessName, preferredLanguage: d.preferredLanguage });
     } catch (e) {
       setError(e);
@@ -116,11 +117,14 @@ export default function Agreement() {
         code={code}
         onCode={setCode}
         invalid={Boolean(error)}
+        sendLabel={t('pub.agree.sendToSign')}
+        sendDisabled={!ready}
+        hint={ready ? t('pub.agree.codeSigns') : t('pub.agree.fillFirst')}
+        onComplete={(typed) => void sign(typed)}
+        submitting={busy}
+        submittingLabel={t('pub.agree.signing')}
       />
       <ActionError error={error} />
-      <button type="button" className="btn bp full" disabled={!canSign || busy} aria-busy={busy || undefined} onClick={() => void sign()}>
-        {t('pub.agree.sign')}
-      </button>
     </>
   );
 }

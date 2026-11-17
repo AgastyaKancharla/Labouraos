@@ -20,10 +20,9 @@ describe('P03-OfferReply / P03b-OfferYes', () => {
       },
     });
     render();
-    expect(await screen.findByRole('heading', { name: 'रमेश, आपके लिए नौकरी का ऑफ़र'.replace('रमेश', 'Ramesh') })).toBeInTheDocument();
-    await waitFor(() => expect(document.documentElement.lang).toBe('hi'));
-    await userEvent.click(screen.getByRole('button', { name: 'EN' }));
-    expect(screen.getByRole('heading', { name: 'A job offer for you, Ramesh' })).toBeInTheDocument();
+    // An offer whose record says Hindi is shown in English (rev 193).
+    expect(await screen.findByRole('heading', { name: 'A job offer for you, Ramesh' })).toBeInTheDocument();
+    await waitFor(() => expect(document.documentElement.lang).toBe('en'));
     expect(screen.getByText('Electrician')).toBeInTheDocument();
     expect(screen.getByText('₹16,000–18,000 a month')).toBeInTheDocument();
     expect(screen.getByText(/uses up your 30-day guarantee/)).toBeInTheDocument();

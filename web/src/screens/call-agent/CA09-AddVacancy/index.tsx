@@ -55,8 +55,9 @@ export default function AddVacancy() {
   const draftId = params.get('draft');
   const now = useNow();
   const todayKey = istDateKey(now);
-  const trades = useTrades();
   const [form, setForm, draft] = useDraft<VacancyForm>('vacancy', EMPTY_VACANCY, { disabled: Boolean(draftId) });
+  // Rev 193: the legal minimum shown is the one for the chosen business's zone.
+  const trades = useTrades(form.business?.id ?? null);
   const [saved, setSaved] = useState<Saved | null>(null);
   const [showErrors, setShowErrors] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);

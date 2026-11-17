@@ -1,7 +1,6 @@
 /**
  * First login and Forgot password in Laboura Field (Master Guide rev 174–175).
- * Spread into en.ts; kn and hi in access.kn.ts and access.hi.ts (drafts — a
- * native speaker checks them).
+ * Spread into en.ts (English only, Master Guide rev 193).
  */
 export const accessEn = {
   'access.forgot.link': 'Forgot password?',

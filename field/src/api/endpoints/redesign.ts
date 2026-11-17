@@ -329,10 +329,11 @@ export const redesignApi = (api: ApiClient) => ({
   myBusinesses: (q?: string) => api.get<{ query: string; results: MyBusinessRow[] }>('/field-work/businesses', { query: { q: q || undefined } }),
   businessPage: (ref: string) => api.get<BusinessPage>(`/field-work/businesses/${enc(ref)}/page`),
   agreement: (ref: string) => api.get<AgreementStatus>(`/field-work/businesses/${enc(ref)}/agreement`),
-  resendAgreement: (ref: string, language?: string) =>
+  /** The agreement link, in English (rev 193). */
+  resendAgreement: (ref: string) =>
     api.post<{ success: boolean; linkSentAt: string; linkExpiresAt: string; sentToLast4: string }>(
       `/field-work/businesses/${enc(ref)}/agreement-link`,
-      language ? { language } : {},
+      {},
     ),
   submitDraft: (vacancyId: string, ownerToldMinimumWage?: boolean) =>
     api.post<SubmittedVacancy>(`/vacancies/${enc(vacancyId)}/submit-for-confirmation`, ownerToldMinimumWage ? { ownerToldMinimumWage: true } : {}),
@@ -347,7 +348,7 @@ export const redesignApi = (api: ApiClient) => ({
   createReferral: (body: Record<string, unknown>) => api.post<CreatedReferral>('/referrals', body),
   referral: (id: string) => api.get<{ id: string; code: string; name: string; language: string | null; paused?: boolean }>(`/referrals/${enc(id)}`),
   referralStatus: (id: string) => api.get<ReferralStatus>(`/referrals/${enc(id)}/registration-status`),
-  resendReferralLink: (id: string, language?: string) => api.post<{ success?: boolean; expiresAt?: string }>(`/referrals/${enc(id)}/terms-links`, language ? { language } : {}),
+  resendReferralLink: (id: string) => api.post<{ success?: boolean; expiresAt?: string }>(`/referrals/${enc(id)}/terms-links`, {}),
 });
 
 /** The stable `code` of an API error (docs/api/field-redesign.md §7), if any. */

@@ -1,5 +1,4 @@
 import { cleanup, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { mockApi, renderScreen, signInAs } from '../../../test/utils';
 import RegisterBusiness from '../CA13-BusinessLead';
@@ -33,54 +32,45 @@ const CHANGED: ScriptTerms = {
 };
 
 describe('call scripts read their figures from Settings', () => {
-  it('job seeker consent script: the fee and the guarantee days, in all three languages', () => {
-    expect(jobSeekerConsentScript(GUIDE).en).toContain('pay ₹499. If we don’t offer you a suitable job within 30 days, you get your ₹499 back.');
+  it('job seeker consent script: the fee and the guarantee days, in English only (rev 193)', () => {
+    expect(jobSeekerConsentScript(GUIDE)).toContain('pay ₹499. If we don’t offer you a suitable job within 30 days, you get your ₹499 back.');
     const changed = jobSeekerConsentScript(CHANGED);
-    for (const text of Object.values(changed)) {
-      expect(text).toContain('₹599');
-      expect(text).toContain('45');
-      expect(text).not.toContain('₹499');
-    }
+    expect(changed).toContain('₹599');
+    expect(changed).toContain('45');
+    expect(changed).not.toContain('₹499');
+    expect(changed).not.toMatch(/\p{Script=Kannada}|\p{Script=Devanagari}/u);
   });
 
   it('business script: placement fee %, GST %, replacement window and no-bypass terms', () => {
-    expect(businessScript(GUIDE).en).toContain('50% of their first month’s salary plus 18% GST');
+    expect(businessScript(GUIDE)).toContain('50% of their first month’s salary plus 18% GST');
     const changed = businessScript(CHANGED);
-    expect(changed.en).toContain('40% of their first month’s salary plus 12% GST. If they leave within 90 days, we replace them free, up to 3 times.');
-    expect(changed.en).toContain('within 18 months, the full fee plus 25% applies');
-    for (const text of Object.values(changed)) {
-      expect(text).toContain('40%');
-      expect(text).toContain('12% GST');
-      expect(text).not.toMatch(/50%|18%/);
-    }
+    expect(changed).toContain('40% of their first month’s salary plus 12% GST. If they leave within 90 days, we replace them free, up to 3 times.');
+    expect(changed).toContain('within 18 months, the full fee plus 25% applies');
+    expect(changed).not.toMatch(/50%|18%/);
   });
 
   it('referral script: the reward amount', () => {
-    expect(referralScript(GUIDE).en).toContain('you get ₹200 by UPI');
-    for (const text of Object.values(referralScript(CHANGED))) {
-      expect(text).toContain('₹250');
-      expect(text).not.toContain('₹200');
-    }
+    expect(referralScript(GUIDE)).toContain('you get ₹200 by UPI');
+    expect(referralScript(CHANGED)).toContain('₹250');
+    expect(referralScript(CHANGED)).not.toContain('₹200');
   });
 
   it('a Manager gets no rupee figures, so the amounts are named in words', () => {
     const blind = { ...GUIDE, activationFeePaise: undefined, referralPayoutPaise: undefined };
-    for (const text of [...Object.values(jobSeekerConsentScript(blind)), ...Object.values(referralScript(blind))]) {
+    for (const text of [jobSeekerConsentScript(blind), referralScript(blind)]) {
       expect(text).not.toContain('₹');
     }
-    expect(jobSeekerConsentScript(blind).en).toContain('pay the registration fee');
+    expect(jobSeekerConsentScript(blind)).toContain('pay the registration fee');
   });
 
   it('the CA13 screen reads out what Settings says, and follows a change', async () => {
-    const user = userEvent.setup();
-    const render = async (terms: ScriptTerms) => {
+      const render = async (terms: ScriptTerms) => {
       mockApi({
         'GET /trades': [],
         'GET /screens/call-registration/options': { city: 'Bengaluru', areas: [], scriptTerms: terms },
       });
       signInAs('call_agent');
       renderScreen(<RegisterBusiness />, { portal: 'call-agent', path: '/call-agent/register/business' });
-      await user.click((await screen.findAllByRole('button', { name: 'English' }))[0]);
     };
 
     await render(GUIDE);

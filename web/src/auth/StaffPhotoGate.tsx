@@ -3,7 +3,6 @@ import { useState, type ReactNode } from 'react';
 import { Button } from '../components/Button';
 import { FamilyContext } from '../components/family';
 import { useT } from '../i18n/I18nProvider';
-import { LanguageSwitcher } from '../i18n/LanguageSwitcher';
 import { api } from '../lib/api/client';
 import { isApiError } from '../lib/api/errors';
 import { postLiveSelfie } from '../screens/public/shared/api';
@@ -67,9 +66,6 @@ function TakeStaffPhoto({ staffId, reason }: { staffId: string; reason: StaffPho
     <FamilyContext.Provider value="console">
       <div className="console lb-center lb-invite lb-signin">
         <main id="main" className="card lb-auth-card">
-          <div className="lb-invite__lang">
-            <LanguageSwitcher tone="onLight" />
-          </div>
           <div className="lb-stack">
             <h1 className="h1">{t(reason === 'retake' ? 'staffPhoto.retakeTitle' : 'staffPhoto.title')}</h1>
             <p className="muted">{t(reason === 'retake' ? 'staffPhoto.retakeIntro' : 'staffPhoto.intro')}</p>

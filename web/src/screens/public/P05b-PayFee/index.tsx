@@ -4,7 +4,7 @@ import { useParams } from 'react-router-dom';
 import { useI18n } from '../../../i18n/I18nProvider';
 import { paymentApi } from '../shared/api';
 import { dateTimeLabel, dayLabel, dayTimeLabel, rupees } from '../shared/format';
-import { LinkProblem, Loading, Muted, Ok, PageTitle, PaidConfirming, Row, UpiQr, usePersonLanguage, Warn } from '../shared/ui';
+import { LinkProblem, Loading, Muted, Ok, PageTitle, PaidConfirming, Row, UpiQr, Warn } from '../shared/ui';
 
 /**
  * P05b-PayFee: a UPI payment for the exact amount, by its reference. For a
@@ -23,7 +23,6 @@ export default function PayFee() {
     enabled: Boolean(reference),
     refetchInterval: (q) => (q.state.data && (q.state.data.state === 'pending' || q.state.data.state === 'confirming') && tapped ? 15_000 : false),
   });
-  usePersonLanguage(summary.data?.language, reference);
 
   if (summary.isLoading) return <Loading />;
   if (summary.error || !summary.data) return <LinkProblem error={summary.error} onRetry={() => void summary.refetch()} />;

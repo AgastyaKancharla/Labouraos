@@ -6,7 +6,7 @@ import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { useAfterSave } from '@/api/refresh';
 import { Banner, Button, Card, Emoji, Screen, Text, TextField } from '@/components';
-import { addDays, Checkbox, ChipPicker, DateField, MobileField, MoneyField, Segmented, SelectField, todayKeyIst } from '@/components/form';
+import { addDays, Checkbox, ChipPicker, DateField, MobileField, MoneyField, SelectField, todayKeyIst } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useLocation } from '@/device/location/useLocation';
 import { useI18n, type MessageKey } from '@/i18n';
@@ -18,10 +18,10 @@ import { type Accent, accents, colors, fonts } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { ErrorBanner, formatRupees, Script, UserFacingError } from '../_selling';
 import { OtpStep } from '../_selling/OtpStep';
-import { JOB_SEEKER_CONSENT_SCRIPT, SCRIPT_LANGUAGES, type ScriptLanguage } from '../_selling/scripts';
+import { JOB_SEEKER_CONSENT_SCRIPT } from '../_selling/scripts';
 import { inShortText } from '@/api/endpoints/legal';
 import {
-  BEST_TIME, createBody, EMPTY_FORM, GENDERS, HEARD_FROM, JOB_TYPES, LICENCES, MESSAGE_LANGUAGES, OTHER_TRADE, profileBody,
+  BEST_TIME, createBody, EMPTY_FORM, GENDERS, HEARD_FROM, JOB_TYPES, LICENCES, OTHER_TRADE, profileBody,
   QUALIFICATIONS, SHIFT_PREFERENCES, SPOKEN_LANGUAGES, tradeName, TRAVEL_KM, validate, YEARS, type FieldError, type JobSeekerForm,
 } from './payload';
 
@@ -30,7 +30,6 @@ const ERROR_KEYS: Record<FieldError, MessageKey> = {
   name: 'fa10.err.required',
   dateOfBirth: 'fa10.err.dob',
   gender: 'fa10.err.required',
-  messageLanguage: 'fa10.err.required',
   bestTime: 'fa10.err.required',
   heardFrom: 'fa10.err.required',
   area: 'fa10.err.required',
@@ -65,8 +64,8 @@ export function clearSeekerDraft() {
  * FA10 — Register a job seeker: exactly the call agent's form and rules
  * (CA08), on a phone, using the same endpoints (POST /otp/send with purpose
  * job_seeker, POST /job-seekers, PATCH /job-seekers/:id/profile). The mobile
- * is checked by OTP first; the consent is explained aloud in the person's
- * language — she gives it herself on the link. Needs signal to save (the OTP
+ * is checked by OTP first; the consent is explained aloud (English only,
+ * rev 193) — she gives it herself on the link. Needs signal to save (the OTP
  * has just been checked).
  */
 export default function CaptureSeekerScreen() {
@@ -81,10 +80,9 @@ export default function CaptureSeekerScreen() {
   const [verified, setVerified] = useState<{ requestId: string; at: number; mobile: string } | null>(null);
   const [duplicate, setDuplicate] = useState<{ code?: string; type?: 'job_seeker' | 'business' | 'referral' | null } | null>(null);
   const [tried, setTried] = useState(false);
-  const [scriptLang, setScriptLang] = useState<ScriptLanguage>('kn');
   const inShort = useQuery({
-    queryKey: ['legal-document', 'job_seeker_terms', scriptLang],
-    queryFn: () => legal.document('job_seeker_terms', scriptLang),
+    queryKey: ['legal-document', 'job_seeker_terms', 'en'],
+    queryFn: () => legal.document('job_seeker_terms', 'en'),
     staleTime: 10 * 60_000,
     retry: false,
   });
@@ -203,7 +201,6 @@ export default function CaptureSeekerScreen() {
           ) : null}
           <DateField label={t('fa10.dob')} required yearFirst value={form.dateOfBirth} onChange={(v) => set('dateOfBirth', v)} max={adultMax} min="1940-01-01" error={err('dateOfBirth')} hint={t('fa10.dobHint')} testID="dob" />
           <SelectField label={t('fa10.gender')} required value={form.gender} choices={choice(GENDERS, 'fa10.gender')} onChange={(v) => set('gender', v)} error={err('gender')} testID="gender" />
-          <SelectField label={t('fa10.messageLanguage')} required value={form.messageLanguage} choices={choice(MESSAGE_LANGUAGES, 'fa10.lang')} onChange={(v) => set('messageLanguage', v)} error={err('messageLanguage')} testID="message-language" />
           <SelectField label={t('fa10.bestTime')} required value={form.bestTime} choices={choice(BEST_TIME, 'fa10.time')} onChange={(v) => set('bestTime', v)} error={err('bestTime')} testID="best-time" />
           <SelectField label={t('fa10.heardFrom')} required value={form.heardFrom} choices={choice(HEARD_FROM, 'fa10.heard')} onChange={(v) => set('heardFrom', v)} error={err('heardFrom')} testID="heard-from" />
         </Section>
@@ -348,9 +345,8 @@ export default function CaptureSeekerScreen() {
         </Section>
 
         <Section n={7} title={t('fa10.s7')}>
-          <Segmented value={scriptLang} options={SCRIPT_LANGUAGES} onChange={setScriptLang} testID="script-language" />
-          {/* Job Seeker Terms v1.1 "In short" in their language (rev 176); the older script until it loads. */}
-          <Script testID="consent-script">{inShort.data ? inShortText(inShort.data) : JOB_SEEKER_CONSENT_SCRIPT[scriptLang]}</Script>
+          {/* Job Seeker Terms v1.1 "In short" (rev 176; English, rev 193); the older script until it loads. */}
+          <Script testID="consent-script">{inShort.data ? inShortText(inShort.data) : JOB_SEEKER_CONSENT_SCRIPT}</Script>
           <Text variant="muted">{t('fa10.ownOtp')}</Text>
         </Section>
 

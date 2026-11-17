@@ -1,4 +1,6 @@
+import { PRODUCT_LANGUAGE } from '../../common/language/english-only';
 import { OwnTeam, businessesOwnedBy } from '../../common/rbac/own-team';
+import { ZONE_ADDRESS_FIELDS, zoneForBusiness } from '../trade/minimum-wage';
 import { assertNotBanned, businessIdFingerprint } from '../conduct/permanent-ban.check';
 import {
   BadRequestException,
@@ -25,7 +27,6 @@ import { CreateBusinessDto, RecordVisitDto } from './dto/create-business.dto';
 import { assertNoRawAadhaar } from '../job-seeker/job-seeker.validator';
 import {
   BUSINESS_CONTACT_ROLES,
-  BUSINESS_MESSAGE_LANGUAGES,
   BUSINESS_TYPES,
   EMPLOYEE_COUNT_BANDS,
   HIRING_FREQUENCIES,
@@ -69,7 +70,6 @@ export const ALLOWED_BUSINESS_UPDATE_FIELDS: ReadonlySet<string> = new Set([
   'familyName',
   'contactRole',
   'contactWhatsAppPhone',
-  'contactLanguage',
   'businessType',
   'employeeCountBand',
   'employeeCount',
@@ -186,6 +186,12 @@ export class BusinessService {
     const data: Record<string, unknown> = {};
     for (const key of diff.changedFields) {
       data[key] = updates[key];
+    }
+    // Rev 193: a zone worked out from the address follows an address edit; a zone office staff set is kept.
+    if (record.minimumWageZoneSource !== 'staff' && diff.changedFields.some((field) => ZONE_ADDRESS_FIELDS.includes(field))) {
+      const merged = { ...record, ...data } as Record<string, string | null | undefined>;
+      const zone = zoneForBusiness(merged).zone;
+      if (zone !== record.minimumWageZone) data.minimumWageZone = zone;
     }
 
     const updated = await this.prisma.business.update({
@@ -327,7 +333,6 @@ export class BusinessService {
     this.assertOptionalValue(dto.yearsInOperationBand, YEARS_RUNNING_BANDS, 'yearsInOperationBand');
     this.assertOptionalValue(dto.hiringFrequency, HIRING_FREQUENCIES, 'hiringFrequency');
     this.assertOptionalValue(dto.heardFrom, HEARD_FROM_VALUES, 'heardFrom');
-    this.assertOptionalValue(dto.contactLanguage, BUSINESS_MESSAGE_LANGUAGES, 'contactLanguage');
     this.assertOptionalTime(dto.openingTime, 'openingTime');
     this.assertOptionalTime(dto.closingTime, 'closingTime');
     this.assertOptionalPincode(dto.pincode);
@@ -352,7 +357,6 @@ export class BusinessService {
           !branch.contactPersonPhone?.trim() || !branch.otpRequestId) {
         throw new BadRequestException('Each branch requires a name, contact name, role and OTP-verified mobile');
       }
-      this.assertOptionalValue(branch.contactLanguage, BUSINESS_MESSAGE_LANGUAGES, 'contactLanguage');
       this.assertOptionalPincode(branch.pincode);
       const branchPhone = requireIndianMobile(branch.contactPersonPhone, 'branches.contactPersonPhone');
       branch.contactPersonPhone = branchPhone;
@@ -538,7 +542,8 @@ export class BusinessService {
           additionalContactPhone: phone,
           contactRole: dto.contactPersonRole,
           contactWhatsAppPhone,
-          contactLanguage: dto.contactLanguage?.trim() || null,
+          // English only (rev 193): every message to the business is in English.
+          contactLanguage: PRODUCT_LANGUAGE,
           businessType,
           employeeCountBand: dto.employeeCountBand?.trim() || null,
           employeeCount: dto.employeeCount ?? null,
@@ -570,6 +575,11 @@ export class BusinessService {
           leadChannel: capturedChannel,
           ...accountAgent,
           locality,
+          // Legal minimum wage zone from the address (rev 193, docs/minimum-wage.md); staff can change it.
+          minimumWageZone: zoneForBusiness({
+            pincode: dto.pincode, city, address: dto.address, street: dto.street, locality, landmark: dto.landmark,
+          }).zone,
+          minimumWageZoneSource: 'auto',
           latitude,
           longitude,
           geofenceFlag,
@@ -586,7 +596,7 @@ export class BusinessService {
           longitude: branch.longitude ?? null, contactPersonName: branch.contactPersonName.trim(),
           contactPersonRole: branch.contactPersonRole, contactPersonPhone: branch.contactPersonPhone.trim(),
           contactWhatsAppPhone: branch.contactWhatsAppPhone?.trim() || null,
-          contactLanguage: branch.contactLanguage?.trim() || null,
+          contactLanguage: PRODUCT_LANGUAGE,
         } });
         branchIds.set(branch.name.trim(), savedBranch.id);
       }

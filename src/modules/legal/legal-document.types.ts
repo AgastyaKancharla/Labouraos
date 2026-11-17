@@ -11,7 +11,8 @@ export interface LegalDocumentSource {
   body: string;
 }
 
-export const LEGAL_LANGUAGES = ['kn', 'hi', 'en'] as const;
+/** English only (Master Guide rev 193). Acceptances recorded earlier in Kannada or Hindi keep their stored text (LegalDocumentText). */
+export const LEGAL_LANGUAGES = ['en'] as const;
 export type LegalLanguage = (typeof LEGAL_LANGUAGES)[number];
 
 export function isLegalLanguage(value: unknown): value is LegalLanguage {

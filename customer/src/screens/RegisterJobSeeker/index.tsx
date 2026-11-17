@@ -15,7 +15,7 @@ import { clearDraft, useDraft } from '@/lib/drafts';
 import { rupees } from '@/lib/money';
 import { RegisterOtpStep } from '../shared/RegisterOtpStep';
 import { SavedNextSteps } from '../shared/SavedNextSteps';
-import { heardFromChoices, messageLanguageChoices, shiftChoices, spokenLanguageChoices } from '../shared/choices';
+import { heardFromChoices, shiftChoices, spokenLanguageChoices } from '../shared/choices';
 import { MAX_TRADES, OTHER_TRADE, checkAge, emptyJobSeeker, salaryHint, toJobSeekerForm, validateJobSeeker, type JobSeekerErrors } from './form';
 
 /**
@@ -191,7 +191,6 @@ export default function RegisterJobSeeker() {
             />
             {errors.gender ? <Text variant="small" style={styles.errorText} testID="js-gender-error">{t(errors.gender)}</Text> : null}
             <Text variant="muted">{t('jobSeeker.genderWhy')}</Text>
-            <SelectField label={t('jobSeeker.messageLanguage')} value={draft.messageLanguage} choices={messageLanguageChoices(t)} onChange={(v) => set('messageLanguage', v)} required testID="js-msg-lang" />
             <SelectField
               label={t('jobSeeker.bestTime')}
               value={draft.bestTimeToCall}

@@ -4,7 +4,7 @@ import { useParams } from 'react-router-dom';
 import { useI18n } from '../../../i18n/I18nProvider';
 import { interviewApi } from '../shared/api';
 import { dayLabel } from '../shared/format';
-import { ActionError, LinkProblem, Loading, Muted, Ok, PageTitle, usePersonLanguage } from '../shared/ui';
+import { ActionError, LinkProblem, Loading, Muted, Ok, PageTitle } from '../shared/ui';
 
 /**
  * P06-DidTheyOffer: sent to the candidate when the owner is asked for the
@@ -15,7 +15,6 @@ export default function DidTheyOffer() {
   const { t, language } = useI18n();
   const token = useParams<{ token: string }>().token ?? '';
   const details = useQuery({ queryKey: ['offer-check', token], queryFn: () => interviewApi.offerCheck(token), enabled: Boolean(token), retry: false });
-  usePersonLanguage(details.data?.language, token);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [answered, setAnswered] = useState(false);
