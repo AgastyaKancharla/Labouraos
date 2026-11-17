@@ -1,4 +1,4 @@
-import { legalMinimumOf, type MinimumWageZone, type SalaryPeriod, type Shift, type Trade, type VacancyDraft } from '@/api/types';
+import { legalMinimumOf, type MinimumWageZone, type SalaryPeriod, type Trade, type VacancyDraft } from '@/api/types';
 import type { MessageKey } from '@/i18n';
 import { monthlyPaise } from '@/lib/validate';
 
