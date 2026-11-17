@@ -141,9 +141,21 @@ export class ManagerTargetsService {
       .filter((a) => a.main.done > 0 || a.main.target)
       .sort((x, y) => (y.main.metric === 'placed' ? 10 : 1) * y.main.done - (x.main.metric === 'placed' ? 10 : 1) * x.main.done || (y.main.percent ?? -1) - (x.main.percent ?? -1))
       .map((a, i) => ({ position: i + 1, staff: a.staff, team: a.team, main: a.main }));
+    // Agents who left this month with a target: their unreached part can be transferred.
+    const leftPeople = await this.tree.leftSince(actor.id, m.from);
+    const leftTargets = leftPeople.length ? await this.prisma.target.findMany({ where: { staffId: { in: leftPeople.map((p) => p.id) }, year: m.year, month: m.month } }) : [];
+    const left = leftPeople
+      .map((p) => {
+        const t = leftTargets.find((x) => x.staffId === p.id);
+        return t
+          ? { staff: p, target: { candidatesActivated: t.candidatesActivated, vacanciesCaptured: t.vacanciesCaptured, placementsClosed: t.placementsClosed, repeatBusinesses: t.repeatBusinesses } }
+          : null;
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
     return {
       year: m.year,
       month: m.month,
+      left,
       dayOfMonth: m.dayOfMonth,
       daysInMonth: m.daysInMonth,
       editable: now.getTime() <= m.to.getTime(),

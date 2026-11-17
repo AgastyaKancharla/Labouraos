@@ -111,7 +111,24 @@ export class TeamLeadTargetsService {
       return { key, label: PLAN_METRIC_LABEL[key], hint: HINT[key], limit: key === 'leftWithin30', handSet: Boolean(teamPlan?.handSetFields.includes(key)), ...row };
     });
     const mark = marks.teams[0];
+    // Agents who left the team this month with a target: their unreached part can be transferred.
+    const everyone = (await new OwnTeam(this.prisma).memberIds(actor.id)).filter((id) => id !== actor.id);
+    const leftPeople = everyone.length
+      ? await this.prisma.staff.findMany({
+          where: { id: { in: everyone }, status: 'deactivated', isOwnerAccount: false, deactivatedAt: { gte: m.from } },
+          select: { id: true, code: true, name: true, role: true },
+          orderBy: { name: 'asc' },
+        })
+      : [];
+    const leftTargets = leftPeople.length ? await this.prisma.target.findMany({ where: { staffId: { in: leftPeople.map((p) => p.id) }, year: m.year, month: m.month } }) : [];
+    const left = leftPeople
+      .map((p) => {
+        const t = leftTargets.find((x) => x.staffId === p.id);
+        return t ? { staff: p, target: { candidatesActivated: t.candidatesActivated, vacanciesCaptured: t.vacanciesCaptured, placementsClosed: t.placementsClosed, repeatBusinesses: t.repeatBusinesses } } : null;
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
     return {
+      left,
       year: m.year,
       month: m.month,
       dayOfMonth: m.dayOfMonth,
