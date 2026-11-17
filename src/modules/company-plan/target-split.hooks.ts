@@ -7,12 +7,14 @@ import { AgentField } from './target-split';
  *  - left: deactivated, or marked as an owner account
  *  - moved: an agent moved to another Team Lead (`before` = their target row this month, read before the move)
  *  - team_moved: a Team Lead moved to another Manager
+ *  - team_closed: a Team Lead deactivated (their team's numbers go back to the Manager's other teams)
  */
 export type StaffSplitEvent =
   | { kind: 'joined'; staffId: string; actorId: string; fromToday: boolean }
   | { kind: 'left'; staffId: string; actorId: string }
   | { kind: 'moved'; staffId: string; actorId: string; fromTeamLeadId: string | null; before: Partial<Record<AgentField, number | null>> | null }
-  | { kind: 'team_moved'; staffId: string; actorId: string };
+  | { kind: 'team_moved'; staffId: string; actorId: string }
+  | { kind: 'team_closed'; staffId: string; actorId: string };
 
 export interface TargetSplitHandler {
   staffChanged(event: StaffSplitEvent): Promise<void>;

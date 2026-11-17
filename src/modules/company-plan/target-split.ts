@@ -45,6 +45,18 @@ export const AGENT_FIELD_LABEL: Record<AgentField, string> = {
   repeatBusinesses: 'Repeat businesses',
 };
 
+/** Money-free names of the plan metrics, for flags and messages (a Manager's answers have rupee text stripped). */
+export const SPLIT_METRIC_LABEL: Record<PlanMetricKey, string> = {
+  registered: 'Registrations',
+  paid: 'Paid registrations',
+  businessesSignedUp: 'Businesses signed up',
+  vacancies: 'Vacancies',
+  interviewsDone: 'Interviews',
+  placed: 'Placements',
+  leftWithin30: 'Left within 30 days',
+  repeatBusinesses: 'Repeat businesses',
+};
+
 export function workTypeOf(role: string): WorkType | null {
   return role === 'call_agent' ? 'call' : role === 'field_agent' ? 'field' : null;
 }

@@ -7,7 +7,7 @@ import { istDayKey } from '../ceo-portal/ceo-common';
 import { WorkingDaysService } from '../attendance/working-days.service';
 import { CallAgentMetricsService } from '../target/call-agent-metrics.service';
 import { FieldAgentMetricsService } from '../target/field-agent-metrics.service';
-import { AGENT_TARGET_FIELD, PLAN_METRICS, PLAN_METRIC_LABEL, PlanMetricKey, PlanValues, valuesOf } from './company-plan.service';
+import { AGENT_TARGET_FIELD, PLAN_METRICS, PlanMetricKey, PlanValues, valuesOf } from './company-plan.service';
 import {
   AGENT_FIELD_LABEL,
   AgentField,
@@ -15,6 +15,7 @@ import {
   METRIC_OF_FIELD,
   NO_MANAGER,
   SPLIT_AGENT_FIELDS,
+  SPLIT_METRIC_LABEL,
   SplitAgent,
   SplitFlag,
   SplitResult,
@@ -121,6 +122,35 @@ export function creditOf(plan: TeamPlan | null): Partial<Record<PlanMetricKey, n
   return out;
 }
 
+type Credit = Partial<Record<PlanMetricKey, number>>;
+
+/** Per person: what each leaver had reached, kept under `people` in TeamPlan.leaverCredit (to release it if they come back). */
+export function creditPeople(plan: TeamPlan | null): Record<string, Credit> {
+  const raw = plan?.leaverCredit as Record<string, unknown> | null | undefined;
+  const people = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw.people : null;
+  if (!people || typeof people !== 'object' || Array.isArray(people)) return {};
+  const out: Record<string, Credit> = {};
+  for (const [id, v] of Object.entries(people as Record<string, unknown>)) {
+    if (!v || typeof v !== 'object') continue;
+    const c: Credit = {};
+    for (const [k, n] of Object.entries(v as Record<string, unknown>)) if (isPlanMetric(k) && typeof n === 'number' && n > 0) c[k] = n;
+    out[id] = c;
+  }
+  return out;
+}
+
+function creditJson(totals: Credit, people: Record<string, Credit>): Prisma.InputJsonObject {
+  const clean: Record<string, number> = {};
+  for (const [k, v] of Object.entries(totals)) if (typeof v === 'number' && v > 0) clean[k] = v;
+  return { ...clean, people: people as unknown as Prisma.InputJsonObject };
+}
+
+function subtractCredit(a: Credit, b: Credit): Credit {
+  const out: Credit = { ...a };
+  for (const [k, v] of Object.entries(b) as [PlanMetricKey, number][]) out[k] = Math.max(0, (out[k] ?? 0) - v);
+  return out;
+}
+
 function agentValues(target: Target | null): Record<AgentField, number | null> {
   return {
     candidatesActivated: target?.candidatesActivated ?? null,
@@ -132,7 +162,7 @@ function agentValues(target: Target | null): Record<AgentField, number | null> {
 
 /** The flags in plain words for MG-Targets and T-Targets. */
 export function flagText(flag: SplitFlag, teamName: (id: string) => string): string {
-  const metric = PLAN_METRIC_LABEL[flag.metric].toLowerCase();
+  const metric = SPLIT_METRIC_LABEL[flag.metric].toLowerCase();
   if (flag.kind === 'no_agents') return `No ${flag.workType} agents in ${teamName(flag.teamId)} for ${metric}: ${flag.amount} stays with the team`;
   if (flag.kind === 'unassigned') return `${flag.amount} ${metric} not given to anyone: every ${flag.level === 'team' ? 'agent' : 'team'} has a number set by hand${flag.level === 'team' ? ` in ${teamName(flag.teamId)}` : ''}`;
   if (flag.level === 'team') return `The agents' ${metric} in ${teamName(flag.teamId)} add up to more than the team's number (set by hand or already done)`;
@@ -268,6 +298,17 @@ export class TargetSplitService implements OnModuleInit, OnApplicationBootstrap,
   }
 
   private splitTeams(state: MonthState, achieved: Achieved): SplitTeam[] {
+    // What an agent reached and left with another team this month (they moved or came back elsewhere)
+    // is that team's: it is not counted again as their floor here.
+    const keptElsewhere = (agentId: string, teamId: string): Credit =>
+      state.teams.filter((t) => t.id !== teamId).reduce<Credit>((sum, t) => addCredit(sum, creditPeople(t.plan)[agentId] ?? {}), {});
+    const floorOf = (agentId: string, teamId: string): Partial<Record<AgentField, number>> => {
+      const done = achieved.get(agentId) ?? {};
+      const kept = keptElsewhere(agentId, teamId);
+      const out: Partial<Record<AgentField, number>> = {};
+      for (const [f, v] of Object.entries(done) as [AgentField, number][]) out[f] = Math.max(0, v - (kept[METRIC_OF_FIELD[f]] ?? 0));
+      return out;
+    };
     return state.teams.map((t) => ({
       id: t.id,
       groupKey: t.groupKey,
@@ -281,7 +322,7 @@ export class TargetSplitService implements OnModuleInit, OnApplicationBootstrap,
             workType: a.workType,
             weight: workingDaysFrom(state.workingDays, a.startDay),
             handSet: agentHandSet(a.target),
-            achieved: achieved.get(a.id) ?? {},
+            achieved: floorOf(a.id, t.id),
           }),
         ),
     }));
@@ -418,16 +459,19 @@ export class TargetSplitService implements OnModuleInit, OnApplicationBootstrap,
    * future month after a staff change). Current or future months only; a
    * month without a CEO plan has nothing to split (null).
    */
-  async splitMonth(year: number, month: number, actorId: string, trigger: string, now: Date = new Date()): Promise<SplitRunSummary | null> {
+  async splitMonth(year: number, month: number, actorId: string, trigger: string, now: Date = new Date(), opts: { onlyIfNotSplit?: boolean } = {}): Promise<SplitRunSummary | null> {
     if (this.isPast(year, month, now)) return null;
     const outside = await this.loadState(this.prisma, year, month, now);
     if (!outside.company) return null;
     const achieved = await this.achievedFor(outside.agents, year, month, now);
     return this.locked(year, month, async (tx) => {
+      // The backfill checks again under the lock: another process may have split it meanwhile.
+      if (opts.onlyIfNotSplit && (await this.alreadySplit(tx, year, month))) return null;
       const state = await this.loadState(tx, year, month, now, outside.workingDays);
       if (!state.company) return null;
       const result = splitPlan(valuesOf(state.company), this.splitTeams(state, achieved));
       const changed = await this.write(tx, state, result, actorId);
+      changed.teams += await this.clearClosedTeams(tx, state);
       const summary: SplitRunSummary = {
         year,
         month,
@@ -441,6 +485,30 @@ export class TargetSplitService implements OnModuleInit, OnApplicationBootstrap,
       await this.auditRun(tx, actorId, summary);
       return summary;
     });
+  }
+
+  private async alreadySplit(client: Client, year: number, month: number): Promise<boolean> {
+    return (await client.auditLog.count({ where: { action: 'target_split.run', entityType: 'target_split', entityCode: monthKey(year, month) } })) > 0;
+  }
+
+  /**
+   * Team plans of Team Leads who are no longer active (deactivated, or no longer a Team Lead)
+   * are emptied: their numbers went to the other teams with this split.
+   */
+  private async clearClosedTeams(tx: Prisma.TransactionClient, state: MonthState): Promise<number> {
+    const active = new Set(state.teams.map((t) => t.id));
+    const rows = await tx.teamPlan.findMany({ where: { year: state.year, month: state.month } });
+    let cleared = 0;
+    for (const row of rows) {
+      if (active.has(row.teamLeadId)) continue;
+      if (PLAN_METRICS.every((k) => row[k] === null) && !row.handSetFields.length) continue;
+      await tx.teamPlan.update({
+        where: { id: row.id },
+        data: { registered: null, paid: null, businessesSignedUp: null, vacancies: null, interviewsDone: null, placed: null, leftWithin30: null, repeatBusinesses: null, handSetFields: [] },
+      });
+      cleared += 1;
+    }
+    return cleared;
   }
 
   /** Re-spread the agents of these teams over each team's current numbers (team totals unchanged). */
@@ -525,11 +593,58 @@ export class TargetSplitService implements OnModuleInit, OnApplicationBootstrap,
   async staffChanged(event: StaffSplitEvent, now: Date = new Date()): Promise<void> {
     const c = this.currentMonth(now);
     const plan = await this.prisma.companyPlan.findUnique({ where: { year_month: { year: c.year, month: c.month } }, select: { id: true } });
-    if (plan && event.kind !== 'team_moved') await this.resplitCurrent(event, c, now);
+    if (plan && event.kind === 'team_closed') await this.closeTeamCurrent(event.staffId, event.actorId, c, now);
+    else if (plan && (event.kind === 'joined' || event.kind === 'left' || event.kind === 'moved')) await this.resplitCurrent(event, c, now);
+    if (event.kind === 'left') await this.clearFutureRows(event.staffId, event.actorId, c);
     await this.resplitFutureMonths(event.actorId, now);
   }
 
-  private async resplitCurrent(event: Exclude<StaffSplitEvent, { kind: 'team_moved' }>, c: { year: number; month: number; day: number }, now: Date): Promise<void> {
+  /** Someone who left (or became an owner account) keeps no automatic numbers in later months; hand-set ones stay. */
+  private async clearFutureRows(staffId: string, actorId: string, c: { year: number; month: number }): Promise<void> {
+    const rows = await this.prisma.target.findMany({ where: { staffId, OR: [{ year: { gt: c.year } }, { year: c.year, month: { gt: c.month } }] } });
+    for (const t of rows) {
+      const keep = (f: AgentField) => t.handSetFields.includes(f);
+      if (SPLIT_AGENT_FIELDS.every((f) => keep(f) || t[f] === null)) continue;
+      await this.prisma.target.update({
+        where: { id: t.id },
+        data: {
+          candidatesActivated: keep('candidatesActivated') ? t.candidatesActivated : null,
+          vacanciesCaptured: keep('vacanciesCaptured') ? t.vacanciesCaptured : null,
+          placementsClosed: keep('placementsClosed') ? t.placementsClosed : null,
+          repeatBusinesses: keep('repeatBusinesses') ? t.repeatBusinesses : null,
+          updatedById: actorId,
+        },
+      });
+    }
+  }
+
+  /**
+   * A Team Lead deactivated this month (they have no agents left by then): their team's
+   * numbers go back to their Manager's other teams, and their own row is emptied.
+   */
+  private async closeTeamCurrent(leadId: string, actorId: string, c: { year: number; month: number }, now: Date): Promise<void> {
+    const { year, month } = c;
+    const lead = await this.prisma.staff.findUnique({ where: { id: leadId }, select: { id: true, code: true, reportsToId: true } });
+    if (!lead) return;
+    const outside = await this.loadState(this.prisma, year, month, now);
+    const groupKey = lead.reportsToId && outside.teams.some((t) => t.groupKey === lead.reportsToId) ? lead.reportsToId : NO_MANAGER;
+    const groupLeadIds = outside.teams.filter((t) => t.groupKey === groupKey).map((t) => t.id);
+    const achieved = await this.achievedFor(outside.agents.filter((a) => groupLeadIds.includes(a.teamLeadId)), year, month, now);
+    await this.locked(year, month, async (tx) => {
+      const state = await this.loadState(tx, year, month, now, outside.workingDays);
+      const closed = (await tx.teamPlan.findMany({ where: { year, month } })).find((p) => p.teamLeadId === lead.id) ?? null;
+      if (!closed || !state.company) return;
+      const metrics = PLAN_METRICS.filter((k) => typeof state.company?.[k] === 'number');
+      const shares: Partial<Record<PlanMetricKey, number | null>> = {};
+      for (const k of metrics) shares[k] = (this.groupShare(state, groupKey, k) ?? 0) + (numberOrNull(closed[k]) ?? 0);
+      await this.clearClosedTeams(tx, state);
+      if (state.teams.some((t) => t.groupKey === groupKey) && metrics.length) {
+        await this.respreadGroupIn(tx, state, groupKey, metrics, achieved, actorId, 'team_closed', shares);
+      }
+    });
+  }
+
+  private async resplitCurrent(event: Extract<StaffSplitEvent, { kind: 'joined' | 'left' | 'moved' }>, c: { year: number; month: number; day: number }, now: Date): Promise<void> {
     const { year, month } = c;
     const staff = await this.prisma.staff.findUnique({
       where: { id: event.staffId },
@@ -551,15 +666,26 @@ export class TargetSplitService implements OnModuleInit, OnApplicationBootstrap,
     const people = outside.agents.filter((a) => affected.includes(a.teamLeadId));
     const achieved = await this.achievedFor([...people, { id: staff.id, workType }], year, month, now);
     await this.locked(year, month, async (tx) => {
+      const plans = await tx.teamPlan.findMany({ where: { year, month } });
       if (oldLead && (event.kind === 'left' || event.kind === 'moved')) {
-        const plan = (await tx.teamPlan.findMany({ where: { year, month } })).find((p) => p.teamLeadId === oldLead) ?? null;
+        const plan = plans.find((p) => p.teamLeadId === oldLead) ?? null;
         const row = event.kind === 'moved' ? event.before : agentValues((await tx.target.findMany({ where: { year, month, staffId: { in: [staff.id] } } }))[0] ?? null);
         if (plan && row) {
-          const credit = addCredit(creditOf(plan), leaverCredit(row, achieved.get(staff.id) ?? {}));
-          await tx.teamPlan.update({ where: { id: plan.id }, data: { leaverCredit: credit as Prisma.InputJsonObject } });
+          const reached = leaverCredit(row, achieved.get(staff.id) ?? {});
+          const people = creditPeople(plan);
+          people[staff.id] = addCredit(people[staff.id] ?? {}, reached);
+          await tx.teamPlan.update({ where: { id: plan.id }, data: { leaverCredit: creditJson(addCredit(creditOf(plan), reached), people) } });
         }
       }
       if (newLead) {
+        // Back in a team they left this month: what was kept for them there is theirs again (no double count).
+        const back = plans.find((p) => p.teamLeadId === newLead && creditPeople(p)[staff.id]);
+        if (back) {
+          const people = creditPeople(back);
+          const mine = people[staff.id];
+          delete people[staff.id];
+          await tx.teamPlan.update({ where: { id: back.id }, data: { leaverCredit: creditJson(subtractCredit(creditOf(back), mine), people) } });
+        }
         // Counted from today (or the joining day) in the new team; hand-set numbers from an old team do not follow.
         const existing = (await tx.target.findMany({ where: { year, month, staffId: { in: [staff.id] } } }))[0] ?? null;
         const fromDay = event.kind === 'joined' && !event.fromToday ? null : c.day;
@@ -659,7 +785,7 @@ export class TargetSplitService implements OnModuleInit, OnApplicationBootstrap,
           return sum + (t.plan?.handSetFields.includes(k) ? (numberOrNull(t.plan?.[k]) ?? 0) : 0);
         }, 0);
         if (handSum > share) {
-          throw new BadRequestException(`${PLAN_METRIC_LABEL[k]}: the teams' numbers set by hand add up to ${handSum}, more than your share of the CEO's plan (${share}). Lower one, or reset it to automatic.`);
+          throw new BadRequestException(`${SPLIT_METRIC_LABEL[k]}: the teams' numbers set by hand add up to ${handSum}, more than your share of the CEO's plan (${share}). Lower one, or reset it to automatic.`);
         }
       }
       let created = 0;
@@ -771,6 +897,15 @@ export class TargetSplitService implements OnModuleInit, OnApplicationBootstrap,
         const changed: AgentField[] = [];
         for (const [f, v] of Object.entries(row.values) as [AgentField, number | null][]) {
           const splitField = FIELD_WORK_TYPE[f] === agent.workType;
+          if (v !== null && !splitField) {
+            throw new BadRequestException(`${AGENT_FIELD_LABEL[f]} is a ${FIELD_WORK_TYPE[f]} agent target; ${agent.name} is a ${agent.workType} agent`);
+          }
+          if (v !== null && numberOrNull(team?.plan?.[METRIC_OF_FIELD[f]]) === null) {
+            const name = team?.teamName ?? `${team?.name ?? 'the'}'s team`;
+            throw new BadRequestException(
+              `${AGENT_FIELD_LABEL[f]}: ${name} has no number for this month yet, so an agent's number cannot be set. ${state.company ? 'The Manager sets the team number first.' : "The CEO's plan for the month comes first."}`,
+            );
+          }
           if (v === null) {
             hand.delete(f);
             if (!splitField || numberOrNull(team?.plan?.[METRIC_OF_FIELD[f]]) === null) values[f] = null;
@@ -1072,9 +1207,8 @@ export class TargetSplitService implements OnModuleInit, OnApplicationBootstrap,
     });
     const out: SplitRunSummary[] = [];
     for (const p of plans) {
-      const done = await this.prisma.auditLog.count({ where: { action: 'target_split.run', entityType: 'target_split', entityCode: monthKey(p.year, p.month) } });
-      if (done) continue;
-      const run = await this.splitMonth(p.year, p.month, p.setByStaffId, 'backfill', now);
+      if (await this.alreadySplit(this.prisma, p.year, p.month)) continue;
+      const run = await this.splitMonth(p.year, p.month, p.setByStaffId, 'backfill', now, { onlyIfNotSplit: true });
       if (run) {
         out.push(run);
         this.logger.log(`Target split backfill ${monthKey(p.year, p.month)}: ${run.teamRowsChanged} team and ${run.agentRowsChanged} agent rows`);
@@ -1114,6 +1248,9 @@ export class TargetSplitService implements OnModuleInit, OnApplicationBootstrap,
           }
           const sum = eligible.reduce((s, a) => s + (a.target?.[field] ?? 0), 0) + (credit[metric] ?? 0);
           if (sum > value) flags.push(flagText({ kind: 'over', level: 'team', teamId: t.id, metric }, nameOf));
+          else if (sum < value && eligible.every((a) => a.target?.handSetFields.includes(field))) {
+            flags.push(flagText({ kind: 'unassigned', level: 'team', teamId: t.id, metric, amount: value - sum }, nameOf));
+          }
         }
         return { teamLeadId: t.id, groupKey: t.groupKey, handSet: (t.plan?.handSetFields ?? []).filter(isPlanMetric), leaverCredit: credit, flags };
       });

@@ -171,7 +171,10 @@ describe('Company plan and team split', () => {
     expect(placedBefore.target).toBeNull();
     expect(overview.planSource.placed).toBeNull();
 
-    await put('mgrA', '/manager/targets', { year, month, rows: [{ staffId: people.caA.id, candidatesActivated: 30 }] });
+    // No team number yet: a Manager cannot set an agent's number by hand; the CEO's own target edit still can.
+    expect((await put('mgrA', '/manager/targets', { year, month, rows: [{ staffId: people.caA.id, candidatesActivated: 30 }] })).status).toBe(400);
+    const own = await request(app.getHttpServer()).post('/targets').set('Authorization', `Bearer ${people.ceo.token}`).send({ staffId: people.caA.id, year, month, candidatesActivated: 30 });
+    expect(own.status).toBe(201);
     overview = (await get('mgrA', '/manager/overview')).body;
     expect(overview.bringMoney.find((r: { metric: string }) => r.metric === 'paid').target).toBe(30);
     expect(overview.planSource.paid).toBe('agent_targets');

@@ -30,6 +30,7 @@ describe('Automatic target split', () => {
   const month = Number(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', month: 'numeric' }).format(now));
   const ahead = { year: year + 4, month };
   const later = { year: year + 5, month };
+  const noPlan = { year: year + 6, month };
   const past = month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 };
   const key = (m: { year: number; month: number }) => `${m.year}-${String(m.month).padStart(2, '0')}`;
 
@@ -88,7 +89,7 @@ describe('Automatic target split', () => {
   afterAll(async () => {
     const created = await prisma.staff.findMany({ where: { OR: [{ id: { in: ids } }, { reportsToId: { in: ids } }] }, select: { id: true } });
     const all = [...new Set([...ids, ...created.map((s) => s.id)])];
-    for (const m of [ahead, later]) {
+    for (const m of [ahead, later, noPlan]) {
       await prisma.teamPlan.deleteMany({ where: { year: m.year, month: m.month } });
       await prisma.target.deleteMany({ where: { year: m.year, month: m.month } });
     }
@@ -149,6 +150,15 @@ describe('Automatic target split', () => {
     expect((await put('mgrA', '/team-lead/targets', { ...ahead, rows: [{ staffId: people.ca1.id, candidatesActivated: 1 }] })).status).toBe(403);
     expect((await post('tlA', '/team-lead/targets/reset', { ...ahead, staffId: people.ca3.id })).status).toBe(403);
 
+    // A month with no plan (no team number) and a target of the other work type: refused.
+    const none = await put('tlA', '/team-lead/targets', { ...noPlan, rows: [{ staffId: people.ca1.id, candidatesActivated: 5 }] });
+    expect(none.status).toBe(400);
+    expect(none.body.message).toMatch(/has no number for this month yet/);
+    expect((await put('mgrA', '/manager/targets', { ...noPlan, rows: [{ staffId: people.ca1.id, candidatesActivated: 5 }] })).status).toBe(400);
+    const wrong = await put('tlA', '/team-lead/targets', { ...ahead, rows: [{ staffId: people.ca1.id, placementsClosed: 2 }] });
+    expect(wrong.status).toBe(400);
+    expect(wrong.body.message).toBe('Placements is a field agent target; Split ca1 is a call agent');
+
     const over = await put('tlA', '/team-lead/targets', { ...ahead, rows: [{ staffId: people.ca1.id, candidatesActivated: teamPaid + 1 }] });
     expect(over.status).toBe(400);
     expect(over.body.message).toMatch(/more than Team Split A's/);
@@ -162,6 +172,13 @@ describe('Automatic target split', () => {
     const audit = await prisma.auditLog.findFirst({ where: { actorId: people.tlA.id, action: 'target.update' } });
     expect(audit?.after).toMatchObject({ candidatesActivated: 7, handSet: ['candidatesActivated'], by: 'team_lead' });
 
+    // Every call agent set by hand and adding up to less than the team: the rest is shown as given to nobody.
+    const both = await put('tlA', '/team-lead/targets', { ...ahead, rows: [{ staffId: people.ca2.id, candidatesActivated: 1 }] });
+    expect(both.status).toBe(200);
+    expect(both.body.flags.join(' ')).toMatch(new RegExp(`${teamPaid - 8} paid registrations not given to anyone`));
+    expect(JSON.stringify(both.body.flags)).not.toMatch(/₹/);
+    expect((await post('tlA', '/team-lead/targets/reset', { ...ahead, staffId: people.ca2.id })).status).toBe(200);
+
     // Reset to automatic: an even split again.
     const reset = await post('tlA', '/team-lead/targets/reset', { ...ahead, staffId: people.ca1.id, field: 'candidatesActivated' });
     expect(reset.status).toBe(200);
@@ -169,7 +186,7 @@ describe('Automatic target split', () => {
     const [ca1, ca2] = await Promise.all([target('ca1', ahead), target('ca2', ahead)]);
     expect(ca1!.handSetFields).toEqual([]);
     expect(Math.abs(ca1!.candidatesActivated! - ca2!.candidatesActivated!)).toBeLessThanOrEqual(1);
-    expect(await prisma.auditLog.count({ where: { actorId: people.tlA.id, action: 'target_split.reset' } })).toBe(1);
+    expect(await prisma.auditLog.count({ where: { actorId: people.tlA.id, action: 'target_split.reset' } })).toBe(2);
   });
 
   it('a Manager works only in their own tree; the CEO and Team Leads cannot use the Manager actions', async () => {
@@ -237,6 +254,27 @@ describe('Automatic target split', () => {
     expect(await split.backfill(now)).toEqual([]);
   });
 
+  it("a Team Lead who is deactivated: their team's numbers go back to the Manager's other teams and drop out of every total", async () => {
+    const tlD = await mk('tlD', 'team_lead', { reportsToId: people.mgrA.id, teamName: 'Team Split D' });
+    expect((await post('ceo', '/plans/company/split', { ...ahead })).status).toBe(200);
+    // The transfer left Teams A and B set by hand; put them back to automatic so D can take a part.
+    for (const lead of [people.tlA.id, people.tlB.id]) expect((await post('mgrA', '/manager/targets/reset', { ...ahead, kind: 'team', id: lead, key: 'paid' })).status).toBe(200);
+    expect((await put('mgrA', '/manager/targets/split', { ...ahead, rows: [{ teamLeadId: tlD.id, paid: 5 }] })).status).toBe(200);
+    let board = (await get('mgrA', `/manager/targets?year=${ahead.year}&month=${ahead.month}`)).body;
+    const share = board.plan.share.paid as number;
+    expect((await post('mgrA', `/staff/${tlD.id}/deactivate`, {})).status).toBe(200);
+    const row = (await prisma.teamPlan.findMany({ where: { ...ahead } })).find((p) => p.teamLeadId === tlD.id)!;
+    expect(row.paid).toBeNull();
+    expect(row.handSetFields).toEqual([]);
+    board = (await get('mgrA', `/manager/targets?year=${ahead.year}&month=${ahead.month}`)).body;
+    expect(board.plan.teams.map((t: { teamLeadId: string }) => t.teamLeadId)).not.toContain(tlD.id);
+    // The whole split runs again for a future month: the share is worked out afresh (rounding may move it by one).
+    expect(Math.abs(board.plan.share.paid - share)).toBeLessThanOrEqual(1);
+    expect(board.plan.difference.paid).toBe(0);
+    const other = (await get('mgrB', `/manager/targets?year=${ahead.year}&month=${ahead.month}`)).body;
+    expect(other.plan.difference.paid).toBe(0);
+  });
+
   it('this month: an agent who leaves passes their unreached part to the team; a joiner gets a share for the days left', async () => {
     const existing = await prisma.companyPlan.findUnique({ where: { year_month: { year, month } } });
     if (existing) return; // another run's plan for this month: leave it alone
@@ -250,7 +288,10 @@ describe('Automatic target split', () => {
     expect((await post('mgrA', `/staff/${people.ca2.id}/deactivate`, {})).status).toBe(200);
     expect((await teamA()).paid).toBe(paidA);
     expect((await target('ca1', { year, month }))!.candidatesActivated).toBe(paidA);
-    expect((await teamA()).leaverCredit).toMatchObject({ paid: 0 });
+    expect((await teamA()).leaverCredit).toMatchObject({ people: { [people.ca2.id]: { } } });
+    // Their automatic numbers in later months go; the one set by hand stays.
+    expect((await target('ca2', ahead))!.candidatesActivated).toBeNull();
+    expect((await target('ca2', later))!.candidatesActivated).toBe(3);
 
     // A joiner today counts from today: a share for the working days left, not pro-rated again.
     const joined = await post('mgrA', '/staff', { name: `Split joiner ${ts}`, role: 'call_agent', teamLeadId: people.tlA.id });
@@ -263,7 +304,20 @@ describe('Automatic target split', () => {
       expect(joiner!.splitFromDay).toBe(day);
       expect(joiner!.candidatesActivated!).toBeLessThanOrEqual(ca1!.candidatesActivated!);
     }
+    // Back in the same month: what was kept for them with the team is released (never counted twice).
+    expect((await post('mgrA', `/staff/${people.ca2.id}/reactivate`, {})).status).toBe(200);
+    expect(((await teamA()).leaverCredit as { people?: Record<string, unknown> }).people ?? {}).not.toHaveProperty(people.ca2.id);
+    // A Team Lead deactivated this month: the team's number goes to the Manager's other teams; the share stays.
+    const tlE = await mk('tlE', 'team_lead', { reportsToId: people.mgrA.id, teamName: 'Team Split E' });
+    expect((await put('mgrA', '/manager/targets/split', { year, month, rows: [{ teamLeadId: tlE.id, paid: 5 }] })).status).toBe(200);
+    const mine = async () => (await prisma.teamPlan.findMany({ where: { year, month } })).filter((p) => [people.tlA.id, people.tlB.id, tlE.id].includes(p.teamLeadId));
+    const shareBefore = (await mine()).reduce((n, p) => n + (p.paid ?? 0), 0);
+    expect((await post('mgrA', `/staff/${tlE.id}/deactivate`, {})).status).toBe(200);
+    const after = await mine();
+    expect(after.find((p) => p.teamLeadId === tlE.id)!.paid).toBeNull();
+    expect(after.reduce((n, p) => n + (p.paid ?? 0), 0)).toBe(shareBefore);
+
     const runs = await prisma.auditLog.findMany({ where: { action: 'target_split.run', entityCode: key({ year, month }), actorId: people.mgrA.id } });
-    expect(runs.map((r) => (r.after as { trigger: string }).trigger)).toEqual(expect.arrayContaining(['staff_left', 'staff_joined']));
+    expect(runs.map((r) => (r.after as { trigger: string }).trigger)).toEqual(expect.arrayContaining(['staff_left', 'staff_joined', 'team_closed']));
   });
 });

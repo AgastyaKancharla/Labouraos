@@ -14,6 +14,7 @@ import {
   unreached,
   workingDaysFrom,
 } from './target-split';
+import { flagText } from './target-split.service';
 
 const DAYS = 26; // working days in a month
 const call = (id: string, extra: Partial<SplitAgent> = {}): SplitAgent => ({ id, workType: 'call', weight: DAYS, handSet: {}, achieved: {}, ...extra });
@@ -190,5 +191,17 @@ describe('Automatic target split: the maths', () => {
       expect(unreached({ candidatesActivated: 40, vacanciesCaptured: 10, placementsClosed: 3 }, { candidatesActivated: 12, vacanciesCaptured: 15 }, 'call')).toEqual({ candidatesActivated: 28 });
       expect(unreached({ placementsClosed: 5, repeatBusinesses: 1 }, { placementsClosed: 2 }, 'field')).toEqual({ placementsClosed: 3, repeatBusinesses: 1 });
     });
+  });
+
+  it('flag words carry no money, so the Manager sees them whole', () => {
+    const name = () => 'Team South';
+    const texts = [
+      flagText({ kind: 'no_agents', teamId: 'T', metric: 'paid', workType: 'call', amount: 5 }, name),
+      flagText({ kind: 'unassigned', level: 'team', teamId: 'T', metric: 'paid', amount: 3 }, name),
+      flagText({ kind: 'over', level: 'team', teamId: 'T', metric: 'paid' }, name),
+    ];
+    expect(texts[0]).toBe('No call agents in Team South for paid registrations: 5 stays with the team');
+    expect(texts[1]).toBe('3 paid registrations not given to anyone: every agent has a number set by hand in Team South');
+    for (const t of texts) expect(t).not.toMatch(/₹|499/);
   });
 });

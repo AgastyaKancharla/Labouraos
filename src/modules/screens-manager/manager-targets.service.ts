@@ -66,7 +66,12 @@ export class ManagerTargetsService {
         flags: mark?.flags ?? [],
       });
     }
-    const others = splits.filter((x) => !leadIds.includes(x.teamLeadId));
+    // Teams under other Managers: only active Team Leads (a closed team's old row is not counted).
+    const otherIds = splits.filter((x) => !leadIds.includes(x.teamLeadId)).map((x) => x.teamLeadId);
+    const activeOthers = otherIds.length
+      ? new Set((await this.prisma.staff.findMany({ where: { id: { in: otherIds }, role: 'team_lead', status: { not: 'deactivated' } }, select: { id: true } })).map((r) => r.id))
+      : new Set<string>();
+    const others = splits.filter((x) => activeOthers.has(x.teamLeadId));
     const otherTeams = others.length ? emptyPlan() : null;
     if (otherTeams) for (const key of PLAN_METRICS) otherTeams[key] = sumOrNull(others.map((x) => x[key]));
     const total = emptyPlan();

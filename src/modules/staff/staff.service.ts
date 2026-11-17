@@ -728,6 +728,8 @@ export class StaffService {
     });
     if (TEAM_MEMBER_ROLES.includes(target.role)) {
       await this.splitHooks?.staffChanged({ kind: 'left', staffId, actorId: actor.sub });
+    } else if (target.role === 'team_lead') {
+      await this.splitHooks?.staffChanged({ kind: 'team_closed', staffId, actorId: actor.sub });
     }
 
     return { staff, sessionsRevoked };
