@@ -452,6 +452,61 @@ describe('Targets, reports, login codes, notifications', () => {
     expect(container.textContent).not.toMatch(/₹/);
   });
 
+  it('targets: the automatic split shows Automatic / Set by hand, resets a value, flags a team and transfers a target', async () => {
+    const autoPlan = {
+      ...splitPlan,
+      automatic: true,
+      share: pv({ registered: 225, paid: 180, businessesSignedUp: 33, placed: 25 }),
+      teams: [{ ...splitPlan.teams[0], handSet: ['paid'], flags: ['No field agents in Team South for placements: 25 stays with the team'] }],
+    };
+    const agent = (id: string, name: string, extra: Record<string, unknown> = {}) => ({
+      staff: { id, code: id, name, role: 'call_agent', isIntern: false },
+      team: 'Team South',
+      teamLeadId: 'tl1',
+      targetId: `t-${id}`,
+      target: { candidatesActivated: 90, vacanciesCaptured: 4, placementsClosed: null, repeatBusinesses: null },
+      main: { metric: 'paid', done: 10, target: 90, percent: 11 },
+      pace: 'behind',
+      handSet: [],
+      ...extra,
+    });
+    const api = mockApi({
+      ...common,
+      'GET /manager/targets': {
+        year: 2026,
+        month: 11,
+        editable: true,
+        previous: { year: 2026, month: 10, targets: 0 },
+        whole: {},
+        teams: [{ teamLeadId: 'tl1', team: 'Team South', candidatesActivated: 180, vacanciesCaptured: 8, placementsClosed: null, repeatBusinesses: null }],
+        plan: autoPlan,
+        agents: [agent('ca1', 'Deepa Nair', { handSet: ['candidatesActivated'] }), agent('ca2', 'Arun Kumar')],
+        left: [{ staff: { id: 'ca9', code: 'ca9', name: 'Gone Agent', role: 'call_agent' }, target: { candidatesActivated: 30, vacanciesCaptured: 2, placementsClosed: null, repeatBusinesses: null } }],
+        leaderboard: [],
+      },
+      'POST /manager/targets/reset': { reset: ['candidatesActivated'] },
+      'POST /manager/targets/transfer': { moved: { candidatesActivated: 20 }, from: 'ca9', to: 'ca2' },
+    });
+    render(<Targets />, '/manager/targets');
+    expect(await screen.findByText('Your share · by agents in your teams')).toBeInTheDocument();
+    expect(screen.getByText('No field agents in Team South for placements: 25 stays with the team')).toBeInTheDocument();
+    expect(screen.getAllByText('Set by hand').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText('Automatic').length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole('button', { name: 'Reset Paid registrations for Deepa Nair to automatic' }));
+    await waitFor(() => expect(api.calls('POST /manager/targets/reset')[0].body).toEqual({ year: 2026, month: 11, kind: 'agent', id: 'ca1', key: 'candidatesActivated' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Reset Paid for Team South to automatic' }));
+    await waitFor(() => expect(api.calls('POST /manager/targets/reset')[1].body).toEqual({ year: 2026, month: 11, kind: 'team', id: 'tl1', key: 'paid' }));
+    // A leaver's unreached part goes to an agent of the same kind.
+    expect(screen.getByText('Left this month')).toBeInTheDocument();
+    const buttons = screen.getAllByRole('button', { name: 'Transfer target' });
+    await userEvent.click(buttons[buttons.length - 1]);
+    const d = await screen.findByRole('dialog');
+    await userEvent.selectOptions(within(d).getByLabelText('Agent who receives the target'), 'ca2');
+    await userEvent.click(within(d).getByRole('button', { name: 'Transfer' }));
+    await waitFor(() => expect(api.calls('POST /manager/targets/transfer')[0].body).toEqual({ year: 2026, month: 11, fromStaffId: 'ca9', toStaffId: 'ca2' }));
+    expect(await screen.findByText('Target transferred · 20 moved')).toBeInTheDocument();
+  });
+
   it('targets: saves an edited agent target and copies from last month', async () => {
     const api = mockApi({
       ...common,

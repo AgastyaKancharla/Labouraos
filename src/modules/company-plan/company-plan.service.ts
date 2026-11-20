@@ -89,9 +89,10 @@ function changed(before: PlanValues, after: PlanValues): PlanMetricKey[] {
 }
 
 /**
- * The CEO's monthly company plan (CompanyPlan) and the Managers' split of it
- * into teams (TeamPlan). Every change is audited with the numbers before and
- * after. Past months are not changed (the same rule as agent targets).
+ * The CEO's monthly company plan (CompanyPlan) and reading the teams' split
+ * of it (TeamPlan). Every change is audited with the numbers before and
+ * after. Past months are not changed (the same rule as agent targets). The
+ * split itself, hand changes and resets: TargetSplitService.
  */
 @Injectable()
 export class CompanyPlanService {
@@ -140,62 +141,6 @@ export class CompanyPlanService {
       changedFields: fields,
     });
     return saved;
-  }
-
-  /**
-   * A Manager saves the split for teams in their tree (`allowedLeadIds`).
-   * Each row: { teamLeadId, ...metrics }. Changes are audited per team.
-   */
-  async saveTeamPlans(
-    actor: { id: string; role: string },
-    year: number,
-    month: number,
-    rows: unknown,
-    allowedLeadIds: string[],
-    now: Date,
-  ): Promise<{ created: number; updated: number; unchanged: number }> {
-    if (actor.role !== 'manager') throw new ForbiddenException('A Manager splits the plan for their own teams');
-    this.assertNotPast(year, month, now);
-    if (!Array.isArray(rows) || rows.length === 0) throw new BadRequestException('rows must list the teams to save');
-    if (rows.length > 100) throw new BadRequestException('At most 100 teams at a time');
-    const allowed = new Set(allowedLeadIds);
-    const parsed = (rows as Array<Record<string, unknown>>).map((row) => {
-      const teamLeadId = typeof row?.teamLeadId === 'string' ? row.teamLeadId : '';
-      if (!allowed.has(teamLeadId)) throw new ForbiddenException('Every row must be a team in your reporting tree');
-      return { teamLeadId, values: parseValues(row) };
-    });
-    const leads = await this.prisma.staff.findMany({ where: { id: { in: parsed.map((p) => p.teamLeadId) } }, select: { id: true, code: true } });
-    const codeOf = new Map(leads.map((l) => [l.id, l.code]));
-    let created = 0;
-    let updated = 0;
-    let unchanged = 0;
-    for (const row of parsed) {
-      const existing = await this.prisma.teamPlan.findUnique({ where: { teamLeadId_year_month: { teamLeadId: row.teamLeadId, year, month } } });
-      const before = valuesOf(existing);
-      const after = { ...before, ...row.values };
-      const fields = changed(before, after);
-      if (!fields.length) {
-        unchanged += 1;
-        continue;
-      }
-      await this.prisma.teamPlan.upsert({
-        where: { teamLeadId_year_month: { teamLeadId: row.teamLeadId, year, month } },
-        create: { teamLeadId: row.teamLeadId, year, month, ...after, setByStaffId: actor.id },
-        update: { ...row.values, setByStaffId: actor.id },
-      });
-      await this.audit.log({
-        actorId: actor.id,
-        action: existing ? 'team_plan.updated' : 'team_plan.set',
-        entityType: 'team_plan',
-        entityCode: `${codeOf.get(row.teamLeadId) ?? row.teamLeadId}:${year}-${String(month).padStart(2, '0')}`,
-        before: existing ? { ...before } : null,
-        after: { ...after },
-        changedFields: fields,
-      });
-      if (existing) updated += 1;
-      else created += 1;
-    }
-    return { created, updated, unchanged };
   }
 
   /** The agents' monthly targets summed per plan metric (null where no agent has one). */

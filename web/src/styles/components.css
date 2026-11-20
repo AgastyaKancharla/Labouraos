@@ -1653,3 +1653,51 @@ img.lb-staffphoto {
 .lb-menu__item--danger { color: var(--tomato); }
 .lb-menu__item:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* Automatic target split (MG-Targets, T-Targets): "Automatic" / "Set by hand" tags, Reset, Transfer. */
+.lb-split-tag {
+  display: inline-block;
+  margin-top: 3px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+  color: var(--text-faint);
+  background: var(--panel-2, rgba(130, 144, 184, 0.12));
+}
+.lb-split-tag--hand {
+  color: var(--amber);
+  background: var(--amber-bg);
+}
+.lb-split-reset {
+  margin-left: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--royal);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.lb-split-reset:disabled { color: var(--text-faint); cursor: default; }
+.lb-split-reset:focus-visible { outline: 2px solid var(--royal); outline-offset: 2px; }
+.lb-split-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.lb-split-cell__meta { display: flex; align-items: center; flex-wrap: wrap; }
+.lb-split-flags { margin: 0; padding: 10px 14px 0 30px; display: grid; gap: 4px; font-size: 12.5px; color: var(--amber); }
+.lb-split-help { margin: 0 0 12px; font-size: 13px; color: var(--text-soft); }
+.lb-split-pick { display: grid; gap: 6px; font-size: 13px; font-weight: 600; }
+.lb-split-pick select { min-height: 44px; padding: 8px 10px; border: 1px solid var(--line-strong, #c3ceea); border-radius: 8px; font: inherit; background: var(--panel); color: var(--text); }
+/* T-Targets: on phones the team's numbers stack, one block per number. */
+.lb-split-stack { display: none; margin: 0; padding: 0; list-style: none; }
+@media (max-width: 760px) {
+  .lb-split-wide { display: none; }
+  .lb-split-stack { display: grid; gap: 10px; }
+  .lb-split-stack > li { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+  .lb-split-stack__head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .lb-split-stack dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 8px 0 0; }
+  .lb-split-stack dt { font-size: 11px; color: var(--text-faint); }
+  .lb-split-stack dd { margin: 2px 0 0; font-weight: 600; font-size: 13.5px; }
+}

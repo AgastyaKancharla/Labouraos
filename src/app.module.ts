@@ -55,6 +55,7 @@ import { ScreensFieldModule } from './modules/screens-field/screens-field.module
 import { MapsLinkModule } from './modules/maps-link/maps-link.module';
 import { RequestsModule } from './modules/requests/requests.module';
 import { CompanyPlanModule } from './modules/company-plan/company-plan.module';
+import { TargetSplitHooksModule } from './modules/company-plan/target-split.hooks';
 import { ScreensTeamLeadModule } from './modules/screens-team-lead/screens-team-lead.module';
 import { IdempotencyModule } from './common/idempotency/idempotency.module';
 import { CustomerAuthModule } from './common/customer-auth/customer-auth.module';
@@ -125,6 +126,7 @@ import { PublicRateLimitGuard } from './common/http/public-rate-limit.guard';
     MapsLinkModule,
     RequestsModule,
     CompanyPlanModule,
+    TargetSplitHooksModule,
     ScreensTeamLeadModule,
     // Customer app (separate sign-in realm). Registered once here so the agents
     // filling these folders never edit this file.

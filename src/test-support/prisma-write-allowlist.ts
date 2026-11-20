@@ -110,10 +110,6 @@ export const PRISMA_WRITE_ALLOWLIST: Record<string, string> = {
     "values = parseValues(body): only PLAN_METRICS keys, each a validated whole number",
   "modules/company-plan/company-plan.service.ts :: setCompany :: companyPlan.upsert :: update-spread":
     "values = parseValues(body): only PLAN_METRICS keys, each a validated whole number",
-  "modules/company-plan/company-plan.service.ts :: saveTeamPlans :: teamPlan.upsert :: create-spread":
-    "values = parseValues(body): only PLAN_METRICS keys, each a validated whole number",
-  "modules/company-plan/company-plan.service.ts :: saveTeamPlans :: teamPlan.upsert :: update-spread":
-    "values = parseValues(body): only PLAN_METRICS keys, each a validated whole number",
   "modules/conduct/conduct.service.ts :: confirmPossibleMatch :: reviewFlag.updateMany :: data-spread":
     "spreads the stored flag details (our own JSON) and the covered profiles worked out by the ban service",
   "modules/conduct/conduct.service.ts :: confirmPossibleMatch :: permanentBan.update :: data-spread":
