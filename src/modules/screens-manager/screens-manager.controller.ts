@@ -12,6 +12,8 @@ import { ManagerPlanService } from './manager-plan.service';
 import { ManagerPeopleService } from './manager-people.service';
 import { ManagerOpsService } from './manager-ops.service';
 import { ManagerTargetsService } from './manager-targets.service';
+import { RecordSectionsService, parseSection } from './record-sections.service';
+import { PHOTO_LINK_ANSWER } from '../../common/rbac/money-visibility';
 
 type AuthedRequest = Request & { user: JwtPayload };
 type Q = Record<string, string | undefined>;
@@ -36,6 +38,7 @@ export class ScreensManagerController {
     private readonly targets: ManagerTargetsService,
     private readonly photos: StaffPhotoService,
     private readonly records: ManagerRecordsService,
+    private readonly sections: RecordSectionsService,
   ) {}
 
   private actor(req: AuthedRequest) {
@@ -236,73 +239,118 @@ export class ScreensManagerController {
       age: cleanOption(q.age),
       stage: cleanOption(q.stage),
       checks: cleanOption(q.checks),
+      dateField: q.dateField === 'paid' ? 'paid' : undefined,
     };
+  }
+
+  /** The Manager's sections (rev 196): his tree's records, or unowned ones in his teams' cities. */
+  private scope(req: AuthedRequest) {
+    return this.records.sectionScope(this.actor(req));
+  }
+
+  /** The Assign picker: anyone active in his reporting tree, himself first. */
+  @Get('assignees')
+  @RequireRoles('manager')
+  async assignees(@Req() req: AuthedRequest) {
+    return this.sections.assigneeList(await this.scope(req));
+  }
+
+  /** Give a job seeker, referral partner or business to someone active in his tree (rev 196). */
+  @Post('assign')
+  @HttpCode(HttpStatus.OK)
+  @RequireRoles('manager')
+  async assign(@Req() req: AuthedRequest, @Body() body: { kind?: unknown; id?: unknown; toStaffId?: unknown }) {
+    return this.sections.assign(await this.scope(req), body ?? {});
   }
 
   @Get('job-seekers')
   @RequireRoles('manager')
-  jobSeekers(@Req() req: AuthedRequest, @Query() q: Q) {
-    return this.records.jobSeekers(req.user.sub, this.listQuery(q));
+  async jobSeekers(@Req() req: AuthedRequest, @Query() q: Q) {
+    return this.sections.jobSeekers(await this.scope(req), parseSection(q.section), this.listQuery(q));
   }
 
   @Get('job-seekers/:id')
   @RequireRoles('manager')
-  jobSeeker(@Req() req: AuthedRequest, @Param('id') id: string) {
-    return this.records.jobSeeker(req.user.sub, id);
+  async jobSeeker(@Req() req: AuthedRequest, @Param('id') id: string) {
+    return this.sections.jobSeeker(await this.scope(req), id);
+  }
+
+  /** C-JobSeeker: the live selfie of a job seeker he may open, through a short-lived private link. */
+  @Get('job-seekers/:id/selfie')
+  @RequireRoles('manager')
+  async jobSeekerSelfie(@Req() req: AuthedRequest, @Param('id') id: string) {
+    (req as unknown as Record<string, unknown>)[PHOTO_LINK_ANSWER] = true;
+    return this.sections.seekerSelfie(await this.scope(req), id);
   }
 
   @Get('businesses')
   @RequireRoles('manager')
-  businessList(@Req() req: AuthedRequest, @Query() q: Q) {
-    return this.records.businessList(req.user.sub, this.listQuery(q));
+  async businessList(@Req() req: AuthedRequest, @Query() q: Q) {
+    return this.sections.businessList(await this.scope(req), parseSection(q.section), this.listQuery(q));
   }
 
   @Get('businesses/:id')
   @RequireRoles('manager')
-  business(@Req() req: AuthedRequest, @Param('id') id: string) {
-    return this.records.business(req.user.sub, id);
+  async business(@Req() req: AuthedRequest, @Param('id') id: string) {
+    return this.sections.business(await this.scope(req), id);
+  }
+
+  /** C-Business: a visit's name-board photo and selfie, for a business he may open; signed links only. */
+  @Get('businesses/:id/visits/:visitId/photos')
+  @RequireRoles('manager')
+  async visitPhotos(@Req() req: AuthedRequest, @Param('id') id: string, @Param('visitId') visitId: string) {
+    (req as unknown as Record<string, unknown>)[PHOTO_LINK_ANSWER] = true;
+    return this.sections.visitPhotos(await this.scope(req), id, visitId);
   }
 
   @Get('vacancies')
   @RequireRoles('manager')
-  vacancies(@Req() req: AuthedRequest, @Query() q: Q) {
-    return this.records.vacancies(req.user.sub, this.listQuery(q));
+  async vacancies(@Req() req: AuthedRequest, @Query() q: Q) {
+    return this.sections.vacancies(await this.scope(req), parseSection(q.section), this.listQuery(q));
   }
 
   @Get('vacancies/:id')
   @RequireRoles('manager')
-  vacancy(@Req() req: AuthedRequest, @Param('id') id: string) {
-    return this.records.vacancy(req.user.sub, id);
+  async vacancy(@Req() req: AuthedRequest, @Param('id') id: string) {
+    return this.sections.vacancy(await this.scope(req), id);
   }
 
   @Get('interviews')
   @RequireRoles('manager')
-  interviews(@Req() req: AuthedRequest, @Query() q: Q) {
+  async interviews(@Req() req: AuthedRequest, @Query() q: Q) {
     const now = new Date();
-    return this.records.interviews(req.user.sub, parseRange(q.fromDate, q.toDate, now), now);
+    return this.sections.interviews(await this.scope(req), parseSection(q.section), parseRange(q.fromDate, q.toDate, now), now);
   }
 
   @Get('placements')
   @RequireRoles('manager')
-  placementList(@Req() req: AuthedRequest, @Query() q: Q) {
-    return this.records.placementList(req.user.sub, this.listQuery(q));
+  async placementList(@Req() req: AuthedRequest, @Query() q: Q) {
+    return this.sections.placementList(await this.scope(req), parseSection(q.section), this.listQuery(q));
   }
 
   @Get('placements/:id')
   @RequireRoles('manager')
-  placement(@Req() req: AuthedRequest, @Param('id') id: string) {
-    return this.records.placement(req.user.sub, id);
+  async placement(@Req() req: AuthedRequest, @Param('id') id: string) {
+    return this.sections.placement(await this.scope(req), id);
   }
 
   @Get('referrals')
   @RequireRoles('manager')
-  referrals(@Req() req: AuthedRequest, @Query() q: Q) {
-    return this.records.referrals(req.user.sub, this.listQuery(q));
+  async referrals(@Req() req: AuthedRequest, @Query() q: Q) {
+    return this.sections.referrals(await this.scope(req), parseSection(q.section), this.listQuery(q));
+  }
+
+  /** C-Partner: the partner's own photo, for a partner he may open; signed link only. */
+  @Get('referrals/:id/photo')
+  @RequireRoles('manager')
+  async partnerPhoto(@Req() req: AuthedRequest, @Param('id') id: string) {
+    (req as unknown as Record<string, unknown>)[PHOTO_LINK_ANSWER] = true;
+    return this.sections.partnerPhoto(await this.scope(req), id);
   }
 
   @Get('referrals/:id')
   @RequireRoles('manager')
-  partner(@Req() req: AuthedRequest, @Param('id') id: string) {
-    return this.records.partner(req.user.sub, id);
+  async partner(@Req() req: AuthedRequest, @Param('id') id: string) {
+    return this.sections.partner(await this.scope(req), id);
   }
 }

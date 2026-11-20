@@ -8,7 +8,8 @@ import { TopBar } from '../../../components/TopBar';
 import { formatINR } from '../../../lib/format/money';
 import { DateFilter, FilterPanel, Kv, OpenLink, PagedTable, SearchField, SelectFilter, dateOrDash, facetOptions, humanize, rangeQuery, useCeoList, useDebounced, type ListPeriod } from '../_kit/kit';
 import { PLACEMENT_STAGE } from '../_kit/labels';
-import { homeBack, useRecordsPortal } from '../_kit/records';
+import { homeBack, useInitialParam, useInitialPeriod, useRecordsPortal } from '../_kit/records';
+import { SectionSwitch, sectionQuery, useSection } from '../_kit/assign';
 import { PlacementTabs } from '../_kit/tabs';
 
 /**
@@ -47,14 +48,15 @@ interface Summary {
 }
 
 export default function PlacementsList() {
-  const { api: base, ceo, link, to } = useRecordsPortal();
+  const { api: base, ceo, sections, link, to } = useRecordsPortal();
+  const [section, setSection] = useSection();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
-  const [stage, setStage] = useState('');
+  const [stage, setStage] = useState(useInitialParam('stage'));
   const [trade, setTrade] = useState('');
-  const [period, setPeriod] = useState<ListPeriod>(null);
+  const [period, setPeriod] = useState<ListPeriod>(useInitialPeriod());
   const q = useDebounced(search);
-  const list = useCeoList<Row, Extra, Summary>(`${base}/placements`, { search: q, stage, trade, ...rangeQuery(period) });
+  const list = useCeoList<Row, Extra, Summary>(`${base}/placements`, { search: q, stage, trade, ...rangeQuery(period), ...sectionQuery(sections, section) });
   const d = list.query.data;
   const s = d?.summary;
   const loading = list.query.isPending;
@@ -102,6 +104,7 @@ export default function PlacementsList() {
         subtitle={ceo ? 'Everyone placed through Laboura, where their 60-day guarantee stands, and what the business paid.' : 'Everyone your teams placed, and where their 60-day guarantee stands.'}
       />
       {ceo && <PlacementTabs />}
+      {sections && <SectionSwitch value={section} onChange={setSection} noun="placements" />}
       <StatGrid>
         <StatTile label="Working now" value={s?.working ?? '—'} tone="navy" loading={loading} onClick={tile('working')} active={stage === 'working'} />
         <StatTile label="Joined this month" value={s?.joinedThisMonth ?? '—'} tone="good" loading={loading} onClick={tile('joined_this_month')} active={stage === 'joined_this_month'} />

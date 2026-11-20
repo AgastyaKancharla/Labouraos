@@ -151,6 +151,18 @@ export const teamLeadSidebar: SidebarConfig = {
       ],
     },
     {
+      // The CEO's pipeline lists and profiles: "My team" and "Not assigned" in his city, no money (rev 194).
+      label: 'navSection.pipeline',
+      items: [
+        { screen: 'JobSeekers', label: 'nav.jobSeekers', icon: 'jobSeekers' },
+        { screen: 'C-Businesses', label: 'nav.businesses', icon: 'businesses' },
+        { screen: 'C-Referrals', label: 'nav.referrals', icon: 'referrals' },
+        { screen: 'C-Vacancies', label: 'nav.vacancies', icon: 'vacancies' },
+        { screen: 'C-Interviews', label: 'nav.interviews', icon: 'interviews' },
+        { screen: 'C-Placements', label: 'nav.placements', icon: 'placements' },
+      ],
+    },
+    {
       label: 'navSection.work',
       items: [
         { screen: 'T-Work', label: 'nav.workList', icon: 'workList' },

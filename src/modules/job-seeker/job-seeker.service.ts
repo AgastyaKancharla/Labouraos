@@ -1,5 +1,5 @@
 import { PRODUCT_LANGUAGE, productLanguage } from '../../common/language/english-only';
-import { OwnTeam } from '../../common/rbac/own-team';
+import { OwnTeam, peopleOwnedBy } from '../../common/rbac/own-team';
 import { assertNoOpenBanReview, assertNotBanned, BANNED_MESSAGE } from '../conduct/permanent-ban.check';
 import { Prisma } from '@prisma/client';
 import {
@@ -417,7 +417,8 @@ export class JobSeekerService {
     const where: Prisma.JobSeekerWhereInput = {};
     if (actor?.role === 'team_lead') {
       // The same team every Team Lead check uses (OwnTeam).
-      where.registeredByStaffId = { in: await new OwnTeam(this.prisma).memberIds(actor.id) };
+      // Registered by the team or assigned to it by the Team Lead (peopleOwnedBy, rev 194).
+      Object.assign(where, peopleOwnedBy(await new OwnTeam(this.prisma).memberIds(actor.id)));
     }
     const take = page.limit !== undefined ? Math.min(Math.max(Math.trunc(page.limit), 1), 500) : undefined;
     const skip = page.offset !== undefined ? Math.max(Math.trunc(page.offset), 0) : undefined;

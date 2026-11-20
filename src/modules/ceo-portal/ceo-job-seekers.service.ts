@@ -39,6 +39,8 @@ export interface JobSeekerListQuery {
   sort?: string;
   /** Manager portal: only these job seekers (record-scope.ts). The CEO passes none. */
   scope?: Prisma.JobSeekerWhereInput;
+  /** 'paid': the date range is when they paid, not when they registered (T-Home "Paid" number). */
+  dateField?: string;
 }
 
 export interface JobSeekerRow {
@@ -110,7 +112,7 @@ export class CeoJobSeekersService {
     const and: Prisma.JobSeekerWhereInput[] = [{ anonymisedAt: null }];
     if (query.scope) and.push(query.scope);
     const created = dateFilter(query.range);
-    if (created) and.push({ createdAt: created });
+    if (created) and.push(query.dateField === 'paid' ? { paymentReceivedAt: created } : { createdAt: created });
     if (query.search) {
       const s = query.search;
       const digits = phoneSearchDigits(s);
@@ -413,6 +415,8 @@ export class CeoJobSeekersService {
         consentsAsked: askedPurposes.size,
         consentAt: consentAt?.toISOString() ?? null,
         selfieAt: seeker.photoTakenAt?.toISOString() ?? null,
+        // The picture itself comes from GET .../job-seekers/:id/selfie (a short-lived private link).
+        hasSelfie: Boolean(seeker.photoStoragePath),
         idCheck: verified
           ? { method: verified.method, last4: verified.last4, adult: verified.isAdult, nameMatches: verified.nameMatches, at: verified.verifiedAt?.toISOString() ?? null }
           : seeker.identityVerifications[0]

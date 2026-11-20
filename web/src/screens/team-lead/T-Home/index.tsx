@@ -15,6 +15,7 @@ import { useScreenPath } from '../../../portals/PortalContext';
 import { firstName, liveText, statusTone, useLive, useTargets, useTeam, useToday, useWaiting, waitedFor } from '../_kit/api';
 import { RequestActions, RequestWants, RequestWho } from '../_kit/requests';
 import { heroLine, monthName, TeamTargetsTable } from '../_kit/targets';
+import { BusinessNumbers, CloseToRefund } from '../_kit/business';
 
 /** Team Lead home — design T-Home.dc.html: my team today. */
 interface N2 {
@@ -177,6 +178,10 @@ export default function TeamLeadHome() {
         <StatTile label="Shop visits today" value={today.data?.totals.visits ?? '—'} tone="orange" loading={today.isPending} />
         <StatTile label="Interviews today" value={today.data?.totals.interviews ?? '—'} tone="gold" loading={today.isPending} />
       </StatGrid>
+
+      <BusinessNumbers />
+
+      <CloseToRefund selfId={session?.staff.id} />
 
       <Card icon="targets" tone="gold" title={`Team targets · ${t ? monthName(t.month) : ''}`} aside={<ButtonLink to={to('T-Targets')}>Each agent</ButtonLink>}>
         {targets.error ? <ErrorState error={targets.error} compact /> : t ? <TeamTargetsTable rows={t.team} month={t.month} daysInMonth={t.daysInMonth} /> : <SkeletonCard />}

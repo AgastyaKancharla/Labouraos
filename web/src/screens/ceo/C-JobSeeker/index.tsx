@@ -14,6 +14,8 @@ import { formatDateIST, formatDateTimeIST } from '../../../lib/format/date';
 import { formatINR } from '../../../lib/format/money';
 import { formatMobile } from '../../../lib/format/phone';
 import { useRecordsPortal } from '../_kit/records';
+import { AssignmentLine, type Assignment } from '../_kit/assign';
+import { ProfileHero } from '../_kit/photos';
 import { ActionButton } from '../_kit/actions';
 import { useAuth } from '../../../auth/AuthProvider';
 import { BanButton, LegalAcceptanceCard } from '../_kit/legal';
@@ -63,6 +65,8 @@ interface Detail {
     consentsAsked: number;
     consentAt: string | null;
     selfieAt: string | null;
+    /** A live selfie is kept: the picture comes from .../job-seekers/:id/selfie (a short-lived private link). */
+    hasSelfie?: boolean;
     idCheck: { method: string; last4?: string | null; adult?: boolean | null; status?: string; failureReason?: string | null } | null;
     paymentAt: string | null;
   };
@@ -70,6 +74,8 @@ interface Detail {
   activity: { at: string; business: string | null; businessId: string | null; what: string; status: string; hit: boolean }[];
   placements: { id: string; code: string; status: string; business: string; joinedDate: string | null }[];
   history: { at: string; kind: string; text: string; by: string | null; detail?: string | null }[];
+  /** Team Lead and Manager only: the record's section and who holds it (rev 194). */
+  assignment?: Assignment;
 }
 
 /** How the ID was checked (guide, 14 Nov: Aadhaar by its Secure QR, or another government ID). */
@@ -125,7 +131,7 @@ function historyText(e: Detail['history'][number]): string {
 
 export default function JobSeekerDetail() {
   const { id = '' } = useParams();
-  const { api: base, ceo, to } = useRecordsPortal();
+  const { api: base, ceo, teamLead, to } = useRecordsPortal();
   const query = useQuery({ queryKey: [base, 'job-seeker', id], queryFn: () => api.get<Detail>(`${base}/job-seekers/${id}`) });
   const d = query.data;
   const role = useAuth().session?.staff.role;
@@ -177,8 +183,9 @@ export default function JobSeekerDetail() {
         subtitle={subtitle}
         actions={
           <div className="ceo-actions">
+            <AssignmentLine assignment={d.assignment} kind="job_seeker" id={d.id} name={d.name} />
             <Button onClick={exportRecord}>Export record</Button>
-            <ActionButton
+            {!teamLead && <ActionButton
               label="Reverse a hit"
               title="Reverse a hit"
               description="Only when the hit was recorded wrongly. The Manager is told, and the reason is kept in the audit log."
@@ -187,7 +194,7 @@ export default function JobSeekerDetail() {
               reason
               run={({ reason, choice }) => api.post(`/job-seeker-hits/${choice}/reverse`, { reversalReason: reason })}
               success="Hit reversed"
-            />
+            />}
             {ceo && (
               <ActionButton
                 label="Approve refund early"
@@ -204,6 +211,8 @@ export default function JobSeekerDetail() {
           </div>
         }
       />
+      {/* Photo at the top of the profile, the name and the ID under it (rev 198). */}
+      <ProfileHero kind="job_seeker" id={d.id} name={d.name} code={d.code} hasPhoto={d.registration.hasSelfie} />
 
       <LegalAcceptanceCard subjectType="job_seeker" subjectId={d.id} />
       <StatGrid>
