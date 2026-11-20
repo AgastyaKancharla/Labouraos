@@ -70,10 +70,10 @@ export function AddShiftForm({ businessId, onAdded, onCancel, testID = 'add-shif
       <TextField label={t('shifts.name')} value={name} onChangeText={setName} placeholder={t('shifts.namePlaceholder')} maxLength={40} testID={`${testID}-name`} />
       <View style={styles.row}>
         <View style={styles.cell}>
-          <TextField label={t('shifts.start')} value={start} onChangeText={setStart} placeholder="07:00" keyboardType="numbers-and-punctuation" maxLength={5} testID={`${testID}-start`} />
+          <TextField label={t('shifts.start')} value={start} onChangeText={setStart} placeholder="07:00" maxLength={8} testID={`${testID}-start`} />
         </View>
         <View style={styles.cell}>
-          <TextField label={t('shifts.end')} value={end} onChangeText={setEnd} placeholder="15:00" keyboardType="numbers-and-punctuation" maxLength={5} testID={`${testID}-end`} />
+          <TextField label={t('shifts.end')} value={end} onChangeText={setEnd} placeholder="15:00" maxLength={8} testID={`${testID}-end`} />
         </View>
       </View>
       {tried && !valid ? <Text variant="small" color={colors.tomato} testID={`${testID}-invalid`}>{t('shifts.err.invalid')}</Text> : null}
