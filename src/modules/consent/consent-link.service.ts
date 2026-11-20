@@ -818,9 +818,10 @@ export class ConsentLinkService {
     const hasAll = await this.consentService.hasAllRequired('job_seeker', seeker.id);
     if (hasAll) {
       // The terms and notice version, language, OTP and exact text he accepted (P01, rev 176), with every
-      // item he has given — also those given earlier and not asked again on this page (17 Nov).
+      // item he has given under THIS notice version — also those given earlier and not asked again on this
+      // page (17 Nov). An item given only under an older notice is not listed: the page asks it again.
       const given = await this.prisma.consent.findMany({
-        where: { subjectType: 'job_seeker', subjectId: seeker.id, granted: true, grantedAt: { not: null }, withdrawnAt: null },
+        where: { subjectType: 'job_seeker', subjectId: seeker.id, noticeVersion: DEFAULT_NOTICE_VERSION, granted: true, grantedAt: { not: null }, withdrawnAt: null },
         select: { purpose: true },
       });
       const allGiven = JOB_SEEKER_CONSENT_PURPOSES.filter((p) => purposes.includes(p) || given.some((g) => g.purpose === p));

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -37,20 +38,30 @@ export class ConsentService {
    * Records a consent grant for (subjectType, subjectId, purpose, noticeVersion) — once (17 Nov, rev 198):
    * - already given under this notice version and not withdrawn: nothing is stored again, the row (and the
    *   time it was first given) stays as it is;
+   * - a not-withdrawn row that says "not given" (granted = false) is turned into a grant, as before;
    * - given again after a withdrawal: a NEW row; the withdrawn row stays untouched as history;
    * - a new noticeVersion is a new row (re-consent), the older version's row is kept.
-   * The database allows one live (not withdrawn) row per key (partial unique index), so two submits at
-   * the same moment still store it once.
+   * The database allows one live (not withdrawn) row per key (partial unique index Consent_live_purpose_key).
+   * The new row is written with INSERT … ON CONFLICT DO NOTHING on that index, so two submits at the same
+   * moment (a double tap) store it once and neither fails — also inside a transaction, which a unique-key
+   * error would abort.
    */
   async grant(dto: GrantConsentDto, client: Prisma.TransactionClient | PrismaService = this.prisma) {
     const key = { subjectType: dto.subjectType, subjectId: dto.subjectId, purpose: dto.purpose, noticeVersion: dto.noticeVersion };
-    const live = () =>
+    const now = this.clock.now();
+    const current = () =>
       client.consent.findFirst({
-        where: { subjectType: key.subjectType, subjectId: key.subjectId, purpose: key.purpose, noticeVersion: key.noticeVersion, granted: true, grantedAt: { not: null }, withdrawnAt: null },
-        orderBy: { grantedAt: 'desc' },
+        where: { subjectType: key.subjectType, subjectId: key.subjectId, purpose: key.purpose, noticeVersion: key.noticeVersion, withdrawnAt: null },
+        orderBy: { createdAt: 'desc' },
       });
-    const existing = await live();
-    if (existing) return existing;
+    const grantRow = (id: string) =>
+      client.consent.update({
+        where: { id },
+        data: { granted: true, language: dto.language, method: dto.method, otpRequestId: dto.otpRequestId ?? null, grantedAt: now },
+      });
+    const existing = await current();
+    if (existing) return existing.granted && existing.grantedAt ? existing : grantRow(existing.id);
+
     // Given again after an agent withdrew it on a call: the withdrawal stays in its own row; the audit log says so.
     const previous = await client.consent.findFirst({
       where: { subjectType: key.subjectType, subjectId: key.subjectId, purpose: key.purpose, noticeVersion: key.noticeVersion },
@@ -73,28 +84,15 @@ export class ConsentService {
         reason: 'Consent given again by OTP after an agent withdrawal; the withdrawn row is kept and a new row records the grant',
       });
     }
-    try {
-      return await client.consent.create({
-        data: {
-          subjectType: key.subjectType,
-          subjectId: key.subjectId,
-          purpose: key.purpose,
-          noticeVersion: key.noticeVersion,
-          granted: true,
-          language: dto.language,
-          method: dto.method,
-          otpRequestId: dto.otpRequestId ?? null,
-          grantedAt: this.clock.now(),
-        },
-      });
-    } catch (error) {
-      // Given at the same moment by another request: that row is the one.
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        const row = await live();
-        if (row) return row;
-      }
-      throw error;
-    }
+    // Times as UTC wall-clock, like every Prisma-written timestamp, whatever the session's time zone.
+    await client.$executeRaw`
+      INSERT INTO "Consent" ("id", "subjectType", "subjectId", "purpose", "noticeVersion", "granted", "language", "method", "otpRequestId", "grantedAt", "updatedAt")
+      VALUES (${randomUUID()}, ${key.subjectType}, ${key.subjectId}, ${key.purpose}, ${key.noticeVersion}, true, ${dto.language}, ${dto.method}, ${dto.otpRequestId ?? null}, (${now.toISOString()}::timestamptz AT TIME ZONE 'UTC'), (${now.toISOString()}::timestamptz AT TIME ZONE 'UTC'))
+      ON CONFLICT ("subjectType", "subjectId", "purpose", "noticeVersion") WHERE "withdrawnAt" IS NULL DO NOTHING`;
+    // Ours, or the one a request at the same moment stored.
+    const row = await current();
+    if (!row) throw new Error('Consent could not be recorded');
+    return row.granted && row.grantedAt ? row : grantRow(row.id);
   }
 
   /**

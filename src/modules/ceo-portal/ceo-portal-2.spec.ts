@@ -12,6 +12,10 @@ describe('CEO portal part 2 — pure rules', () => {
     expect(staffState({ status: 'active', lockedUntil: new Date('2026-11-15T07:00:00Z') }, NOW)).toBe('locked');
     expect(staffState({ status: 'active', lockedUntil: new Date('2026-11-15T06:00:00Z') }, NOW)).toBe('active');
     expect(staffState({ status: 'pending_invite', lockedUntil: null }, NOW)).toBe('invite_pending');
+    // 17 Nov: a lock by a person ("Lock", no end time) is Locked on Team & access too, so Unlock is offered.
+    expect(staffState({ status: 'active', lockedUntil: null, lockedByStaffId: 'mgr-1' }, NOW)).toBe('locked');
+    expect(staffState({ status: 'pending_invite', lockedUntil: null, lockedByStaffId: 'ceo-1' }, NOW)).toBe('locked');
+    expect(staffState({ status: 'deactivated', lockedUntil: null, lockedByStaffId: 'ceo-1' }, NOW)).toBe('deactivated');
   });
 
   it('names a team after its Team Lead until the CEO names it', () => {
@@ -89,6 +93,25 @@ describe('CeoTeamService', () => {
     const audit = { log: jest.fn().mockResolvedValue(undefined) };
     return { service: new CeoTeamService(prisma as never, audit as never, targets as never, {} as never, {} as never), audit, targets };
   }
+
+  it('Team & access shows a person locked by "Lock" (no end time) as Locked, with the reason, and counts them (17 Nov)', async () => {
+    const base = { email: null, title: null, totpEnabled: false, failedLoginCount: 0, teamName: null, teamLeadId: null, reportsToId: null, createdAt: new Date('2026-11-01'), deactivatedAt: null, joinedOn: null, isOwnerAccount: false };
+    const prisma = {
+      staff: {
+        findMany: jest.fn().mockResolvedValue([
+          { ...base, id: 'ca', code: 'CA-1', name: 'Deepa', role: 'call_agent', status: 'active', lockedUntil: null, lockedByStaffId: 'mgr-1', lockedReason: 'Left the company' },
+          { ...base, id: 'ca2', code: 'CA-2', name: 'Arun', role: 'call_agent', status: 'active', lockedUntil: null, lockedByStaffId: null, lockedReason: null },
+        ]),
+      },
+      staffSession: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const { service } = make(prisma);
+    const team = await service.team(new Date('2026-11-17T06:30:00Z'));
+    expect(team.rows.find((r) => r.id === 'ca')).toMatchObject({ state: 'locked', lockedReason: 'Left the company', lockedUntil: null });
+    expect(team.rows.find((r) => r.id === 'ca2')).toMatchObject({ state: 'active' });
+    expect(team.totals.locked).toBe(1);
+    expect(prisma.staff.findMany).toHaveBeenCalledWith(expect.objectContaining({ select: expect.objectContaining({ lockedByStaffId: true }) }));
+  });
 
   it('names a Team Lead\'s team and logs the change; refuses anyone who is not a Team Lead', async () => {
     const prisma = {

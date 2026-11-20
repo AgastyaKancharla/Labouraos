@@ -139,6 +139,31 @@ describe('Consent once per item, resume on a new link (17 Nov)', () => {
     expect(detail.body.consents[5]).toMatchObject({ required: false, granted: false, at: null });
   }, 120000);
 
+  it('an item given only under an older notice version is asked again, and the acceptance lists only current-notice items', async () => {
+    const auth = await ceo();
+    const s = await seeker();
+    clock.current = new Date('2026-11-01T05:00:00.000Z');
+    await consent.grant({ subjectType: 'job_seeker', subjectId: s.id, purpose: 'job_matching', noticeVersion: '1.1', language: 'en', method: 'sms_link' });
+    for (const purpose of ['profile_sharing', 'aadhaar_verification', 'job_updates']) {
+      await consent.grant({ subjectType: 'job_seeker', subjectId: s.id, purpose, noticeVersion: DEFAULT_NOTICE_VERSION, language: 'en', method: 'sms_link' });
+    }
+    clock.current = new Date('2026-11-16T10:00:00.000Z');
+    const { linkToken, requestId } = await openLink(auth, s.id);
+    const status = await request(app.getHttpServer()).get(`/registration/${linkToken}/status`).query({ requestId });
+    expect(status.body.currentStep).toBe('consent');
+    expect([...status.body.consentGiven].sort()).toEqual(['aadhaar_verification', 'job_updates', 'profile_sharing']);
+    const submit = await request(app.getHttpServer())
+      .post('/consent/submit')
+      .send({ token: linkToken, otpRequestId: requestId, purposes: ['job_matching', 'call_recording'], language: 'en', textHash: await jobSeekerTermsHash(app) });
+    expect(submit.status).toBe(201);
+    // job_matching is now given under 1.2 too (a new row; the 1.1 row is kept).
+    const matching = await prisma.consent.findMany({ where: { subjectId: s.id, purpose: 'job_matching' }, orderBy: { createdAt: 'asc' } });
+    expect(matching.map((r) => r.noticeVersion)).toEqual(['1.1', DEFAULT_NOTICE_VERSION]);
+    const acceptance = await prisma.legalAcceptance.findFirstOrThrow({ where: { subjectId: s.id, context: 'registration' } });
+    expect(acceptance.noticeVersion).toBe(DEFAULT_NOTICE_VERSION);
+    expect([...acceptance.purposes].sort()).toEqual(['aadhaar_verification', 'call_recording', 'job_matching', 'job_updates', 'profile_sharing']);
+  }, 120000);
+
   it('"Consent X of Y" counts every required item, also those never recorded', async () => {
     const auth = await ceo();
     const s = await seeker();

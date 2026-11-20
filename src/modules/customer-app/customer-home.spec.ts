@@ -19,7 +19,7 @@ describe('Job seeker Home: no business before the interview is booked', () => {
   const prisma = {
     jobSeeker: { findUniqueOrThrow: jest.fn().mockResolvedValue({ code: 'JS-00001', name: 'Ravi Kumar', status: 'active', hitCount: 1, paymentReceivedAt: new Date('2026-11-20T06:00:00.000Z') }) },
     jobSeekerHit: { findFirst: jest.fn().mockResolvedValue(null) },
-    consent: { findFirst: jest.fn().mockResolvedValue(null) },
+    consent: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) },
     payment: { findFirst: jest.fn().mockResolvedValue(null) },
     interview: { findFirst: jest.fn() },
   };

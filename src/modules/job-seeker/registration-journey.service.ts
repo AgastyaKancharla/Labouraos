@@ -7,6 +7,7 @@ import { ensurePayPageToken } from '../payment/pay-page-token';
 import { calculateAge } from './job-seeker.validator';
 import { buildJourneyStatus, JourneyStatus, maskPublicPhone, publicLanguage, PublicLanguage } from './registration-journey';
 import { LegalDocumentService, LegalStatus } from '../legal/legal-document.service';
+import { DEFAULT_NOTICE_VERSION } from '../consent/consent.constants';
 
 export interface JourneyLocked {
   otpRequired: true;
@@ -50,7 +51,7 @@ export class RegistrationJourneyService {
       this.pricing.current(),
       this.prisma.consent.findMany({
         where: { subjectType: 'job_seeker', subjectId: seeker.id, granted: true, withdrawnAt: null },
-        select: { purpose: true },
+        select: { purpose: true, noticeVersion: true },
       }),
       this.prisma.identityVerification.findFirst({
         where: { jobSeekerId: seeker.id },
@@ -79,6 +80,7 @@ export class RegistrationJourneyService {
         isUnder18ByDateOfBirth: seeker.dateOfBirth ? calculateAge(seeker.dateOfBirth, now) < policy.adultMinimumAge : false,
       },
       grantedPurposes: consents.map((row) => row.purpose),
+      grantedUnderCurrentNotice: consents.filter((row) => row.noticeVersion === DEFAULT_NOTICE_VERSION).map((row) => row.purpose),
       latestVerification,
       latestPayment,
       activationFeePaise: policy.activationFeePaise,

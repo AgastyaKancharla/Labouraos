@@ -182,6 +182,23 @@ describe('Team & access', () => {
     expect(screen.queryByRole('checkbox', { name: /Owner account/ })).toBeNull();
   });
 
+  it('a person locked by "Lock" (no end time) shows Locked, and Access offers Unlock (17 Nov)', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /ceo/team': { ...teamResponse, rows: teamResponse.rows.map((r) => (r.id === 'ca1' ? { ...r, state: 'locked', lockedUntil: null, lockedReason: 'Left the company' } : r)) },
+      'POST /staff/ca1/unlock': { success: true },
+    });
+    render(<Team />, '/ceo/team');
+    const row = (await screen.findByText('Deepa Nair')).closest('tr') as HTMLElement;
+    expect(within(row).getByText('Locked')).toBeInTheDocument();
+    expect(within(row).queryByRole('menuitem', { name: 'Lock', hidden: true })).toBeNull();
+    await userEvent.click(await menuItem(row, 'Access', 'Unlock'));
+    const d = await dialog();
+    expect(within(d).getByText('Locked: Left the company')).toBeInTheDocument();
+    await userEvent.click(within(d).getByRole('button', { name: 'Unlock Deepa Nair' }));
+    await waitFor(() => expect(api.calls('POST /staff/ca1/unlock')).toHaveLength(1));
+  });
+
   it('shows the error with a retry', async () => {
     mockApi({ ...common, 'GET /ceo/team': apiError(500, 'Internal server error', 'req-t1') });
     render(<Team />, '/ceo/team');

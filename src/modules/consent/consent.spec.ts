@@ -271,12 +271,44 @@ describe('Phase 12 Task 1 — Consent table and service', () => {
     expect(await prisma.consent.count({ where: { subjectType: 'job_seeker', subjectId: seekerId, purpose: 'promotions' } })).toBe(2);
   });
 
+  it('a not-withdrawn row that says "not given" is turned into a grant (no second row)', async () => {
+    const seekerId = await createTestSeeker('consented');
+    const notGiven = await prisma.consent.create({ data: { subjectType: 'job_seeker', subjectId: seekerId, purpose: 'promotions', noticeVersion: '1.2', granted: false, language: 'en', method: 'in_app' } });
+    const row = await consentService.grant({ subjectType: 'job_seeker', subjectId: seekerId, purpose: 'promotions', noticeVersion: '1.2', language: 'en', method: 'sms_link' });
+    expect(row.id).toBe(notGiven.id);
+    expect(row).toMatchObject({ granted: true, method: 'sms_link', withdrawnAt: null });
+    expect(row.grantedAt).toEqual(clock.current);
+    expect(await prisma.consent.count({ where: { subjectId: seekerId, purpose: 'promotions' } })).toBe(1);
+  });
+
+  it('a new grant row keeps the clock time exactly (UTC), as Prisma writes it', async () => {
+    const seekerId = await createTestSeeker('consented');
+    const row = await consentService.grant({ subjectType: 'job_seeker', subjectId: seekerId, purpose: 'job_matching', noticeVersion: '1.2', language: 'en', method: 'sms_link', otpRequestId: 'otp-1' });
+    expect(row).toMatchObject({ granted: true, language: 'en', method: 'sms_link', otpRequestId: 'otp-1', withdrawnAt: null });
+    expect(row.grantedAt).toEqual(clock.current);
+    expect(row.updatedAt).toEqual(clock.current);
+  });
+
   it('two grants at the same moment store the item once (one live row per item in the database)', async () => {
     const seekerId = await createTestSeeker('consented');
     const dto = { subjectType: 'job_seeker', subjectId: seekerId, purpose: 'job_updates', noticeVersion: '1.2', language: 'en', method: 'sms_link' };
     const rows = await Promise.all([consentService.grant(dto), consentService.grant(dto), consentService.grant(dto)]);
     expect(new Set(rows.map((r) => r.id)).size).toBe(1);
     expect(await prisma.consent.count({ where: { subjectType: 'job_seeker', subjectId: seekerId, purpose: 'job_updates' } })).toBe(1);
+    // Inside transactions (the consent link and re-consent grant in one): a double tap at the same moment
+    // stores it once and no transaction is aborted — the next statement in each still runs.
+    const tapDto = { ...dto, purpose: 'profile_sharing' };
+    const results = await Promise.all(
+      [1, 2, 3].map(() =>
+        prisma.$transaction(async (tx) => {
+          const row = await consentService.grant(tapDto, tx);
+          const after = await tx.consent.count({ where: { subjectId: seekerId, purpose: 'profile_sharing' } });
+          return { id: row.id, after };
+        }),
+      ),
+    );
+    expect(new Set(results.map((r) => r.id)).size).toBe(1);
+    expect(await prisma.consent.count({ where: { subjectType: 'job_seeker', subjectId: seekerId, purpose: 'profile_sharing' } })).toBe(1);
     // The database itself refuses a second live row.
     await expect(
       prisma.consent.create({ data: { subjectType: 'job_seeker', subjectId: seekerId, purpose: 'job_updates', noticeVersion: '1.2', granted: true, language: 'en', method: 'sms_link', grantedAt: new Date() } }),

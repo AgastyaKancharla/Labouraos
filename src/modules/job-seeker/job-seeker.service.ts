@@ -82,6 +82,7 @@ import {
   requireIndianMobile,
   sameIndianMobile,
 } from '../../common/phone/indian-mobile';
+import { loadStandingWithdrawals } from '../consent/consent-withdrawal-state';
 
 const ALLOWED_JOB_SEEKER_UPDATE_FIELDS = new Set([
   'name',
@@ -1050,16 +1051,11 @@ export class JobSeekerService {
     });
     const existingRefund = await this.prisma.payment.findFirst({ where: existingRefundWhere });
 
-    const withdrawnConsent = jobSeeker.paymentReceivedAt && this.prisma.consent
-      ? await this.prisma.consent.findFirst({
-          where: {
-            subjectType: 'job_seeker',
-            subjectId: jobSeeker.id,
-            purpose: { in: ['job_matching', 'profile_sharing', 'call_recording'] },
-            withdrawnAt: { not: null, gte: jobSeeker.paymentReceivedAt },
-          },
-        })
+    // A withdrawal after paying ends the guarantee only while it stands: given again later, it is back (rev 200).
+    const standingWithdrawal = jobSeeker.paymentReceivedAt && this.prisma.consent
+      ? (await loadStandingWithdrawals(this.prisma, [jobSeeker.id])).get(jobSeeker.id) ?? null
       : null;
+    const withdrawnConsent = Boolean(standingWithdrawal && jobSeeker.paymentReceivedAt && standingWithdrawal >= jobSeeker.paymentReceivedAt);
 
     const openBypassFlag = this.prisma.reviewFlag
       ? await this.prisma.reviewFlag.findFirst({

@@ -15,6 +15,7 @@ import {
   classifyPlacementFeePayment,
   ExposureResult,
 } from './guarantee-exposure';
+import { loadStandingWithdrawals } from '../consent/consent-withdrawal-state';
 
 export interface GuaranteeBucket {
   receivedPaise: number;
@@ -174,15 +175,8 @@ export class MoneyUnderGuaranteeService {
         },
         select: { jobSeekerId: true },
       }),
-      this.prisma.consent.findMany({
-        where: {
-          subjectType: 'job_seeker',
-          subjectId: { in: seekerIds },
-          purpose: { in: ['job_matching', 'profile_sharing', 'call_recording'] },
-          withdrawnAt: { not: null },
-        },
-        select: { subjectId: true, withdrawnAt: true },
-      }),
+      // Only a withdrawal that still stands (not given again later) counts (rev 200).
+      loadStandingWithdrawals(this.prisma, seekerIds).then((standing) => [...standing].map(([subjectId, withdrawnAt]) => ({ subjectId, withdrawnAt }))),
       this.prisma.reviewFlag.findMany({
         where: { subjectType: 'job_seeker', subjectId: { in: seekerIds }, kind: 'bypass_suspected', status: 'open' },
         select: { subjectId: true },
