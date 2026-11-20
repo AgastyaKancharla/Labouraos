@@ -105,6 +105,32 @@ export class CustomerAppController {
     return this.homes.home(me.accountId, profileId);
   }
 
+  /** The business's own shifts (17 Nov): the owner adds, changes and removes them; a vacancy picks one. */
+  @Get('me/profiles/:profileId/shifts')
+  @CustomerRoute()
+  shifts(@CurrentCustomer() me: CustomerPrincipal, @Param('profileId') profileId: string) {
+    return this.requests.listShifts(me.accountId, profileId);
+  }
+
+  @Post('me/profiles/:profileId/shifts')
+  @CustomerRoute()
+  addShift(@CurrentCustomer() me: CustomerPrincipal, @Param('profileId') profileId: string, @Body() body: Body_) {
+    return this.requests.addShift(me.accountId, profileId, body ?? {});
+  }
+
+  @Patch('me/profiles/:profileId/shifts/:shiftId')
+  @CustomerRoute()
+  changeShift(@CurrentCustomer() me: CustomerPrincipal, @Param('profileId') profileId: string, @Param('shiftId') shiftId: string, @Body() body: Body_) {
+    return this.requests.changeShift(me.accountId, profileId, shiftId, body ?? {});
+  }
+
+  @Delete('me/profiles/:profileId/shifts/:shiftId')
+  @HttpCode(204)
+  @CustomerRoute()
+  async removeShift(@CurrentCustomer() me: CustomerPrincipal, @Param('profileId') profileId: string, @Param('shiftId') shiftId: string): Promise<void> {
+    await this.requests.removeShift(me.accountId, profileId, shiftId);
+  }
+
   @Post('me/profiles/:profileId/vacancy-drafts')
   @CustomerRoute()
   createDraft(@CurrentCustomer() me: CustomerPrincipal, @Param('profileId') profileId: string, @Body() body: Body_) {

@@ -3,12 +3,12 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useI18n, type MessageKey } from '@/i18n';
-import { Banner, Button, Card, CodeInput, Emoji, LoadingState, Screen, StatusChip, Text, TextField } from '@/components';
+import { Banner, Button, Card, CodeInput, Emoji, Icon, LoadingState, Screen, StatusChip, Text, TextField } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
 import { readOtpSend, duplicateMessage } from '@/lib/otp-send';
 import { queryKeys } from '@/api/queryClient';
 import { isApiError } from '@/api/errors';
-import type { Trade } from '@/api/endpoints';
+import { errorCode, type Trade } from '@/api/endpoints';
 import { isNeedsSignalError, useOfflineQueue } from '@/device/offline-queue';
 import { readLocation } from '@/device/location/location';
 import { locationProvider } from '@/device/location/provider';
@@ -24,7 +24,7 @@ import { DatePicker } from '../_visits/DatePicker';
 import { useVisit } from '../_visits/useVisit';
 import { updateDraft, type VisitDraft } from '../_visits/visitDraft';
 import { StepHeader } from '../_visits/StepHeader';
-import { businessBody, formErrors, type FormState, type MobileState, type StaffRow } from './form';
+import { businessBody, DEFAULT_CITY, formErrors, type FormState, type MobileState, type StaffRow } from './form';
 
 const ROLES = ['owner', 'manager', 'hr', 'supervisor', 'other'] as const;
 const HEARD = ['toll_free_missed_call', 'ad', 'referral_partner', 'field_visit', 'social_media', 'walk_in', 'other'] as const;
@@ -90,7 +90,7 @@ export default function RegisterBusinessScreen() {
 
 function RegisterForm({ visitId, visit }: { visitId: string | null; visit: VisitDraft | null }) {
   const { t } = useI18n();
-  const { registration, visits, legal } = useEndpoints();
+  const { registration, visits, legal, redesign } = useEndpoints();
   const queue = useOfflineQueue();
   const client = useQueryClient();
   const options = useQuery({ queryKey: queryKeys.registrationOptions, queryFn: () => registration.options(), staleTime: 3_600_000 });
@@ -123,6 +123,7 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
     landmark: '',
     area: '',
     pincode: '',
+    city: DEFAULT_CITY,
     pin: visit ? { latitude: visit.latitude, longitude: visit.longitude } : null,
     branches: [],
     gstin: '',
@@ -222,6 +223,58 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
       update({ ...current, verifiedAt: new Date().toISOString() });
     } catch (e) {
       setFieldProblem(field, mobileErrorText(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // 17 Nov: "Paste Google Maps link" sets the pin and fills (or replaces, when pasted again) the shop number,
+  // street, area, PIN code and city from the lookup; the agent can correct them. The PIN code from the link wins
+  // over the one the GPS area suggested, and the city decides the legal minimum wage zone on the server.
+  const [mapsLink, setMapsLink] = useState('');
+  const [mapsNote, setMapsNote] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  async function fillFromMapsLink() {
+    if (!mapsLink.trim()) return;
+    setBusy('maps');
+    setMapsNote(null);
+    try {
+      const found = await redesign.resolveMapsLink(mapsLink.trim());
+      const a = found.address;
+      const lookupArea = a?.area?.trim().toLowerCase() ?? '';
+      const listedArea = lookupArea
+        ? areaList.find((x) => x.name.toLowerCase() === lookupArea) ?? areaList.find((x) => x.name.toLowerCase().includes(lookupArea) || lookupArea.includes(x.name.toLowerCase()))
+        : undefined;
+      const filled: string[] = [];
+      if (a?.shopNumber) filled.push(t('fa07.mapsField.shopNumber'));
+      if (a?.street) filled.push(t('fa07.mapsField.street'));
+      if (listedArea) filled.push(t('fa07.mapsField.area'));
+      if (a?.pincode) filled.push(t('fa07.mapsField.pincode'));
+      if (a?.city) filled.push(t('fa07.mapsField.city'));
+      // An area from the list that matches the lookup; else the area follows the new pin (as before).
+      setAutoArea(null);
+      setForm((f) => ({
+        ...f,
+        pin: { latitude: found.latitude, longitude: found.longitude },
+        shopNumber: a?.shopNumber ?? f.shopNumber,
+        street: a?.street ?? f.street,
+        area: listedArea ? listedArea.name : '',
+        pincode: a?.pincode ?? (listedArea?.pincode || ''),
+        city: a?.city ?? f.city,
+      }));
+      setMapsNote({
+        tone: 'ok',
+        text: a && filled.length ? t('fa07.mapsLinkFilledFields', { fields: filled.join(', ') }) : t('fa07.mapsLinkPinOnly'),
+      });
+    } catch (e) {
+      const code = errorCode(e);
+      setMapsNote({
+        tone: 'error',
+        text: isNeedsSignalError(e) || (isApiError(e) && e.isNetworkError)
+          ? t('common.needsSignal')
+          : code && ['MAPS_LINK_INVALID', 'MAPS_LINK_NO_LOCATION', 'MAPS_LINK_UNREACHABLE', 'TOO_MANY'].includes(code)
+            ? t(`fa07.mapsLink.err.${code}` as MessageKey)
+            : t('fa07.mapsLink.err.MAPS_LINK_UNREACHABLE'),
+      });
     } finally {
       setBusy(null);
     }
@@ -383,6 +436,34 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
 
         <Card style={styles.gapCard} stripe accent={SECTION_ACCENTS[2]}>
           <Section n={3} title={t('fa07.s3')} />
+          <TextField
+            label={t('fa07.mapsLink')}
+            value={mapsLink}
+            onChangeText={(v) => {
+              setMapsLink(v);
+              setMapsNote(null);
+            }}
+            placeholder="https://maps.app.goo.gl/…"
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+            hint={t('fa07.mapsLinkHint')}
+            testID="fa07-maps-link"
+          />
+          <Button
+            label={busy === 'maps' ? t('fa07.mapsLinkLoading') : t('fa07.mapsLinkUse')}
+            variant="secondary"
+            icon={<Icon name="location" color={colors.cyan} />}
+            loading={busy === 'maps'}
+            disabled={!mapsLink.trim()}
+            onPress={() => void fillFromMapsLink()}
+            testID="fa07-maps-fill"
+          />
+          {mapsNote ? (
+            <Text variant="small" color={mapsNote.tone === 'ok' ? colors.greenText : colors.tomato} testID="fa07-maps-note">
+              {mapsNote.text}
+            </Text>
+          ) : null}
           <TextField label={t('fa07.shopNumber')} value={form.shopNumber} onChangeText={(v) => set({ shopNumber: v })} error={err('shopNumber') ? t('fa07.required') : null} />
           <TextField label={t('fa07.street')} value={form.street} onChangeText={(v) => set({ street: v })} error={err('street') ? t('fa07.required') : null} />
           <TextField label={t('fa07.landmark')} value={form.landmark} onChangeText={(v) => set({ landmark: v })} error={err('landmark') ? t('fa07.required') : null} />
@@ -405,10 +486,11 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
               {t('fa07.areaNoneNear', { distance: distanceText(areaMaxMeters) })}
             </Text>
           ) : null}
-          <TextField label={t('fa07.pincode')} value={form.pincode} keyboardType="number-pad" maxLength={6} onChangeText={(v) => set({ pincode: v.replace(/\D/g, '') })} error={err('pincode') ? t('fa07.pincodeInvalid') : null} hint={t('fa07.city')} />
+          <TextField label={t('fa07.pincode')} value={form.pincode} keyboardType="number-pad" maxLength={6} onChangeText={(v) => set({ pincode: v.replace(/\D/g, '') })} error={err('pincode') ? t('fa07.pincodeInvalid') : null} testID="fa07-pincode" />
+          <TextField label={t('fa07.cityLabel')} value={form.city ?? DEFAULT_CITY} onChangeText={(v) => set({ city: v })} hint={t('fa07.cityHint')} maxLength={60} testID="fa07-city" />
           <View style={styles.inline}>
             <Text variant="small" style={styles.flex1}>
-              {form.pin ? `📍 ${t('fa07.pinSet')}` : t('fa07.pinMissing')}
+              {form.pin ? `📍 ${t('fa07.pinSet')} · ${t('fa07.mapsPin', { lat: form.pin.latitude.toFixed(5), lng: form.pin.longitude.toFixed(5) })}` : t('fa07.pinMissing')}
             </Text>
             <Button label={t('fa07.pinChange')} variant="secondary" loading={busy === 'pin'} onPress={() => void movePin()} />
           </View>

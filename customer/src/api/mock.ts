@@ -2,6 +2,7 @@ import { ApiError } from './errors';
 import { announceTestMode } from './testMode';
 import type { CustomerApi } from './customerApi';
 import type {
+  BusinessShift,
   BusinessHome,
   CustomerAccount,
   FormOptions,
@@ -36,6 +37,8 @@ interface State {
   account: CustomerAccount | null;
   pendingPhone: string | null;
   homes: Record<string, ProfileHome>;
+  /** Profile id → the business's shifts (17 Nov). */
+  shifts: Record<string, BusinessShift[]>;
   /** Draft id → owner told about the legal minimum. */
   seq: number;
 }
@@ -76,7 +79,7 @@ function checkOtp(otp: OtpProof | { code: string }) {
 }
 
 export function mockCustomerApi({ latencyMs = 250 }: { latencyMs?: number } = {}): CustomerApi {
-  const state: State = { account: null, pendingPhone: null, homes: {}, seq: 0 };
+  const state: State = { account: null, pendingPhone: null, homes: {}, shifts: {}, seq: 0 };
   const wait = <T,>(value: T | (() => T)): Promise<T> =>
     new Promise((resolve, reject) => {
       const run = () => {
@@ -299,6 +302,23 @@ export function mockCustomerApi({ latencyMs = 250 }: { latencyMs?: number } = {}
         return JSON.parse(JSON.stringify(home)) as ProfileHome;
       }),
 
+    shifts: (profileId) => wait(() => [...(state.shifts[profileId] ?? [])]),
+    addShift: (profileId, input) =>
+      wait(() => {
+        const list = (state.shifts[profileId] ??= []);
+        if (list.some((s) => s.name.toLowerCase() === input.name.toLowerCase())) throw fail(409, 'VALIDATION_FAILED', 'This business already has a shift with this name');
+        const [sh, eh] = [Number(input.startTime.slice(0, 2)), Number(input.endTime.slice(0, 2))];
+        const shift: BusinessShift = {
+          id: `sh-${next()}`, ...input, label: `${input.name} ${input.startTime}–${input.endTime}`,
+          category: sh >= 20 || sh < 4 || (eh <= sh && eh >= 2) ? 'night' : 'day',
+        };
+        list.push(shift);
+        return shift;
+      }),
+    removeShift: (profileId, shiftId) =>
+      wait(() => {
+        state.shifts[profileId] = (state.shifts[profileId] ?? []).filter((s) => s.id !== shiftId);
+      }),
     createVacancy: (profileId, draft) =>
       wait(() => {
         const home = state.homes[profileId];

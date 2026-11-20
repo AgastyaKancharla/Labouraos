@@ -20,11 +20,12 @@ type Body = Record<string, unknown>;
 const CALLBACK_TOPICS = ['signup', 'payment', 'interview', 'refund', 'payout', 'vacancy', 'other'] as const;
 const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
 /** Fields of the agent's vacancy form a business may write in the app. */
+import { BusinessShiftService } from '../business/business-shift.service';
 const VACANCY_FIELDS = [
   'tradeSkill', 'headcount', 'salaryMinPaise', 'salaryMaxPaise', 'salaryPeriod', 'roleTitle', 'description', 'extras',
   'workingHours', 'shift', 'weeklyOff', 'experienceRequiredYears', 'educationRequired', 'languagesRequired',
   'licencesRequired', 'ageMin', 'ageMax', 'genderRequirement', 'genderReason', 'startDate', 'urgency', 'probationDays',
-  'interviewType', 'walkInDate', 'interviewSlots', 'interviewContactName', 'branchId',
+  'interviewType', 'walkInDate', 'interviewSlots', 'interviewContactName', 'branchId', 'businessShiftId',
 ] as const;
 const ACTIVE_JOB_SEEKER_STATUSES_ENDED = ['placed', 'closed', 'deactivated', 'refunded'];
 /** Open vacancy drafts one account may keep. */
@@ -59,6 +60,7 @@ export class CustomerRequestsService {
     private readonly signIn: CustomerSignInService,
     private readonly audit: AuditService,
     private readonly homes: CustomerHomeService,
+    private readonly shifts: BusinessShiftService,
   ) {}
 
   /** An account being deleted can only look, cancel the deletion or sign out (security review M4). */
@@ -273,6 +275,55 @@ export class CustomerRequestsService {
     ]);
     await this.audit.log({ actorId: `customer:${accountId}`, action: 'customer.deletion_cancelled', entityType: 'customer_account', entityCode: accountId });
     return { id: open.id, status: 'cancelled' };
+  }
+
+  // ─── The business's shifts (17 Nov) ───────────────────────────────────
+
+  /** The owner's own business shifts: name and start / end time ("Morning 07:00–15:00"). */
+  async listShifts(accountId: string, profileId: string) {
+    const profile = await this.businessProfile(accountId, profileId);
+    return { shifts: await this.shifts.list(profile.businessId!) };
+  }
+
+  async addShift(accountId: string, profileId: string, body: Body) {
+    await this.assertNotDeleting(accountId);
+    const profile = await this.businessProfile(accountId, profileId);
+    return this.customerShiftError(() => this.shifts.create(profile.businessId!, body ?? {}, { accountId }));
+  }
+
+  async changeShift(accountId: string, profileId: string, shiftId: string, body: Body) {
+    await this.assertNotDeleting(accountId);
+    const profile = await this.businessProfile(accountId, profileId);
+    return this.customerShiftError(() => this.shifts.update(profile.businessId!, shiftId, body ?? {}, { accountId }));
+  }
+
+  async removeShift(accountId: string, profileId: string, shiftId: string) {
+    await this.assertNotDeleting(accountId);
+    const profile = await this.businessProfile(accountId, profileId);
+    await this.customerShiftError(() => this.shifts.remove(profile.businessId!, shiftId, { accountId }));
+  }
+
+  /** The staff service's coded errors in the customer API's shape (docs/customer-app-api.md). */
+  private async customerShiftError<T>(run: () => Promise<T>): Promise<T> {
+    try {
+      return await run();
+    } catch (error) {
+      if (!(error instanceof HttpException) || error instanceof CustomerApiError) throw error;
+      const response = error.getResponse() as { code?: string; message?: string; fields?: string[] };
+      const message = typeof response === 'object' && response?.message ? String(response.message) : error.message;
+      switch (response?.code) {
+        case 'SHIFT_INVALID':
+          throw new CustomerApiError(HttpStatus.BAD_REQUEST, CUSTOMER_ERROR_CODES.VALIDATION, message, { field: response.fields?.[0] ?? 'name', fields: response.fields ?? [] });
+        case 'SHIFT_NAME_TAKEN':
+          throw new CustomerApiError(HttpStatus.CONFLICT, CUSTOMER_ERROR_CODES.VALIDATION, message, { field: 'name' });
+        case 'SHIFT_LIMIT':
+          throw new CustomerApiError(HttpStatus.CONFLICT, CUSTOMER_ERROR_CODES.LIMIT_REACHED, message);
+        case 'SHIFT_NOT_FOUND':
+          throw new CustomerApiError(HttpStatus.NOT_FOUND, CUSTOMER_ERROR_CODES.VALIDATION, message, { field: 'shiftId' });
+        default:
+          throw error;
+      }
+    }
   }
 
   // ─── Vacancy drafts (business) ────────────────────────────────────────

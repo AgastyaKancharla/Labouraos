@@ -9,6 +9,7 @@ import { routes } from '@/navigation/routes';
 import type { Accent, Tone } from '@/theme';
 import type { HeroInfo } from './hero';
 import { useSecureSheet } from '../shared/useSecureSheet';
+import { ShiftsCard } from '../shared/Shifts';
 
 /** Hero chip tone for a tracker step: done green, waiting amber, booked cyan, not started grey, paused red. */
 const STEP_TONE: Record<StepState, Tone> = { done: 'green', in_progress: 'amber', not_started: 'neutral' };
@@ -145,6 +146,8 @@ export function BusinessHomeView({ profileId, home, hero }: { profileId: string;
           <Button label={t('bizHome.addVacancy')} onPress={() => router.push(routes.addVacancy)} testID="biz-home-add-vacancy" />
         </View>
       </Card>
+
+      <ShiftsCard profileId={profileId} />
 
       {sheet.error ? <Banner tone="error" message={sheet.error} /> : null}
       {sheet.outcome === 'opened_in_browser' ? <Banner tone="info" message={t('sheet.openedInBrowser')} /> : null}

@@ -2,17 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useI18n } from '../../../i18n/I18nProvider';
-import type { MessageKey } from '../../../i18n/en';
 import { vacancyConfirmApi } from '../shared/api';
-import { dateTimeLabel, dayLabel, rupeeRange } from '../shared/format';
+import { dateTimeLabel, dayLabel, rupeeRange, shiftText } from '../shared/format';
 import { ActionError, LinkProblem, Loading, Muted, Ok, OtpBlock, PageTitle, Row, Warn } from '../shared/ui';
-
-const SHIFT: Record<string, MessageKey> = {
-  day: 'pub.shift.day',
-  night: 'pub.shift.night',
-  rotational: 'pub.shift.rotational',
-  any: 'pub.shift.any',
-};
 
 /**
  * P07-VacancyConfirm (rev 192 fix S3; no design file, built like P04-Agreement).
@@ -90,7 +82,7 @@ export default function VacancyConfirm() {
             {salary} {per}
           </Row>
         )}
-        {d.shift && <Row label={t('pub.offer.shift')}>{t(SHIFT[d.shift] ?? 'pub.shift.any')}</Row>}
+        {d.shift && <Row label={t('pub.offer.shift')}>{shiftText(d.shift, t)}</Row>}
         {d.startDate && <Row label={t('pub.vac.start')}>{dayLabel(d.startDate, language)}</Row>}
       </div>
       <Muted>{t('pub.vac.wrong')}</Muted>

@@ -13,7 +13,7 @@ import { formatTimeIst } from '@/lib/format';
 import { useSellingRoutes } from '@/navigation/useFlow';
 import { colors } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
-import { ErrorBanner, formatRupees, Note, QueryView, SHIFT_KEYS, useParam } from '../_selling';
+import { ErrorBanner, formatRupees, Note, QueryView, useParam, vacancyShiftText } from '../_selling';
 import { OtpStep } from '../_selling/OtpStep';
 import { roleKey } from '../FA18-CallOwner';
 
@@ -104,7 +104,7 @@ function Vacancy({ page, row, id, status, confirmedAt, confirmedByName }: {
     ? [
         `${page.name} · ${row.headcount > 1 ? `${row.trade} × ${row.headcount}` : row.trade}`,
         row.salaryMinPaise ? `${formatRupees(row.salaryMinPaise)}${row.salaryMaxPaise ? `–${formatRupees(row.salaryMaxPaise).replace('₹', '')}` : ''}` : null,
-        row.shift && SHIFT_KEYS[row.shift] ? t('fa17b.shiftLabel', { shift: t(SHIFT_KEYS[row.shift]) }) : null,
+        row.shift ? t('fa17b.shiftLabel', { shift: vacancyShiftText(row.shift, t)! }) : null,
         row.startDate ? t('fa17b.from', { date: formatDateKey(String(row.startDate).slice(0, 10)) }) : null,
       ].filter(Boolean).join(' · ')
     : page.name;

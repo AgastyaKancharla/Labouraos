@@ -35,6 +35,11 @@ export const DAY_MAX_DAYS_BACK = 90;
 /** Needs you now: unfinished visits from this many days back. */
 const UNFINISHED_VISIT_DAYS = 7;
 const LIST_LIMIT = 100;
+/** The business page's history: visits and vacancy events, newest first. */
+const HISTORY_LIMIT = 40;
+/** All visits: rows per page (and the most a caller may ask for). */
+const ALL_VISITS_PAGE = 30;
+const ALL_VISITS_PAGE_MAX = 100;
 const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
 
 export type AgreementState = 'signed' | 'link_sent' | 'link_expired' | 'not_sent';
@@ -62,6 +67,7 @@ export interface NeedsYouItem {
     | 'vacancy_awaiting_owner'
     | 'vacancy_draft'
     | 'ready_show_candidates'
+    | 'vacancies_to_fill'
     | 'joining_due'
     | 'revisit_due'
     | 'followup_task';
@@ -80,6 +86,7 @@ const NEEDS_ORDER: NeedsYouItem['kind'][] = [
   'vacancy_awaiting_owner',
   'vacancy_draft',
   'ready_show_candidates',
+  'vacancies_to_fill',
   'joining_due',
   'revisit_due',
   'followup_task',
@@ -300,7 +307,7 @@ export class FieldRedesignService {
     });
     const agreements = await this.agreementInfos(businesses.map((b) => b.id), now);
     const openIds = businesses.flatMap((b) => b.vacancies.filter((v) => v.status === 'open').map((v) => v.id));
-    const shown = await this.shownByVacancy(openIds);
+    const [shown, seatsTaken] = await Promise.all([this.shownByVacancy(openIds), this.seatsTakenByVacancy(openIds)]);
     for (const b of businesses) {
       const agreement = agreements.get(b.id)!;
       if (agreement.state !== 'signed') {
@@ -344,6 +351,21 @@ export class FieldRedesignService {
           target: { type: 'business', id: b.id, step: 'show_candidates', vacancyId: fresh.id },
           vacancy: { code: fresh.code, trade: fresh.tradeSkill, headcount: fresh.headcount },
         });
+      }
+      // 17 Nov: a heads-up per business with open vacancies still to fill ("2 vacancies to fill"),
+      // opening that business. Seats are each open vacancy's headcount less its placements (not cancelled).
+      if (!b.pausedAt && !isBusinessSuspended(b, now)) {
+        const open = b.vacancies.filter((v) => v.status === 'open');
+        const toFill = open.reduce((sum, v) => sum + Math.max(0, v.headcount - (seatsTaken.get(v.id) ?? 0)), 0);
+        if (toFill > 0) {
+          const oldest = open.reduce((a, v) => (v.createdAt < a ? v.createdAt : a), open[0].createdAt);
+          items.push({
+            id: `vacancies_to_fill:${b.id}`, kind: 'vacancies_to_fill', title: b.name, subtitle: b.locality,
+            at: oldest.toISOString(), due: null,
+            target: { type: 'business', id: b.id, step: 'fill_vacancies' },
+            toFill: { count: toFill, vacancies: open.length, trades: [...new Set(open.map((v) => v.tradeSkill))] },
+          });
+        }
       }
     }
 
@@ -502,7 +524,7 @@ export class FieldRedesignService {
     const window = { gte: start, lt: new Date(start.getTime() + DAY_MS) };
     const staffId = actor.sub;
 
-    const [firsts, visits, businesses, seekers, partners, added, confirmed, intros, booked, attended] = await Promise.all([
+    const [firsts, visits, businesses, seekers, partners, intros, booked, attended] = await Promise.all([
       firstOnboardingsBy(this.prisma, staffId, window),
       this.prisma.businessVisit.findMany({
         where: { staffId, visitedAt: window },
@@ -519,14 +541,6 @@ export class FieldRedesignService {
       this.prisma.referral.findMany({
         where: { registeredByStaffId: staffId, createdAt: window, anonymisedAt: null },
         select: { id: true, code: true, name: true, locality: true, pausedAt: true, createdAt: true },
-      }),
-      this.prisma.vacancy.findMany({
-        where: { capturedByStaffId: staffId, createdAt: window },
-        select: { id: true, code: true, tradeSkill: true, status: true, createdAt: true, business: { select: { id: true, name: true } } },
-      }),
-      this.prisma.vacancy.findMany({
-        where: { capturedByStaffId: staffId, confirmedAt: window },
-        select: { id: true, code: true, tradeSkill: true, status: true, confirmedAt: true, business: { select: { id: true, name: true } } },
       }),
       this.prisma.candidateIntroduction.findMany({
         where: { shownByStaffId: staffId, shownAt: window },
@@ -573,18 +587,7 @@ export class FieldRedesignService {
         subtitle: r.locality, status: r.pausedAt ? 'paused' : 'active', target: { type: 'referral', id: r.id },
       });
     }
-    for (const v of added) {
-      items.push({
-        type: 'vacancy_added', id: `vacancy_added:${v.id}`, at: v.createdAt.toISOString(), title: v.business.name,
-        subtitle: v.tradeSkill, status: v.status, target: { type: 'vacancy', id: v.id, businessId: v.business.id },
-      });
-    }
-    for (const v of confirmed) {
-      items.push({
-        type: 'vacancy_confirmed', id: `vacancy_confirmed:${v.id}`, at: v.confirmedAt!.toISOString(), title: v.business.name,
-        subtitle: v.tradeSkill, status: v.status, target: { type: 'vacancy', id: v.id, businessId: v.business.id },
-      });
-    }
+    // Adding or confirming a vacancy is not a row here (17 Nov): both show on the business page's history.
     const groups = new Map<string, DayItem>();
     for (const i of intros) {
       const id = `candidates_shown:${i.vacancyId}`;
@@ -616,11 +619,93 @@ export class FieldRedesignService {
     }
     items.sort((a, b) => b.at.localeCompare(a.at));
     const counts: Record<string, number> = {
-      visit: 0, business_registered: 0, job_seeker_registered: 0, referral_registered: 0, vacancy_added: 0,
-      vacancy_confirmed: 0, candidates_shown: 0, interview_booked: 0, interview_attended: 0,
+      visit: 0, business_registered: 0, job_seeker_registered: 0, referral_registered: 0,
+      candidates_shown: 0, interview_booked: 0, interview_attended: 0,
     };
     for (const item of items) counts[item.type] += 1;
     return { date: key, isToday: key === todayKey, counts, items };
+  }
+
+  // ----------------------------------------------------------- All visits
+
+  /**
+   * My visits → All visits (17 Nov, item 2): the agent's own visits, newest
+   * first, the full history (no 90-day limit), with a search on the shop
+   * name, area or business code and an optional IST date range. Paged by
+   * `before` (the `at` of the last row seen).
+   */
+  async allVisits(actor: Actor, query: { q?: string; from?: string; to?: string; before?: string; limit?: string }) {
+    const staffId = actor.sub;
+    const limit = Math.min(Math.max(Number.parseInt(query.limit ?? '', 10) || ALL_VISITS_PAGE, 1), ALL_VISITS_PAGE_MAX);
+    const day = (value: unknown, name: 'from' | 'to'): string | null => {
+      if (value === undefined || value === null || value === '') return null;
+      const v = typeof value === 'string' ? value.trim() : '';
+      if (!v && typeof value === 'string') return null;
+      const parsed = new Date(`${v}T00:00:00.000Z`);
+      // Not a string (a repeated ?from=), not YYYY-MM-DD, not a real date (2026-13-45, 2026-02-30): 400, never 500.
+      if (!DATE_KEY.test(v) || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== v) {
+        throw codedError(HttpStatus.BAD_REQUEST, 'DATE_INVALID', `${name} must be YYYY-MM-DD`);
+      }
+      return v;
+    };
+    const from = day(query.from, 'from');
+    const to = day(query.to, 'to');
+    if (from && to && from > to) throw codedError(HttpStatus.BAD_REQUEST, 'DATE_RANGE_INVALID', 'from must be on or before to');
+    // The cursor is "<visitedAt ISO>|<visit id>" of the last row seen (ties on the time are kept apart by the id).
+    let cursor: { at: Date; id: string } | null = null;
+    if (query.before !== undefined && query.before !== '') {
+      if (typeof query.before !== 'string') throw codedError(HttpStatus.BAD_REQUEST, 'CURSOR_INVALID', 'before is not a cursor from this list');
+      const [iso, id] = query.before.split('|');
+      const at = new Date(iso);
+      if (Number.isNaN(at.getTime()) || !id) throw codedError(HttpStatus.BAD_REQUEST, 'CURSOR_INVALID', 'before is not a cursor from this list');
+      cursor = { at, id };
+    }
+    const visitedAt: Prisma.DateTimeFilter = {};
+    if (from) visitedAt.gte = new Date(`${from}T00:00:00.000+05:30`);
+    if (to) visitedAt.lt = new Date(new Date(`${to}T00:00:00.000+05:30`).getTime() + DAY_MS);
+    const q = (typeof query.q === 'string' ? query.q : '').trim().slice(0, 80);
+    const insensitive = { contains: q, mode: Prisma.QueryMode.insensitive };
+    const and: Prisma.BusinessVisitWhereInput[] = [];
+    if (cursor) and.push({ OR: [{ visitedAt: { lt: cursor.at } }, { visitedAt: cursor.at, id: { lt: cursor.id } }] });
+    if (q) {
+      and.push({
+        OR: [
+          { shopName: insensitive },
+          { business: { name: insensitive } },
+          { business: { locality: insensitive } },
+          { business: { code: insensitive } },
+        ],
+      });
+    }
+    const where: Prisma.BusinessVisitWhereInput = {
+      staffId,
+      ...(Object.keys(visitedAt).length ? { visitedAt } : {}),
+      ...(and.length ? { AND: and } : {}),
+    };
+    const rows = await this.prisma.businessVisit.findMany({
+      where,
+      orderBy: [{ visitedAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+      include: { business: { select: { id: true, code: true, name: true, locality: true } } },
+    });
+    const page = rows.slice(0, limit);
+    return {
+      items: page.map((v) => ({
+        id: v.id,
+        at: (v.startedAt ?? v.visitedAt).toISOString(),
+        visitedAt: v.visitedAt.toISOString(),
+        title: v.business?.name ?? v.shopName ?? '',
+        subtitle: v.business?.locality ?? null,
+        businessId: v.businessId,
+        businessCode: v.business?.code ?? null,
+        purpose: v.purpose,
+        status: v.outcome ?? 'unfinished',
+        durationSeconds: v.durationSeconds,
+        hasBoardPhoto: Boolean(v.boardPhotoHash),
+        hasSelfie: Boolean(v.selfieHash),
+      })),
+      nextBefore: rows.length > limit ? `${page[page.length - 1].visitedAt.toISOString()}|${page[page.length - 1].id}` : null,
+    };
   }
 
   // ------------------------------------------------------- My businesses
@@ -762,7 +847,7 @@ export class FieldRedesignService {
     const dayEnd = new Date(dayStart.getTime() + DAY_MS);
     const vacancyIds = business.vacancies.map((v) => v.id);
     const [agreements, accountAgent, shownTotal, shownByMe, shown, interviewTotal, interviewToday, interviewUpcoming,
-      recentInterviews, placements, inGuarantee, visits, outside, confirmLinks] = await Promise.all([
+      recentInterviews, placements, inGuarantee, visits, outside, confirmLinks, vacancyEvents] = await Promise.all([
       this.agreementInfos([business.id], now),
       business.accountAgentId
         ? this.prisma.staff.findUnique({ where: { id: business.accountAgentId }, select: { id: true, name: true, code: true } })
@@ -795,6 +880,7 @@ export class FieldRedesignService {
             select: { subjectId: true, createdAt: true, expiresAt: true },
           })
         : Promise.resolve([]),
+      this.vacancyEvents(business.id),
     ]);
     const agreement = agreements.get(business.id)!;
     const outsideArea = outside.has(business.id);
@@ -862,6 +948,17 @@ export class FieldRedesignService {
         ? { state: 'waiting', at: null }
         : { state: 'not_yet', at: null };
     const shownMap = shown;
+    const visitRows = visits.map((v) => ({
+      id: v.id,
+      at: (v.startedAt ?? v.visitedAt).toISOString(),
+      durationSeconds: v.durationSeconds,
+      purpose: v.purpose,
+      outcome: v.outcome,
+      staffName: v.staff?.name ?? null,
+      mine: v.staffId === actor.sub,
+      hasBoardPhoto: Boolean(v.boardPhotoHash),
+      hasSelfie: Boolean(v.selfieHash),
+    }));
     return {
       id: business.id,
       code: business.code,
@@ -924,17 +1021,11 @@ export class FieldRedesignService {
           candidateName: shortName(i.jobSeeker.name),
         })),
       },
-      visits: visits.map((v) => ({
-        id: v.id,
-        at: (v.startedAt ?? v.visitedAt).toISOString(),
-        durationSeconds: v.durationSeconds,
-        purpose: v.purpose,
-        outcome: v.outcome,
-        staffName: v.staff?.name ?? null,
-        mine: v.staffId === actor.sub,
-        hasBoardPhoto: Boolean(v.boardPhotoHash),
-        hasSelfie: Boolean(v.selfieHash),
-      })),
+      visits: visitRows,
+      // The business's history (17 Nov): its visits and its vacancy events, newest first.
+      history: [...visitRows.map((v) => ({ kind: 'visit' as const, at: v.at, visit: v })), ...vacancyEvents]
+        .sort((a, b) => b.at.localeCompare(a.at))
+        .slice(0, HISTORY_LIMIT),
       actions: {
         recordVisit: canAct,
         callOwner: canAct,
@@ -1068,6 +1159,58 @@ export class FieldRedesignService {
       });
     }
     return result;
+  }
+
+  /** Placements (not cancelled) per vacancy: the seats already taken. */
+  private async seatsTakenByVacancy(vacancyIds: string[]): Promise<Map<string, number>> {
+    if (vacancyIds.length === 0) return new Map();
+    const rows = await this.prisma.placement.groupBy({
+      by: ['vacancyId'],
+      where: { vacancyId: { in: vacancyIds }, status: { not: 'cancelled' } },
+      _count: { _all: true },
+    });
+    return new Map(rows.map((r) => [r.vacancyId, r._count._all]));
+  }
+
+  /**
+   * The business page's history (17 Nov): vacancy events — added, sent to the
+   * owner, confirmed, filled, closed — so adding a vacancy shows here rather
+   * than as a row of My visits / Today's work.
+   */
+  private async vacancyEvents(businessId: string): Promise<Array<{
+    kind: 'vacancy'; at: string; event: 'added' | 'sent' | 'confirmed' | 'filled' | 'closed';
+    vacancyId: string; code: string; trade: string; headcount: number; byName: string | null;
+  }>> {
+    const vacancies = await this.prisma.vacancy.findMany({
+      where: { businessId },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: {
+        id: true, code: true, tradeSkill: true, headcount: true, createdAt: true, confirmedAt: true,
+        capturedBy: { select: { name: true } },
+      },
+    });
+    if (vacancies.length === 0) return [];
+    const history = await this.prisma.statusHistory.findMany({
+      where: { subjectType: 'vacancy', subjectId: { in: vacancies.map((v) => v.id) }, toStatus: { in: ['awaiting_confirmation', 'filled', 'cancelled', 'closed'] } },
+      orderBy: { changedAt: 'desc' },
+      take: 200,
+      select: { subjectId: true, toStatus: true, changedAt: true, changedByStaff: { select: { name: true } } },
+    });
+    const byId = new Map(vacancies.map((v) => [v.id, v]));
+    const base = (v: (typeof vacancies)[number]) => ({ vacancyId: v.id, code: v.code, trade: v.tradeSkill, headcount: v.headcount });
+    const events: Awaited<ReturnType<FieldRedesignService['vacancyEvents']>> = [];
+    for (const v of vacancies) {
+      events.push({ kind: 'vacancy', at: v.createdAt.toISOString(), event: 'added', ...base(v), byName: v.capturedBy?.name ?? null });
+      if (v.confirmedAt) events.push({ kind: 'vacancy', at: v.confirmedAt.toISOString(), event: 'confirmed', ...base(v), byName: null });
+    }
+    for (const h of history) {
+      const v = byId.get(h.subjectId);
+      if (!v) continue;
+      const event = h.toStatus === 'awaiting_confirmation' ? 'sent' : h.toStatus === 'filled' ? 'filled' : 'closed';
+      events.push({ kind: 'vacancy', at: h.changedAt.toISOString(), event, ...base(v), byName: h.changedByStaff?.name ?? null });
+    }
+    return events;
   }
 
   private async shownByVacancy(vacancyIds: string[]): Promise<Map<string, number>> {

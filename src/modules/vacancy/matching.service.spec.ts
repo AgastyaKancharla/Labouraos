@@ -251,6 +251,21 @@ describe('MatchingService', () => {
     expect(result.matches).toHaveLength(0);
   });
 
+  it('17 Nov: a vacancy on a business shift is day or night by its times, not by its label', async () => {
+    const seekers = ['day', 'night'].map((pref) => baseCandidate(pref, { shiftPreference: pref }));
+    consentRows = seekers.flatMap(({ id }) => [
+      { subjectId: id, purpose: 'job_matching', granted: true, grantedAt: now, withdrawnAt: null },
+      { subjectId: id, purpose: 'profile_sharing', granted: true, grantedAt: now, withdrawnAt: null },
+    ]);
+    const night = await run(seekers, { shift: 'Night guard 22:00–06:00', shiftStartTime: '22:00', shiftEndTime: '06:00' });
+    expect(night.matches.map((m) => m.jobSeekerId)).toEqual(['night']);
+    const morning = await run(seekers, { shift: 'Morning 07:00–15:00', shiftStartTime: '07:00', shiftEndTime: '15:00' });
+    expect(morning.matches.map((m) => m.jobSeekerId)).toEqual(['day']);
+    // An older vacancy keeps its own word.
+    const old = await run(seekers, { shift: 'Night' });
+    expect(old.matches.map((m) => m.jobSeekerId)).toEqual(['night']);
+  });
+
   it('excludes a business that rejected the seeker through a placement, replacement or interview result', async () => {
     candidates = [
       baseCandidate('placement-rejected', { placements: [{ status: 'rejected', businessId: 'business-id', replacementCandidates: [] }] }),

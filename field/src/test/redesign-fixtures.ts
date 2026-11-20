@@ -124,6 +124,7 @@ export const todayView = (over: Partial<TodayView> = {}): TodayView => ({
     { id: 'vacancy_awaiting_owner:vac-2', kind: 'vacancy_awaiting_owner', title: 'Sri Sai Bakery', subtitle: null, at: null, due: null, target: { type: 'vacancy', id: 'vac-2', step: 'enter_code', businessId: 'b-1' }, vacancy: { code: 'VC-00032', trade: 'Helper', headcount: 1 } },
     { id: 'vacancy_draft:vac-1', kind: 'vacancy_draft', title: 'Sri Sai Bakery', subtitle: null, at: null, due: null, target: { type: 'vacancy', id: 'vac-1', step: 'send_to_owner', businessId: 'b-1' }, vacancy: { code: 'VC-00031', trade: 'Cook', headcount: 2 } },
     { id: 'ready_show_candidates:b-4', kind: 'ready_show_candidates', title: 'Green Leaf Café', subtitle: null, at: null, due: null, target: { type: 'business', id: 'b-4', step: 'show_candidates', vacancyId: 'vac-9' }, vacancy: { code: 'VC-00090', trade: 'Waiter', headcount: 1 } },
+    { id: 'vacancies_to_fill:b-4', kind: 'vacancies_to_fill', title: 'Green Leaf Café', subtitle: 'Jayanagar', at: null, due: null, target: { type: 'business', id: 'b-4', step: 'fill_vacancies' }, toFill: { count: 2, vacancies: 2, trades: ['Waiter', 'Cook'] } },
     { id: 'joining_due:pl-1', kind: 'joining_due', title: 'Hotel Kamat', subtitle: null, at: null, due: 'tomorrow', target: { type: 'placement', id: 'pl-1', step: 'confirm_joining', businessId: 'b-5' }, placement: { code: 'PL-00001', joiningDate: '2026-11-17', candidateFirstName: 'Suresh' } },
     { id: 'revisit_due:v-9', kind: 'revisit_due', title: 'Lakshmi Tiffins', subtitle: null, at: null, due: 'overdue', target: { type: 'revisit', id: 'v-9', step: 'start_visit', businessId: null }, revisitOn: '2026-11-15' },
     { id: 'followup_task:t-1', kind: 'followup_task', title: 'Kavya', subtitle: null, at: null, due: 'today', target: { type: 'followup', id: 't-1', step: 'placement_check_in_day_7', subjectType: 'job_seeker', subjectId: 'js-1', relatedType: 'placement', relatedId: 'pl-2' }, taskKind: 'placement_check_in_day_7', code: 'FT-1' },
@@ -134,7 +135,7 @@ export const todayView = (over: Partial<TodayView> = {}): TodayView => ({
 export const dayView = (date = '2026-11-16', over: Partial<DayView> = {}): DayView => ({
   date,
   isToday: date === '2026-11-16',
-  counts: { visit: 2, business_registered: 1, job_seeker_registered: 1, referral_registered: 0, vacancy_added: 0, vacancy_confirmed: 0, candidates_shown: 0, interview_booked: 0, interview_attended: 0 },
+  counts: { visit: 2, business_registered: 1, job_seeker_registered: 1, referral_registered: 0, candidates_shown: 0, interview_booked: 0, interview_attended: 0 },
   items: [
     { type: 'visit', id: 'visit:v-1', at: '2026-11-16T05:02:00.000Z', title: 'Sri Sai Bakery', subtitle: 'JP Nagar', status: 'onboarded', target: { type: 'visit', id: 'v-1' } },
     { type: 'business_registered', id: 'business:b-1', at: '2026-11-16T05:20:00.000Z', title: 'Sri Sai Bakery', subtitle: 'JP Nagar', status: 'lead', target: { type: 'business', id: 'b-1' } },

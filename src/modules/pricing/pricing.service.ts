@@ -448,8 +448,8 @@ export class PricingService {
         throw new BadRequestException(`${field} must be a positive integer number of paise`);
       }
     }
-    const effectiveFrom = new Date(input.effectiveFrom);
-    if (Number.isNaN(effectiveFrom.getTime())) throw new BadRequestException('effectiveFrom must be a valid date');
+    const effectiveFrom = legalMinimumEffectiveDate(input.effectiveFrom);
+    if (!effectiveFrom) throw new BadRequestException('effectiveFrom must be a valid date');
     return this.createVersion({
       legalMinimumWageUnskilledPaise: values.unskilledPaise as number,
       legalMinimumWageSemiSkilledPaise: values.semiSkilledPaise as number,
@@ -484,3 +484,25 @@ export interface UpdateMinimumWagesInput {
   zone3HighlySkilledPaise?: number;
   effectiveFrom: string;
 }
+
+/**
+ * The government's "in force from" date, kept as a calendar date (a DATE
+ * column, stored as midnight UTC of that day). A plain "YYYY-MM-DD" is that
+ * day; an instant is read as its IST day — so "start of 17 Nov IST"
+ * (2026-11-16T18:30:00Z) is 17 Nov, never 16 Nov.
+ */
+export function legalMinimumEffectiveDate(value: unknown): Date | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const text = value.trim();
+  let key: string;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    key = text;
+  } else {
+    const instant = new Date(text);
+    if (Number.isNaN(instant.getTime())) return null;
+    key = new Date(instant.getTime() + 330 * 60 * 1000).toISOString().slice(0, 10);
+  }
+  const day = new Date(`${key}T00:00:00.000Z`);
+  return Number.isNaN(day.getTime()) || day.toISOString().slice(0, 10) !== key ? null : day;
+}
+

@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useT } from '../i18n/I18nProvider';
 
 /**
@@ -26,14 +26,30 @@ const AUTO_DISMISS_MS = 6000;
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<ToastItem[]>([]);
   const nextId = useRef(1);
+  const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
   const t = useT();
+
+  // Cancel pending auto-dismiss timers when the provider unmounts, so none fires on an unmounted tree.
+  useEffect(() => {
+    const pending = timers.current;
+    return () => {
+      pending.forEach(clearTimeout);
+      pending.clear();
+    };
+  }, []);
 
   const dismiss = useCallback((id: number) => setItems((list) => list.filter((i) => i.id !== id)), []);
   const push = useCallback(
     (kind: ToastKind, message: ReactNode) => {
       const id = nextId.current++;
       setItems((list) => [...list.slice(-2), { id, kind, message }]);
-      if (kind !== 'error') setTimeout(() => dismiss(id), AUTO_DISMISS_MS);
+      if (kind !== 'error') {
+        const timer = setTimeout(() => {
+          timers.current.delete(timer);
+          dismiss(id);
+        }, AUTO_DISMISS_MS);
+        timers.current.add(timer);
+      }
     },
     [dismiss],
   );

@@ -41,9 +41,28 @@ describe('legal minimum wage', () => {
   });
 });
 
+const morning = { id: 'sh-1', name: 'Morning', startTime: '07:00', endTime: '15:00', label: 'Morning 07:00–15:00', category: 'day' as const };
+
 describe('Add a vacancy', () => {
+  it('17 Nov: with no shifts yet the owner adds one right here and the vacancy picks it', async () => {
+    const api = fakeApi({
+      shifts: async () => [],
+      addShift: async (_p: string, input: { name: string; startTime: string; endTime: string }) => ({ id: 'sh-7', ...input, label: `${input.name} ${input.startTime}–${input.endTime}`, category: 'night' as const }),
+    });
+    await renderWithApp(<AddVacancy />, { api, account: owner });
+    await waitFor(() => screen.getByTestId('vacancy-add-shift'));
+    await fireEvent.changeText(screen.getByTestId('vacancy-add-shift-name'), 'Night');
+    await fireEvent.changeText(screen.getByTestId('vacancy-add-shift-start'), '22');
+    await fireEvent.changeText(screen.getByTestId('vacancy-add-shift-end'), '6:00');
+    await fireEvent.press(screen.getByTestId('vacancy-add-shift-save'));
+    await waitFor(() => expect(api.addShift).toHaveBeenCalledWith('p-biz', { name: 'Night', startTime: '22:00', endTime: '06:00' }));
+    await waitFor(() => expect(screen.getByTestId('vacancy-shift')).toHaveTextContent(/Night 22:00–06:00/));
+  });
+
+
   it('warns below the legal minimum and needs the tick; saves a draft, then confirms by OTP', async () => {
     const api = fakeApi({
+      shifts: async () => [morning],
       createVacancy: async () => ({ id: 'v-9', code: null, trade: 'Cook', roleTitle: null, openings: 1, salaryMinPaise: 2_000_000, salaryMaxPaise: null, salaryPeriod: 'monthly', status: 'draft', belowLegalMinimum: true }),
       sendStepUp: async () => ({ requestId: 'vreq' }),
       confirmVacancy: async () => ({ id: 'v-9', code: 'VC-0100', trade: 'Cook', roleTitle: null, openings: 1, salaryMinPaise: 2_000_000, salaryMaxPaise: null, salaryPeriod: 'monthly', status: 'waiting_for_visit', belowLegalMinimum: true }),
@@ -52,7 +71,8 @@ describe('Add a vacancy', () => {
     await choose('vacancy-trade', 'Cook');
     await fireEvent.changeText(screen.getByTestId('vacancy-salary-min'), '20000');
     expect(screen.getByTestId('vacancy-min-wage')).toHaveTextContent(/legal minimum for this work is about ₹25,700 a month/);
-    await choose('vacancy-shift', 'day');
+    await waitFor(() => screen.getByTestId('vacancy-shift'));
+    await choose('vacancy-shift', 'sh-1');
     await fireEvent.press(screen.getByTestId('vacancy-start'));
     await fireEvent.press(screen.getByTestId(`vacancy-start-day-${todayKeyIst()}`));
     await fireEvent.press(screen.getByTestId('vacancy-save'));
@@ -62,7 +82,7 @@ describe('Add a vacancy', () => {
     await fireEvent.press(screen.getByTestId('vacancy-min-wage-tick'));
     await fireEvent.press(screen.getByTestId('vacancy-save'));
     await waitFor(() =>
-      expect(api.createVacancy).toHaveBeenCalledWith('p-biz', expect.objectContaining({ trade: 'Cook', salaryMinPaise: 2_000_000, legalMinimumAcknowledged: true, shift: 'day' })),
+      expect(api.createVacancy).toHaveBeenCalledWith('p-biz', expect.objectContaining({ trade: 'Cook', salaryMinPaise: 2_000_000, legalMinimumAcknowledged: true, businessShiftId: 'sh-1' })),
     );
     await fireEvent.press(await screen.findByTestId('vacancy-otp-card-send'));
     expect(api.sendStepUp).toHaveBeenCalledWith('confirm_vacancy', undefined);

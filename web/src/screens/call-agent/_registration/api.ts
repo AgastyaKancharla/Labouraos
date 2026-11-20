@@ -19,6 +19,8 @@ export interface Trade {
   minimumWageLevel: string;
   /** The legal minimum for the business's zone when `useTrades(businessId)` names one, else Zone 1 (rev 193). */
   legalMinimumPaise: number;
+  /** The zone `legalMinimumPaise` is for (1, 2 or 3). */
+  zone?: number;
   /** All three zones' figures for this trade's level. */
   legalMinimumPaiseByZone?: Record<'1' | '2' | '3', number>;
 }

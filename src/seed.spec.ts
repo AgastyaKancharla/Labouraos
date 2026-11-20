@@ -39,6 +39,9 @@ describe('Seed Data Script', () => {
     const businessLocalities = new Set(businesses.map((b) => b.locality));
     expect(businessCities.size).toBeGreaterThanOrEqual(2); // Bengaluru, Mysuru
     expect(businessLocalities.size).toBeGreaterThanOrEqual(3); // Koramangala, Indiranagar, Hebbal
+    // Legal minimum wage zones (rev 193): Bengaluru Zone 1, Mysuru (a city corporation) Zone 2.
+    const zoneOf = (code: string) => businesses.find((b) => b.code === code)?.minimumWageZone;
+    expect([zoneOf('BZ-00001'), zoneOf('BZ-00002'), zoneOf('BZ-00003')]).toEqual([1, 1, 2]);
 
     // Assert job seekers in different cities and statuses
     const jobSeekers = await prisma.jobSeeker.findMany({

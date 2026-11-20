@@ -12,7 +12,7 @@ import { useI18n, type MessageKey } from '@/i18n';
 import { formatTimeIst } from '@/lib/format';
 import type { SellingRoutes } from '@/navigation/routes';
 import { colors, radius } from '@/theme';
-import { formatRupees, SHIFT_KEYS } from '../_selling';
+import { formatRupees, vacancyShiftText } from '../_selling';
 import { formatDateKey } from '../_visits/format';
 
 const MISSING_KEYS: Record<string, MessageKey> = {
@@ -28,7 +28,8 @@ export function vacancyLine(v: PageVacancy, t: (key: MessageKey, params?: Record
   return [
     v.headcount > 1 ? `${v.trade} × ${v.headcount}` : v.trade,
     v.salaryMinPaise ? `${formatRupees(v.salaryMinPaise)}${v.salaryMaxPaise && v.salaryMaxPaise !== v.salaryMinPaise ? `–${formatRupees(v.salaryMaxPaise).replace('₹', '')}` : ''}` : null,
-    v.shift && SHIFT_KEYS[v.shift] ? t(SHIFT_KEYS[v.shift]) : null,
+    // A business shift's label ("Morning 07:00–15:00"), an older day/night word, or older free text as it was written.
+    vacancyShiftText(v.shift, t),
   ]
     .filter(Boolean)
     .join(' · ');

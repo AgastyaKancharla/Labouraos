@@ -20,6 +20,9 @@ import { BusinessVerificationModule } from './business-verification.module';
 import { FieldVisitModule } from '../field-visit/field-visit.module';
 import { MessageModule } from '../message/message.module';
 
+import { BusinessShiftController } from './business-shift.controller';
+import { BusinessShiftService } from './business-shift.service';
+
 @Module({
   imports: [
     PrismaModule,
@@ -36,8 +39,9 @@ import { MessageModule } from '../message/message.module';
     // M3: the old number is told when the owner's number changes.
     MessageModule,
   ],
-  controllers: [BusinessController],
+  controllers: [BusinessController, BusinessShiftController],
   providers: [
+    BusinessShiftService,
     BusinessService,
     { provide: GST_LOOKUP_PROVIDER, useClass: MockGstLookupProvider },
     {
@@ -50,6 +54,6 @@ import { MessageModule } from '../message/message.module';
       },
     },
   ],
-  exports: [BusinessService],
+  exports: [BusinessService, BusinessShiftService],
 })
 export class BusinessModule {}

@@ -8,7 +8,10 @@ export interface QuickVacancy {
   salaryMinPaise: number | null;
   salaryMaxPaise: number | null;
   ownerTold: boolean;
+  /** Older drafts only: the day / night / rotational word. New vacancies pick a business shift. */
   shift: string;
+  /** One of the business's own shifts (17 Nov). */
+  businessShiftId: string;
   startDate: string;
   extras: string[];
 }
@@ -22,6 +25,7 @@ export const EMPTY_VACANCY: QuickVacancy = {
   salaryMaxPaise: null,
   ownerTold: false,
   shift: '',
+  businessShiftId: '',
   startDate: '',
   extras: [],
 };
@@ -53,7 +57,7 @@ export function vacancyErrors(form: QuickVacancy, trade: Trade | undefined): Vac
   if (!form.salaryMinPaise) e.push('salaryMin');
   if (form.salaryMinPaise && form.salaryMaxPaise && form.salaryMaxPaise < form.salaryMinPaise) e.push('salaryOrder');
   if (isBelowLegalMinimum(trade, form.salaryMinPaise) && !form.ownerTold) e.push('ownerTold');
-  if (!form.shift) e.push('shift');
+  if (!form.businessShiftId) e.push('shift');
   if (!form.startDate) e.push('startDate');
   return e;
 }
@@ -66,7 +70,7 @@ export function vacancyBody(businessId: string, form: QuickVacancy) {
     salaryMinPaise: form.salaryMinPaise,
     ...(form.salaryMaxPaise ? { salaryMaxPaise: form.salaryMaxPaise } : {}),
     salaryPeriod: 'monthly',
-    shift: form.shift,
+    businessShiftId: form.businessShiftId,
     startDate: form.startDate,
     extras: form.extras,
     ownerToldMinimumWage: form.ownerTold,
