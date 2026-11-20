@@ -149,11 +149,19 @@ describe('Manager pipeline lists and profiles', () => {
     }
   });
 
-  it('lists show the own tree and records with no owner, never another Manager’s tree', async () => {
-    const codes = async (path: string) => ((await get('mgrA', `${path}?pageSize=100`).expect(200)).body.rows as Array<{ id: string }>).map((r) => r.id);
+  it('lists show the own tree ("My team") and, apart, records with no owner ("Not assigned"), never another Manager’s tree', async () => {
+    const codes = async (path: string) => ((await get('mgrA', `${path}${path.includes('?') ? '&' : '?'}pageSize=100`).expect(200)).body.rows as Array<{ id: string }>).map((r) => r.id);
     const seekers = await codes('/manager/job-seekers');
-    expect(seekers).toEqual(expect.arrayContaining([rec.sA, rec.sNone]));
+    expect(seekers).toContain(rec.sA);
+    expect(seekers).not.toContain(rec.sNone);
     expect(seekers).not.toContain(rec.sB);
+    expect(await codes('/manager/job-seekers?section=team')).toEqual(seekers);
+    const open = await codes('/manager/job-seekers?section=unassigned');
+    expect(open).toContain(rec.sNone);
+    expect(open).not.toContain(rec.sA);
+    expect(open).not.toContain(rec.sB);
+    expect((await get('mgrA', '/manager/job-seekers?section=all')).status).toBe(400);
+    expect((await get('mgrA', `/manager/job-seekers/${rec.sNone}`)).status).toBe(200);
     const businesses = await codes('/manager/businesses');
     expect(businesses).toContain(rec.bA);
     expect(businesses).not.toContain(rec.bB);
@@ -223,6 +231,36 @@ describe('Manager pipeline lists and profiles', () => {
     const working = await ids(`/ceo/placements?stage=joined_this_month&search=PL-MGR-${tail}&pageSize=100`);
     expect(working).toContain(rec.pA);
     expect(working).not.toContain(rec.pB);
+  });
+
+  it('assigns an unowned record to someone in his tree, with a bell for the receiver; never outside the tree (rev 196)', async () => {
+    const post = (who: string, body: Record<string, unknown>) => request(app.getHttpServer()).post('/manager/assign').set('Authorization', `Bearer ${people[who].token}`).send(body);
+    const pick = await get('mgrA', '/manager/assignees').expect(200);
+    const ids = pick.body.rows.map((r: { id: string }) => r.id);
+    expect(ids[0]).toBe(people.mgrA.id);
+    expect(ids).toEqual(expect.arrayContaining([people.tlA.id, people.caA.id]));
+    expect(ids).not.toContain(people.caB.id);
+
+    expect((await post('mgrA', { kind: 'job_seeker', id: rec.sNone, toStaffId: people.caB.id })).status).toBe(400);
+    expect((await post('mgrA', { kind: 'job_seeker', id: rec.sB, toStaffId: people.caA.id })).status).toBe(403);
+    expect((await post('mgrA', { kind: 'business', id: rec.bB, toStaffId: people.tlA.id })).status).toBe(403);
+    expect((await post('tlA', { kind: 'job_seeker', id: rec.sNone, toStaffId: people.caA.id })).status).toBe(403);
+    const res = await post('mgrA', { kind: 'job_seeker', id: rec.sNone, toStaffId: people.caA.id });
+    expect(res.status).toBe(200);
+    expect(await prisma.jobSeeker.findUnique({ where: { id: rec.sNone }, select: { registeredByStaffId: true, assignedStaffId: true } })).toEqual({ registeredByStaffId: null, assignedStaffId: people.caA.id });
+    expect(await prisma.auditLog.count({ where: { actorId: people.mgrA.id, action: 'record_assigned', entityCode: `JS-MGR-${tail}-N` } })).toBe(1);
+    const bell = await prisma.notification.findFirst({ where: { recipientStaffId: people.caA.id, kind: 'job_seeker_assigned' } });
+    expect(bell).toMatchObject({ title: 'New job seeker assigned to you', link: `/call-agent/people/${rec.sNone}` });
+    const team = ((await get('mgrA', '/manager/job-seekers?pageSize=100').expect(200)).body.rows as Array<{ id: string }>).map((r) => r.id);
+    expect(team).toContain(rec.sNone);
+    // The other Manager no longer sees him, as an unowned record or otherwise.
+    expect((await get('mgrB', `/manager/job-seekers/${rec.sNone}`)).status).toBe(404);
+    // A business he owns can go to a Team Lead in his tree; to a call agent it cannot.
+    expect((await post('mgrA', { kind: 'business', id: rec.bA, toStaffId: people.caA.id })).status).toBe(400);
+    expect((await post('mgrA', { kind: 'business', id: rec.bA, toStaffId: people.tlA.id })).status).toBe(200);
+    expect((await prisma.business.findUnique({ where: { id: rec.bA }, select: { accountAgentId: true } }))?.accountAgentId).toBe(people.tlA.id);
+    const bizBell = await prisma.notification.findFirst({ where: { recipientStaffId: people.tlA.id, kind: 'business_assigned' } });
+    expect(bizBell?.link).toBe(`/team-lead/businesses/${rec.bA}`);
   });
 
   it('the CEO still sees the money on his own pages (unchanged)', async () => {

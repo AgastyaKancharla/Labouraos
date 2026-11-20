@@ -146,6 +146,18 @@ export const attendanceEn = {
   'att.day.changed': 'changed by Team Lead',
 
   // CA14e — my attendance
+  // CA14e — today, at the top of my month (rev 194)
+  'att.today.title': 'Today',
+  'att.today.loggedIn': 'Logged in at',
+  'att.today.loggedOut': 'Logged out at',
+  'att.today.stillWorking': 'Still working',
+  'att.today.productive': 'Productive',
+  'att.today.unproductive': 'Unproductive (breaks + idle)',
+  'att.today.unproductiveSub': 'Breaks {breaks} · idle {idle}',
+  'att.today.late': 'Late',
+  'att.today.lateValue': '{minutes} min',
+  'att.today.status': 'Status now',
+  'att.today.notLoggedIn': 'Not logged in yet today',
   'att.mine.title': 'My attendance · {month}',
   'att.mine.prev': 'Previous month',
   'att.mine.next': 'Next month',

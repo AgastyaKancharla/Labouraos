@@ -18,13 +18,14 @@ import { ManagerPeopleService } from './manager-people.service';
 import { ManagerOpsService } from './manager-ops.service';
 import { ManagerTargetsService } from './manager-targets.service';
 import { ManagerRecordsService } from './manager-records.service';
+import { RecordSectionsService } from './record-sections.service';
 import { CeoPortalModule } from '../ceo-portal/ceo-portal.module';
 
 /** Manager portal read endpoints (MG-* designs), scoped to the Manager's own reporting tree. */
 @Module({
   imports: [PrismaModule, AuditModule, IdModule, ReportingScopeModule, AttendanceModule, RefundPriorityModule, ReviewFlagModule, NotificationModule, TargetModule, RequestsModule, CompanyPlanModule, StaffPhotoModule, CeoPortalModule],
   controllers: [ScreensManagerController],
-  providers: [ManagerTreeService, ManagerPlanService, ManagerPeopleService, ManagerOpsService, ManagerTargetsService, ManagerRecordsService],
-  exports: [ManagerTreeService, ManagerPlanService],
+  providers: [ManagerTreeService, ManagerPlanService, ManagerPeopleService, ManagerOpsService, ManagerTargetsService, ManagerRecordsService, RecordSectionsService],
+  exports: [ManagerTreeService, ManagerPlanService, ManagerRecordsService, RecordSectionsService],
 })
 export class ScreensManagerModule {}
