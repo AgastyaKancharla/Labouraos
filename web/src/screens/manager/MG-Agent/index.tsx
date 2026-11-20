@@ -15,6 +15,7 @@ import { ActionButton } from '../../ceo/_kit/actions';
 import { hm, ms } from '../../ceo/_kit/format';
 import { monthLong, teamShort, type Forecast, Verdict } from '../_kit/kit';
 import { NoteActions, NotesList, type CoachingNote } from '../_kit/Notes';
+import { formatLateMinutes } from '../../../lib/format/late';
 
 interface AgentResponse {
   staff: { id: string; code: string; name: string; role: string; isIntern: boolean; photoUrl?: string | null };
@@ -72,7 +73,7 @@ export default function Agent() {
         <>
           <StatGrid>
             <StatTile label={mainLabel} value={d ? (d.main.target ? `${d.main.atThisSpeed} of ${d.main.target}` : `${d.main.atThisSpeed}`) : '—'} tone={d?.main.pace === 'behind' ? 'red' : 'good'} loading={q.isPending} />
-            <StatTile label="Late logins" value={d ? `${d.lateLogins} · ${d.lateMinutes} min` : '—'} tone="gold" loading={q.isPending} />
+            <StatTile label="Late logins" value={d ? `${d.lateLogins} · ${formatLateMinutes(d.lateMinutes)}` : '—'} tone="gold" loading={q.isPending} />
             <StatTile label="Work time lost" value={d ? hm(d.lostSeconds) : '—'} tone="orange" loading={q.isPending} />
             <StatTile label="Leave left" value={d ? `${d.leaveLeft.casual + d.leaveLeft.emergency} day${d.leaveLeft.casual + d.leaveLeft.emergency === 1 ? '' : 's'}` : '—'} tone="cyan" loading={q.isPending} />
             <StatTile label="Registrations that paid" value={d ? (d.registerToPay === null ? '—' : `${d.registerToPay}%`) : '—'} tone="royal" loading={q.isPending} />
@@ -119,7 +120,7 @@ export default function Agent() {
                     {d?.attendance.map((a) => (
                       <tr key={a.id}>
                         <td>{dayLabel(a.date)}</td>
-                        <td>{a.loginAt ? `${formatTimeIST(a.loginAt)}${a.lateMinutes ? ` · ${a.lateMinutes} late` : ''}` : '—'}</td>
+                        <td>{a.loginAt ? `${formatTimeIST(a.loginAt)}${a.lateMinutes ? ` · ${formatLateMinutes(a.lateMinutes)} late` : ''}` : '—'}</td>
                         <td>{a.loginAt ? hm(a.productionSeconds) : '—'}</td>
                         <td>
                           <StatusPill tone={countsTone(a.countsAs)}>{a.countsAs}</StatusPill>

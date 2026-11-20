@@ -78,10 +78,15 @@ export function IdCheckPanel({
   const cleanNumber = number.toUpperCase().replace(/\s+/g, '');
   // The camera's one-time token: asked for when the card camera opens, and again after each try
   // (it works once, for 2 minutes). The server refuses a card photo without it.
+  // The pages pass a new getCaptureNonce function on every render: kept in a ref so that one token is asked
+  // for each time the card camera opens, not on every re-render of the page (17 Nov).
   const nonce = useRef<Promise<string | null> | null>(null);
+  const askNonce = useRef(getCaptureNonce);
+  askNonce.current = getCaptureNonce;
   const freshNonce = useCallback(() => {
-    nonce.current = getCaptureNonce ? getCaptureNonce().catch(() => null) : Promise.resolve(null);
-  }, [getCaptureNonce]);
+    const ask = askNonce.current;
+    nonce.current = ask ? ask().catch(() => null) : Promise.resolve(null);
+  }, []);
   useEffect(() => {
     if (mode === 'card') freshNonce();
   }, [mode, freshNonce]);

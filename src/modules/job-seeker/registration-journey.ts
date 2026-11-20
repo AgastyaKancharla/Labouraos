@@ -58,6 +58,8 @@ export interface JourneyInput {
     isUnder18ByDateOfBirth: boolean;
   };
   grantedPurposes: string[];
+  /** Items given (not withdrawn) under the CURRENT consent notice version: only these count as "already given". */
+  grantedUnderCurrentNotice?: string[];
   latestVerification: {
     status: string;
     nameMatches: boolean | null;
@@ -88,6 +90,8 @@ export interface JourneyStatus {
   jobSeekerCode: string;
   currentStep: RegistrationStep;
   steps: { consent: boolean; selfie: boolean; idCheck: boolean; payment: boolean };
+  /** Consent items already given under the current notice version and not withdrawn: the consent page does not ask them again (17 Nov). An item given under an older notice is asked again. */
+  consentGiven: string[];
   idCheck: {
     /** Another ID is waiting for the Team Lead's check (rev 154): no payment until it is approved. */
     waitingForTeamLead: boolean;
@@ -152,6 +156,7 @@ export function buildJourneyStatus(input: JourneyInput): JourneyStatus {
     jobSeekerCode: seeker.code,
     currentStep,
     steps: { consent, selfie, idCheck, payment: paid },
+    consentGiven: [...new Set(input.grantedUnderCurrentNotice ?? input.grantedPurposes)],
     idCheck: { waitingForTeamLead: lastResult === 'pending', lastResult },
     stopped: seeker.isUnder18ByDateOfBirth || input.under18Stop ? 'under_18' : null,
     waitingForTrade: seeker.guaranteeFloorPaise === null,

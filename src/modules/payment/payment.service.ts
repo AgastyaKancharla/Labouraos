@@ -47,6 +47,7 @@ import { alreadyExists, isDuplicatePayout, lockSubject } from '../../common/mone
 import { isRuleBasedRefund, recordRefundRejection, refundLockKey } from '../refund/refund-rejection';
 import { markJobSeekerRefunded } from '../job-seeker/job-seeker-refunded';
 import { CustomerNotificationHooks } from '../customer-notification/customer-notification-hooks.service';
+import { loadStandingWithdrawals } from '../consent/consent-withdrawal-state';
 
 /** What the bank feed webhook reports back for one credit. */
 export interface BankFeedWebhookResult {
@@ -1722,16 +1723,11 @@ export class PaymentService {
 
         const guards = await loadJobSeekerRefundGuards(this.prisma, jobSeeker);
 
-        const withdrawnConsent = jobSeeker.paymentReceivedAt && this.prisma.consent
-          ? await this.prisma.consent.findFirst({
-              where: {
-                subjectType: 'job_seeker',
-                subjectId: jobSeeker.id,
-                purpose: { in: ['job_matching', 'profile_sharing', 'call_recording'] },
-                withdrawnAt: { not: null, gte: jobSeeker.paymentReceivedAt },
-              },
-            })
+        // A withdrawal after paying ends the guarantee only while it stands: given again later, it is back (rev 200).
+        const standingWithdrawal = jobSeeker.paymentReceivedAt && this.prisma.consent
+          ? (await loadStandingWithdrawals(this.prisma, [jobSeeker.id])).get(jobSeeker.id) ?? null
           : null;
+        const withdrawnConsent = Boolean(standingWithdrawal && jobSeeker.paymentReceivedAt && standingWithdrawal >= jobSeeker.paymentReceivedAt);
 
         const openBypassFlag = await this.prisma.reviewFlag.findFirst({
           where: {

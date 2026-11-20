@@ -6,6 +6,7 @@ import { Skeleton } from '../../../components/Skeleton';
 import { useT } from '../../../i18n/I18nProvider';
 import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
+import { formatLateMinutes } from '../../../lib/format/late';
 
 /**
  * "Today" at the top of My attendance (Master Guide rev 194, 17 Nov), on every
@@ -55,7 +56,7 @@ export function TodayCard() {
     [t('att.today.loggedOut'), today.logoutAt ? clockTime(today.logoutAt) : t('att.today.stillWorking'), null],
     [t('att.today.productive'), hm(today.productionSeconds), null],
     [t('att.today.unproductive'), hm(unproductive), t('att.today.unproductiveSub', { breaks: span(today.breakSeconds), idle: span(today.idleSeconds) })],
-    [t('att.today.late'), today.lateMinutes > 0 ? t('att.today.lateValue', { minutes: today.lateMinutes }) : t('att.onTime'), null],
+    [t('att.today.late'), today.lateMinutes > 0 ? t('att.today.lateValue', { late: formatLateMinutes(today.lateMinutes) }) : t('att.onTime'), null],
     [t('att.today.status'), status.text, null],
   ];
   return (

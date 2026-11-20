@@ -59,7 +59,7 @@ describe('Manager portal: pipeline lists and profiles', () => {
     expect(screen.queryByRole('button', { name: 'Approve refund early' })).toBeNull();
     expect(screen.queryByText(/Refunds/)).toBeNull();
     expect(screen.getByText('10:00 – 13:00')).toBeInTheDocument();
-    expect(screen.getByText(/Call recording · given/)).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Consent items' })).toHaveTextContent(/Call recording · Given/);
     // Only job salaries (allowed for a Manager) carry a rupee sign.
     const rupees = (document.body.textContent ?? '').match(/₹[\d,]+/g) ?? [];
     expect(rupees.every((r) => ['₹15,000', '₹20,000'].includes(r))).toBe(true);

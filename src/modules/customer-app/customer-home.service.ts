@@ -11,6 +11,7 @@ import { publicLink } from '../../common/public-link';
 import { PricingService } from '../pricing/pricing.service';
 import { RegistrationJourneyService } from '../job-seeker/registration-journey.service';
 import { firstName } from '../customer-account/customer-account.service';
+import { loadStandingWithdrawals, REFUND_ENDING_CONSENT_PURPOSES } from '../consent/consent-withdrawal-state';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Hits that end the refund (guide, Hits): declining, not replying, not turning up. */
@@ -19,7 +20,7 @@ const REFUND_ENDING_HITS = [...REFUND_FORFEITING_HIT_REASONS];
 const PAID_STATUSES = ['succeeded', 'completed'];
 const DONE_REFUND_STATUSES = ['rejected', 'cancelled', 'reversed'];
 /** Withdrawing any of these after paying ends the refund (decided 7 Nov). */
-const REFUND_ENDING_CONSENTS = ['job_matching', 'profile_sharing', 'call_recording'];
+const REFUND_ENDING_CONSENTS = REFUND_ENDING_CONSENT_PURPOSES;
 
 /**
  * The three Home screens (docs/customer-app-api.md §7). Read-only, and only
@@ -90,12 +91,8 @@ export class CustomerHomeService {
             select: { id: true },
           })
         : null,
-      paidAt
-        ? this.prisma.consent.findFirst({
-            where: { subjectType: 'job_seeker', subjectId: id, purpose: { in: REFUND_ENDING_CONSENTS }, withdrawnAt: { not: null } },
-            select: { id: true },
-          })
-        : null,
+      // Only a withdrawal that still stands (not given again later) ends the guarantee (rev 200).
+      paidAt ? loadStandingWithdrawals(this.prisma, [id], REFUND_ENDING_CONSENTS).then((standing) => standing.get(id) ?? null) : null,
       paidAt
         ? this.prisma.payment.findFirst({
             where: { jobSeekerId: id, type: 'refund', createdAt: { gte: paidAt } },

@@ -45,6 +45,30 @@ describe('P01-Consent', () => {
     expect(await screen.findByTestId('navigated-away')).toBeInTheDocument();
   });
 
+  it('an item he already gave on an earlier link is shown as given and not asked again; only the rest is sent (17 Nov)', async () => {
+    verifiedInThisTab();
+    const api = mockApi({
+      [`GET /registration/${TOKEN}/status`]: openStatus({ consentGiven: ['job_matching', 'profile_sharing', 'aadhaar_verification', 'job_updates'] }),
+      'GET /legal/documents/job_seeker_terms': legalDocument(),
+      'POST /consent/submit': { success: true },
+    });
+    render();
+    expect(await screen.findByTestId('consent-given-job_matching')).toHaveTextContent('Already given');
+    expect(screen.getByText(/they are not asked again/)).toBeInTheDocument();
+    // Only call recording (required) and promotions (optional) are asked.
+    const boxes = screen.getAllByRole('checkbox');
+    expect(boxes).toHaveLength(2);
+    expect(screen.queryByRole('checkbox', { name: /Match me to jobs/ })).toBeNull();
+    const agree = screen.getByRole('button', { name: 'I agree — continue' });
+    expect(agree).toBeDisabled();
+    expect(screen.getByText('Tick the remaining required boxes to continue.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('checkbox', { name: /Record calls/ }));
+    expect(agree).toBeEnabled();
+    await userEvent.click(agree);
+    expect(api.calls('POST /consent/submit')[0]!.body).toMatchObject({ purposes: ['call_recording'] });
+    expect(await screen.findByTestId('navigated-away')).toBeInTheDocument();
+  });
+
   it('sends him back to the start for a fresh code when his code has lapsed', async () => {
     verifiedInThisTab();
     mockApi({ [`GET /registration/${TOKEN}/status`]: { otpRequired: true, maskedPhone: '******2345', language: null, registrationComplete: false } });

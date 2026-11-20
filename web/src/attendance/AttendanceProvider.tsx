@@ -11,6 +11,7 @@ import { clockTime } from './format';
 import { IdlePrompt } from './IdlePrompt';
 import { isKnownStatus, statusLabelKey, type AttendanceAudience, type AttendanceStatus } from './statuses';
 import './attendance.css';
+import { formatLateMinutes } from '../lib/format/late';
 
 /**
  * One attendance state per signed-in tab, shared by the header status menu,
@@ -161,7 +162,7 @@ export function AttendanceProvider({ audience, children }: { audience: Attendanc
       lastActivity.current = clock().getTime();
       lastBeat.current = lastActivity.current;
       const time = next.loginAt ? clockTime(next.loginAt) : '';
-      toast.success(next.lateMinutes > 0 ? t('att.toast.startedLate', { time, minutes: next.lateMinutes }) : t('att.toast.started', { time }));
+      toast.success(next.lateMinutes > 0 ? t('att.toast.startedLate', { time, late: formatLateMinutes(next.lateMinutes) }) : t('att.toast.started', { time }));
     } catch (error) {
       showError(error);
     }

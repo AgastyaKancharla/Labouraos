@@ -2,6 +2,7 @@ import type { AttendanceDayRow, MyRequest } from '../../../attendance/api';
 import { dateRange, dayLabel, hhmm, span } from '../../../attendance/format';
 import type { Translate } from '../../../i18n/I18nProvider';
 import type { MessageKey } from '../../../i18n/en';
+import { formatLateMinutes } from '../../../lib/format/late';
 
 /** Tag colour classes of the CA14 designs (.tg green, .ta amber, .tc cyan, .tr crit, .tb blue, .tn grey, .tt tomato). */
 export type TagTone = 'tg' | 'ta' | 'tc' | 'tr' | 'tb' | 'tn' | 'tt';
@@ -15,7 +16,7 @@ export interface Chip {
 /** "Counts as" for one day: the day type, plus late / short / make-up where they apply. */
 export function dayChips(day: AttendanceDayRow): Chip[] {
   const extras: Chip[] = [];
-  if (day.lateMinutes > 0 && day.dayType !== 'leave' && day.dayType !== 'absent') extras.push({ key: 'att.day.late', vars: { minutes: day.lateMinutes }, tone: 'ta' });
+  if (day.lateMinutes > 0 && day.dayType !== 'leave' && day.dayType !== 'absent') extras.push({ key: 'att.day.late', vars: { late: formatLateMinutes(day.lateMinutes) }, tone: 'ta' });
   if (day.shortfallSeconds > 0 && day.dayType !== 'open') extras.push({ key: 'att.day.short', vars: { time: span(day.shortfallSeconds) }, tone: 'ta' });
   if (day.makeUpSeconds > 0) extras.push({ key: 'att.day.makeUp', vars: { time: span(day.makeUpSeconds) }, tone: 'tg' });
   if (day.change) extras.push({ key: 'att.day.changed', tone: 'tn' });

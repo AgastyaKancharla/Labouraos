@@ -134,8 +134,6 @@ export const PRISMA_WRITE_ALLOWLIST: Record<string, string> = {
     "device fields validated one by one (appVersion, pushPermission, pushToken)",
   "modules/customer-notification/customer-notification-settings.service.ts :: update :: customerNotificationSetting.update :: data-not-literal":
     "only the service/jobUpdates/promotions booleans (each checked), or a consent key of the account's own subject and a fixed purpose",
-  "modules/customer-notification/customer-notification-settings.service.ts :: grant :: consent.upsert :: create-spread":
-    "only the service/jobUpdates/promotions booleans (each checked), or a consent key of the account's own subject and a fixed purpose",
   "modules/customer-notification/customer-push-sender.service.ts :: checkReceipts :: messageLog.update :: data-not-literal":
     "message status worked out from the push send tallies",
   "modules/data-request/data-request.service.ts :: update :: dataRequest.update :: data-not-literal":

@@ -27,6 +27,9 @@ interface Acceptance {
   noticeVersion: string | null;
   purposes: string[];
   acceptedAt: string;
+  /** Job seekers (17 Nov): the same text accepted again is one line — how many times, and the first time. */
+  times?: number;
+  firstAcceptedAt?: string;
 }
 interface AcceptanceList {
   status: { documentKey: string; currentVersion: string; acceptedVersion: string | null; needsReconsent: boolean; noticeVersion: string | null; currentNoticeVersion: string | null };
@@ -72,6 +75,7 @@ export function LegalAcceptanceCard({ subjectType, subjectId }: { subjectType: L
             <li key={a.id}>
               {formatDateTimeIST(a.acceptedAt)} · {CONTEXT[a.context] ?? a.context} · v{a.version}
               {a.noticeVersion ? ` (notice ${a.noticeVersion})` : ''} · {LANG[a.language] ?? a.language} · {a.method === 'in_app' ? 'in the app' : 'on the link'} by OTP ·{' '}
+              {a.times && a.times > 1 ? `accepted ${a.times} times, first ${a.firstAcceptedAt ? formatDateTimeIST(a.firstAcceptedAt) : ''} · ` : ''}
               <button
                 type="button"
                 className="lb-link"

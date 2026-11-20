@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useT } from '../../../i18n/I18nProvider';
-import { Muted, Warn } from './ui';
+import { useLiveCamera } from '../../../lib/camera/useLiveCamera';
+import { CameraProblem } from './CameraProblem';
+import { Muted } from './ui';
 import './public.css';
 
 /**
@@ -17,8 +19,6 @@ import './public.css';
  * With `facing="environment"` the same live camera photographs an ID card
  * (another ID, rev 154): the back camera, not mirrored, a card-shaped frame.
  */
-type CameraState = 'starting' | 'ready' | 'denied' | 'unavailable';
-
 export function LiveSelfie({
   active,
   onCapture,
@@ -45,44 +45,11 @@ export function LiveSelfie({
   noGalleryLabel?: string;
 }) {
   const t = useT();
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const [camera, setCamera] = useState<CameraState>('starting');
+  // One getUserMedia per open (also the permission prompt), looser constraints when needed, a retry while
+  // Android still releases the camera, and the stream always stopped (lib/camera, 17 Nov).
+  const { videoRef, state: camera, start, stop } = useLiveCamera(active, facing);
   const [preview, setPreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-
-  const stop = useCallback(() => {
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-  }, []);
-
-  const start = useCallback(async () => {
-    setCamera('starting');
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setCamera('unavailable');
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: facing === 'user' ? { facingMode: 'user', width: { ideal: 720 } } : { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch(() => undefined);
-      }
-      setCamera('ready');
-    } catch (e) {
-      setCamera(e instanceof DOMException && (e.name === 'NotAllowedError' || e.name === 'SecurityError') ? 'denied' : 'unavailable');
-    }
-  }, [facing]);
-
-  useEffect(() => {
-    if (!active) return;
-    void start();
-    return stop;
-  }, [active, start, stop]);
 
   const capture = async () => {
     const video = videoRef.current;
@@ -124,10 +91,9 @@ export function LiveSelfie({
         <div className={facing === 'user' ? 'lb-camera__oval' : 'lb-camera__card'} aria-hidden="true" />
       </div>
       {tips && <Muted>{tips}</Muted>}
-      {camera === 'denied' && <Warn>{t('pub.selfie.denied')}</Warn>}
-      {camera === 'unavailable' && <Warn>{t('pub.selfie.unavailable')}</Warn>}
+      {camera !== 'starting' && camera !== 'ready' && <CameraProblem kind={camera} noCamera={t('pub.selfie.unavailable')} />}
       {error}
-      {camera === 'denied' || camera === 'unavailable' ? (
+      {camera !== 'starting' && camera !== 'ready' ? (
         <button type="button" className="btn bs full" onClick={() => void start()}>
           {t('common.retry')}
         </button>

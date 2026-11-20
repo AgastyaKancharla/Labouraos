@@ -8,6 +8,7 @@ import { evaluateJobSeekerRefundEligibility } from '../job-seeker/job-seeker-ref
 import { evaluatePlacementRefundEligibility } from '../placement/placement-refund-eligibility';
 import { RefundDueRow } from './dto/refund-due.dto';
 import { primaryJobSeekerTrade } from '../job-seeker/job-seeker-legacy-read';
+import { loadStandingWithdrawals } from '../consent/consent-withdrawal-state';
 
 @Injectable()
 export class RefundService {
@@ -117,25 +118,9 @@ export class RefundService {
       }
 
       // Check withdrawn essential consents
-      const withdrawnConsents = this.prisma.consent
-        ? await this.prisma.consent.findMany({
-            where: {
-              subjectType: 'job_seeker',
-              subjectId: { in: candidateIds },
-              purpose: { in: ['job_matching', 'profile_sharing', 'call_recording'] },
-              withdrawnAt: { not: null },
-            },
-            select: { subjectId: true, withdrawnAt: true },
-          })
-        : [];
-      for (const c of withdrawnConsents) {
-        if (c.withdrawnAt) {
-          const existing = withdrawnConsentMap.get(c.subjectId);
-          if (!existing || c.withdrawnAt > existing) {
-            withdrawnConsentMap.set(c.subjectId, c.withdrawnAt);
-          }
-        }
-      }
+      // Only a withdrawal that still stands (not given again later) counts (rev 200).
+      const standing = this.prisma.consent ? await loadStandingWithdrawals(this.prisma, candidateIds) : new Map<string, Date>();
+      for (const [subjectId, withdrawnAt] of standing) withdrawnConsentMap.set(subjectId, withdrawnAt);
 
       // Check open bypass_suspected flags
       const openBypassFlags = this.prisma.reviewFlag

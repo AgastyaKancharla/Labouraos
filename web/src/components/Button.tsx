@@ -1,6 +1,7 @@
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { Link, type LinkProps } from 'react-router-dom';
 import { useFamily } from './family';
+import { useInMenu } from './RowMenu';
 
 /**
  * Buttons from both design families. In portal screens a Button renders the
@@ -44,14 +45,17 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   ref,
 ) {
   const family = useFamily();
+  // Inside a row menu ("Edit ▾", "Access ▾") the same action is a menu item (RowMenu).
+  const inMenu = useInMenu();
   const resolved = size ?? (family === 'portal' ? 'compact' : 'regular');
   return (
     <button
       ref={ref}
       type={type}
-      className={buttonClass(variant, resolved, className, fullWidth)}
+      className={inMenu ? `lb-menu__item${variant === 'danger' ? ' lb-menu__item--danger' : ''}` : buttonClass(variant, resolved, className, fullWidth)}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
+      {...(inMenu ? { role: 'menuitem', tabIndex: -1 } : {})}
       {...rest}
     >
       {loading ? <span className="lb-spinner" aria-hidden="true" /> : icon}

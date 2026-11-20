@@ -8,6 +8,7 @@ import { TopBar } from '../../../components/TopBar';
 import { api } from '../../../lib/api/client';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { paceText, paceTone, roleTeam, teamShort } from '../_kit/kit';
+import { formatLateMinutes } from '../../../lib/format/late';
 
 /** GET /manager/agents. */
 export interface AgentRow {
@@ -72,7 +73,7 @@ export default function Agents() {
     },
     { key: 'pace', header: 'At this speed', cell: (r) => <StatusPill tone={paceTone(r.pace)}>{paceText(r.pace)}</StatusPill>, filter: 'select', filterValue: (r) => paceText(r.pace), csv: (r) => paceText(r.pace) },
     { key: 'att', header: 'Attendance', cell: (r) => (r.attendancePercent === null ? '—' : `${r.attendancePercent}%`), sortValue: (r) => r.attendancePercent ?? -1, csv: (r) => r.attendancePercent },
-    { key: 'late', header: 'Late logins', cell: (r) => (r.lateLogins ? `${r.lateLogins} · ${r.lateMinutes} min` : '—'), sortValue: (r) => r.lateMinutes, csv: (r) => r.lateLogins },
+    { key: 'late', header: 'Late logins', cell: (r) => (r.lateLogins ? `${r.lateLogins} · ${formatLateMinutes(r.lateMinutes)}` : '—'), sortValue: (r) => r.lateMinutes, csv: (r) => r.lateLogins },
     { key: 'leave', header: 'Leave left', cell: (r) => r.leaveLeft, sortValue: (r) => r.leaveLeft, csv: (r) => r.leaveLeft, hideOnPhone: true },
     { key: 'flags', header: 'Flags', cell: (r) => (r.openFlags ? <StatusPill tone="danger">{String(r.openFlags)}</StatusPill> : '0'), sortValue: (r) => r.openFlags, csv: (r) => r.openFlags },
   ];

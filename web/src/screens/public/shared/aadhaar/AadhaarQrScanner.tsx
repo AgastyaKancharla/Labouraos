@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useT } from '../../../../i18n/I18nProvider';
-import { Muted, Warn } from '../ui';
+import { useLiveCamera } from '../../../../lib/camera/useLiveCamera';
+import { CameraProblem } from '../CameraProblem';
+import { Muted } from '../ui';
 import { decodeQrImage } from './qrDecoder';
 
 /**
@@ -10,58 +12,32 @@ import { decodeQrImage } from './qrDecoder';
  * resolution, and "Zoom in" reads a smaller middle part (Secure QR codes are
  * very dense, so filling the frame matters).
  */
-type CameraState = 'starting' | 'ready' | 'denied' | 'unavailable';
-
 const SCAN_EVERY_MS = 300;
 const ZOOMS = [1, 0.6] as const;
 
 export function AadhaarQrScanner({ onText, onCancel, decode = decodeQrImage }: { onText: (text: string) => void; onCancel: () => void; decode?: (image: ImageData) => Promise<string | null> }) {
   const t = useT();
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  // The back camera through lib/camera (17 Nov): retries while Android releases a camera, looser constraints
+  // when needed, and the stream always stopped — also one that arrives after "Back".
+  const { videoRef, state: camera, start, stop } = useLiveCamera(true, 'environment');
   const zoomRef = useRef<number>(ZOOMS[0]);
   const doneRef = useRef(false);
-  const [camera, setCamera] = useState<CameraState>('starting');
   const [zoomed, setZoomed] = useState(false);
-
-  const stop = useCallback(() => {
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-  }, []);
-
-  const start = useCallback(async () => {
-    setCamera('starting');
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setCamera('unavailable');
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-        audio: false,
-      });
-      streamRef.current = stream;
-      const track = stream.getVideoTracks()[0];
-      // Continuous focus where the phone allows it (helps with the small, dense code).
-      await track?.applyConstraints?.({ advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet] }).catch(() => undefined);
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch(() => undefined);
-      }
-      setCamera('ready');
-    } catch (e) {
-      setCamera(e instanceof DOMException && (e.name === 'NotAllowedError' || e.name === 'SecurityError') ? 'denied' : 'unavailable');
-    }
-  }, []);
 
   useEffect(() => {
     doneRef.current = false;
-    void start();
     return () => {
       doneRef.current = true;
-      stop();
     };
-  }, [start, stop]);
+  }, []);
+
+  // Continuous focus where the phone allows it (helps with the small, dense code).
+  useEffect(() => {
+    if (camera !== 'ready') return;
+    const stream = videoRef.current?.srcObject as MediaStream | null | undefined;
+    const track = stream?.getVideoTracks?.()[0];
+    void track?.applyConstraints?.({ advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet] }).catch(() => undefined);
+  }, [camera, videoRef]);
 
   useEffect(() => {
     if (camera !== 'ready') return;
@@ -92,7 +68,7 @@ export function AadhaarQrScanner({ onText, onCancel, decode = decodeQrImage }: {
         });
     }, SCAN_EVERY_MS);
     return () => window.clearInterval(timer);
-  }, [camera, decode, onText, stop]);
+  }, [camera, decode, onText, stop, videoRef]);
 
   const toggleZoom = () => {
     const next = !zoomed;
@@ -112,9 +88,8 @@ export function AadhaarQrScanner({ onText, onCancel, decode = decodeQrImage }: {
         <li>{t('pub.qr.tipFill')}</li>
         <li>{t('pub.qr.tipSteady')}</li>
       </ul>
-      {camera === 'denied' && <Warn>{t('pub.selfie.denied')}</Warn>}
-      {camera === 'unavailable' && <Warn>{t('pub.qr.unavailable')}</Warn>}
-      {camera === 'denied' || camera === 'unavailable' ? (
+      {camera !== 'starting' && camera !== 'ready' && <CameraProblem kind={camera} noCamera={t('pub.qr.unavailable')} />}
+      {camera !== 'starting' && camera !== 'ready' ? (
         <button type="button" className="btn bs full" onClick={() => void start()}>
           {t('common.retry')}
         </button>

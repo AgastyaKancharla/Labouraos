@@ -41,7 +41,7 @@ describe('My attendance (CA14e)', () => {
     expect(within(rows[2]!).getByText('Fri 6 Nov')).toBeInTheDocument();
     expect(within(rows[2]!).getByText('9:52')).toBeInTheDocument();
     expect(within(rows[2]!).getByText('6:31')).toBeInTheDocument();
-    expect(within(rows[2]!).getByText('Late 22m · 40m short')).toHaveClass('ta');
+    expect(within(rows[2]!).getByText('Late 22 min · 40m short')).toHaveClass('ta');
     expect(within(rows[3]!).getByText('Casual leave (approved)')).toHaveClass('tc');
     expect(within(rows[4]!).getByText('Half day')).toHaveClass('tr');
     expect(within(rows[5]!).getByText('Full day · +40m make-up')).toHaveClass('tg');

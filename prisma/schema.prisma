@@ -2078,7 +2078,12 @@ model Consent {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  @@unique([subjectType, subjectId, purpose, noticeVersion])
+  // One LIVE (not withdrawn) row per subject, purpose and notice version: the partial unique index
+  // "Consent_live_purpose_key" ... WHERE "withdrawnAt" IS NULL, created in migration
+  // 20261203400000_consent_regrant_new_row (SQL only — Prisma can't express it; keep it if a future
+  // migration is generated). ConsentService.grant inserts with ON CONFLICT on it. Giving an item again
+  // after a withdrawal adds a new row; the withdrawn one stays.
+  @@index([subjectType, subjectId, purpose, noticeVersion])
   @@index([subjectType, subjectId])
 }
 

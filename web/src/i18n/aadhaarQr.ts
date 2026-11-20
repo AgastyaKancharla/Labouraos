@@ -39,6 +39,9 @@ export const aadhaarQrEn = {
   'pub.qr.zoomIn': 'Zoom in',
   'pub.qr.zoomOut': 'Zoom out',
   'pub.qr.back': 'Back',
+  // Why a live camera did not start (17 Nov): busy / still being released, or not on the https link.
+  'pub.camera.inUse': 'The camera is busy or still starting. Close other apps that use the camera (video calls, the camera app), then tap Try again.',
+  'pub.camera.insecure': 'The camera only works on a secure (https) Laboura address. Open your Laboura link again.',
   'pub.qr.unavailable': "This phone's camera couldn't be opened. Use your e-Aadhaar PDF or another ID.",
   'pub.qr.noUpload': 'The camera only reads the QR code — no photo is taken or sent.',
   'pub.qr.checking': "Checking UIDAI's digital signature…",

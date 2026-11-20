@@ -10,6 +10,7 @@ import { api } from '../../../lib/api/client';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { FilterPanel, SearchField, SelectFilter } from '../../ceo/_kit/kit';
 import { useTeam, type Brief } from '../_kit/api';
+import { formatLateMinutes } from '../../../lib/format/late';
 
 /** Agents — design T-Agents.dc.html. */
 interface AgentRow {
@@ -56,7 +57,7 @@ export default function TeamLeadAgents() {
     },
     { key: 'speed', header: 'At this speed', cell: (r) => (r.main.onTrack === null ? <span className="tl-sub">—</span> : <StatusPill tone={r.main.onTrack ? 'good' : 'warn'}>{r.main.onTrack ? 'On track' : 'Behind'}</StatusPill>) },
     { key: 'att', header: 'Attendance', cell: (r) => `${r.attendance.present} of ${r.attendance.workingDays}` },
-    { key: 'late', header: 'Late logins', cell: (r) => (r.lateLogins.count ? `${r.lateLogins.count} · ${r.lateLogins.minutes} min` : '0'), sortValue: (r) => r.lateLogins.count },
+    { key: 'late', header: 'Late logins', cell: (r) => (r.lateLogins.count ? `${r.lateLogins.count} · ${formatLateMinutes(r.lateLogins.minutes)}` : '0'), sortValue: (r) => r.lateLogins.count },
     { key: 'leave', header: 'Leave left', cell: (r) => r.leaveLeft, sortValue: (r) => r.leaveLeft, hideOnPhone: true },
     { key: 'quality', header: 'Call quality', cell: (r) => (r.callQuality === null ? '—' : `${r.callQuality} / 100`), sortValue: (r) => r.callQuality ?? -1, hideOnPhone: true },
   ];

@@ -18,6 +18,7 @@ import { SetCallingPhoneButton } from '../../shared/staffAccess';
 import { hm, ms, roleLabel } from '../../ceo/_kit/format';
 import { firstName, useTeam, type Brief, type PaceRow } from '../_kit/api';
 import { Verdict } from '../_kit/targets';
+import { formatLateMinutes } from '../../../lib/format/late';
 
 /** One agent — design T-Agent.dc.html. Phone numbers stay hidden. */
 interface AgentDetail {
@@ -66,7 +67,7 @@ export default function TeamLeadAgent() {
       <StatGrid>
         <StatTile label={a.main.label} value={a.main.target === null ? a.main.done : `${a.main.done} of ${a.main.target}`} tone="royal" />
         <StatTile label="At this speed by month end" value={a.main.projection} tone={a.main.verdict?.startsWith('Short') ? 'red' : 'good'} />
-        <StatTile label="Late logins" value={a.lateLogins.count ? `${a.lateLogins.count} · ${a.lateLogins.minutes} min` : '0'} tone="orange" />
+        <StatTile label="Late logins" value={a.lateLogins.count ? `${a.lateLogins.count} · ${formatLateMinutes(a.lateLogins.minutes)}` : '0'} tone="orange" />
         <StatTile label="Leave left" value={`${a.leaveLeft.total} days`} tone="cyan" />
         <StatTile label="Call quality" value={a.callQuality === null ? '—' : `${a.callQuality} / 100`} tone="gold" />
       </StatGrid>
@@ -141,7 +142,7 @@ export default function TeamLeadAgent() {
                     <td>{formatDateIST(`${d.date}T06:00:00Z`)}</td>
                     <td>
                       {d.loginAt ? formatTimeIST(d.loginAt) : '—'}
-                      {d.lateMinutes > 0 && <span className="tl-alert"> · {d.lateMinutes} late</span>}
+                      {d.lateMinutes > 0 && <span className="tl-alert"> · {formatLateMinutes(d.lateMinutes)} late</span>}
                     </td>
                     <td>{d.loginAt ? hm(d.productionSeconds) : '—'}</td>
                     <td>

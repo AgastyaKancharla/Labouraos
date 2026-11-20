@@ -15,6 +15,7 @@ import { NewTempPasswordButton, SetCallingPhoneButton, ResetSignInButton, TempPa
 import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { ActionButton } from '../../ceo/_kit/actions';
+import { RowMenu } from '../../../components/RowMenu';
 import { roleWord, teamShort } from '../_kit/kit';
 
 /** GET /manager/staff. */
@@ -126,8 +127,11 @@ export default function StaffAndAccess() {
 
   const leads = (d?.reportsToOptions ?? []).filter((o) => o.role === 'team_lead');
 
+  // 17 Nov: the row's actions sit in "Edit ▾" (Team Lead) and "Access ▾" (sign-in, phones and account); a waiting
+  // device stays a button of its own, as it is a request to answer. Same dialogs and API calls as before.
   const actions = (r: StaffRow) => {
     const isAgent = r.role === 'call_agent' || r.role === 'field_agent';
+    const canMove = isAgent && leads.length > 1;
     return (
       <div className="ceo-actions" onClick={(e) => e.stopPropagation()}>
         {r.pendingDevice && (
@@ -141,49 +145,53 @@ export default function StaffAndAccess() {
             confirmLabel="Approve"
           />
         )}
-        {r.state === 'locked' && (
-          <ActionButton label="Unlock" variant="success" title={`Unlock ${r.name}`} reason run={({ reason }) => api.post(`/staff/${r.id}/unlock`, { reason })} success={`${r.name} can sign in again`} confirmLabel="Unlock" />
+        {canMove && (
+          <RowMenu label="Edit" name={r.name} testId={`edit-menu-${r.id}`}>
+            <ActionButton
+              label="Change Team Lead"
+              title={`Change ${r.name}'s Team Lead`}
+              description="Their requests, targets and open work move to the new Team Lead · both Team Leads are told."
+              choice={{ label: 'New Team Lead', options: leads.filter((l) => l.id !== r.teamLeadId).map((l) => ({ value: l.id, label: `${l.name} · ${teamShort(l.team)}` })) }}
+              reason
+              run={({ choice, reason }) => api.post(`/staff/${r.id}/reporting-line`, { reportsToId: choice, reason })}
+              success="Team Lead changed"
+              confirmLabel="Change"
+            />
+          </RowMenu>
         )}
-        {/* Rev 174–175: "New temporary password" replaces the invite and reset links; a Manager can do it for people below Manager in their teams. */}
-        <NewTempPasswordButton id={r.id} name={r.name} />
-        <SetCallingPhoneButton id={r.id} name={r.name} />
-        {r.state !== 'invite_pending' && <ResetSignInButton id={r.id} name={r.name} />}
-        {isAgent && leads.length > 1 && (
+        <RowMenu label="Access" name={r.name} testId={`access-menu-${r.id}`}>
+          {r.state === 'locked' && (
+            <ActionButton label="Unlock" variant="success" title={`Unlock ${r.name}`} reason run={({ reason }) => api.post(`/staff/${r.id}/unlock`, { reason })} success={`${r.name} can sign in again`} confirmLabel="Unlock" />
+          )}
+          {/* Rev 174–175: "New temporary password" replaces the invite and reset links; a Manager can do it for people below Manager in their teams. */}
+          <NewTempPasswordButton id={r.id} name={r.name} />
+          <SetCallingPhoneButton id={r.id} name={r.name} />
+          {r.state !== 'invite_pending' && <ResetSignInButton id={r.id} name={r.name} />}
+          {r.role === 'field_agent' && r.approvedDevices.length > 0 && (
+            <ActionButton
+              label="Remove lost phone"
+              variant="danger"
+              title={`Remove ${r.name}'s phone`}
+              description="The phone can no longer sign in. Their next phone needs approving."
+              choice={{ label: 'Phone', options: r.approvedDevices.map((dv) => ({ value: dv.id, label: `${dv.label} (${dv.platform})` })) }}
+              run={({ choice }) => api.post(`/staff/devices/${choice}/revoke`)}
+              success="Phone removed"
+              confirmLabel="Remove"
+            />
+          )}
+          {r.state !== 'locked' && (
+            <ActionButton label="Lock" variant="danger" title={`Lock ${r.name}'s account`} description="They are signed out at once and cannot sign in until someone unlocks the account." reason run={({ reason }) => api.post(`/staff/${r.id}/lock`, { reason })} success={`${r.name} is locked`} confirmLabel="Lock" />
+          )}
           <ActionButton
-            label="Change Team Lead"
-            title={`Change ${r.name}'s Team Lead`}
-            description="Their requests, targets and open work move to the new Team Lead · both Team Leads are told."
-            choice={{ label: 'New Team Lead', options: leads.filter((l) => l.id !== r.teamLeadId).map((l) => ({ value: l.id, label: `${l.name} · ${teamShort(l.team)}` })) }}
-            reason
-            run={({ choice, reason }) => api.post(`/staff/${r.id}/reporting-line`, { reportsToId: choice, reason })}
-            success="Team Lead changed"
-            confirmLabel="Change"
-          />
-        )}
-        {r.role === 'field_agent' && r.approvedDevices.length > 0 && (
-          <ActionButton
-            label="Remove lost phone"
+            label="Deactivate"
             variant="danger"
-            title={`Remove ${r.name}'s phone`}
-            description="The phone can no longer sign in. Their next phone needs approving."
-            choice={{ label: 'Phone', options: r.approvedDevices.map((dv) => ({ value: dv.id, label: `${dv.label} (${dv.platform})` })) }}
-            run={({ choice }) => api.post(`/staff/devices/${choice}/revoke`)}
-            success="Phone removed"
-            confirmLabel="Remove"
+            title={`Deactivate ${r.name}`}
+            description="For someone who has left. Their records stay; they can never sign in again unless reactivated. Anyone who reports to them must be moved first."
+            run={() => api.post(`/staff/${r.id}/deactivate`)}
+            success={`${r.name} is deactivated`}
+            confirmLabel="Deactivate"
           />
-        )}
-        {r.state !== 'locked' && (
-          <ActionButton label="Lock" variant="danger" title={`Lock ${r.name}'s account`} description="They are signed out at once and cannot sign in until someone unlocks the account." reason run={({ reason }) => api.post(`/staff/${r.id}/lock`, { reason })} success={`${r.name} is locked`} confirmLabel="Lock" />
-        )}
-        <ActionButton
-          label="Deactivate"
-          variant="danger"
-          title={`Deactivate ${r.name}`}
-          description="For someone who has left. Their records stay; they can never sign in again unless reactivated. Anyone who reports to them must be moved first."
-          run={() => api.post(`/staff/${r.id}/deactivate`)}
-          success={`${r.name} is deactivated`}
-          confirmLabel="Deactivate"
-        />
+        </RowMenu>
       </div>
     );
   };

@@ -15,6 +15,7 @@ import { useNow } from '../../../lib/useNow';
 import { usePortal, useScreenPath } from '../../../portals/PortalContext';
 import { shortBreakSpans, timelineBlocks } from './timeline';
 import '../../../attendance/attendance.css';
+import { formatLateMinutes } from '../../../lib/format/late';
 
 /**
  * Attendance — designs CA14-Attendance (before the day starts), CA14b-
@@ -106,7 +107,7 @@ function BeforeStart({ today }: { today: AttendanceToday }) {
             {!yesterday || !yesterday.loginAt
               ? t('att.tile.yesterdayNone')
               : yesterday.lateMinutes > 0
-                ? t('att.tile.yesterdayLate', { minutes: yesterday.lateMinutes })
+                ? t('att.tile.yesterdayLate', { late: formatLateMinutes(yesterday.lateMinutes) })
                 : t('att.tile.yesterdayOnTime')}
           </span>
         </div>
@@ -139,7 +140,7 @@ function DayTiles({ today, audience }: { today: AttendanceToday; audience: Atten
         <span className="lbl">{t('att.tile.loggedIn')}</span>
         <b>{today.loginAt ? clockTime(today.loginAt) : '—'}</b>
         <span className="sub">
-          {t('att.tile.shift', { shift: shiftText(today), state: today.lateMinutes > 0 ? t('att.late', { minutes: today.lateMinutes }) : t('att.onTime') })}
+          {t('att.tile.shift', { shift: shiftText(today), state: today.lateMinutes > 0 ? t('att.late', { late: formatLateMinutes(today.lateMinutes) }) : t('att.onTime') })}
         </span>
       </div>
       <div className="card lb-att-stat">
@@ -340,7 +341,7 @@ function DayEnded({ today }: { today: AttendanceToday }) {
         </div>
         <div className="lb-att-row lb-att-row--split">
           <span>{t('att.ended.late')}</span>
-          <span>{today.lateMinutes > 0 ? t('att.ended.lateYes', { minutes: today.lateMinutes }) : t('att.ended.no')}</span>
+          <span>{today.lateMinutes > 0 ? t('att.ended.lateYes', { late: formatLateMinutes(today.lateMinutes) }) : t('att.ended.no')}</span>
         </div>
         <div className="lb-att-row lb-att-row--split">
           <span>{t('att.ended.countsAs')}</span>

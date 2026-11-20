@@ -20,6 +20,7 @@ import {
   sumPaise,
 } from './ceo-common';
 import { phoneSearchDigits } from '../../common/phone/indian-mobile';
+import { JOB_SEEKER_CONSENT_PURPOSES, JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } from '../consent/consent.constants';
 
 /** Statuses of a job seeker who registered but has not paid yet. */
 export const NOT_PAID_STATUSES = ['lead', 'consented', 'pending_activation'];
@@ -308,8 +309,12 @@ export class CeoJobSeekersService {
     const sinceGuarantee = seeker.paymentReceivedAt ?? new Date(0);
     const offers = seeker.interviews.filter((i) => OFFER_STATUSES.includes(i.status) && i.offerSentAt >= sinceGuarantee);
     const activeHits = seeker.hits.filter((h) => !h.reversedAt && !h.supersededAt);
-    const grantedPurposes = new Set(consents.filter((c) => c.granted && !c.withdrawnAt).map((c) => c.purpose));
-    const askedPurposes = new Set(consents.map((c) => c.purpose));
+    // 17 Nov: "Consent X of Y" — Y is every required item he is asked for (not only those recorded), X the
+    // ones given and not withdrawn. Rows from two links or a re-grant are one item each (the latest).
+    const grantedPurposes = new Set(
+      consents.filter((c) => c.granted && !c.withdrawnAt && (JOB_SEEKER_REQUIRED_CONSENT_PURPOSES as readonly string[]).includes(c.purpose)).map((c) => c.purpose),
+    );
+    const askedPurposes = new Set<string>(JOB_SEEKER_REQUIRED_CONSENT_PURPOSES);
     const consentAt = consents.filter((c) => c.grantedAt).map((c) => c.grantedAt as Date).sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
     const verified = seeker.identityVerifications.find((v) => v.status === 'verified') ?? null;
 
@@ -403,16 +408,7 @@ export class CeoJobSeekersService {
         // As on the call agent's person page: when he can be called.
         bestTime: seeker.preferredCallWindowStart && seeker.preferredCallWindowEnd ? { start: seeker.preferredCallWindowStart, end: seeker.preferredCallWindowEnd } : null,
       },
-      // Each consent item he was asked for, granted or withdrawn (purpose and time only).
-      consents: [...askedPurposes].map((purpose) => {
-        const latest = consents.filter((c) => c.purpose === purpose).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
-        return {
-          purpose,
-          granted: Boolean(latest?.granted && !latest.withdrawnAt),
-          at: (latest?.withdrawnAt ?? latest?.grantedAt ?? latest?.createdAt)?.toISOString() ?? null,
-          withdrawn: Boolean(latest?.withdrawnAt),
-        };
-      }),
+      consents: consentItems(consents),
       registration: {
         phoneVerified: seeker.phoneVerified,
         consentsGranted: grantedPurposes.size,
@@ -644,4 +640,24 @@ export class CeoJobSeekersService {
     });
     return { task, created: true };
   }
+}
+
+type ConsentRow = { purpose: string; granted: boolean; grantedAt: Date | null; withdrawnAt: Date | null; createdAt: Date };
+
+/**
+ * Each consent item a job seeker is asked for, once (17 Nov): the five required ones and the optional
+ * promotions, in the order of the consent page, each with its latest state — given (when it was first
+ * given, as long as it stands), withdrawn (when), or not given. Several rows for one item (two links, an
+ * older notice version, a re-grant after a withdrawal) show as one; no row is hidden from the database.
+ */
+export function consentItems(rows: ConsentRow[]) {
+  return JOB_SEEKER_CONSENT_PURPOSES.map((purpose) => {
+    const mine = rows.filter((c) => c.purpose === purpose);
+    const live = mine.filter((c) => c.granted && !c.withdrawnAt && c.grantedAt).sort((a, b) => a.grantedAt!.getTime() - b.grantedAt!.getTime())[0];
+    const latest = [...mine].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+    const required = (JOB_SEEKER_REQUIRED_CONSENT_PURPOSES as readonly string[]).includes(purpose);
+    if (live) return { purpose, required, granted: true, withdrawn: false, at: live.grantedAt!.toISOString() };
+    if (latest?.withdrawnAt) return { purpose, required, granted: false, withdrawn: true, at: latest.withdrawnAt.toISOString() };
+    return { purpose, required, granted: false, withdrawn: false, at: null };
+  });
 }

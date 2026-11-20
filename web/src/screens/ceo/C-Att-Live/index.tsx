@@ -10,6 +10,7 @@ import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { hm, liveLabel, roleLabel } from '../_kit/format';
 import { AttendanceTabs } from '../_kit/tabs';
+import { formatLateMinutes } from '../../../lib/format/late';
 
 /** Attendance · live board — design C-Att-Live.dc.html. Refreshes every few seconds. */
 export interface LiveRow {
@@ -67,7 +68,7 @@ export default function AttendanceLive() {
       filterValue: (r) => liveLabel(r.status).label,
       csv: (r) => rightNow(r, now),
     },
-    { key: 'login', header: 'Login', cell: (r) => (r.loginAt ? formatTimeIST(r.loginAt) : '—'), csv: (r) => r.loginAt, hideOnPhone: true },
+    { key: 'login', header: 'Login', cell: (r) => (r.loginAt ? <span>{formatTimeIST(r.loginAt)}{r.lateMinutes > 0 ? <span className="ceo-cell-sub"> · {formatLateMinutes(r.lateMinutes)} late</span> : null}</span> : '—'), csv: (r) => r.loginAt, hideOnPhone: true },
     { key: 'prod', header: 'Production today', cell: (r) => hm(r.productionSeconds), sortValue: (r) => r.productionSeconds, csv: (r) => Math.round(r.productionSeconds / 60), hideOnPhone: true },
     { key: 'breaks', header: 'Breaks', cell: (r) => `${hm(r.breakSeconds)}${r.breakOverSeconds ? ` (${hm(r.breakOverSeconds)} over)` : ''}`, csv: (r) => Math.round(r.breakSeconds / 60), hideOnPhone: true },
   ];

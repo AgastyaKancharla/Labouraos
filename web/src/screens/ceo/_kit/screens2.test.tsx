@@ -35,6 +35,11 @@ const render = (ui: React.ReactElement, path: string, route?: string) => {
   return renderScreen(ui, { portal: 'ceo', path, route, now: NOW });
 };
 const dialog = () => screen.findByRole('dialog');
+/** Opens a row's "Edit ▾" or "Access ▾" menu (17 Nov) and returns one of its items. */
+async function menuItem(row: HTMLElement, menu: 'Edit' | 'Access', item: string) {
+  await userEvent.click(within(row).getByRole('button', { name: new RegExp(`^${menu} · `) }));
+  return within(within(row).getByRole('menu')).getByRole('menuitem', { name: item });
+}
 
 const teamResponse = {
   rows: [
@@ -71,7 +76,7 @@ describe('Team & access', () => {
     expect(await screen.findByText(/3 call \+ 2 field agents/)).toBeInTheDocument();
     expect(screen.getByText(/12 staff accounts · 7 signed in now/)).toBeInTheDocument();
     const row = screen.getByText('Deepa Nair').closest('tr') as HTMLElement;
-    await userEvent.click(within(row).getByRole('button', { name: 'Lock' }));
+    await userEvent.click(await menuItem(row, 'Access', 'Lock'));
     const d = await dialog();
     await userEvent.type(within(d).getByLabelText(/Reason/), 'Left the company');
     await userEvent.click(within(d).getByRole('button', { name: 'Lock Deepa Nair' }));
@@ -106,14 +111,14 @@ describe('Team & access', () => {
     render(<Team />, '/ceo/team');
     const row = (await screen.findByText('Sanket')).closest('tr') as HTMLElement;
     expect(within(row).getByText('Co-founder')).toBeInTheDocument();
-    await userEvent.click(within(row).getByRole('button', { name: 'Title' }));
+    await userEvent.click(await menuItem(row, 'Edit', 'Title'));
     const d = await dialog();
     await userEvent.selectOptions(within(d).getByLabelText(/Title/), 'founder');
     await userEvent.click(within(d).getByRole('button', { name: 'Save title' }));
     await waitFor(() => expect(api.calls('POST /ceo/team/c2/title')[0].body).toEqual({ title: 'founder' }));
     // Only CEO-level accounts get a title.
     const agent = screen.getByText('Deepa Nair').closest('tr') as HTMLElement;
-    expect(within(agent).queryByRole('button', { name: 'Title' })).toBeNull();
+    expect(within(agent).queryByRole('menuitem', { name: 'Title', hidden: true })).toBeNull();
   });
 
   it('takes a joining date when adding staff and lets the CEO set one later', async () => {
@@ -126,7 +131,7 @@ describe('Team & access', () => {
     render(<Team />, '/ceo/team');
     await screen.findByText(/3 call \+ 2 field agents/);
     const row = screen.getByText('Deepa Nair').closest('tr') as HTMLElement;
-    await userEvent.click(within(row).getByRole('button', { name: 'Joining date' }));
+    await userEvent.click(await menuItem(row, 'Edit', 'Joining date'));
     const d = await dialog();
     fireEvent.change(within(d).getByLabelText(/Joined on/), { target: { value: '2026-10-28' } });
     await userEvent.click(within(d).getByRole('button', { name: 'Joining date · Deepa Nair' }));
@@ -149,16 +154,16 @@ describe('Team & access', () => {
     await screen.findByText(/3 call \+ 2 field agents/);
     // Agents only: a Team Lead has no owner-account switch.
     const lead = screen.getByText('Ravi Shankar').closest('tr') as HTMLElement;
-    expect(within(lead).queryByRole('button', { name: /owner account/i })).toBeNull();
+    expect(within(lead).queryByRole('menuitem', { name: /owner account/i, hidden: true })).toBeNull();
     const owner = screen.getByText('Owner Field').closest('tr') as HTMLElement;
     expect(within(owner).getByText(/owner account/)).toBeInTheDocument();
-    await userEvent.click(within(owner).getByRole('button', { name: 'Owner account · clear' }));
+    await userEvent.click(await menuItem(owner, 'Edit', 'Owner account · clear'));
     let d = await dialog();
     await userEvent.click(within(d).getByRole('button', { name: 'Clear owner account' }));
     await waitFor(() => expect(api.calls('PUT /staff/fa2/owner-account')[0]?.body).toEqual({ ownerAccount: false }));
 
     const row = screen.getByText('Deepa Nair').closest('tr') as HTMLElement;
-    await userEvent.click(within(row).getByRole('button', { name: 'Mark as owner account' }));
+    await userEvent.click(await menuItem(row, 'Edit', 'Mark as owner account'));
     d = await dialog();
     expect(within(d).getByText(/their work counts in the lists, but not in targets, leaderboard, attendance or salary/)).toBeInTheDocument();
     await userEvent.click(within(d).getByRole('button', { name: 'Mark as owner account' }));
@@ -175,6 +180,23 @@ describe('Team & access', () => {
     const form = screen.getByLabelText(/Full name/).closest('form') as HTMLElement;
     await userEvent.selectOptions(within(form).getByLabelText(/^Role/), 'team_lead');
     expect(screen.queryByRole('checkbox', { name: /Owner account/ })).toBeNull();
+  });
+
+  it('a person locked by "Lock" (no end time) shows Locked, and Access offers Unlock (17 Nov)', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /ceo/team': { ...teamResponse, rows: teamResponse.rows.map((r) => (r.id === 'ca1' ? { ...r, state: 'locked', lockedUntil: null, lockedReason: 'Left the company' } : r)) },
+      'POST /staff/ca1/unlock': { success: true },
+    });
+    render(<Team />, '/ceo/team');
+    const row = (await screen.findByText('Deepa Nair')).closest('tr') as HTMLElement;
+    expect(within(row).getByText('Locked')).toBeInTheDocument();
+    expect(within(row).queryByRole('menuitem', { name: 'Lock', hidden: true })).toBeNull();
+    await userEvent.click(await menuItem(row, 'Access', 'Unlock'));
+    const d = await dialog();
+    expect(within(d).getByText('Locked: Left the company')).toBeInTheDocument();
+    await userEvent.click(within(d).getByRole('button', { name: 'Unlock Deepa Nair' }));
+    await waitFor(() => expect(api.calls('POST /staff/ca1/unlock')).toHaveLength(1));
   });
 
   it('shows the error with a retry', async () => {
@@ -315,8 +337,8 @@ describe('Staff photo (guide, 14 Nov)', () => {
     expect(within(ravi).getByTestId('staff-initials')).toHaveTextContent('RS');
     // Not offered on an invite that has not been accepted yet.
     const meena = screen.getByText('Meena R').closest('tr') as HTMLElement;
-    expect(within(meena).queryByRole('button', { name: 'Ask for a new photo' })).not.toBeInTheDocument();
-    await userEvent.click(within(row).getByRole('button', { name: 'Ask for a new photo' }));
+    expect(within(meena).queryByRole('menuitem', { name: 'Ask for a new photo', hidden: true })).not.toBeInTheDocument();
+    await userEvent.click(await menuItem(row, 'Edit', 'Ask for a new photo'));
     const d = await dialog();
     await userEvent.type(within(d).getByLabelText(/Reason/), 'Face not clear');
     await userEvent.click(within(d).getByRole('button', { name: 'Ask for a new photo' }));
@@ -409,11 +431,11 @@ describe('Temporary passwords and password resets (rev 174–175)', () => {
     render(<Team />, '/ceo/team');
     const pending = (await screen.findByText('Meena R')).closest('tr') as HTMLElement;
     expect(within(pending).getByText('Not signed in yet')).toBeInTheDocument();
-    expect(within(pending).getByRole('button', { name: 'New temporary password' })).toBeInTheDocument();
-    expect(within(pending).queryByRole('button', { name: 'Reset sign-in completely' })).not.toBeInTheDocument();
+    expect(within(pending).getByRole('menuitem', { name: 'New temporary password', hidden: true })).toBeInTheDocument();
+    expect(within(pending).queryByRole('menuitem', { name: 'Reset sign-in completely', hidden: true })).not.toBeInTheDocument();
     const row = screen.getByText('Deepa Nair').closest('tr') as HTMLElement;
-    expect(within(row).getByRole('button', { name: 'New temporary password' })).toBeInTheDocument();
-    await userEvent.click(within(row).getByRole('button', { name: 'Reset sign-in completely' }));
+    expect(within(row).getByRole('menuitem', { name: 'New temporary password', hidden: true })).toBeInTheDocument();
+    await userEvent.click(await menuItem(row, 'Access', 'Reset sign-in completely'));
     const d = await dialog();
     expect(within(d).getByText(/For a lost phone or authenticator/)).toBeInTheDocument();
     await userEvent.click(within(d).getByRole('button', { name: 'Reset sign-in completely' }));

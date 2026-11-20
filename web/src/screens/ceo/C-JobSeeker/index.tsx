@@ -39,7 +39,8 @@ interface Detail {
   /** The CEO only: a Manager's answer has no payment or refunds. */
   activation?: { amountPaise: number; at: string; utr: string | null; confirmedBy: string | null } | null;
   refunds?: { id: string; code: string; amountPaise: number; status: string; at: string }[];
-  consents?: { purpose: string; granted: boolean; withdrawn: boolean; at: string | null }[];
+  /** Every consent item he is asked for, once each (17 Nov): given (when), withdrawn (when) or not given. */
+  consents?: { purpose: string; required?: boolean; granted: boolean; withdrawn: boolean; at: string | null }[];
   profile: {
     pincode?: string | null;
     dateOfBirth?: string | null;
@@ -320,13 +321,19 @@ export default function JobSeekerDetail() {
             ]}
           />
           {(d.consents ?? []).length > 0 && (
-            <div className="ceo-note" style={{ marginTop: 8 }}>
-              Consent items:{' '}
-              {(d.consents ?? []).map((c) => (
-                <StatusPill key={c.purpose} tone={c.granted ? 'good' : c.withdrawn ? 'danger' : 'muted'}>
-                  {humanize(c.purpose)} · {c.granted ? 'given' : c.withdrawn ? 'withdrawn' : 'not given'}
-                </StatusPill>
-              ))}
+            <div className="ceo-note" style={{ marginTop: 8 }} data-testid="consent-items">
+              <div>Consent items</div>
+              <ul className="ceo-list" aria-label="Consent items">
+                {(d.consents ?? []).map((c) => (
+                  <li key={c.purpose}>
+                    {humanize(c.purpose)}
+                    {c.required === false ? ' (optional)' : ''} ·{' '}
+                    <StatusPill tone={c.granted ? 'good' : c.withdrawn ? 'danger' : 'muted'}>
+                      {c.granted ? `Given${c.at ? ` ${formatDateTimeIST(c.at)}` : ''}` : c.withdrawn ? `Withdrawn${c.at ? ` ${formatDateTimeIST(c.at)}` : ''}` : 'Not given'}
+                    </StatusPill>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
         </Card>

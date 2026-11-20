@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useT } from '../i18n/I18nProvider';
 import { UiIcon } from './Icon';
+import { MenuItemContext } from './RowMenu';
 
 /**
  * Accessible dialog: focus moves into it, Tab stays inside, Escape and the
@@ -68,6 +69,8 @@ export function Modal({ open, onClose, title, children, footer, dismissible = tr
 
   if (!open) return null;
   return createPortal(
+    // A dialog opened from a row menu item: its own buttons are ordinary buttons again.
+    <MenuItemContext.Provider value={false}>
     <div className="lb-modal" onMouseDown={(e) => e.target === e.currentTarget && dismissible && onClose()}>
       <div
         ref={panel}
@@ -91,7 +94,8 @@ export function Modal({ open, onClose, title, children, footer, dismissible = tr
         <div className="lb-modal__body">{children}</div>
         {footer && <div className="lb-modal__foot">{footer}</div>}
       </div>
-    </div>,
+    </div>
+    </MenuItemContext.Provider>,
     document.body,
   );
 }

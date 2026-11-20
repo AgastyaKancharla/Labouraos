@@ -16,9 +16,14 @@ const AGENT_ROLES = ['call_agent', 'field_agent'];
 
 export type StaffState = 'active' | 'invite_pending' | 'locked' | 'deactivated';
 
-/** The status word shown on Team & access: deactivated, then locked, then invite, then active. */
-export function staffState(row: { status: string; lockedUntil: Date | null }, now: Date): StaffState {
+/**
+ * The status word shown on Team & access: deactivated, then locked, then invite, then active. Locked is a
+ * lock by a person (lockedByStaffId: "Lock" on Team & access / Staff & access, no end time) or a timed lock
+ * after wrong passwords (lockedUntil still ahead) — as Manager's Staff & access shows it.
+ */
+export function staffState(row: { status: string; lockedUntil: Date | null; lockedByStaffId?: string | null }, now: Date): StaffState {
   if (row.status === 'deactivated') return 'deactivated';
+  if (row.lockedByStaffId) return 'locked';
   if (row.lockedUntil && row.lockedUntil.getTime() > now.getTime()) return 'locked';
   if (row.status === 'pending_invite') return 'invite_pending';
   return 'active';
@@ -129,6 +134,7 @@ export class CeoTeamService {
           totpEnabled: true,
           lockedUntil: true,
           lockedReason: true,
+          lockedByStaffId: true,
           failedLoginCount: true,
           teamName: true,
           teamLeadId: true,
