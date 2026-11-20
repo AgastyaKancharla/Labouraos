@@ -103,6 +103,12 @@ model JobSeeker {
   referredBy                Referral?   @relation(fields: [referredById], references: [id], onDelete: SetNull)
   registeredByStaffId       String?
   registeredBy              Staff?      @relation("JobSeekerRegisteredBy", fields: [registeredByStaffId], references: [id], onDelete: SetNull)
+  /// Team Lead portal (Master Guide rev 194, 17 Nov): the agent a Team Lead assigned this job
+  /// seeker to. Counts as an owner (with registeredBy) for team scope; never changes
+  /// registeredByStaffId (registration credit and the self-approval rule stay there).
+  assignedStaffId           String?
+  assignedStaff             Staff?      @relation("JobSeekerAssignedTo", fields: [assignedStaffId], references: [id], onDelete: SetNull)
+  assignedAt                DateTime?
   paymentReceivedAt         DateTime?   // when the ₹499 activation fee was received
   guaranteeFloorPaise       Int?        // frozen salary guarantee term once activation is paid
   termsAcceptedAt           DateTime?   // when he ticked the exact terms on the registration link (Phase 20 Task 5)
@@ -176,6 +182,7 @@ model JobSeeker {
   @@index([status])
   @@index([status, paymentReceivedAt])
   @@index([registeredByStaffId])
+  @@index([assignedStaffId])
 }
 
 model JobSeekerTrade {
@@ -401,11 +408,17 @@ model Referral {
   /// the CEO and Managers only.
   registeredByStaffId String?
   registeredBy  Staff?      @relation("ReferralRegisteredBy", fields: [registeredByStaffId], references: [id], onDelete: SetNull)
+  /// Team Lead portal (rev 194): the agent a Team Lead assigned this partner to (owner for team
+  /// scope with registeredBy; registeredByStaffId never changes).
+  assignedStaffId String?
+  assignedStaff Staff?      @relation("ReferralAssignedTo", fields: [assignedStaffId], references: [id], onDelete: SetNull)
+  assignedAt    DateTime?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
   @@index([city])
   @@index([registeredByStaffId])
+  @@index([assignedStaffId])
 }
 
 model Business {
@@ -905,6 +918,8 @@ model Staff {
   capturedVacancies Vacancy[]
   registeredJobSeekers JobSeeker[]      @relation("JobSeekerRegisteredBy")
   registeredReferrals Referral[]        @relation("ReferralRegisteredBy")
+  assignedJobSeekers JobSeeker[]       @relation("JobSeekerAssignedTo")
+  assignedReferrals Referral[]          @relation("ReferralAssignedTo")
   candidateIntroductionsShown CandidateIntroduction[] @relation("CandidateIntroductionShownBy")
   createdPlacements    Placement[]      @relation("PlacementCreatedBy")
   interviewsProposed   Interview[]      @relation("InterviewProposedBy")

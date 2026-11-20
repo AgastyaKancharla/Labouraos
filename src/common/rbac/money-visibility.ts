@@ -23,6 +23,13 @@
  */
 export const OWN_PAY_ANSWER = '__labouraOwnPayAnswer';
 
+/**
+ * Set on a request whose answer is only private photo links (profile photos,
+ * rev 194): no money in it, and the rupee-text rule could change characters
+ * inside a signed link or a data: URI, so stripMoney is not run on it.
+ */
+export const PHOTO_LINK_ANSWER = '__labouraPhotoLinkAnswer';
+
 /** Roles that never receive a money figure. */
 export const MONEY_BLIND_ROLES: ReadonlySet<string> = new Set(['manager']);
 

@@ -7,7 +7,8 @@ import { StatGrid, StatTile } from '../../../components/StatTile';
 import { StatusPill } from '../../../components/Badge';
 import { TopBar } from '../../../components/TopBar';
 import { formatINR } from '../../../lib/format/money';
-import { homeBack, useRecordsPortal } from '../_kit/records';
+import { homeBack, useInitialParam, useInitialPeriod, useRecordsPortal } from '../_kit/records';
+import { AssignButton, SectionSwitch, sectionQuery, useSection } from '../_kit/assign';
 import { DateFilter, FilterPanel, OpenLink, PagedTable, SearchField, SelectFilter, dateOrDash, humanize, rangeQuery, useCeoList, useDebounced, type ListPeriod } from '../_kit/kit';
 import { BUSINESS_STATUS } from '../_kit/labels';
 import { BusinessTabs } from '../_kit/tabs';
@@ -46,16 +47,17 @@ interface Summary {
 }
 
 export default function BusinessesList() {
-  const { api: base, ceo, link, to } = useRecordsPortal();
+  const { api: base, ceo, sections, link, to } = useRecordsPortal();
+  const [section, setSection] = useSection();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState(useInitialParam('status'));
   const [agent, setAgent] = useState('');
   const [area, setArea] = useState('');
   const [type, setType] = useState('');
-  const [period, setPeriod] = useState<ListPeriod>(null);
+  const [period, setPeriod] = useState<ListPeriod>(useInitialPeriod());
   const q = useDebounced(search);
-  const list = useCeoList<Row, Extra, Summary>(`${base}/businesses`, { search: q, status, agent, area, type, ...rangeQuery(period) });
+  const list = useCeoList<Row, Extra, Summary>(`${base}/businesses`, { search: q, status, agent, area, type, ...rangeQuery(period), ...sectionQuery(sections, section) });
   const d = list.query.data;
   const s = d?.summary;
   const loading = list.query.isPending;
@@ -65,6 +67,8 @@ export default function BusinessesList() {
 
   const appLabels = useAppLabels('business', (list.query.data?.rows ?? []).map((r) => r.id));
   const columns: Column<Row>[] = [
+    // Not assigned: Assign comes first, so it is in reach on a phone without scrolling the table.
+    ...(sections && section === 'unassigned' ? [{ key: 'assign', header: '', cell: (r: Row) => <AssignButton kind="business" id={r.id} name={r.name} /> } satisfies Column<Row>] : []),
     { key: 'code', header: 'Code', cell: (r) => <span className="code">{r.code}</span>, csv: (r) => r.code },
     {
       key: 'name',
@@ -114,6 +118,7 @@ export default function BusinessesList() {
         subtitle={ceo ? 'Every business, its account agent, what it has paid and anything that needs a look.' : 'Your teams’ businesses, their account agents and anything that needs a look.'}
       />
       {ceo && <BusinessTabs />}
+      {sections && <SectionSwitch value={section} onChange={setSection} noun="businesses" />}
       <StatGrid>
         <StatTile label="Active businesses" value={s?.active ?? '—'} tone="royal" loading={loading} onClick={tile('verified')} active={status === 'verified'} />
         <StatTile label="Signed this month" value={s?.signedThisMonth ?? '—'} tone="good" loading={loading} onClick={tile('signed_this_month')} active={status === 'signed_this_month'} />

@@ -53,6 +53,10 @@ export const NOTIFICATION_KINDS = [
   'behind_pace',
   // Someone's password was reset (rev 174–175): for their boss and the CEO.
   'password_reset',
+  // A Team Lead or Manager assigned a record to this person (rev 196).
+  'job_seeker_assigned',
+  'referral_assigned',
+  'business_assigned',
 ] as const;
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
@@ -61,7 +65,7 @@ export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
  * Kinds that tell someone something rather than ask them to do something.
  * Reading them is the work: marking one as seen clears it.
  */
-export const INFORMATIONAL_KINDS: readonly NotificationKind[] = ['request_decided', 'hit_reversed', 'stuck_work_reminder', 'agent_reminder', 'payslip_ready', 'weekly_report', 'fee_unpaid_reminder', 'new_match_registered', 'password_reset'];
+export const INFORMATIONAL_KINDS: readonly NotificationKind[] = ['request_decided', 'hit_reversed', 'stuck_work_reminder', 'agent_reminder', 'payslip_ready', 'weekly_report', 'fee_unpaid_reminder', 'new_match_registered', 'password_reset', 'job_seeker_assigned', 'referral_assigned', 'business_assigned'];
 
 /** Kinds that carry rupee amounts. They only ever go to the CEO or Finance. */
 export const MONEY_KINDS: readonly NotificationKind[] = [
@@ -162,6 +166,10 @@ const LINKS: Record<NotificationKind, LinkTable> = {
   new_match_registered: { field_agent: '' },
   behind_pace: { team_lead: 'agents/:id', manager: 'agents/:id', ceo: 'targets' },
   password_reset: { team_lead: 'login-codes', manager: 'login-codes', ceo: 'login-codes' },
+  // Field agents read their bell in Laboura Field (no web link); the others open the record.
+  job_seeker_assigned: { call_agent: 'people/:id', team_lead: 'job-seekers/:id', manager: 'job-seekers/:id', field_agent: '' },
+  referral_assigned: { call_agent: 'people/:id', team_lead: 'referrals/:id', manager: 'referrals/:id', field_agent: '' },
+  business_assigned: { team_lead: 'businesses/:id', manager: 'businesses/:id', field_agent: '' },
 };
 
 /**

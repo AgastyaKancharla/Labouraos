@@ -17,18 +17,23 @@ import { TeamLeadChecksService } from './team-lead-checks.service';
 import { TeamLeadController } from './team-lead.controller';
 import { TeamLeadScreensService } from './team-lead-screens.service';
 import { IdCheckPhotoModule } from '../aadhaar-qr/id-check-photo.module';
+import { CeoPortalModule } from '../ceo-portal/ceo-portal.module';
+import { RefundPriorityModule } from '../refund-priority/refund-priority.module';
+import { ScreensManagerModule } from '../screens-manager/screens-manager.module';
 import { CompanyPlanModule } from '../company-plan/company-plan.module';
-import { ManagerTreeService } from '../screens-manager/manager-tree.service';
+import { TeamLeadRecordsController } from './team-lead-records.controller';
+import { TeamLeadRecordsService } from './team-lead-records.service';
 import { TeamLeadTargetsService } from './team-lead-targets.service';
 
 @Module({
-  imports: [PrismaModule, AuditModule, AttendanceModule, JobSeekerModule, NotificationModule, ReviewFlagModule, ReportingScopeModule, TargetModule, StaffPhotoModule, IdCheckPhotoModule, CompanyPlanModule],
-  controllers: [TeamLeadController],
+  imports: [PrismaModule, AuditModule, AttendanceModule, JobSeekerModule, NotificationModule, ReviewFlagModule, ReportingScopeModule, TargetModule, StaffPhotoModule, IdCheckPhotoModule, CeoPortalModule, ScreensManagerModule, RefundPriorityModule, CompanyPlanModule],
+  controllers: [TeamLeadController, TeamLeadRecordsController],
   providers: [
     TeamLeadScreensService,
     TeamLeadChecksService,
+    TeamLeadRecordsService,
+    // ManagerTreeService comes from ScreensManagerModule (its work counts back the targets' "done").
     TeamLeadTargetsService,
-    ManagerTreeService,
     {
       // Visit photos live with the business photos (private bucket); read here through signed links only.
       provide: BUSINESS_PHOTO_STORAGE,

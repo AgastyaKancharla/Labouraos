@@ -11,6 +11,7 @@ import { NotificationService } from '../notification/notification.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { ReportingScopeService } from '../staff/reporting-scope.service';
 import { Actor, TeamLeadScreensService } from './team-lead-screens.service';
+import { RecordSectionsService } from '../screens-manager/record-sections.service';
 import { QUALITY_CHECKLIST, scoreOf } from './quality';
 import { IdCheckPhotoService, verifiedByUidai } from '../aadhaar-qr/id-check-photo.service';
 import { OtherIdService } from '../aadhaar-qr/other-id.service';
@@ -83,6 +84,7 @@ export class TeamLeadChecksService {
     private readonly flags: ReviewFlagService,
     private readonly notifications: NotificationService,
     @Inject(BUSINESS_PHOTO_STORAGE) private readonly photoStore: BusinessPhotoStorage,
+    private readonly sections: RecordSectionsService,
     @Optional() @Inject(CANDIDATE_PHOTO_STORAGE) private readonly candidatePhotos?: CandidatePhotoStorage,
     @Optional() private readonly idPhotos?: IdCheckPhotoService,
     @Optional() private readonly otherIds?: OtherIdService,
@@ -211,28 +213,15 @@ export class TeamLeadChecksService {
   /** Move a business to another field agent in the team; its open visits and follow-ups move with it. */
   async moveBusiness(actor: Actor, businessId: string, body: { toStaffId?: string }) {
     const team = await this.screens.members(actor);
-    const business = await this.prisma.business.findUnique({ where: { id: businessId }, select: { id: true, code: true, accountAgentId: true } });
+    const business = await this.prisma.business.findUnique({ where: { id: businessId }, select: { id: true, code: true, city: true, accountAgentId: true } });
     if (!business) throw new NotFoundException('Business not found');
     const from = team.find((row) => row.id === business.accountAgentId);
     if (!from) throw new ForbiddenException("Only your team's businesses move here; moving to another team is done by the Manager");
     const to = team.find((row) => row.id === body?.toStaffId && row.role === 'field_agent');
     if (!to) throw new BadRequestException('Pick a field agent in your team');
     if (to.id === from.id) throw new BadRequestException('It is already with this agent');
-    const now = this.clock.now();
-    const moved = await this.prisma.$transaction(async (tx) => {
-      await tx.business.update({ where: { id: business.id }, data: { accountAgentId: to.id, accountAgentAssignedAt: now } });
-      const followUps = await tx.followUpTask.updateMany({ where: { subjectType: 'business', subjectId: business.id, status: 'pending', assignedStaffId: from.id }, data: { assignedStaffId: to.id } });
-      const visits = await tx.visitAssignment.updateMany({ where: { businessId: business.id, status: { in: ['pending', 'assigned'] }, assignedStaffId: from.id }, data: { assignedStaffId: to.id } });
-      return { followUps: followUps.count, visits: visits.count };
-    });
-    await this.audit.log({
-      actorId: actor.id,
-      action: 'business.account_agent_moved',
-      entityType: 'business',
-      entityCode: business.code,
-      before: { accountAgentId: from.id },
-      after: { accountAgentId: to.id, followUpsMoved: moved.followUps, visitsMoved: moved.visits },
-    });
+    // The one account-agent change of the Team Lead and Manager portals (RecordSectionsService).
+    const moved = await this.sections.setAccountAgent(actor, business, to.id);
     return { ok: true, business: business.code, from, to, ...moved };
   }
 

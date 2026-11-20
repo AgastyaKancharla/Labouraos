@@ -2,7 +2,7 @@ import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@
 import { Request } from 'express';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { OwnTeam, businessOwners } from '../../common/rbac/own-team';
+import { OwnTeam, businessOwners, personOwners } from '../../common/rbac/own-team';
 
 /**
  * Who may act on one call (/calls/:id, its outcome, notes and recording),
@@ -66,11 +66,11 @@ export class CallPlaceGuard implements CanActivate {
     const where = { OR: [{ id: ref }, { code: ref }] };
     let owners: Array<string | null> | null = null;
     if (body.subjectType === 'job_seeker') {
-      const seeker = await this.prisma.jobSeeker.findFirst({ where, select: { registeredByStaffId: true } });
-      owners = seeker ? [seeker.registeredByStaffId] : null;
+      const seeker = await this.prisma.jobSeeker.findFirst({ where, select: { registeredByStaffId: true, assignedStaffId: true } });
+      owners = seeker ? personOwners(seeker) : null;
     } else if (body.subjectType === 'referral') {
-      const partner = await this.prisma.referral.findFirst({ where, select: { registeredByStaffId: true } });
-      owners = partner ? [partner.registeredByStaffId] : null;
+      const partner = await this.prisma.referral.findFirst({ where, select: { registeredByStaffId: true, assignedStaffId: true } });
+      owners = partner ? personOwners(partner) : null;
     } else if (body.subjectType === 'business') {
       const business = await this.prisma.business.findFirst({
         where,

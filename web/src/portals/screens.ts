@@ -132,6 +132,19 @@ export const teamLeadScreens: readonly ScreenDef[] = [
   { id: 'T-Work', path: 'work', title: 'screen.T-Work' },
   // Customer app (proposal 4.4): the team's app sign-ups, move one to another agent.
   { id: 'T-AppSignups', path: 'app-signups', title: 'screen.T-AppSignups' },
+  // The CEO's pipeline lists and profiles, reused (src/screens/ceo, useRecordsPortal; rev 194): the API keeps
+  // them to "My team" or "Not assigned" (unowned in his city), masks phone numbers and leaves out every rupee.
+  { id: 'JobSeekers', path: 'job-seekers', title: 'screen.JobSeekers' },
+  { id: 'C-JobSeeker', path: 'job-seekers/:id', title: 'screen.C-JobSeeker' },
+  { id: 'C-Referrals', path: 'referrals', title: 'screen.C-Referrals' },
+  { id: 'C-Partner', path: 'referrals/:id', title: 'screen.C-Partner' },
+  { id: 'C-Businesses', path: 'businesses', title: 'screen.C-Businesses' },
+  { id: 'C-Business', path: 'businesses/:id', title: 'screen.C-Business' },
+  { id: 'C-Vacancies', path: 'vacancies', title: 'screen.C-Vacancies' },
+  { id: 'C-Vacancy', path: 'vacancies/:id', title: 'screen.C-Vacancy' },
+  { id: 'C-Interviews', path: 'interviews', title: 'screen.C-Interviews' },
+  { id: 'C-Placements', path: 'placements', title: 'screen.C-Placements' },
+  { id: 'C-Placement', path: 'placements/:id', title: 'screen.C-Placement' },
   { id: 'T-LoginCodes', path: 'login-codes', title: 'screen.T-LoginCodes' },
   { id: 'T-Flags', path: 'flags', title: 'screen.T-Flags' },
   { id: 'T-Notifications', path: 'notifications', title: 'screen.T-Notifications' },

@@ -120,6 +120,7 @@ export class RefundPriorityService {
       include: {
         trades: { select: { trade: true, isPrimary: true } },
         registeredBy: { select: { id: true, code: true, name: true } },
+        assignedStaff: { select: { id: true, code: true, name: true } },
         interviews: { select: { status: true, offerSentAt: true } },
         hits: {
           where: { reversedAt: null, supersededAt: null, reason: { in: [...REFUND_FORFEITING_HIT_REASONS] } },
@@ -132,6 +133,20 @@ export class RefundPriorityService {
         },
       },
     });
+    // Who works on a job seeker (rev 194/196): the agent a Team Lead or Manager assigned him to,
+    // else the registering agent, else for an app sign-up the agent the sign-up is given to.
+    const appIds = seekers.filter((s) => !s.assignedStaff && !s.registeredBy).map((s) => s.id);
+    const trackers = appIds.length
+      ? await this.prisma.signupTracker.findMany({
+          where: { subjectType: 'job_seeker', subjectId: { in: appIds }, assignedStaffId: { not: null } },
+          orderBy: { updatedAt: 'asc' },
+          select: { subjectId: true, assignedStaffId: true },
+        })
+      : [];
+    const trackerAgentIds = [...new Set(trackers.map((t) => t.assignedStaffId!))];
+    const trackerAgents = trackerAgentIds.length ? await this.prisma.staff.findMany({ where: { id: { in: trackerAgentIds } }, select: { id: true, code: true, name: true } }) : [];
+    const trackerAgentById = new Map(trackerAgents.map((a) => [a.id, a]));
+    const appAgent = new Map(trackers.map((t) => [t.subjectId!, trackerAgentById.get(t.assignedStaffId!) ?? null]));
     for (const s of seekers) {
       const paidAt = s.paymentReceivedAt as Date;
       if (s.hits.length > 0) continue;
@@ -156,7 +171,7 @@ export class RefundPriorityService {
         bucket,
         deadline: deadline.toISOString(),
         priority: true,
-        agent: s.registeredBy,
+        agent: s.assignedStaff ?? s.registeredBy ?? appAgent.get(s.id) ?? null,
         businessId: null,
         businessName: null,
         atStakePaise: activation?.amount ?? policy.activationFeePaise,
