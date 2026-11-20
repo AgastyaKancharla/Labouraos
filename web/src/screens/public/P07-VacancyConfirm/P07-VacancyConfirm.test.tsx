@@ -11,6 +11,14 @@ const details = {
 const render = () => renderScreen(<VacancyConfirm />, { portal: 'public', path: '/p/vacancy-confirm/vtok', route: '/p/vacancy-confirm/:token' });
 
 describe('P07-VacancyConfirm', () => {
+  it('17 Nov: a business shift shows its name and times; older free text shows as written', async () => {
+    mockApi({ 'GET /vacancy-confirm/vtok': { ...details, shift: 'Morning 07:00–15:00' } });
+    render();
+    expect(await screen.findByText('Morning 07:00–15:00')).toBeInTheDocument();
+    expect(screen.queryByText('any shift')).not.toBeInTheDocument();
+  });
+
+
   it('shows the vacancy (job, people, salary, shift, start date, business); one button sends the code and typing it confirms (rev 193)', async () => {
     const api = mockApi({
       'GET /vacancy-confirm/vtok': details,

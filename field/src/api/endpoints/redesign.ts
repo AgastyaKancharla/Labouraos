@@ -32,6 +32,7 @@ export type NeedsKind =
   | 'vacancy_awaiting_owner'
   | 'vacancy_draft'
   | 'ready_show_candidates'
+  | 'vacancies_to_fill'
   | 'joining_due'
   | 'revisit_due'
   | 'followup_task';
@@ -50,6 +51,8 @@ export interface NeedsItem {
   vacancy?: { code: string; trade: string; headcount: number };
   placement?: { code: string; joiningDate: string | null; candidateFirstName: string };
   revisitOn?: string | null;
+  /** vacancies_to_fill (17 Nov): open seats left across the business's open vacancies. */
+  toFill?: { count: number; vacancies: number; trades: string[] };
   taskKind?: string;
   code?: string;
 }
@@ -78,8 +81,7 @@ export type DayItemType =
   | 'business_registered'
   | 'job_seeker_registered'
   | 'referral_registered'
-  | 'vacancy_added'
-  | 'vacancy_confirmed'
+  // 'vacancy_added' and 'vacancy_confirmed' are no longer rows (17 Nov): both show on the business's history.
   | 'candidates_shown'
   | 'interview_booked'
   | 'interview_attended';
@@ -95,6 +97,68 @@ export interface DayItem {
   /** The one row per business that the Onboarded number counts that day (rev 189). */
   countsAsOnboarded?: boolean;
   target: { type: 'visit' | 'business' | 'job_seeker' | 'referral' | 'vacancy' | 'interview'; id: string; businessId?: string | null; vacancyId?: string | null };
+}
+
+/** One row of GET /field-work/visits/all (My visits → All visits, 17 Nov). */
+export interface AllVisitRow {
+  id: string;
+  at: string;
+  visitedAt: string;
+  title: string;
+  subtitle: string | null;
+  businessId: string | null;
+  businessCode: string | null;
+  purpose: string | null;
+  /** The visit's result, or "unfinished". */
+  status: string;
+  durationSeconds: number | null;
+  hasBoardPhoto: boolean;
+  hasSelfie: boolean;
+}
+
+export interface AllVisitsQuery {
+  q?: string;
+  /** IST dates, YYYY-MM-DD. */
+  from?: string;
+  to?: string;
+  /** The `nextBefore` of the previous page. */
+  before?: string;
+}
+
+/** GET /field-work/visits/all: my whole visit history, newest first. */
+export interface AllVisitsPage {
+  items: AllVisitRow[];
+  nextBefore: string | null;
+}
+
+/** POST /maps-link/resolve (17 Nov): the pin from a Google Maps link and its address from OpenStreetMap. */
+export interface ResolvedMapsLink {
+  latitude: number;
+  longitude: number;
+  placeName: string | null;
+  address: {
+    shopNumber: string | null;
+    street: string | null;
+    area: string | null;
+    city: string | null;
+    state: string | null;
+    pincode: string | null;
+    displayName: string | null;
+  } | null;
+  shortLink: boolean;
+}
+
+/** One of a business's own shifts (17 Nov): GET/POST/PATCH/DELETE /businesses/:id/shifts. */
+export interface BusinessShift {
+  id: string;
+  businessId: string;
+  name: string;
+  /** "HH:MM", IST. */
+  startTime: string;
+  endTime: string;
+  /** "Morning 07:00–15:00". */
+  label: string;
+  category: 'day' | 'night';
 }
 
 /** GET /field-work/day?date= (Today's work) */
@@ -204,6 +268,24 @@ export interface AgreementChecklist {
 
 export type CandidatesHiddenReason = 'suspended' | 'paused' | 'agreement_not_signed' | 'visit_outside_area' | 'not_verified' | null;
 
+export interface PageVisit {
+  id: string;
+  at: string;
+  durationSeconds: number | null;
+  purpose: string | null;
+  outcome: string | null;
+  staffName: string | null;
+  mine: boolean;
+  hasBoardPhoto: boolean;
+  hasSelfie: boolean;
+}
+
+export type VacancyEvent = 'added' | 'sent' | 'confirmed' | 'filled' | 'closed';
+
+export type HistoryEntry =
+  | { kind: 'visit'; at: string; visit: PageVisit }
+  | { kind: 'vacancy'; at: string; event: VacancyEvent; vacancyId: string; code: string; trade: string; headcount: number; byName: string | null };
+
 /** GET /field-work/businesses/:ref/page (the one business page). */
 export interface BusinessPage {
   id: string;
@@ -241,17 +323,9 @@ export interface BusinessPage {
     inGuarantee: number;
     recentInterviews: { id: string; code: string; startsAt: string; status: string; result: string | null; candidateName: string }[];
   };
-  visits: {
-    id: string;
-    at: string;
-    durationSeconds: number | null;
-    purpose: string | null;
-    outcome: string | null;
-    staffName: string | null;
-    mine: boolean;
-    hasBoardPhoto: boolean;
-    hasSelfie: boolean;
-  }[];
+  visits: PageVisit[];
+  /** Visits and vacancy events, newest first (17 Nov). Older servers send only `visits`. */
+  history?: HistoryEntry[];
   actions: { recordVisit: boolean; callOwner: boolean; addVacancy: boolean; resendAgreement: boolean; showCandidates: boolean };
 }
 
@@ -324,7 +398,13 @@ const enc = encodeURIComponent;
 export const redesignApi = (api: ApiClient) => ({
   today: () => api.get<TodayView>('/field-work/today'),
   day: (date?: string) => api.get<DayView>('/field-work/day', { query: { date } }),
+  allVisits: (query: AllVisitsQuery) =>
+    api.get<AllVisitsPage>('/field-work/visits/all', { query: { q: query.q || undefined, from: query.from, to: query.to, before: query.before } }),
   visit: (id: string) => api.get<VisitDetails>(`/field-visits/${enc(id)}`),
+  shifts: (businessId: string) => api.get<BusinessShift[]>(`/businesses/${enc(businessId)}/shifts`),
+  addShift: (businessId: string, body: { name: string; startTime: string; endTime: string }) => api.post<BusinessShift>(`/businesses/${enc(businessId)}/shifts`, body),
+  removeShift: (businessId: string, shiftId: string) => api.delete<{ removed: true }>(`/businesses/${enc(businessId)}/shifts/${enc(shiftId)}`),
+  resolveMapsLink: (url: string) => api.post<ResolvedMapsLink>('/maps-link/resolve', { url }),
   changeResult: (id: string, body: ChangeResultBody) => api.post<VisitDetails>(`/field-visits/${enc(id)}/change-result`, body),
   myBusinesses: (q?: string) => api.get<{ query: string; results: MyBusinessRow[] }>('/field-work/businesses', { query: { q: q || undefined } }),
   businessPage: (ref: string) => api.get<BusinessPage>(`/field-work/businesses/${enc(ref)}/page`),

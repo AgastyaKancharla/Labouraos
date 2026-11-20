@@ -2,9 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useI18n } from '../../../i18n/I18nProvider';
-import type { MessageKey } from '../../../i18n/en';
 import { interviewApi, type BookedDetails } from '../shared/api';
-import { dayLabel, dayTimeLabel, rupeeRange, timeLabel } from '../shared/format';
+import { dayLabel, dayTimeLabel, rupeeRange, shiftText, timeLabel } from '../shared/format';
 import { ActionError, LinkProblem, Loading, Muted, Ok, PageTitle, Row, Warn } from '../shared/ui';
 
 /**
@@ -12,13 +11,6 @@ import { ActionError, LinkProblem, Loading, Muted, Ok, PageTitle, Row, Warn } fr
  * and the interview time — no business name yet. He has 48 hours to reply.
  * Only after "Yes" does he see the business, address and who to ask for.
  */
-const SHIFT: Record<string, MessageKey> = {
-  day: 'pub.shift.day',
-  night: 'pub.shift.night',
-  rotational: 'pub.shift.rotational',
-  any: 'pub.shift.any',
-};
-
 export default function OfferReply() {
   const { t, language } = useI18n();
   const token = useParams<{ token: string }>().token ?? '';
@@ -84,7 +76,7 @@ export default function OfferReply() {
         </Row>
         {o.area && <Row label={t('pub.offer.area')}>{o.area}</Row>}
         {o.salaryMinPaise !== null && <Row label={t('pub.offer.salary')}>{`${rupeeRange(o.salaryMinPaise, o.salaryMaxPaise)} ${period}`}</Row>}
-        {o.shift && <Row label={t('pub.offer.shift')}>{t(SHIFT[o.shift] ?? 'pub.shift.any')}</Row>}
+        {o.shift && <Row label={t('pub.offer.shift')}>{shiftText(o.shift, t)}</Row>}
         <Row label={t('pub.offer.interview')}>
           {t('pub.offer.interviewValue', { day: dayLabel(o.slotStartsAt, language), from: timeLabel(o.slotStartsAt, language), to: timeLabel(o.slotEndsAt, language) })}
         </Row>

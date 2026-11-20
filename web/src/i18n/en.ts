@@ -13,6 +13,7 @@ import { staffPhotoEn } from './staffPhoto';
 import { appSignupsEn } from './appSignups';
 
 import { callAgentEn } from '../screens/call-agent/_lib/i18n.en';
+import { fixes17En } from './fixes17';
 export const en = {
   "app.name": "Laboura",
   "common.loading": "Loading…",
@@ -618,10 +619,13 @@ export const en = {
   ...staffPhotoEn,
   ...appSignupsEn,
   ...callAgentEn,
+  ...fixes17En,
   ...payslipEn,
   ...attendanceEn,
   ...workerLeftEn,
 } as const;
 
 export type MessageKey = keyof typeof en;
-export type Messages = Record<MessageKey, string>;
+/** Keys added on 17 Nov (fixes17.ts): English only, so Kannada and Hindi have no copy (English shows). */
+export type EnglishOnlyKey = keyof typeof fixes17En;
+export type Messages = Record<Exclude<MessageKey, EnglishOnlyKey>, string> & Partial<Record<EnglishOnlyKey, string>>;

@@ -11,6 +11,14 @@ const offer = {
 const render = () => renderScreen(<OfferReply />, { portal: 'public', path: '/p/offer/otok', route: '/p/offer/:token' });
 
 describe('P03-OfferReply / P03b-OfferYes', () => {
+  it('17 Nov: a business shift shows its name and times, never "any shift"', async () => {
+    mockApi({ 'GET /interviews/reply/otok': { ...offer, shift: 'Night 22:00–06:00' } });
+    render();
+    expect(await screen.findByText('Night 22:00–06:00')).toBeInTheDocument();
+    expect(screen.queryByText('any shift')).not.toBeInTheDocument();
+  });
+
+
   it('shows the offer without the business, and after Yes shows the booking', async () => {
     const api = mockApi({
       'GET /interviews/reply/otok': offer,

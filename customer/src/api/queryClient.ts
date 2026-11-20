@@ -25,5 +25,7 @@ export function createQueryClient(): QueryClient {
 export const queryKeys = {
   formOptions: ['form-options'] as const,
   home: (profileId: string) => ['home', profileId] as const,
+  /** The business's own shifts (17 Nov). */
+  shifts: (profileId: string) => ['shifts', profileId] as const,
   homes: ['home'] as const,
 };

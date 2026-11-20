@@ -89,6 +89,16 @@ export const SHIFT_KEYS: Record<string, MessageKey> = {
   any: 'selling.shift.any',
 };
 
+/**
+ * A vacancy's shift as words: a day / night / rotational word translated, a
+ * business shift's label ("Morning 07:00–15:00", 17 Nov) or older free text
+ * as it was written.
+ */
+export function vacancyShiftText(shift: string | null | undefined, t: (key: MessageKey) => string): string | null {
+  if (!shift) return null;
+  return SHIFT_KEYS[shift] ? t(SHIFT_KEYS[shift]) : shift;
+}
+
 export const REASON_KEYS: Record<string, MessageKey> = {
   skills: 'selling.reason.skills',
   experience: 'selling.reason.experience',

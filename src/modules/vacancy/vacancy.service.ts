@@ -20,6 +20,7 @@ import { VACANCY_EXTRAS } from './vacancy.constants';
 import { EditPolicyService, EditActor, pickEditableFields } from '../../common/edit-policy/edit-policy.service';
 import { normalizeTradeName, TradeService } from '../trade/trade.service';
 import { VacancyConfirmationService } from './vacancy-confirmation.service';
+import { shiftLabel } from '../business/business-shift';
 import { BUSINESS_SUSPENDED_MESSAGE, businessAccessMessage, businessCandidateAccess, isBusinessSuspended } from '../business/business-candidate-access';
 
 const IST_OFFSET_MINUTES = 330;
@@ -83,6 +84,20 @@ export class VacancyService {
     private readonly confirmationService: VacancyConfirmationService,
   ) {}
 
+  /**
+   * The business shift a vacancy picks (17 Nov): it must be one of this
+   * business's shifts. The vacancy keeps its own copy (label in `shift`, and
+   * the times matching reads), so a later change to the list never changes it.
+   */
+  private async pickedShift(businessId: string, shiftId: unknown) {
+    if (shiftId === undefined || shiftId === null || shiftId === '') return null;
+    const shift = typeof shiftId === 'string' && shiftId.length <= 64
+      ? await this.prisma.businessShift.findFirst({ where: { id: shiftId, businessId } })
+      : null;
+    if (!shift) throw new BadRequestException('businessShiftId must be one of this business\'s shifts');
+    return { shift: shiftLabel(shift), businessShiftId: shift.id, shiftStartTime: shift.startTime, shiftEndTime: shift.endTime };
+  }
+
   async update(id: string, dto: Record<string, unknown>, actor: EditActor | string) {
     let editActor: EditActor;
     if (typeof actor === 'string') {
@@ -101,7 +116,15 @@ export class VacancyService {
 
     const reason = typeof dto.reason === 'string' ? dto.reason : undefined;
     // The "I told the owner about the minimum wage" tick goes with a salary change; it is not a column write.
-    const { ownerToldMinimumWage, ...body } = dto;
+    // A picked business shift (17 Nov) is turned into its label here; its id and times are written below.
+    const { ownerToldMinimumWage, businessShiftId, ...body } = dto;
+    let picked: Awaited<ReturnType<VacancyService['pickedShift']>> = null;
+    if (businessShiftId !== undefined) {
+      const owner = await this.prisma.vacancy.findFirst({ where: { OR: [{ id }, { code: id }] }, select: { businessId: true } });
+      if (!owner) throw new NotFoundException('Vacancy not found');
+      picked = await this.pickedShift(owner.businessId, businessShiftId);
+      if (picked) body.shift = picked.shift;
+    }
     // Security (AC-1): job details only; status, confirmation and links have their own routes.
     const updates = pickEditableFields(body, ALLOWED_VACANCY_UPDATE_FIELDS, 'vacancy');
     if ('headcount' in updates && (!Number.isInteger(updates.headcount) || (updates.headcount as number) < 1)) {
@@ -136,6 +159,12 @@ export class VacancyService {
     }
 
     const data: Record<string, unknown> = {};
+    if (diff.changedFields.includes('shift')) {
+      // A typed shift drops the picked one; a picked one brings its id and times.
+      Object.assign(data, picked
+        ? { businessShiftId: picked.businessShiftId, shiftStartTime: picked.shiftStartTime, shiftEndTime: picked.shiftEndTime }
+        : { businessShiftId: null, shiftStartTime: null, shiftEndTime: null });
+    }
     for (const key of diff.changedFields) {
       if (key === 'tradeSkill' && typeof updates[key] === 'string') {
         data[key] = normalizeTradeName(updates[key] as string);
@@ -390,6 +419,7 @@ export class VacancyService {
       if (!branch) throw new BadRequestException('branchId must be a branch of this business');
       branchId = branch.id;
     }
+    const picked = await this.pickedShift(business.id, dto.businessShiftId);
     const legalMinimum = await this.confirmationService.legalMinimumFields(
       normalizeTradeName(dto.tradeSkill),
       dto.salaryMinPaise,
@@ -419,7 +449,10 @@ export class VacancyService {
           roleTitle: dto.roleTitle?.trim() ?? null,
           extras: dto.extras ?? [],
           workingHours: dto.workingHours?.trim() ?? null,
-          shift: dto.shift?.trim() ?? null,
+          shift: picked ? picked.shift : dto.shift?.trim() ?? null,
+          businessShiftId: picked?.businessShiftId ?? null,
+          shiftStartTime: picked?.shiftStartTime ?? null,
+          shiftEndTime: picked?.shiftEndTime ?? null,
           weeklyOff: dto.weeklyOff?.trim() ?? null,
           latitude: dto.latitude ?? business.latitude,
           longitude: dto.longitude ?? business.longitude,

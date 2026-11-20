@@ -102,4 +102,57 @@ describe('FA08 the one business page', () => {
     expect(screen.getByTestId('fa08-visit-v-5')).toHaveTextContent(/Already onboarded/);
     expect(screen.getByTestId('fa08-visit-v-1')).toHaveTextContent(/Onboarded/);
   });
+  it('17 Nov: vacancy events are on the business history beside the visits, newest first', async () => {
+    const page = businessPage();
+    page.history = [
+      { kind: 'vacancy', at: '2026-11-16T07:00:00Z', event: 'confirmed', vacancyId: 'vac-3', code: 'VC-00033', trade: 'Baker', headcount: 1, byName: null },
+      { kind: 'vacancy', at: '2026-11-16T06:00:00Z', event: 'added', vacancyId: 'vac-1', code: 'VC-00031', trade: 'Cook', headcount: 2, byName: 'Kiran Kumar' },
+      { kind: 'visit', at: page.visits[0].at, visit: page.visits[0] },
+    ];
+    const { route } = routeTable({ '/field-work/businesses/b-1/page': page });
+    await renderWithApp(<BusinessScreen />, { signedInAs: kiran, route });
+    await waitFor(() => screen.getByTestId('fa08-history-vac-1-added'));
+    expect(screen.getByTestId('fa08-visits')).toHaveTextContent(/History/);
+    expect(screen.getByTestId('fa08-history-vac-1-added')).toHaveTextContent(/Vacancy added · Cook × 2.*Kiran Kumar/);
+    expect(screen.getByTestId('fa08-history-vac-3-confirmed')).toHaveTextContent(/Vacancy confirmed by the owner · Baker/);
+    expect(screen.getByTestId(`fa08-visit-${page.visits[0].id}`)).toBeTruthy();
+    await fireEvent.press(screen.getByTestId('fa08-history-vac-1-added'));
+    expect(router.push).toHaveBeenCalledWith('/businesses/vacancy/vac-1');
+  });
+  it('17 Nov: Shifts — the account agent sees, adds and removes the business\'s shifts; view-only shows the list only', async () => {
+    const morning = { id: 'sh-1', businessId: 'b-1', name: 'Morning', startTime: '07:00', endTime: '15:00', label: 'Morning 07:00–15:00', category: 'day' };
+    const { route, calls } = routeTable({
+      '/field-work/businesses/b-1/page': businessPage(),
+      '/businesses/b-1/shifts': [morning],
+      'POST /businesses/b-1/shifts': { ...morning, id: 'sh-2', name: 'Night', startTime: '22:00', endTime: '06:00', label: 'Night 22:00–06:00', category: 'night' },
+      'DELETE /businesses/b-1/shifts/sh-1': { removed: true },
+    });
+    await renderWithApp(<BusinessScreen />, { signedInAs: kiran, route });
+    await waitFor(() => screen.getByTestId('shift-sh-1'));
+    expect(screen.getByTestId('fa08-shifts')).toHaveTextContent(/Shifts.*Morning 07:00–15:00/);
+    await fireEvent.press(screen.getByTestId('shift-add'));
+    await fireEvent.changeText(screen.getByTestId('add-shift-name'), 'Night');
+    await fireEvent.changeText(screen.getByTestId('add-shift-start'), '10 pm');
+    await fireEvent.changeText(screen.getByTestId('add-shift-end'), '6 AM');
+    await fireEvent.press(screen.getByTestId('add-shift-save'));
+    await waitFor(() => screen.getByTestId('shift-sh-2'));
+    expect(calls).toContainEqual({ method: 'POST', path: '/businesses/b-1/shifts', body: { name: 'Night', startTime: '22:00', endTime: '06:00' } });
+    // Remove asks first; Cancel keeps it.
+    await fireEvent.press(screen.getByTestId('shift-remove-sh-1'));
+    expect(screen.getByTestId('shift-confirm-sh-1')).toHaveTextContent(/Remove Morning 07:00–15:00\? Vacancies that already use it keep their shift/);
+    expect(calls.some((c) => c.method === 'DELETE')).toBe(false);
+    await fireEvent.press(screen.getByTestId('shift-remove-yes-sh-1'));
+    await waitFor(() => expect(screen.queryByTestId('shift-sh-1')).toBeNull());
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(expect.arrayContaining(['POST /businesses/b-1/shifts', 'DELETE /businesses/b-1/shifts/sh-1']));
+  });
+
+  it('17 Nov: a vacancy on a business shift shows the shift\'s label; an older free-text shift shows as written', async () => {
+    const page = businessPage();
+    page.vacancies = [{ ...page.vacancies[0], shift: 'Morning 07:00–15:00' }, { ...page.vacancies[1], shift: 'Morning 6 to 2' }];
+    const { route } = routeTable({ '/field-work/businesses/b-1/page': page, '/businesses/b-1/shifts': [] });
+    await renderWithApp(<BusinessScreen />, { signedInAs: kiran, route });
+    await waitFor(() => screen.getByTestId(`vacancy-${page.vacancies[0].id}`));
+    expect(screen.getByTestId(`vacancy-${page.vacancies[0].id}`)).toHaveTextContent(/Morning 07:00–15:00/);
+    expect(screen.getByTestId(`vacancy-${page.vacancies[1].id}`)).toHaveTextContent(/Morning 6 to 2/);
+  });
 });

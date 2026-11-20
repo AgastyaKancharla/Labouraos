@@ -34,6 +34,7 @@ export const routes = {
   visits: '/visits', // FA05 Visits
   visitsSearch: '/visits/search',
   todaysWork: '/visits/work', // FA05b Today's work (?date=YYYY-MM-DD, ?kind)
+  allVisits: '/visits/all', // FA05c All visits (17 Nov)
   shopsNearMe: '/visits/near', // FA13 Shops near me
   visitStart: '/visit/start', // FA20 (?businessId, ?revisitOf)
   visitTalk: '/visit/talk', // FA21 (?id)

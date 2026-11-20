@@ -393,6 +393,18 @@ export interface LegalDocumentView {
 
 // ---------------------------------------------------------------- vacancies
 
+/** One of the business's own shifts (17 Nov): GET/POST/PATCH/DELETE /me/profiles/:id/shifts. */
+export interface BusinessShift {
+  id: string;
+  name: string;
+  /** "HH:MM", IST. */
+  startTime: string;
+  endTime: string;
+  /** "Morning 07:00–15:00". */
+  label: string;
+  category: 'day' | 'night';
+}
+
 export interface VacancyDraft {
   trade: string;
   roleTitle: string | null;
@@ -400,7 +412,8 @@ export interface VacancyDraft {
   salaryMinPaise: number;
   salaryMaxPaise: number | null;
   salaryPeriod: SalaryPeriod;
-  shift: Shift;
+  /** One of the business's own shifts (17 Nov). */
+  businessShiftId: string;
   startDate: string;
   description: string;
   /** Required (true) when the salary is below the legal minimum wage. */
