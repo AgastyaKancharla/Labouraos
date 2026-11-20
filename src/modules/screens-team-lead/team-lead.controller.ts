@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
@@ -7,6 +7,7 @@ import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { TeamLeadChecksService } from './team-lead-checks.service';
 import { TeamLeadScreensService } from './team-lead-screens.service';
 import { StaffPhotoService } from '../staff/staff-photo.service';
+import { TeamLeadTargetsService } from './team-lead-targets.service';
 
 type Authed = Request & { user: JwtPayload };
 
@@ -19,6 +20,7 @@ export class TeamLeadController {
     private readonly screens: TeamLeadScreensService,
     private readonly checks: TeamLeadChecksService,
     private readonly photos: StaffPhotoService,
+    private readonly teamTargets: TeamLeadTargetsService,
   ) {}
 
   private actor(req: Authed) {
@@ -41,6 +43,34 @@ export class TeamLeadController {
   @RequireRoles('team_lead')
   targets(@Req() req: Authed) {
     return this.screens.targets(this.actor(req));
+  }
+
+  /** T-Targets with the automatic split: the team's eight numbers and each agent's targets (Automatic / Set by hand). */
+  @Get('targets/plan')
+  @RequireRoles('team_lead')
+  targetsPlan(@Req() req: Authed, @Query('year') year?: string, @Query('month') month?: string) {
+    return this.teamTargets.plan(this.actor(req), year, month);
+  }
+
+  /** The Team Lead sets their own agents' targets by hand: { year, month, rows: [{ staffId, candidatesActivated?, … }] }. */
+  @Put('targets')
+  @RequireRoles('team_lead')
+  saveTargets(@Req() req: Authed, @Body() body: { year?: unknown; month?: unknown; rows?: unknown }) {
+    return this.teamTargets.save(this.actor(req), body ?? {});
+  }
+
+  @Post('targets/reset')
+  @HttpCode(HttpStatus.OK)
+  @RequireRoles('team_lead')
+  resetTarget(@Req() req: Authed, @Body() body: { year?: unknown; month?: unknown; staffId?: unknown; field?: unknown }) {
+    return this.teamTargets.reset(this.actor(req), body ?? {});
+  }
+
+  @Post('targets/transfer')
+  @HttpCode(HttpStatus.OK)
+  @RequireRoles('team_lead')
+  transferTarget(@Req() req: Authed, @Body() body: { year?: unknown; month?: unknown; fromStaffId?: unknown; toStaffId?: unknown }) {
+    return this.teamTargets.transfer(this.actor(req), body ?? {});
   }
 
   @Get('agents')

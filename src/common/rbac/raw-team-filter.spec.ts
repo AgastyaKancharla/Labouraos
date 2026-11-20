@@ -14,10 +14,6 @@ const ALLOWED: Record<string, string> = {
   // Team plans are their own table, keyed by the Team Lead; not a staff scope.
   'modules/company-plan/company-plan.service.ts: return this.prisma.teamPlan.findMany({ where: { year, month, ...(leadIds ? { teamLeadId: { in: leadIds } } : {}) } });':
     'team plan rows (TeamPlan.teamLeadId), Managers and the CEO',
-  'modules/company-plan/company-plan.service.ts: const existing = await this.prisma.teamPlan.findUnique({ where: { teamLeadId_year_month: { teamLeadId: row.teamLeadId, year, month } } });':
-    'team plan rows (TeamPlan.teamLeadId), a write by the CEO',
-  'modules/company-plan/company-plan.service.ts: where: { teamLeadId_year_month: { teamLeadId: row.teamLeadId, year, month } },':
-    'team plan rows (TeamPlan.teamLeadId), a write by the CEO',
   // Fallbacks used only when ReportingScopeService is not provided; they read
   // the whole reporting line (Team Lead or Manager), never a Team Lead scope alone.
   'modules/review-flag/review-flag.service.ts: const rows = await this.prisma.staff.findMany({ where: { OR: [{ teamLeadId: staffId }, { reportsToId: staffId }] }, select: { id: true } });':

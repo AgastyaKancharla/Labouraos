@@ -108,6 +108,7 @@ describe('Manager portal endpoints', () => {
     await prisma.notification.deleteMany({ where: { recipientStaffId: { in: ids } } });
     await prisma.jobSeeker.deleteMany({ where: { id: { in: seekerIds } } });
     await prisma.target.deleteMany({ where: { staffId: { in: ids } } });
+    await prisma.teamPlan.deleteMany({ where: { OR: [{ teamLeadId: { in: ids } }, { setByStaffId: { in: ids } }] } });
     await prisma.staffCoachingNote.deleteMany({ where: { OR: [{ staffId: { in: ids } }, { authorStaffId: { in: ids } }] } });
     await prisma.staffSession.deleteMany({ where: { staffId: { in: ids } } });
     await prisma.auditLog.deleteMany({ where: { OR: [{ actorId: { in: ids } }, { entityCode: { in: codes } }] } });
@@ -209,21 +210,27 @@ describe('Manager portal endpoints', () => {
   });
 
   it('targets: save, copy from last month (own agents only), and the board sums teams', async () => {
-    const save = await send('mgrA', 'put', '/manager/targets', {
-      year: next.year,
-      month: next.month,
-      rows: [
-        { staffId: people.caA.id, candidatesActivated: 40, vacanciesCaptured: 5 },
-        { staffId: people.faA.id, placementsClosed: 6, candidatesActivated: 10 },
-      ],
-    });
+    const rows = [
+      { staffId: people.caA.id, candidatesActivated: 40, vacanciesCaptured: 5 },
+      { staffId: people.faA.id, placementsClosed: 6 },
+    ];
+    // No team number yet: an agent's number cannot be set by hand (automatic split, 17 Nov).
+    const noTeam = await send('mgrA', 'put', '/manager/targets', { year: next.year, month: next.month, rows });
+    expect(noTeam.status).toBe(400);
+    expect(noTeam.body.message).toMatch(/has no number for this month yet/);
+    expect((await send('mgrA', 'put', '/manager/targets/split', { year: next.year, month: next.month, rows: [{ teamLeadId: people.tlA.id, paid: 50, vacancies: 5, placed: 6 }] })).status).toBe(200);
+    // A call agent's target on a field agent: refused.
+    const wrongType = await send('mgrA', 'put', '/manager/targets', { year: next.year, month: next.month, rows: [{ staffId: people.faA.id, candidatesActivated: 10 }] });
+    expect(wrongType.status).toBe(400);
+    expect(wrongType.body.message).toMatch(/is a call agent target/);
+    const save = await send('mgrA', 'put', '/manager/targets', { year: next.year, month: next.month, rows });
     expect(save.status).toBe(200);
     expect(save.body).toMatchObject({ created: 2 });
     expect((await send('mgrA', 'put', '/manager/targets', { year: next.year, month: next.month, rows: [{ staffId: people.caB.id, candidatesActivated: 1 }] })).status).toBe(403);
 
     const board = await get('mgrA', `/manager/targets?year=${next.year}&month=${next.month}`);
     expect(board.status).toBe(200);
-    expect(board.body.teams[0]).toMatchObject({ teamLeadId: people.tlA.id, candidatesActivated: 50, placementsClosed: 6 });
+    expect(board.body.teams[0]).toMatchObject({ teamLeadId: people.tlA.id, candidatesActivated: 40, placementsClosed: 6 });
 
     // Manager B's agent has a target this month; Manager A's copy must not touch it.
     await prisma.target.create({ data: { staffId: people.caB.id, year, month, candidatesActivated: 9, createdById: people.ceo.id } });

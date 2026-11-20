@@ -7,6 +7,7 @@ import { useToast } from '../../../components/Toast';
 import { api } from '../../../lib/api/client';
 import { ApiError } from '../../../lib/api/errors';
 import { teamShort } from '../_kit/kit';
+import { ResetLink, SplitTag } from '../../../components/TargetSplit';
 
 /** The plan metrics, in the order the designs show them (never money). */
 export const PLAN_KEYS = ['registered', 'paid', 'businessesSignedUp', 'vacancies', 'interviewsDone', 'placed', 'repeatBusinesses', 'leftWithin30'] as const;
@@ -29,7 +30,11 @@ const ALWAYS: PlanKey[] = ['registered', 'paid', 'businessesSignedUp', 'vacancie
 
 export interface PlanSplit {
   company: PlanValues | null;
-  teams: { teamLeadId: string; team: string; teamLead: string; split: PlanValues; agents: PlanValues }[];
+  /** The CEO set a plan: the numbers come from the automatic split. */
+  automatic?: boolean;
+  /** The Manager's share of the CEO's plan (what the split gave their teams). */
+  share?: PlanValues;
+  teams: { teamLeadId: string; team: string; teamLead: string; split: PlanValues; agents: PlanValues; handSet?: PlanKey[]; flags?: string[] }[];
   otherTeams: PlanValues | null;
   total: PlanValues;
   difference: Record<PlanKey, number | null>;
@@ -62,6 +67,17 @@ export function PlanSplitCard({ plan, year, month, editable, agentSums }: { plan
   };
   const total = (key: PlanKey) => sum([...(plan?.teams ?? []).map((t) => current(t.teamLeadId, key, t.split[key])), plan?.otherTeams?.[key] ?? null]);
   const dirty = Object.keys(draft).length > 0;
+  const automatic = Boolean(plan?.automatic);
+  const flags = (plan?.teams ?? []).flatMap((t) => t.flags ?? []);
+
+  const reset = useMutation({
+    mutationFn: (v: { teamLeadId: string; key: PlanKey }) => api.post('/manager/targets/reset', { year, month, kind: 'team', id: v.teamLeadId, key: v.key }),
+    onSuccess: () => {
+      toast.success('Back to automatic');
+      void qc.invalidateQueries({ queryKey: ['manager'] });
+    },
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : 'Could not reset. Try again.'),
+  });
 
   const save = useMutation({
     mutationFn: () => {
@@ -108,13 +124,25 @@ export function PlanSplitCard({ plan, year, month, editable, agentSums }: { plan
                 <td key={k}>{plan?.company?.[k] ?? '—'}</td>
               ))}
             </tr>
+            {automatic && plan?.share && (
+              <tr>
+                <td>Your share · by agents in your teams</td>
+                {keys.map((k) => (
+                  <td key={k}>
+                    <b>{plan.share?.[k] ?? '—'}</b>
+                  </td>
+                ))}
+              </tr>
+            )}
             {plan?.teams.map((t) => (
               <tr key={t.teamLeadId}>
                 <td>{`Team ${teamShort(t.team)}`}</td>
                 {keys.map((k) => {
                   const agents = agentSums[t.teamLeadId]?.[k] ?? t.agents[k];
+                  const hand = Boolean(t.handSet?.includes(k));
                   return (
                     <td key={k}>
+                      <div className="lb-split-cell">
                       <input
                         className="mg-target-input"
                         inputMode="numeric"
@@ -126,7 +154,16 @@ export function PlanSplitCard({ plan, year, month, editable, agentSums }: { plan
                           setDraft((prev) => ({ ...prev, [t.teamLeadId]: { ...prev[t.teamLeadId], [k]: v } }));
                         }}
                       />
+                      {automatic && typeof t.split[k] === 'number' && (
+                        <span className="lb-split-cell__meta">
+                          <SplitTag hand={hand} />
+                          {hand && editable && (
+                            <ResetLink label={`Reset ${PLAN_LABEL[k]} for Team ${teamShort(t.team)} to automatic`} disabled={reset.isPending} onClick={() => reset.mutate({ teamLeadId: t.teamLeadId, key: k })} />
+                          )}
+                        </span>
+                      )}
                       {agents !== null && agents !== undefined && <span className="mg-agents-sum">agents {agents}</span>}
+                      </div>
                     </td>
                   );
                 })}
@@ -159,8 +196,17 @@ export function PlanSplitCard({ plan, year, month, editable, agentSums }: { plan
           </tbody>
         </table>
       </div>
+      {flags.length > 0 && (
+        <ul className="lb-split-flags" aria-label="Split warnings">
+          {flags.map((f) => (
+            <li key={f}>{f}</li>
+          ))}
+        </ul>
+      )}
       <div className="mg-note">
-        The split must add up to the CEO's plan · you can't lower the plan, only the CEO can
+        {automatic
+          ? "The CEO's plan is split automatically by the number of agents in each team · a number you change is kept (Set by hand) and the rest of your share goes to your other teams · Reset puts it back to automatic"
+          : "The split must add up to the CEO's plan · you can't lower the plan, only the CEO can"}
         {plan && !plan.company ? ' · the CEO has not set this month’s plan yet' : ''} · under each team: the sum of its agents' targets
       </div>
       {editable && (

@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TargetService } from '../target/target.service';
@@ -7,12 +7,12 @@ import { percent } from '../ceo-portal/ceo-common';
 import { monthOf, previousMonth } from './manager-common';
 import { ManagerTree, ManagerTreeService } from './manager-tree.service';
 import { CompanyPlanService, PLAN_METRICS, emptyPlan, splitDifference, sumOrNull, valuesOf } from '../company-plan/company-plan.service';
+import { TargetSplitService } from '../company-plan/target-split.service';
 
 /** The target fields a Manager edits on MG-Targets (guide, Monthly targets). */
 export const EDITABLE_TARGET_KEYS = ['candidatesActivated', 'vacanciesCaptured', 'placementsClosed', 'repeatBusinesses'] as const;
 type EditableKey = (typeof EDITABLE_TARGET_KEYS)[number];
 
-type TargetValues = Partial<Record<EditableKey, number | null>>;
 
 export interface AgentTargetRow {
   staff: { id: string; code: string; name: string; role: string; isIntern: boolean };
@@ -22,6 +22,8 @@ export interface AgentTargetRow {
   target: Record<EditableKey, number | null>;
   main: { metric: string; done: number; target: number | null; percent: number | null };
   pace: string;
+  /** The fields set by hand (the rest come from the automatic split). */
+  handSet: string[];
 }
 
 /**
@@ -38,6 +40,7 @@ export class ManagerTargetsService {
     private readonly tree: ManagerTreeService,
     private readonly targets: TargetService,
     private readonly plans: CompanyPlanService,
+    private readonly split: TargetSplitService,
   ) {}
 
   /**
@@ -48,30 +51,43 @@ export class ManagerTargetsService {
   async planSplit(tree: ManagerTree, year: number, month: number) {
     const leadIds = tree.leads.map((l) => l.id);
     const [company, splits] = await Promise.all([this.plans.company(year, month), this.plans.teamPlans(year, month)]);
+    const marks = await this.split.readMarks(year, month, leadIds);
     const teams = [];
     for (const lead of tree.leads) {
+      const mark = marks.teams.find((m) => m.teamLeadId === lead.id);
       teams.push({
         teamLeadId: lead.id,
         team: lead.team,
         teamLead: lead.name,
         split: valuesOf(splits.find((x) => x.teamLeadId === lead.id)),
         agents: await this.plans.agentSums(this.tree.trackedTeamIds(tree, lead.id), year, month),
+        handSet: mark?.handSet ?? [],
+        leaverCredit: mark?.leaverCredit ?? {},
+        flags: mark?.flags ?? [],
       });
     }
-    const others = splits.filter((x) => !leadIds.includes(x.teamLeadId));
+    // Teams under other Managers: only active Team Leads (a closed team's old row is not counted).
+    const otherIds = splits.filter((x) => !leadIds.includes(x.teamLeadId)).map((x) => x.teamLeadId);
+    const activeOthers = otherIds.length
+      ? new Set((await this.prisma.staff.findMany({ where: { id: { in: otherIds }, role: 'team_lead', status: { not: 'deactivated' } }, select: { id: true } })).map((r) => r.id))
+      : new Set<string>();
+    const others = splits.filter((x) => activeOthers.has(x.teamLeadId));
     const otherTeams = others.length ? emptyPlan() : null;
     if (otherTeams) for (const key of PLAN_METRICS) otherTeams[key] = sumOrNull(others.map((x) => x[key]));
     const total = emptyPlan();
     for (const key of PLAN_METRICS) total[key] = sumOrNull([...teams.map((t) => t.split[key]), otherTeams?.[key] ?? null]);
     const plan = company ? valuesOf(company) : null;
-    return { company: plan, teams, otherTeams, total, difference: splitDifference(plan, total) };
+    // The Manager's share of the CEO's plan: what the split gave their teams (per metric the CEO set).
+    const share = emptyPlan();
+    for (const key of PLAN_METRICS) share[key] = plan?.[key] === null || !plan ? null : (sumOrNull(teams.map((t) => t.split[key])) ?? 0);
+    return { company: plan, automatic: marks.automatic, share, teams, otherTeams, total, difference: splitDifference(plan, total), agentHandSet: marks.agents };
   }
 
   /** Save the Manager's split for teams in their tree (PUT /manager/targets/split). */
   async saveSplit(actor: JwtPayload, body: { year?: unknown; month?: unknown; rows?: unknown }, now: Date) {
     const sel = parseMonth(body?.year, body?.month, now);
     const tree = await this.tree.load(actor.sub);
-    const result = await this.plans.saveTeamPlans({ id: actor.sub, role: actor.role }, sel.year, sel.month, body?.rows, tree.leads.map((l) => l.id), now);
+    const result = await this.split.saveTeamValues({ id: actor.sub, role: actor.role }, sel.year, sel.month, body?.rows, tree.leads.map((l) => l.id), now);
     return { ...result, plan: await this.planSplit(tree, sel.year, sel.month) };
   }
 
@@ -86,6 +102,7 @@ export class ManagerTargetsService {
     const prev = previousMonth(m.year, m.month);
     const prevCount = ids.length ? await this.prisma.target.count({ where: { staffId: { in: ids }, year: prev.year, month: prev.month } }) : 0;
     const range = { from: m.from, to: now.getTime() < m.to.getTime() ? now : m.to };
+    const plan = await this.planSplit(tree, m.year, m.month);
     const agents: AgentTargetRow[] = [];
     for (const a of targetAgents) {
       const t = rows.find((r) => r.staffId === a.id) ?? null;
@@ -107,6 +124,7 @@ export class ManagerTargetsService {
         },
         main: { metric: field ? 'placed' : 'paid', done: mainDone, target: mainTarget, percent: mainTarget ? percent(mainDone, mainTarget) : null },
         pace: paceFor(mainDone, mainTarget, m.dayOfMonth, m.daysInMonth),
+        handSet: t?.handSetFields ?? [],
       });
     }
     const sum = (list: typeof agents, key: EditableKey) => {
@@ -128,9 +146,21 @@ export class ManagerTargetsService {
       .filter((a) => a.main.done > 0 || a.main.target)
       .sort((x, y) => (y.main.metric === 'placed' ? 10 : 1) * y.main.done - (x.main.metric === 'placed' ? 10 : 1) * x.main.done || (y.main.percent ?? -1) - (x.main.percent ?? -1))
       .map((a, i) => ({ position: i + 1, staff: a.staff, team: a.team, main: a.main }));
+    // Agents who left this month with a target: their unreached part can be transferred.
+    const leftPeople = await this.tree.leftSince(actor.id, m.from);
+    const leftTargets = leftPeople.length ? await this.prisma.target.findMany({ where: { staffId: { in: leftPeople.map((p) => p.id) }, year: m.year, month: m.month } }) : [];
+    const left = leftPeople
+      .map((p) => {
+        const t = leftTargets.find((x) => x.staffId === p.id);
+        return t
+          ? { staff: p, target: { candidatesActivated: t.candidatesActivated, vacanciesCaptured: t.vacanciesCaptured, placementsClosed: t.placementsClosed, repeatBusinesses: t.repeatBusinesses } }
+          : null;
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
     return {
       year: m.year,
       month: m.month,
+      left,
       dayOfMonth: m.dayOfMonth,
       daysInMonth: m.daysInMonth,
       editable: now.getTime() <= m.to.getTime(),
@@ -142,70 +172,51 @@ export class ManagerTargetsService {
         repeatBusinesses: sum(agents, 'repeatBusinesses'),
       },
       teams,
-      plan: await this.planSplit(tree, m.year, m.month),
+      plan,
       agents,
       leaderboard,
     };
   }
 
-  private clean(value: unknown, key: string): number | null | undefined {
-    if (value === undefined) return undefined;
-    if (value === null || value === '') return null;
-    const n = typeof value === 'string' ? Number(value) : value;
-    if (typeof n !== 'number' || !Number.isInteger(n) || n < 0 || n > 100000) {
-      throw new BadRequestException(`${key} must be a whole number of 0 or more`);
-    }
-    return n;
-  }
-
   /**
-   * Save targets for several agents in one go (Save targets). Creates a
-   * target where there is none and updates it otherwise; an agent left with
-   * every value empty is skipped. Everyone must be in the Manager's tree.
+   * Save targets for several agents in one go (Save targets). A number that
+   * changes is "set by hand" and kept; empty puts it back to automatic. The
+   * hand-set numbers of a team's agents may not add up to more than the
+   * team's number; the rest is spread over the other agents. Everyone must be
+   * in the Manager's tree; past months are refused.
    */
   async save(actor: JwtPayload, body: { year?: unknown; month?: unknown; rows?: unknown }, now: Date) {
     const sel = parseMonth(body?.year, body?.month, now);
     if (!Array.isArray(body?.rows) || body.rows.length === 0) throw new BadRequestException('rows must list the targets to save');
-    if (body.rows.length > 200) throw new BadRequestException('At most 200 rows at a time');
     const tree = await this.tree.load(actor.sub);
-    const agentIds = new Set(this.tree.targetAgents(tree).map((a) => a.id));
-    const parsed = (body.rows as Array<Record<string, unknown>>).map((r) => {
-      const staffId = typeof r?.staffId === 'string' ? r.staffId : '';
-      if (!agentIds.has(staffId)) throw new ForbiddenException('Every row must be an agent in your teams');
-      const values: TargetValues = {};
-      for (const key of EDITABLE_TARGET_KEYS) {
-        const v = this.clean(r[key], key);
-        if (v !== undefined) values[key] = v;
-      }
-      return { staffId, values };
-    });
-    let created = 0;
-    let updated = 0;
-    let skipped = 0;
-    for (const row of parsed) {
-      const existing = await this.prisma.target.findUnique({ where: { staffId_year_month: { staffId: row.staffId, year: sel.year, month: sel.month } } });
-      const hasValue = Object.values(row.values).some((v) => typeof v === 'number');
-      if (existing) {
-        const merged = { ...existing, ...row.values };
-        const anyLeft = ['candidatesActivated', 'refundRate', 'vacanciesCaptured', 'placementsClosed', 'replacementsInside15Days', 'repeatBusinesses'].some(
-          (k) => (merged as Record<string, unknown>)[k] !== null && (merged as Record<string, unknown>)[k] !== undefined,
-        );
-        if (!anyLeft) {
-          skipped += 1;
-          continue;
-        }
-        const changed = EDITABLE_TARGET_KEYS.some((k) => row.values[k] !== undefined && row.values[k] !== existing[k]);
-        if (!changed) continue;
-        await this.targets.updateTarget(existing.id, row.values, actor.sub, now, actor);
-        updated += 1;
-      } else if (hasValue) {
-        await this.targets.setTarget({ staffId: row.staffId, year: sel.year, month: sel.month, ...row.values }, actor.sub, now, actor);
-        created += 1;
-      } else {
-        skipped += 1;
-      }
-    }
-    return { created, updated, skipped };
+    return this.split.saveAgentValues({ id: actor.sub, role: actor.role }, sel.year, sel.month, body.rows, this.tree.targetAgents(tree).map((a) => a.id), now);
+  }
+
+  /** "Reset to automatic" for a team's number (kind 'team', id = Team Lead) or an agent's (kind 'agent'); key = one metric, or the whole row. */
+  async reset(actor: JwtPayload, body: { year?: unknown; month?: unknown; kind?: unknown; id?: unknown; key?: unknown }, now: Date) {
+    const sel = parseMonth(body?.year, body?.month, now);
+    const tree = await this.tree.load(actor.sub);
+    const result = await this.split.reset(
+      { id: actor.sub, role: actor.role },
+      { year: sel.year, month: sel.month, kind: body?.kind, id: body?.id, key: body?.key },
+      { leadIds: tree.leads.map((l) => l.id), agentIds: this.tree.targetAgents(tree).map((a) => a.id) },
+      now,
+    );
+    return { ...result, plan: await this.planSplit(tree, sel.year, sel.month) };
+  }
+
+  /** "Transfer target": what one agent has not reached yet goes to another agent of the same work type in the Manager's tree. */
+  async transfer(actor: JwtPayload, body: { year?: unknown; month?: unknown; fromStaffId?: unknown; toStaffId?: unknown }, now: Date) {
+    const sel = parseMonth(body?.year, body?.month, now);
+    const tree = await this.tree.load(actor.sub);
+    const active = new Set(this.tree.targetAgents(tree).map((a) => a.id));
+    return this.split.transfer(
+      { id: actor.sub, role: actor.role },
+      { year: sel.year, month: sel.month, fromStaffId: body?.fromStaffId, toStaffId: body?.toStaffId },
+      // An agent who has left is no longer in the tree: still the Manager's when they were under one of the Manager's people.
+      async (staffId, opts) => active.has(staffId) || (opts.allowLeft && (await this.tree.isUnder(actor.sub, staffId))),
+      now,
+    );
   }
 
   /**

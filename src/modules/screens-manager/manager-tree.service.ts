@@ -132,6 +132,22 @@ export class ManagerTreeService {
     throw new ForbiddenException('A Manager sees only the people in their own teams');
   }
 
+  /** Anyone under the Manager by the reporting line, deactivated people included (for a leaver's target). */
+  isUnder(managerId: string, staffId: string): Promise<boolean> {
+    return this.scope.personIsUnder(managerId, staffId);
+  }
+
+  /** Call and field agents under the Manager who were deactivated since `from` (for "Transfer target" from a leaver). */
+  async leftSince(managerId: string, from: Date): Promise<Array<{ id: string; code: string; name: string; role: string }>> {
+    const under = await this.scope.peopleUnder(managerId);
+    if (!under.length) return [];
+    return this.prisma.staff.findMany({
+      where: { id: { in: under }, role: { in: AGENT_ROLES }, status: 'deactivated', isOwnerAccount: false, deactivatedAt: { gte: from } },
+      select: { id: true, code: true, name: true, role: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
   /** Ids of a team: the Team Lead and their agents. */
   teamIds(tree: ManagerTree, leadId: string): string[] {
     return tree.people.filter((p) => p.teamLeadId === leadId).map((p) => p.id);
