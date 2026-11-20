@@ -87,6 +87,7 @@ describe('late login in hours and minutes (17 Nov)', () => {
     expect(attendanceEn['att.late']).toBe('Late · {late}');
     expect(attendanceEn['att.toast.startedLate']).toContain('{late}');
     expect(attendanceEn['att.ended.lateYes']).toBe('Yes · {late}');
+    expect(attendanceEn['att.today.lateValue']).toBe('{late}');
     expect(within(document.body).queryByText(/min min/)).toBeNull();
   });
 });

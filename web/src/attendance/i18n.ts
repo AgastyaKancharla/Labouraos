@@ -155,7 +155,7 @@ export const attendanceEn = {
   'att.today.unproductive': 'Unproductive (breaks + idle)',
   'att.today.unproductiveSub': 'Breaks {breaks} · idle {idle}',
   'att.today.late': 'Late',
-  'att.today.lateValue': '{minutes} min',
+  'att.today.lateValue': '{late}',
   'att.today.status': 'Status now',
   'att.today.notLoggedIn': 'Not logged in yet today',
   'att.mine.title': 'My attendance · {month}',

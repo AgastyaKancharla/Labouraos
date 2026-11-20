@@ -15,8 +15,12 @@ import { ConsentClock } from './consent-clock';
 import { ConsentService } from './consent.service';
 import { DEFAULT_NOTICE_VERSION } from './consent.constants';
 
+// Times relative to today: the link the test sends must not have expired by the real clock.
+const DAY = 24 * 60 * 60 * 1000;
+const daysAgo = (n: number) => new Date(Math.floor(Date.now() / 1000) * 1000 - n * DAY);
+
 class TestConsentClock extends ConsentClock {
-  current = new Date('2026-11-16T10:00:00.000Z');
+  current = daysAgo(0);
   override now() {
     return new Date(this.current);
   }
@@ -97,16 +101,17 @@ describe('Consent once per item, resume on a new link (17 Nov)', () => {
     const auth = await ceo();
     const s = await seeker();
     // The first link: four items given, then he stopped (call recording later withdrawn on a call).
-    const firstAt = new Date('2026-11-10T05:12:00.000Z');
+    const firstAt = daysAgo(6);
     clock.current = firstAt;
     for (const purpose of ['job_matching', 'profile_sharing', 'aadhaar_verification', 'job_updates', 'call_recording']) {
       await consent.grant({ subjectType: 'job_seeker', subjectId: s.id, purpose, noticeVersion: DEFAULT_NOTICE_VERSION, language: 'en', method: 'sms_link' });
     }
-    clock.current = new Date('2026-11-11T09:00:00.000Z');
+    clock.current = daysAgo(5);
     await consent.withdraw({ subjectType: 'job_seeker', subjectId: s.id, purpose: 'call_recording', withdrawnMethod: 'agent_call' });
 
     // The link again: he resumes at consent, and the page is told what is already given.
-    clock.current = new Date('2026-11-16T10:00:00.000Z');
+    const regrantAt = daysAgo(0);
+    clock.current = regrantAt;
     const { linkToken, requestId } = await openLink(auth, s.id);
     const status = await request(app.getHttpServer()).get(`/registration/${linkToken}/status`).query({ requestId });
     expect(status.body.currentStep).toBe('consent');
@@ -135,19 +140,19 @@ describe('Consent once per item, resume on a new link (17 Nov)', () => {
     expect(detail.status).toBe(200);
     expect(detail.body.registration).toMatchObject({ consentsGranted: 5, consentsAsked: 5 });
     expect(detail.body.consents.map((c: { purpose: string }) => c.purpose)).toEqual(['job_matching', 'profile_sharing', 'call_recording', 'aadhaar_verification', 'job_updates', 'promotions']);
-    expect(detail.body.consents[2]).toMatchObject({ granted: true, withdrawn: false, at: '2026-11-16T10:00:00.000Z' });
+    expect(detail.body.consents[2]).toMatchObject({ granted: true, withdrawn: false, at: regrantAt.toISOString() });
     expect(detail.body.consents[5]).toMatchObject({ required: false, granted: false, at: null });
   }, 120000);
 
   it('an item given only under an older notice version is asked again, and the acceptance lists only current-notice items', async () => {
     const auth = await ceo();
     const s = await seeker();
-    clock.current = new Date('2026-11-01T05:00:00.000Z');
+    clock.current = daysAgo(15);
     await consent.grant({ subjectType: 'job_seeker', subjectId: s.id, purpose: 'job_matching', noticeVersion: '1.1', language: 'en', method: 'sms_link' });
     for (const purpose of ['profile_sharing', 'aadhaar_verification', 'job_updates']) {
       await consent.grant({ subjectType: 'job_seeker', subjectId: s.id, purpose, noticeVersion: DEFAULT_NOTICE_VERSION, language: 'en', method: 'sms_link' });
     }
-    clock.current = new Date('2026-11-16T10:00:00.000Z');
+    clock.current = daysAgo(0);
     const { linkToken, requestId } = await openLink(auth, s.id);
     const status = await request(app.getHttpServer()).get(`/registration/${linkToken}/status`).query({ requestId });
     expect(status.body.currentStep).toBe('consent');
