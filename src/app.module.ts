@@ -52,6 +52,7 @@ import { ScreensManagerModule } from './modules/screens-manager/screens-manager.
 import { FinanceModule } from './modules/finance/finance.module';
 import { FieldVisitModule } from './modules/field-visit/field-visit.module';
 import { ScreensFieldModule } from './modules/screens-field/screens-field.module';
+import { MapsLinkModule } from './modules/maps-link/maps-link.module';
 import { RequestsModule } from './modules/requests/requests.module';
 import { CompanyPlanModule } from './modules/company-plan/company-plan.module';
 import { ScreensTeamLeadModule } from './modules/screens-team-lead/screens-team-lead.module';
@@ -121,6 +122,7 @@ import { PublicRateLimitGuard } from './common/http/public-rate-limit.guard';
     BypassChargeModule,
     FieldVisitModule,
     ScreensFieldModule,
+    MapsLinkModule,
     RequestsModule,
     CompanyPlanModule,
     ScreensTeamLeadModule,

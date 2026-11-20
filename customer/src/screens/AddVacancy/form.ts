@@ -1,4 +1,4 @@
-import { legalMinimumOf, type MinimumWageZone, type SalaryPeriod, type Shift, type Trade, type VacancyDraft } from '@/api/types';
+import { legalMinimumOf, type MinimumWageZone, type SalaryPeriod, type Trade, type VacancyDraft } from '@/api/types';
 import type { MessageKey } from '@/i18n';
 import { monthlyPaise } from '@/lib/validate';
 
@@ -9,7 +9,8 @@ export interface VacancyFormState {
   salaryMinPaise: number | null;
   salaryMaxPaise: number | null;
   salaryPeriod: SalaryPeriod;
-  shift: '' | Shift;
+  /** One of the business's own shifts (17 Nov). */
+  businessShiftId: string;
   startDate: string;
   description: string;
   legalMinimumAcknowledged: boolean;
@@ -22,7 +23,7 @@ export const emptyVacancy = (): VacancyFormState => ({
   salaryMinPaise: null,
   salaryMaxPaise: null,
   salaryPeriod: 'monthly',
-  shift: '',
+  businessShiftId: '',
   startDate: '',
   description: '',
   legalMinimumAcknowledged: false,
@@ -47,7 +48,7 @@ export function validateVacancy(v: VacancyFormState, trade: Trade | undefined, z
   if (!v.openings || v.openings < 1) e.openings = 'form.required';
   if (!v.salaryMinPaise) e.salaryMinPaise = 'form.required';
   if (v.salaryMinPaise && v.salaryMaxPaise && v.salaryMaxPaise < v.salaryMinPaise) e.salaryMaxPaise = 'jobSeeker.maxBelowMin';
-  if (!v.shift) e.shift = 'form.required';
+  if (!v.businessShiftId) e.businessShiftId = 'form.required';
   if (!v.startDate) e.startDate = 'form.required';
   if (belowLegalMinimum(trade, v, zone) && !v.legalMinimumAcknowledged) e.legalMinimumAcknowledged = 'vacancy.tickLegalMinimum';
   return e;
@@ -61,7 +62,7 @@ export function toVacancyDraft(v: VacancyFormState): VacancyDraft {
     salaryMinPaise: v.salaryMinPaise ?? 0,
     salaryMaxPaise: v.salaryMaxPaise,
     salaryPeriod: v.salaryPeriod,
-    shift: v.shift as Shift,
+    businessShiftId: v.businessShiftId,
     startDate: v.startDate,
     description: v.description.trim(),
     legalMinimumAcknowledged: v.legalMinimumAcknowledged,

@@ -5,6 +5,8 @@ import type { ApiClient } from './client';
 import type { CustomerApi } from './customerApi';
 import { isApiError } from './errors';
 import type {
+  Trade,
+  BusinessShift,
   AppConfig,
   AuthResult,
   BusinessHome,
@@ -412,7 +414,21 @@ export function liveCustomerApi(api: ApiClient, options: Options = {}): Customer
         throw err;
       }
     },
-    formOptions: () => api.get<FormOptions>('/me/form-options'),
+    // The server names a trade's usual pay marketSalaryMin/MaxPaise and sends no id; the screens read
+    // salaryMin/MaxPaise and id (17 Nov: "Usual pay ₹NaN" on Add a vacancy).
+    formOptions: async () => {
+      const raw = await api.get<Omit<FormOptions, 'trades'> & { trades?: (Partial<Trade> & { name: string; marketSalaryMinPaise?: number; marketSalaryMaxPaise?: number })[] }>('/me/form-options');
+      return {
+        ...raw,
+        trades: (raw.trades ?? []).map((t) => ({
+          ...t,
+          id: t.id ?? t.name,
+          salaryMinPaise: t.salaryMinPaise ?? t.marketSalaryMinPaise ?? 0,
+          salaryMaxPaise: t.salaryMaxPaise ?? t.marketSalaryMaxPaise ?? 0,
+          legalMinimumPaise: t.legalMinimumPaise ?? 0,
+        })),
+      };
+    },
     ageCheck: async (dateOfBirth) => {
       try {
         await api.post('/me/register/age-check', { dateOfBirth });
@@ -516,6 +532,11 @@ export function liveCustomerApi(api: ApiClient, options: Options = {}): Customer
       return api.post<{ version: string }>(`${profilePath(profileId)}/legal/accept`, { purposes, language, textHash });
     },
 
+    shifts: async (profileId) => (await api.get<{ shifts: BusinessShift[] }>(`${profilePath(profileId)}/shifts`)).shifts,
+    addShift: (profileId, input) => api.post<BusinessShift>(`${profilePath(profileId)}/shifts`, input),
+    removeShift: async (profileId, shiftId) => {
+      await api.delete<unknown>(`${profilePath(profileId)}/shifts/${enc(shiftId)}`);
+    },
     createVacancy: async (profileId, d) => {
       const r = await api.post<{ id: string; warnings?: { belowLegalMinimum?: boolean; legalMinimumPaise?: number } }>(`${profilePath(profileId)}/vacancy-drafts`, {
         form: {
@@ -525,7 +546,7 @@ export function liveCustomerApi(api: ApiClient, options: Options = {}): Customer
           salaryMinPaise: d.salaryMinPaise,
           ...(d.salaryMaxPaise ? { salaryMaxPaise: d.salaryMaxPaise } : {}),
           salaryPeriod: d.salaryPeriod,
-          shift: d.shift,
+          businessShiftId: d.businessShiftId,
           startDate: d.startDate,
           ...(d.description ? { description: d.description } : {}),
           ownerToldMinimumWage: d.legalMinimumAcknowledged,

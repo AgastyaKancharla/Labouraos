@@ -497,4 +497,57 @@ describe('Phase 21 Task 2: the working day', () => {
     expect(again.status).toBe(400);
     expect(again.body.message).toContain('already closed');
   });
+  describe('Log in / Log out (17 Nov): once a day, and the status never errors on an open day', () => {
+    /** The code is at the top here and under details behind the global exception filter. */
+    const codeOf = (body: { code?: string; details?: { code?: string } }) => body.details?.code ?? body.code;
+    function logout(token: string) {
+      return request(app.getHttpServer()).post('/attendance/logout').set('Authorization', `Bearer ${token}`);
+    }
+
+    it('a status before Log in or after Log out says which (coded), and Log out twice is not an error', async () => {
+      at('2026-11-11T04:00:00.000Z');
+      const agent = await make('field_agent', 'LIO');
+      const token = tokenFor(agent);
+      const before = await postStatus(token, 'lunch');
+      expect(before.status).toBe(400);
+      expect(codeOf(before.body)).toBe('DAY_NOT_STARTED');
+      const early = await logout(token);
+      expect(early.status).toBe(400);
+      expect(codeOf(early.body)).toBe('DAY_NOT_STARTED');
+
+      await login(token, { latitude: 12.9116, longitude: 77.6101 }).expect(201);
+      for (const status of ['team_meeting', 'training', 'one_to_one', 'system_problem', 'short_break', 'lunch', 'available']) {
+        at(new Date(shared.at.getTime() + 60_000).toISOString());
+        const res = await postStatus(token, status);
+        expect(res.status).toBe(201);
+        expect(res.body.status).toBe(status);
+      }
+      at('2026-11-11T12:00:00.000Z');
+      const first = await logout(token).expect(201);
+      expect(first.body.logoutAt).toBe('2026-11-11T12:00:00.000Z');
+      at('2026-11-11T12:01:00.000Z');
+      const second = await logout(token).expect(201);
+      expect(second.body.logoutAt).toBe('2026-11-11T12:00:00.000Z');
+
+      const after = await postStatus(token, 'available');
+      expect(after.status).toBe(400);
+      expect(codeOf(after.body)).toBe('DAY_ENDED');
+      const again = await login(token, { latitude: 12.9116, longitude: 77.6101 });
+      expect(again.status).toBe(400);
+      expect(codeOf(again.body)).toBe('DAY_ALREADY_ENDED');
+      expect(again.body.message).toContain('already closed');
+    });
+
+    it('two Log in taps at the same moment start one day, both answer 201', async () => {
+      at('2026-11-12T04:00:00.000Z');
+      const agent = await make('field_agent', 'LI2');
+      const token = tokenFor(agent);
+      const [a, b] = await Promise.all([
+        login(token, { latitude: 12.9116, longitude: 77.6101 }),
+        login(token, { latitude: 12.9116, longitude: 77.6101 }),
+      ]);
+      expect([a.status, b.status]).toEqual([201, 201]);
+      expect(await prisma.attendanceDay.count({ where: { staffId: agent.id } })).toBe(1);
+    });
+  });
 });

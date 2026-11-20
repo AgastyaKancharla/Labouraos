@@ -51,6 +51,8 @@ export interface FormState {
   landmark: string;
   area: string;
   pincode: string;
+  /** From the Maps link lookup or typed (17 Nov); decides the legal minimum wage zone with the PIN code. Older drafts have none. */
+  city?: string;
   pin: { latitude: number; longitude: number } | null;
   branches: BranchRow[];
   gstin: string;
@@ -62,6 +64,8 @@ export interface FormState {
   staff: StaffRow[];
 }
 
+/** The city when nothing else is known (the business form's old fixed value). */
+export const DEFAULT_CITY = 'Bengaluru';
 const OTHER_TRADE = '__other__';
 const GSTIN = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 const PAN = /^[A-Z]{5}\d{4}[A-Z]$/;
@@ -142,7 +146,7 @@ export function businessBody(form: FormState, visitId: string | null): Record<st
     address,
     latitude: form.pin?.latitude,
     longitude: form.pin?.longitude,
-    city: 'Bengaluru',
+    city: form.city?.trim() || DEFAULT_CITY,
     ...(visitId ? { fieldVisitId: visitId } : {}),
     ...(docs
       ? { noDocuments: !household }

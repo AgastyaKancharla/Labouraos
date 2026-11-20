@@ -18,16 +18,29 @@ export class ApiError extends Error {
     this.body = init.body;
   }
 
+  /**
+   * The error's own fields. The live server's exception filter puts them under
+   * `details` ({ statusCode, message, details: { code, field, … } }); tests and
+   * older answers have them at the top. Both are read.
+   */
+  private get fields(): Record<string, unknown> {
+    const body = this.body as Record<string, unknown> | null | undefined;
+    if (!body || typeof body !== 'object') return {};
+    const details = body.details;
+    return details && typeof details === 'object' && !Array.isArray(details) ? { ...(details as Record<string, unknown>), ...body } : body;
+  }
+
   /** The contract's machine-readable error code (OTP_INVALID, PROFILE_EXISTS…), if any. */
   get code(): string | null {
-    const body = this.body as { code?: unknown } | null | undefined;
-    return body && typeof body === 'object' && typeof body.code === 'string' ? body.code : null;
+    const body = this.body as Record<string, unknown> | null | undefined;
+    if (body && typeof body === 'object' && typeof body.code === 'string') return body.code;
+    const code = this.fields.code;
+    return typeof code === 'string' ? code : null;
   }
 
   /** An extra field of the error body (profileId, legalMinimumPaise, retryAfterSeconds…). */
   field<T = unknown>(name: string): T | undefined {
-    const body = this.body as Record<string, unknown> | null | undefined;
-    return body && typeof body === 'object' ? (body[name] as T | undefined) : undefined;
+    return this.fields[name] as T | undefined;
   }
 
   /** True for "no signal / server unreachable" — the request may be retried later. */

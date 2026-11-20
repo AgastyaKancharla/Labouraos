@@ -39,6 +39,20 @@ export class ScreensFieldController {
     return this.redesign.day(req.user, date);
   }
 
+  /** My visits → All visits (17 Nov): my whole visit history, search and IST date range, newest first. */
+  @Get('visits/all')
+  @RequireRoles('field_agent')
+  allVisits(
+    @Req() req: Authed,
+    @Query('q') q?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('before') before?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.redesign.allVisits(req.user, { q, from, to, before, limit });
+  }
+
   /** Businesses tab: my businesses, each with what it needs next. */
   @Get('businesses')
   @RequireRoles('field_agent')

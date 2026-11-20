@@ -14,7 +14,10 @@ export interface VacancyForm {
   salaryMaxPaise: number | null;
   period: 'monthly' | 'daily';
   ownerTold: boolean;
+  /** Older drafts only: the shift word written before (shown, not sent). */
   shift: string;
+  /** One of the business's own shifts (17 Nov). */
+  businessShiftId: string;
   startsAt: string;
   endsAt: string;
   weeklyOff: string;
@@ -43,6 +46,7 @@ export const EMPTY_VACANCY: VacancyForm = {
   period: 'monthly',
   ownerTold: false,
   shift: '',
+  businessShiftId: '',
   startsAt: '',
   endsAt: '',
   weeklyOff: '',
@@ -67,7 +71,7 @@ export function vacancyErrors(form: VacancyForm, tradeName: string, belowLegal: 
   if (!form.salaryMinPaise) e.push('salaryMin');
   if (form.salaryMinPaise && form.salaryMaxPaise && form.salaryMaxPaise < form.salaryMinPaise) e.push('salaryOrder');
   if (belowLegal && !form.ownerTold) e.push('ownerTold');
-  if (!form.shift) e.push('shift');
+  if (!form.businessShiftId) e.push('shift');
   if (!form.startsAt) e.push('startsAt');
   if (!form.endsAt) e.push('endsAt');
   if (!form.weeklyOff) e.push('weeklyOff');
@@ -97,7 +101,7 @@ export function vacancyBody(form: VacancyForm, tradeName: string) {
     ...(form.salaryMaxPaise ? { salaryMaxPaise: form.salaryMaxPaise } : {}),
     salaryPeriod: form.period,
     ownerToldMinimumWage: form.ownerTold,
-    shift: form.shift,
+    businessShiftId: form.businessShiftId,
     workingHours: `${form.startsAt}–${form.endsAt}`,
     weeklyOff: form.weeklyOff,
     experienceRequiredYears: EXPERIENCE_NEEDED.find((x) => x.value === form.experience)?.years ?? 0,
@@ -122,7 +126,7 @@ export function draftPatchBody(form: VacancyForm, tradeName: string) {
     salaryMinPaise: form.salaryMinPaise!,
     salaryMaxPaise: form.salaryMaxPaise ?? form.salaryMinPaise!,
     salaryPeriod: form.period,
-    shift: form.shift,
+    businessShiftId: form.businessShiftId,
     workingHours: `${form.startsAt}–${form.endsAt}`,
     weeklyOff: form.weeklyOff,
     experienceRequiredYears: EXPERIENCE_NEEDED.find((x) => x.value === form.experience)?.years ?? 0,

@@ -192,5 +192,13 @@ describe('legal minimum wage by zone and skill level (rev 193)', () => {
     expect(page.body.zones['2']).toMatchObject({ unskilledPaise: 2125131, skilledPaise: 2571408 });
     expect(page.body.zones['3']).toMatchObject({ unskilledPaise: 1931937, highlySkilledPaise: 2571407 });
     expect(typeof page.body.zones['1'].businesses).toBe('number');
+
+    // The "in force from" date is the day picked: a plain date, or the start of that day in IST — never a day early.
+    const plain = await request(server()).put('/pricing/legal-minimum-wages').set(as(ceoToken)).send({ ...body, effectiveFrom: '2026-11-17' }).expect(200);
+    expect(new Date(plain.body.legalMinimumWageEffectiveFrom).toISOString().slice(0, 10)).toBe('2026-11-17');
+    const istStart = await request(server()).put('/pricing/legal-minimum-wages').set(as(ceoToken)).send({ ...body, effectiveFrom: '2026-11-16T18:30:00.000Z' }).expect(200);
+    expect(new Date(istStart.body.legalMinimumWageEffectiveFrom).toISOString().slice(0, 10)).toBe('2026-11-17');
+    await request(server()).put('/pricing/legal-minimum-wages').set(as(ceoToken)).send({ ...body, effectiveFrom: '2026-02-30' }).expect(400);
+    await request(server()).put('/pricing/legal-minimum-wages').set(as(ceoToken)).send(body).expect(200);
   });
 });

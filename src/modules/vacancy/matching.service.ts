@@ -9,6 +9,7 @@ import { isUnconfirmedVacancyStatus } from './vacancy-confirmation.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { jobSeekerHasTrade } from '../job-seeker/job-seeker-legacy-read';
 import { compareMatches, refundPriorityOf } from '../refund-priority/refund-priority.rules';
+import { vacancyShiftCategory } from '../business/business-shift';
 import {
   BUSINESS_PAUSED_MESSAGE,
   businessCandidateAccess,
@@ -104,6 +105,9 @@ type VacancyForMatching = {
   ageMax: number | null;
   genderRequirement: string | null;
   shift: string | null;
+  /** The picked business shift's times (17 Nov): day/night is read from them. */
+  shiftStartTime?: string | null;
+  shiftEndTime?: string | null;
   business: BusinessCandidateAccessInput;
 };
 
@@ -329,8 +333,9 @@ export class MatchingService {
         highestFloor = Math.max(highestFloor, floor);
         continue;
       }
-      if (seeker.shiftPreference !== 'any' && seeker.shiftPreference && vacancy.shift &&
-        seeker.shiftPreference.toLowerCase() !== vacancy.shift.toLowerCase()) {
+      const vacancyShift = vacancyShiftCategory(vacancy);
+      if (seeker.shiftPreference !== 'any' && seeker.shiftPreference && vacancyShift &&
+        seeker.shiftPreference.toLowerCase() !== vacancyShift) {
         shiftOnly += 1;
       }
     }
@@ -561,8 +566,9 @@ export class MatchingService {
     if (age < adultMinimumAge || (vacancy.ageMin !== null && age < vacancy.ageMin) || (vacancy.ageMax !== null && age > vacancy.ageMax)) return false;
     if (vacancy.genderRequirement && !['none', 'any'].includes(vacancy.genderRequirement.toLowerCase()) &&
       seeker.gender?.toLowerCase() !== vacancy.genderRequirement.toLowerCase()) return false;
+    // 17 Nov: a vacancy that picked a business shift is day or night by its times; older ones by their word.
     if (seeker.shiftPreference !== 'any' && (
-      !seeker.shiftPreference || seeker.shiftPreference.toLowerCase() !== vacancy.shift?.toLowerCase()
+      !seeker.shiftPreference || seeker.shiftPreference.toLowerCase() !== vacancyShiftCategory(vacancy)
     )) return false;
     if (!businessCandidateAccess(vacancy.business).allowed) return false;
     return true;

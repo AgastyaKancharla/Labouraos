@@ -1,23 +1,15 @@
 import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useI18n } from '@/i18n';
-import { Banner, Button, Card, ErrorState, HeroCard, IconTile, ListRow, LoadingState, ProgressBar, Screen, Text } from '@/components';
-import { useEndpoints } from '@/api/ApiProvider';
-import { queryKeys } from '@/api/queryClient';
-import type { AttendanceToday } from '@/api/endpoints';
+import { Button, Card, HeroCard, IconTile, ListRow, ProgressBar, Screen, Text } from '@/components';
 import { useAuth } from '@/auth/AuthProvider';
 import { formatCoordinates } from '@/device/location/location';
-import { formatTimeIst } from '@/lib/format';
-import { attendanceErrorText, isPickableStatus, PICKABLE_STATUSES, statusLabel, type PickableStatus } from '@/lib/status';
 import { routes } from '@/navigation/routes';
 import { colors, fonts } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { useAttendanceToday, useFieldHome } from '../FA03-Home/useHome';
-import { SelectField } from '../_visits/SelectField';
+import { DayControls, dayState } from '../_attendance/DayControls';
 
-/** Statuses a field agent picks here (fix list A2): On visit and Travelling are set at check-in / check-out, never picked. */
-const PICKABLE = PICKABLE_STATUSES;
 const FULL_DAY_SECONDS = 8 * 3600;
 
 function hm(seconds: number): string {
@@ -26,65 +18,29 @@ function hm(seconds: number): string {
 }
 
 /**
- * FA04 — Checked in. Login time and lateness, the status dropdown (On visit
- * is automatic at a shop; picking Travelling ends it; meetings, training and
- * breaks are picked here), production and breaks today, and the one GPS
+ * FA04 — My day. Log in / Log out and the status (the same controls as
+ * Today, 17 Nov: On visit and Travelling are automatic at a shop; meetings,
+ * training and breaks are picked; no picker once the day has ended),
+ * production and breaks today, and the one GPS
  * point saved at check-in with its accuracy. Location is recorded only at
  * login, visits and calls — never all day.
  */
 export default function CheckedInScreen() {
   const { t } = useI18n();
   const { session } = useAuth();
-  const { attendance } = useEndpoints();
-  const client = useQueryClient();
   const today = useAttendanceToday();
   const home = useFieldHome();
-  const change = useMutation<AttendanceToday, Error, string>({
-    mutationFn: (status) => attendance.setStatus(status),
-    onSuccess: (data) => client.setQueryData(queryKeys.attendanceToday, data),
-  });
-
-  const labels: Record<PickableStatus, string> = {
-    available: t('status.available'),
-    team_meeting: t('status.team_meeting'),
-    training: t('status.training'),
-    one_to_one: t('status.one_to_one'),
-    system_problem: t('status.system_problem'),
-    short_break: t('fa04.shortBreak'),
-    lunch: t('fa04.lunch'),
-  };
+  const state = dayState(today.data);
   const checkIn = home.data?.checkIn ?? null;
 
   return (
     <View style={styles.flex} testID="screen-FA04">
-      <AppHeader title={t('fa03.headerTitle')} subtitle={`${session?.staff.name ?? ''} · ${t('fa04.checkedIn')}`} />
+      <AppHeader title={t('fa03.headerTitle')} subtitle={`${session?.staff.name ?? ''} · ${t(state === 'open' ? 'day.subtitle.open' : state === 'ended' ? 'day.subtitle.ended' : 'day.subtitle.notStarted')}`} />
       <Screen onRefresh={() => void today.refetch()} refreshing={today.isRefetching}>
-        {today.isPending ? (
-          <LoadingState />
-        ) : today.isError ? (
-          <ErrorState error={today.error} onRetry={() => void today.refetch()} />
-        ) : !today.data.loginAt ? (
-          <Banner tone="warn" title={t('fa03.notLoggedIn')} message={t('fa04.loginOnHome')} action={<Button label={t('tabs.home')} onPress={() => router.replace(routes.home)} />} />
-        ) : (
+        {/* Log in / status / Log out: the same controls as Today (17 Nov); never a status picker on a day that is not open. */}
+        <DayControls testID="fa04-day" />
+        {today.data?.loginAt ? (
           <>
-            <Banner
-              tone="ok"
-              title={`${t('fa03.loggedInAt', { time: formatTimeIst(today.data.loginAt) })} · ${
-                today.data.lateMinutes > 0 ? t('fa03.lateBy', { minutes: today.data.lateMinutes }) : t('fa03.onTime')
-              }`}
-              testID="fa04-logged-in"
-            />
-            <Card stripe accent="gold">
-              <SelectField
-                label={t('fa03.myStatus')}
-                value={isPickableStatus(today.data.status) ? today.data.status : null}
-                placeholder={today.data.status ? statusLabel(today.data.status, t) : t('form.choose')}
-                choices={PICKABLE.map((s) => ({ value: s, label: labels[s] }))}
-                onChange={(s) => change.mutate(s)}
-                testID="fa04-status"
-              />
-              {change.error ? <Text variant="small" color={colors.tomato} testID="fa04-status-error">{attendanceErrorText(change.error, 'today.statusFailed', t)}</Text> : null}
-            </Card>
             <HeroCard eyebrow={t('fa04.production')} emoji="⏱️">
               <Text style={styles.heroValue} testID="fa04-production">
                 {t('fa04.ofHours', { done: hm(today.data.productionSeconds), total: '8h' })}
@@ -106,7 +62,7 @@ export default function CheckedInScreen() {
               />
             </Card>
           </>
-        )}
+        ) : null}
         <Card testID="fa04-location">
           <ListRow title={t('fa04.location')} leading={<IconTile icon="location" accent="cyan" size={34} />} trailing={<Text variant="bodyStrong">{checkIn ? formatCoordinates(checkIn) : t('common.placeholderValue')}</Text>} />
           <ListRow

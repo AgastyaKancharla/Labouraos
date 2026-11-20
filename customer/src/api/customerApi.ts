@@ -1,6 +1,7 @@
 import type {
   AppConfig,
   AuthResult,
+  BusinessShift,
   BusinessForm,
   CallbackRequest,
   CustomerAccount,
@@ -71,6 +72,11 @@ export interface CustomerApi {
   // Legal documents (rev 176): the current terms and re-consent by a fresh OTP
   legalDocument(profileId: string, language: string): Promise<LegalDocumentView>;
   acceptTerms(profileId: string, input: { purposes: string[]; language: string; otp: OtpProof; textHash?: string }): Promise<{ version: string }>;
+
+  // The business's own shifts (17 Nov): a vacancy picks one
+  shifts(profileId: string): Promise<BusinessShift[]>;
+  addShift(profileId: string, input: { name: string; startTime: string; endTime: string }): Promise<BusinessShift>;
+  removeShift(profileId: string, shiftId: string): Promise<void>;
 
   // Business vacancies: a draft, then the contact person's fresh OTP
   createVacancy(profileId: string, draft: VacancyDraft): Promise<VacancySummary>;

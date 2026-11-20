@@ -74,6 +74,14 @@ describe('FA05 Visits', () => {
     await waitFor(() => expect(days).toContain(addDays(todayKeyIst(), -1)));
   });
 
+  it('has All visits beside Today and Yesterday (17 Nov), opening the whole history', async () => {
+    await renderWithApp(<VisitsScreen />, { signedInAs: kiran, route });
+    await waitFor(() => screen.getByTestId('fa05-day-all'));
+    expect(screen.getByTestId('fa05-day-all')).toHaveTextContent('All visits');
+    await fireEvent.press(screen.getByTestId('fa05-day-all'));
+    expect(router.push).toHaveBeenCalledWith('/visits/all');
+  });
+
   it('shows a business that signed up in the app as a sign-up visit with the time the owner picked, opening the verification steps', async () => {
     const signup = {
       ...visits,

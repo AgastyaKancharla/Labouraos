@@ -9,7 +9,7 @@ import { TopBar } from '../../../components/TopBar';
 import { useToast } from '../../../components/Toast';
 import { api } from '../../../lib/api/client';
 import { ApiError } from '../../../lib/api/errors';
-import { formatDateIST, istDateKey, istStartOfDay } from '../../../lib/format/date';
+import { formatDateIST, istDateKey } from '../../../lib/format/date';
 import { formatINR } from '../../../lib/format/money';
 import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
@@ -105,7 +105,9 @@ export default function MinimumWage() {
 }
 
 function UpdateFigures({ current, onClose }: { current: MinWage; onClose: () => void }) {
-  const today = istDateKey(useNow());
+  // The date already in force (a calendar date) unless the CEO picks the new notification's date.
+  const now = useNow();
+  const inForce = current.effectiveFrom ? String(current.effectiveFrom).slice(0, 10) : istDateKey(now);
   const [v, setV] = useState<Record<string, number | null>>(() => {
     const start: Record<string, number | null> = {};
     for (const [zone] of ZONES) {
@@ -114,11 +116,11 @@ function UpdateFigures({ current, onClose }: { current: MinWage; onClose: () => 
     }
     return start;
   });
-  const [from, setFrom] = useState(today);
+  const [from, setFrom] = useState(inForce);
   const toast = useToast();
   const qc = useQueryClient();
   const save = useMutation({
-    mutationFn: () => api.put('/pricing/legal-minimum-wages', { ...v, effectiveFrom: istStartOfDay(from).toISOString() }),
+    mutationFn: () => api.put('/pricing/legal-minimum-wages', { ...v, effectiveFrom: from }),
     onSuccess: () => {
       toast.success('Minimum wage figures updated');
       void qc.invalidateQueries({ queryKey: ['ceo'] });

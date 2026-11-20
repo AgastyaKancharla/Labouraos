@@ -48,7 +48,8 @@ describe('Security AC-4: money is stripped from audit rows except for the CEO an
   describe('over HTTP', () => {
     let app: INestApplication;
     let prisma: PrismaService;
-    const suffix = Date.now().toString().slice(-7);
+    // No 9s in the test codes: the row is checked for the money digits "999", which a code must never trip.
+    const suffix = Date.now().toString().slice(-7).replace(/9/g, '8');
     const staffIds: string[] = [];
     const tokens: Record<'ceo' | 'lead', string> = { ceo: '', lead: '' };
     const entityCode = `PAY-AC4-${suffix}`;
