@@ -1,8 +1,29 @@
 import type { Area, HeardFrom, JobSeekerForm, Language, Pin, SalaryPeriod, Shift, Trade } from '@/api/types';
 import type { MessageKey } from '@/i18n';
 import { ageOn, isPincode } from '@/lib/validate';
+import { addDays, todayKeyIst as todayKeyIstNow } from '@/components/form';
 
 export const OTHER_TRADE = '__other__';
+
+/**
+ * "How long have you been looking for work?" — simple choices instead of a
+ * calendar (Agastya, 22 Nov). The server keeps a date (lookingSince), so the
+ * choice is turned into "today minus that long" when the form is sent.
+ */
+export const LOOKING_FOR = [
+  { value: 'now', days: 0, label: 'jobSeeker.looking.now' },
+  { value: '1w', days: 7, label: 'jobSeeker.looking.1w' },
+  { value: '2w', days: 14, label: 'jobSeeker.looking.2w' },
+  { value: '1m', days: 30, label: 'jobSeeker.looking.1m' },
+  { value: '3m', days: 90, label: 'jobSeeker.looking.3m' },
+  { value: '6m', days: 180, label: 'jobSeeker.looking.6m' },
+] as const satisfies readonly { value: string; days: number; label: MessageKey }[];
+export type LookingFor = (typeof LOOKING_FOR)[number]['value'];
+
+export function lookingSinceFrom(choice: LookingFor, todayKey: string): string {
+  const days = LOOKING_FOR.find((c) => c.value === choice)?.days ?? 0;
+  return addDays(todayKey, -days);
+}
 export const MAX_TRADES = 3;
 
 export interface TradeRow {
@@ -25,7 +46,8 @@ export interface JobSeekerDraft {
   travelKm: number | null;
   trades: TradeRow[];
   availableFrom: string;
-  lookingSince: string;
+  /** How long he has been looking (a choice); sent as the date lookingSince. */
+  lookingFor: '' | LookingFor;
   salaryMinPaise: number | null;
   salaryMaxPaise: number | null;
   salaryPeriod: SalaryPeriod;
@@ -48,7 +70,7 @@ export const emptyJobSeeker = (language: Language): JobSeekerDraft => ({
   travelKm: null,
   trades: [{ trade: '', otherName: '', years: null }],
   availableFrom: '',
-  lookingSince: '',
+  lookingFor: '',
   salaryMinPaise: null,
   salaryMaxPaise: null,
   salaryPeriod: 'monthly',
@@ -84,7 +106,7 @@ export function validateJobSeeker(d: JobSeekerDraft): JobSeekerErrors {
     else if (row.years > 50) e[`years${i}`] = 'jobSeeker.yearsTooMany';
   });
   if (!d.availableFrom) e.availableFrom = 'form.required';
-  if (!d.lookingSince) e.lookingSince = 'form.required';
+  if (!d.lookingFor) e.lookingFor = 'form.required';
   if (!d.salaryMinPaise) e.salaryMin = 'form.required';
   if (!d.salaryMaxPaise) e.salaryMax = 'form.required';
   else if (d.salaryMinPaise && d.salaryMaxPaise < d.salaryMinPaise) e.salaryMax = 'jobSeeker.maxBelowMin';
@@ -95,7 +117,7 @@ export function validateJobSeeker(d: JobSeekerDraft): JobSeekerErrors {
 }
 
 /** Without a pin, the centre of the chosen area (an agent fixes it later). */
-export function toJobSeekerForm(d: JobSeekerDraft, areas: Area[] = []): JobSeekerForm {
+export function toJobSeekerForm(d: JobSeekerDraft, areas: Area[] = [], todayKey: string = todayKeyIstNow()): JobSeekerForm {
   const area = areas.find((a) => a.name === d.area);
   return {
     fullName: d.fullName.trim(),
@@ -111,7 +133,7 @@ export function toJobSeekerForm(d: JobSeekerDraft, areas: Area[] = []): JobSeeke
       row.trade === OTHER_TRADE ? { trade: 'other', otherName: row.otherName.trim(), years: row.years ?? 0 } : { trade: row.trade, years: row.years ?? 0 },
     ),
     availableFrom: d.availableFrom,
-    lookingSince: d.lookingSince,
+    lookingSince: lookingSinceFrom(d.lookingFor || 'now', todayKey),
     salaryMinPaise: d.salaryMinPaise ?? 0,
     salaryMaxPaise: d.salaryMaxPaise ?? 0,
     salaryPeriod: d.salaryPeriod,
