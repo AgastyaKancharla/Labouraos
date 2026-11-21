@@ -200,7 +200,7 @@ export class CustomerHomeService {
     const businessId = profile.businessId!;
     const branchId = profile.branchId;
     const now = this.clock.now();
-    const [business, branch, agreement, visit, doneVisit, vacancies, drafts] = await Promise.all([
+    const [business, branch, agreement, visit, doneVisit, vacancies, drafts, workersPlaced] = await Promise.all([
       this.prisma.business.findUniqueOrThrow({
         where: { id: businessId },
         select: { code: true, name: true, verificationStatus: true, verifiedAt: true, inPersonOnboardedAt: true, suspendedAt: true, suspendedUntil: true, suspensionReason: true },
@@ -227,6 +227,10 @@ export class CustomerHomeService {
         where: { businessId, status: 'draft', ...(branchId ? { branchId } : {}) },
         orderBy: { updatedAt: 'desc' },
         select: { id: true, form: true, updatedAt: true },
+      }),
+      // Workers it can report on ("a worker left"): fee paid, working now or due to join.
+      this.prisma.placement.count({
+        where: { businessId, status: { in: ['active', 'confirmed'] }, ...(branchId ? { vacancy: { branchId } } : {}) },
       }),
     ]);
     const verified = business.verificationStatus === 'verified' || Boolean(business.verifiedAt);
@@ -280,6 +284,8 @@ export class CustomerHomeService {
       counts: {
         interviewsUpcoming: vacancyRows.reduce((sum, v) => sum + v.interviewsUpcoming, 0),
         placements: vacancyRows.reduce((sum, v) => sum + v.placements, 0),
+        /** Workers placed whose fee is paid (working now, or due to join): "Report a worker left" shows when above 0. */
+        workersPlaced,
       },
       nextAction,
     };

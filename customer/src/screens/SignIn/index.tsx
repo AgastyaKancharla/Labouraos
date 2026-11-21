@@ -13,8 +13,8 @@ import { routes } from '@/navigation/routes';
 
 /**
  * Sign-in (decision D2): "Continue with Google" or "Continue with mobile
- * number", and "Sign in with Apple" on iPhone (Apple rule 4.8) once the
- * server supports it (not in the v1 contract yet). Either way the mobile
+ * number", and "Sign in with Apple" on iPhone (Apple rule 4.8) when the
+ * server's GET /config says appleSignIn (an Apple client id is set). Either way the mobile
  * number is verified before any profile is registered.
  */
 export default function SignIn() {
@@ -61,7 +61,7 @@ export default function SignIn() {
     setBusy('apple');
     setError(null);
     const result = await appleSignIn();
-    if (result.status === 'ok') await finish(() => api.signInWithApple({ identityToken: result.identityToken, fullName: result.fullName }));
+    if (result.status === 'ok') await finish(() => api.signInWithApple({ idToken: result.idToken, nonce: result.nonce, name: result.name }));
     else if (result.status === 'error') setError(t('signIn.failed'));
     setBusy(null);
   };

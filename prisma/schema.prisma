@@ -3061,6 +3061,8 @@ model CustomerAccount {
   deletionRequests      CustomerDeletionRequest[]
   callbackRequests      CustomerCallbackRequest[]
   vacancyDrafts         CustomerVacancyDraft[]
+  workerLeftReports     CustomerWorkerLeftReport[]
+  referralLeads         CustomerReferralLead[]
 
   @@index([status])
   @@index([createdAt])
@@ -3370,6 +3372,85 @@ model CustomerCallbackRequest {
 
   @@index([status, createdAt])
   @@index([accountId])
+}
+
+/// "A worker left" told by a business in the app (Master Guide, customer app
+/// 14 Nov: a business may report a worker leaving in the app; claims still go
+/// to the Team Lead). It is NOT the replacement claim: the call team calls the
+/// owner (the answered, recorded call a claim needs) and files the claim from
+/// the staff screens as today. createdAt is when the business told Laboura.
+/// Customer-only table; the office session reads it (open reports, the claim
+/// filed from it) and sets status / claimId.
+model CustomerWorkerLeftReport {
+  id                String          @id @default(uuid())
+  /// Null once the account is deleted: the report stays as the record of when the business told Laboura.
+  accountId         String?
+  account           CustomerAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  /// CustomerProfile.id of the business profile that reported it.
+  profileId         String
+  businessId        String
+  /// Set when a branch profile reported it (that branch's worker).
+  branchId          String?
+  placementId       String
+  /// The Indian day the business says the worker left, as UTC midnight of that date (as ReplacementClaim.workerLeftOn).
+  workerLeftOn      DateTime
+  /// A key from the claim reasons (placement/claim-reasons.ts).
+  reason            String
+  /// Optional words from the business, at most 200 characters, no ID or phone numbers.
+  note              String?
+  /// open (waiting for the call team), claim_filed, closed
+  status            String          @default("open")
+  /// The "Call me back" request made with it, so the call team gets a task at once.
+  callbackRequestId String?
+  /// ReplacementClaim.id once the call team files the claim.
+  claimId           String?
+  closedAt          DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([placementId, status])
+  @@index([status, createdAt])
+  @@index([accountId])
+}
+
+/// A lead a referral partner sends from the app (Master Guide, 21 Nov: a
+/// submit-a-lead form). Someone who wants a job, or a business that needs
+/// staff, who agreed to be called by Laboura. It is not a registration: the
+/// call team calls, and if the person registers, "referred by" is this
+/// partner. The ₹200 reward stays as it is: only when a referred candidate
+/// joins a job. Customer-only table; the office session picks new leads up
+/// (call list) and sets status / subjectType / subjectId.
+model CustomerReferralLead {
+  id            String          @id @default(uuid())
+  /// Null once the referral partner deletes their account: the lead stays with Laboura (Agastya, 21 Nov).
+  accountId     String?
+  account       CustomerAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  /// CustomerProfile.id of the partner profile that sent it.
+  profileId     String
+  referralId    String
+  /// The partner's RF- code, for "referred by".
+  referralCode  String
+  /// job_seeker (wants a job) or business (needs staff); optional — name and mobile are enough
+  kind          String?
+  name          String
+  /// +91 and 10 digits. Never shown back to the partner.
+  phone         String
+  /// An area from the managed list; optional.
+  area          String?
+  /// The partner ticked that this person agreed Laboura may call them.
+  personAgreed  Boolean
+  /// new, contacted, registered, not_interested, closed (set by the office session)
+  status        String          @default("new")
+  /// The record once the person registers: job_seeker or business, and its id.
+  subjectType   String?
+  subjectId     String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@unique([referralId, phone])
+  @@index([status, createdAt])
+  @@index([accountId])
+  @@index([phone])
 }
 
 /// A vacancy a business user is writing in the app. It becomes a real vacancy

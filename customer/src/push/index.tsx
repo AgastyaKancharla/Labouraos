@@ -1,7 +1,7 @@
 /**
- * Agent C's part of the Laboura app: push notifications and the inbox.
+ * Push notifications and the inbox of the Laboura app.
  * The rest of the app uses exactly these exports (customer/README.md,
- * "Hand-off to Agent C"):
+ * "Notifications"):
  *   - InboxScreen: default export of app/(app)/inbox.tsx.
  *   - PushBridge: rendered once in the signed-in layout.
  * Also available: useUnreadCount (a badge for the bell) and

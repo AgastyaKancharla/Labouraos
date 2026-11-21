@@ -22,8 +22,7 @@ import type {
   StepUpPurpose,
   VacancyDraft,
   VacancySummary,
-  LegalDocumentView,
-} from './types';
+  LegalDocumentView, WorkersAnswer, LeadKind, ReferralLeadsAnswer } from './types';
 
 /**
  * Everything the screens can ask the server. Two implementations:
@@ -41,7 +40,8 @@ export interface CustomerApi {
   sendSignInOtp(phone: string, resendOf?: string): Promise<OtpSent>;
   verifySignInOtp(input: { phone: string; requestId: string; code: string; contactConsent: boolean }): Promise<AuthResult>;
   signInWithGoogle(idToken: string): Promise<AuthResult>;
-  signInWithApple(input: { identityToken: string; fullName: string | null }): Promise<AuthResult>;
+  /** Field names as the server reads them (contract 3.2): idToken, nonce (raw), name. */
+  signInWithApple(input: { idToken: string; nonce: string; name: string | null }): Promise<AuthResult>;
   signOut(): Promise<void>;
 
   // The signed-in account
@@ -82,6 +82,15 @@ export interface CustomerApi {
   createVacancy(profileId: string, draft: VacancyDraft): Promise<VacancySummary>;
   /** `otp` null = retry after the minimum-wage tick with the OTP already checked. */
   confirmVacancy(profileId: string, draftId: string, input: { otp: OtpProof | null; ownerToldMinimumWage: boolean }): Promise<VacancySummary>;
+
+  // "A worker left" (contract 8.2): the business tells us; the call team calls and files the claim
+  workers(profileId: string): Promise<WorkersAnswer>;
+  reportWorkerLeft(profileId: string, placementId: string, input: { workerLeftOn: string; reason: string; note: string | null }): Promise<{ reportId: string; status: string }>;
+
+  // Referral partner: send a lead (contract 7.3b) — switched on by the server
+  referralLeads(profileId: string): Promise<ReferralLeadsAnswer>;
+  /** Name and mobile are enough; who they are and the area are optional (Agastya, 21 Nov). */
+  sendReferralLead(profileId: string, input: { name: string; phone: string; personAgreed: boolean; kind?: LeadKind; area?: string }): Promise<{ leadId: string; stage: string }>;
 
   // Help and privacy
   requestCallback(request: CallbackRequest): Promise<{ id: string }>;
