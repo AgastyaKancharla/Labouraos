@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { authApi, type PasswordResetNotice, type TokenResponse } from './authApi';
 import { isStaffRole } from './roles';
 import { sessionFromToken, sessionStore, type Session, type SignOutReason } from './session';
-import { refreshSession } from './refresh';
+import { listenForSharedTokens, refreshSession, shareToken } from './refresh';
 
 /**
  * Holds the signed-in staff session and keeps it alive while the person is
@@ -42,6 +42,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [signOutReason, setSignOutReason] = useState<SignOutReason | null>(null);
   const [resetNotice, setResetNotice] = useState<PasswordResetNotice | null>(null);
 
+  // Tokens renewed in another tab of this session arrive here (21 Nov).
+  useEffect(() => listenForSharedTokens(), []);
+
   useEffect(
     () =>
       sessionStore.subscribe((next, reason) => {
@@ -60,7 +63,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!session || session.totpSetupOnly) return;
     const wait = Math.max(1000, session.expiresAt - Date.now() - REFRESH_BEFORE_EXPIRY_MS);
     const timer = setTimeout(async () => {
-      if (session.refreshToken && session.sessionId) {
+      // While the token still works, renew with the bearer refresh: it does not
+      // use up the single-use refresh token, so a second tab with the same one
+      // is not knocked out (21 Nov). After it ran out, the refresh token.
+      if (session.refreshToken && session.sessionId && sessionStore.get()!.expiresAt <= Date.now()) {
         // 'ended' already signed out with the server's reason; 'failed' (offline) tries again on the next request.
         await refreshSession();
         return;
@@ -68,6 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const { accessToken } = await authApi.refresh();
         sessionStore.replaceToken(accessToken);
+        shareToken();
       } catch {
         // apiRequest already cleared the session with the API's reason on 401;
         // anything else (network) leaves the token to expire normally.

@@ -38,6 +38,8 @@ export interface DayRow {
   breakOverSeconds: number;
   /** Short breaks taken that day (the guide allows two 15-minute breaks a day, plus lunch). */
   breakCount: number;
+  /** "Resume my day" presses that day (21 Nov). */
+  resumeCount: number;
   idleSeconds: number;
   shortfallSeconds: number;
   makeUpSeconds: number;
@@ -419,6 +421,7 @@ export class AttendanceDaysService {
       dayTypeChangedById: string | null;
       dayTypeChangedAt: Date | null;
       dayTypeChangeReason: string | null;
+      resumeCount?: number;
       segments: AttendanceSegment[];
     },
     policy: PricingPolicy,
@@ -434,6 +437,7 @@ export class AttendanceDaysService {
       breakSeconds: day.breakSeconds,
       breakOverSeconds: this.breakOverSeconds(day.segments, policy, day.logoutAt),
       breakCount: day.segments.filter((segment) => segment.status === 'short_break').length,
+      resumeCount: day.resumeCount ?? 0,
       idleSeconds: day.idleSeconds,
       shortfallSeconds: day.dayType === 'open' ? 0 : day.shortfallSeconds,
       makeUpSeconds: day.dayType === 'open' ? 0 : day.makeUpSeconds,

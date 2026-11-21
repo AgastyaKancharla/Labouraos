@@ -15,6 +15,13 @@ import { SessionDayService } from './session-day.service';
 import { appForRole, isStaffApp, roleAllowedInApp } from './staff-app';
 import { isFieldHost } from '../../modules/web-app/site-hosts';
 
+/** Header the web app sets on polls made while nobody is using the page (21 Nov). */
+export const BACKGROUND_HEADER = 'x-laboura-background';
+
+export function isBackgroundRequest(req: { headers?: Record<string, unknown> }): boolean {
+  return req.headers?.[BACKGROUND_HEADER] === '1';
+}
+
 /** A token used in the other app (or on the other app's address). */
 export const WRONG_APP_TOKEN = 'This sign-in belongs to the other Laboura app: sign in again here';
 
@@ -105,7 +112,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
       noteRequestDevice({ staffId: payload.sub, sessionId: session.id, deviceId: session.deviceId });
 
-      if (shouldTouchActivity(session.lastActivityAt, now)) {
+      // Background polls (the web app's 30-second refreshes, bells, the live
+      // stream) say so with X-Laboura-Background and never count as activity,
+      // so outside an open attendance day the 1-hour idle rule works (21 Nov).
+      if (!isBackgroundRequest(req) && shouldTouchActivity(session.lastActivityAt, now)) {
         await this.prisma.staffSession.updateMany({
           where: { id: session.id, revokedAt: null },
           data: { lastActivityAt: now },

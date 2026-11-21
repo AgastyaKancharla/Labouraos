@@ -1485,6 +1485,11 @@ model StaffSession {
   /// after the app was closed; the office web app after its 15-minute token
   /// ran out, decided 21 Nov). Single use: each refresh hands out the next one.
   tokenHash          String?
+  /// The refresh token's hash before the last renewal and when it was renewed (21 Nov):
+  /// a second tab that used the old one within a minute is refused softly; any other
+  /// reuse of an old token ends the session.
+  previousTokenHash  String?
+  tokenRotatedAt     DateTime?
   /// The app the session belongs to: office (app.laboura.com) or field (Laboura Field).
   /// A token works only in its own app. Null on sessions from before 14 Nov (the role's own app).
   app                String?
@@ -1731,6 +1736,8 @@ model AttendanceDay {
   /// Last click, key, call or saved work (decided 21 Nov): "Still there?" counts from
   /// this. lastHeartbeatAt is any sign of an open, visible console or Laboura Field.
   lastActiveAt      DateTime?
+  /// Times the person pressed "Resume my day" on this day (21 Nov); the second rings the Team Lead.
+  resumeCount       Int                 @default(0)
   flagged           Boolean             @default(false)
   /// Production below the full-day line on a full day. Zero on a half day,
   /// inside the tolerance, and after a Team Lead or Manager changes the day.

@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PricingService } from '../../modules/pricing/pricing.service';
 import { sessionLifetimeEnd } from '../auth/session-lifetime';
 import { SessionDayService } from '../auth/session-day.service';
+import { AuthClock } from '../auth/auth.service';
 import { LiveEventsService } from './live-events.service';
 
 /** Keeps proxies (Render, Cloudflare) from closing a quiet connection. */
@@ -38,6 +39,7 @@ export class LiveController {
     private readonly prisma: PrismaService,
     private readonly pricing: PricingService,
     @Optional() private readonly sessionDay?: SessionDayService,
+    @Optional() private readonly clock?: AuthClock,
   ) {}
 
   /**
@@ -92,9 +94,10 @@ export class LiveController {
       });
       if (!session || session.revokedAt || session.staff.status !== 'active') return false;
       // Day-long while the attendance day is open on an approved device (decided 21 Nov).
-      if (this.sessionDay) return (await this.sessionDay.endFor(session, new Date())) === null;
+      const now = this.clock?.now() ?? new Date();
+      if (this.sessionDay) return (await this.sessionDay.endFor(session, now)) === null;
       const policy = await this.pricing.current();
-      return sessionLifetimeEnd(session, new Date(), policy.idleLogoutMinutes) === null;
+      return sessionLifetimeEnd(session, now, policy.idleLogoutMinutes) === null;
     }
     const staff = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { status: true } });
     return staff?.status === 'active';

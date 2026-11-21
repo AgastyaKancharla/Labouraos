@@ -4,9 +4,18 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { ClearInfo, NotificationDraft, NotificationService } from '../notification/notification.service';
 import { NotificationSourcesService } from '../notification/notification-sources.service';
 import type { DirectoryRow, StaffDirectory } from '../notification/staff-directory';
+import { istClockOn } from '../attendance/staff-shift';
 
 export const LOGIN_CODE_BELL = 'login_code_request' as const;
 export const DEVICE_BELL = 'device_approval_request' as const;
+export const NO_CODE_BELL = 'signed_in_without_code' as const;
+
+export interface NoCodeSignInRow {
+  id: string;
+  title: string;
+  body: string | null;
+  at: string;
+}
 
 /**
  * Bells for sign-in requests (Master Guide rev 202, decided 21 Nov): the Team
@@ -155,6 +164,47 @@ export class SignInBellsService implements OnModuleInit {
         now,
       );
     });
+  }
+
+  /**
+   * Signed in again without a code (a code was accepted earlier today on that
+   * device) and it ended a session still in use, or came from a network not
+   * seen today (21 Nov hardening): a bell for the same seniors, shown on their
+   * Login codes screen. Informational: reading it clears it.
+   */
+  async noCodeSignIn(
+    staffId: string,
+    sessionId: string,
+    why: { endedEarlierSession: boolean; newNetwork: boolean },
+    now: Date = this.notifications.now(),
+  ): Promise<void> {
+    await this.safely('no-code sign-in', async () => {
+      const dir = await this.directory();
+      if (!dir || !sessionId) return;
+      const reasons = [why.endedEarlierSession ? 'ended the earlier session' : null, why.newNetwork ? 'from a new network' : null]
+        .filter(Boolean)
+        .join(' and ');
+      const drafts = this.drafts(dir, staffId, {
+        kind: NO_CODE_BELL,
+        title: `${this.who(dir, staffId)} signed in again without a code — ${reasons}`,
+        body: 'A login code was given earlier today on the same device. If this was not them, lock the account or end the session.',
+        subjectType: 'staff_session',
+        subjectId: sessionId,
+      });
+      for (const draft of drafts) await this.notifications.open(draft, now);
+    });
+  }
+
+  /** Today's "signed in again without a code" alerts for this senior (their Login codes screen). */
+  async noCodeSignInsFor(readerId: string, now: Date = this.notifications.now()): Promise<NoCodeSignInRow[]> {
+    const dayStart = istClockOn(now, '00:00');
+    const rows = await this.prisma.notification.findMany({
+      where: { recipientStaffId: readerId, kind: NO_CODE_BELL, createdAt: { gte: dayStart } },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: { id: true, title: true, body: true, createdAt: true },
+    });
+    return rows.map((row) => ({ id: row.id, title: row.title, body: row.body, at: row.createdAt.toISOString() }));
   }
 
   /** Every open sign-in request: opens missing bells, clears finished ones (the sweep). */

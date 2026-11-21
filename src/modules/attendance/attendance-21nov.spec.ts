@@ -348,6 +348,47 @@ describe('Attendance fixes (21 Nov): own shifts, idle, closing and reopening day
       await post(token, '/attendance/login').expect(201);
     });
 
+    it('Resume is refused once a senior changed the day; the Team Lead\'s Reopen clears the change and keeps it in the audit row', async () => {
+      const agent = await agentOf(lead, 'RCH');
+      const token = tokenFor(agent);
+      await post(token, '/attendance/login').expect(201);
+      at('2026-11-24T05:00:00.000Z');
+      await post(token, '/attendance/logout').expect(201);
+      const day = await prisma.attendanceDay.findFirstOrThrow({ where: { staffId: agent.id } });
+      await post(tokenFor(lead), `/attendance/days/${day.id}/day-type`, { dayType: 'full', reason: 'Was in a client meeting' }).expect(201);
+      expect((await today(token)).body.canResume).toBe(false);
+      const refused = await post(token, '/attendance/resume');
+      expect(refused.status).toBe(400);
+      expect(JSON.stringify(refused.body)).toContain('Ask your Team Lead to reopen your day');
+
+      at('2026-11-24T05:10:00.000Z');
+      await post(tokenFor(lead), `/attendance/days/${day.id}/reopen`, { reason: 'Back after the meeting' }).expect(201);
+      const open = await prisma.attendanceDay.findUniqueOrThrow({ where: { id: day.id } });
+      expect(open).toMatchObject({ logoutAt: null, dayTypeChangedAt: null, dayTypeChangedById: null, dayTypeChangeReason: null });
+      const audit = await prisma.auditLog.findFirst({ where: { actorId: lead.id, action: 'attendance.day_reopened', entityCode: day.id } });
+      expect(audit?.before).toMatchObject({ dayTypeChangedById: lead.id, dayTypeChangeReason: 'Was in a client meeting' });
+    });
+
+    it('counts Resume presses on the day row and rings the Team Lead on the second one', async () => {
+      const agent = await agentOf(lead, 'RCT');
+      const token = tokenFor(agent);
+      await post(token, '/attendance/login').expect(201);
+      for (const [out, back] of [['05:00', '05:05'], ['06:00', '06:05']] as const) {
+        at(`2026-11-24T${out}:00.000Z`);
+        await post(token, '/attendance/logout').expect(201);
+        at(`2026-11-24T${back}:00.000Z`);
+        await post(token, '/attendance/resume').expect(201);
+      }
+      const day = await prisma.attendanceDay.findFirstOrThrow({ where: { staffId: agent.id } });
+      expect(day.resumeCount).toBe(2);
+      expect((await today(token)).body.resumeCount).toBe(2);
+      const month = await http().get('/attendance/month').query({ month: '2026-11', staffId: agent.id }).set('Authorization', `Bearer ${tokenFor(lead)}`).expect(200);
+      expect(month.body.days.find((d: { id: string }) => d.id === day.id).resumeCount).toBe(2);
+      const bells = await prisma.notification.findMany({ where: { kind: 'day_resumed_again', recipientStaffId: lead.id } });
+      expect(bells).toHaveLength(1);
+      expect(bells[0].title).toContain('resumed their day 2 times');
+    });
+
     it('the Team Lead reopens today\'s closed day with a reason; others and earlier days are refused', async () => {
       const agent = await agentOf(lead, 'REO');
       const token = tokenFor(agent);
@@ -362,7 +403,7 @@ describe('Attendance fixes (21 Nov): own shifts, idle, closing and reopening day
       at('2026-11-24T05:10:00.000Z');
       await post(tokenFor(lead), `/attendance/days/${day.id}/reopen`, { reason: 'Logged out by mistake' }).expect(201);
       expect((await today(token)).body).toMatchObject({ logoutAt: null, status: 'available' });
-      const audit = await prisma.auditLog.findFirst({ where: { actorId: lead.id, action: 'attendance.day_reopened' } });
+      const audit = await prisma.auditLog.findFirst({ where: { actorId: lead.id, action: 'attendance.day_reopened', entityCode: day.id } });
       expect(audit?.reason).toBe('Logged out by mistake');
       // Still open: nothing to reopen.
       await post(tokenFor(lead), `/attendance/days/${day.id}/reopen`, { reason: 'again' }).expect(400);

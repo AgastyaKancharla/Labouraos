@@ -40,6 +40,7 @@ import {
 } from './session-lifetime';
 import { SessionDayService } from './session-day.service';
 import { istClockOn } from '../../modules/attendance/staff-shift';
+import { userAgentFamily } from './user-agent-family';
 import { appForRole, appLabel, FIELD_APP_ONLY_MESSAGE, isStaffApp, roleAllowedInApp, StaffApp, UNKNOWN_APP_MESSAGE, wrongAppMessage } from './staff-app';
 
 export interface StaffSessionView {
@@ -85,6 +86,9 @@ export const DEVICE_NO_LONGER_APPROVED = 'This device is no longer approved. Ask
  */
 export const FIELD_SESSION_ROLES: readonly string[] = ['field_agent'];
 export const FIELD_SESSION_REFUSED = 'Session not found';
+
+/** A second tab presenting the refresh token renewed this recently is refused without ending the session. */
+export const REFRESH_REUSE_GRACE_MS = 60 * 1000;
 
 /** Ended reasons after which the next sign-in needs a login code again (decided 21 Nov). */
 const CODE_AGAIN_REASONS = ['revoked', 'locked'];
@@ -296,8 +300,9 @@ export class AuthService {
 
     // A login code once a day (decided 21 Nov): signed in with a code today on
     // this approved device and app, and nothing since asked for a new code.
-    if (await this.signedInWithCodeToday(staff, device, app)) {
-      return this.issueSession(staff, deviceId, metadata, null, app, 'code_accepted_earlier_today');
+    const earlier = await this.signedInWithCodeToday(staff, device, app, metadata);
+    if (earlier) {
+      return this.issueSessionWithoutCode(staff, deviceId, metadata, app, earlier);
     }
 
     const request = await this.loginCodeService.create(staff.id, device.id, metadata?.ip ?? '', app);
@@ -326,7 +331,8 @@ export class AuthService {
     staff: Staff,
     device: { deviceId: string; approvedAt: Date | null },
     app: StaffApp,
-  ): Promise<boolean> {
+    metadata?: LoginMetadata,
+  ): Promise<{ id: string } | null> {
     const now = this.clock.now();
     const since = Math.max(istClockOn(now, '00:00').getTime(), device.approvedAt?.getTime() ?? 0);
     // Strictly after the sessions were ended (a lock at the same instant as the sign-in still asks again).
@@ -339,9 +345,58 @@ export class AuthService {
         loginCodeRequestId: { not: null },
         createdAt: { gte: new Date(since), lte: now, ...(revoked ? { gt: revoked } : {}) },
       },
-      select: { id: true },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, userAgent: true },
     });
-    return Boolean(earlier);
+    if (!earlier) return null;
+    // Hardening (21 Nov): the device id comes from the client, so the browser or
+    // app family must also match the sign-in that had the code.
+    if (userAgentFamily(earlier.userAgent) !== userAgentFamily(metadata?.userAgent)) return null;
+    return { id: earlier.id };
+  }
+
+  /**
+   * A sign-in without a code (a code was accepted earlier today on this
+   * device). When it replaces a session still in use, or comes from a network
+   * not seen today, the Team Lead and the Manager above get a bell and it
+   * shows on their Login codes screen (21 Nov hardening).
+   */
+  private async issueSessionWithoutCode(
+    staff: Staff,
+    deviceId: string,
+    metadata: LoginMetadata | undefined,
+    app: StaffApp,
+    codeSession: { id: string },
+  ): Promise<LoginResponseDto> {
+    const now = this.clock.now();
+    const open = await this.prisma.staffSession.findMany({
+      where: { staffId: staff.id, revokedAt: null },
+      select: { staffId: true, deviceId: true, createdAt: true, lastActivityAt: true, absoluteExpiresAt: true },
+    });
+    let endedLive = false;
+    for (const session of open) {
+      if ((await this.sessionDay.endFor(session, now)) === null) endedLive = true;
+    }
+    const ip = metadata?.ip?.trim() || null;
+    let newIp = false;
+    if (ip) {
+      const seen = await this.prisma.staffSession.findFirst({
+        where: { staffId: staff.id, ipAddress: ip, createdAt: { gte: istClockOn(now, '00:00'), lte: now } },
+        select: { id: true },
+      });
+      newIp = !seen;
+    }
+    const response = await this.issueSession(staff, deviceId, metadata, null, app, 'code_accepted_earlier_today');
+    if (endedLive || newIp) {
+      await this.auditAttempt(staff.id, staff.code, 'auth.login.without_code_alert', {
+        sessionId: response.sessionId,
+        codeSessionId: codeSession.id,
+        endedEarlierSession: endedLive,
+        newNetwork: newIp,
+      });
+      await this.signInBells?.noCodeSignIn(staff.id, response.sessionId ?? '', { endedEarlierSession: endedLive, newNetwork: newIp }, now);
+    }
+    return response;
   }
 
   /**
@@ -668,6 +723,37 @@ export class AuthService {
     });
     const presented = hashRefreshToken(refreshToken);
     const sessionApp = session ? (isStaffApp(session.app) ? session.app : appForRole(session.staff.role)) : null;
+    // An old refresh token presented again (21 Nov): a second tab that used the
+    // previous one within a minute of the renewal is refused softly; any other
+    // reuse means the token may be in someone else's hands — the session ends.
+    if (
+      session &&
+      session.tokenHash &&
+      !sameHash(session.tokenHash, presented) &&
+      session.deviceId === deviceId &&
+      sessionApp === app &&
+      !session.revokedAt
+    ) {
+      const now = this.clock.now();
+      const justRotated =
+        session.previousTokenHash &&
+        sameHash(session.previousTokenHash, presented) &&
+        session.tokenRotatedAt &&
+        now.getTime() - session.tokenRotatedAt.getTime() <= REFRESH_REUSE_GRACE_MS;
+      if (!justRotated && session.previousTokenHash && sameHash(session.previousTokenHash, presented)) {
+        await this.endSession(session.id, 'revoked');
+        await this.prisma.staff.update({ where: { id: session.staffId }, data: { sessionsRevokedAt: now } });
+        await this.auditService.log({
+          actorId: session.staffId,
+          action: 'auth.refresh_token_reused',
+          entityType: 'staff_session',
+          entityCode: session.id,
+          after: { app, ended: true },
+        });
+        throw refuse('Session has been revoked', 'revoked');
+      }
+      throw refuse(FIELD_SESSION_REFUSED, 'unknown');
+    }
     if (
       !session ||
       !session.tokenHash ||
@@ -706,6 +792,8 @@ export class AuthService {
       where: { id: session.id, tokenHash: session.tokenHash, revokedAt: null },
       data: {
         tokenHash: hashRefreshToken(next),
+        previousTokenHash: session.tokenHash,
+        tokenRotatedAt: now,
         expiresAt: new Date(now.getTime() + ACCESS_SESSION_MS),
       },
     });
@@ -1148,9 +1236,10 @@ export class AuthService {
     const lockedUntil = new Date(
       this.clock.now().getTime() + minutesToMs(policy.lockoutMinutes),
     );
+    // A lock (here: 5 wrong tries) asks for a login code again at the next sign-in (21 Nov).
     await this.prisma.staff.update({
       where: { id: staff.id },
-      data: { lockedUntil },
+      data: { lockedUntil, sessionsRevokedAt: this.clock.now() },
     });
     await this.auditService.log({
       actorId: staff.id,

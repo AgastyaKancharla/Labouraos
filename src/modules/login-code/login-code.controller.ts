@@ -16,6 +16,7 @@ import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { LoginCodeActor, LoginCodeService } from './login-code.service';
+import { SignInBellsService } from './sign-in-bells.service';
 
 type AuthenticatedRequest = Request & { user: JwtPayload };
 
@@ -23,7 +24,10 @@ type AuthenticatedRequest = Request & { user: JwtPayload };
 @UseGuards(JwtAuthGuard, RbacGuard)
 @RequireRoles('ceo', 'manager', 'team_lead')
 export class LoginCodeController {
-  constructor(private readonly loginCodeService: LoginCodeService) {}
+  constructor(
+    private readonly loginCodeService: LoginCodeService,
+    private readonly signInBells: SignInBellsService,
+  ) {}
 
   private actor(req: AuthenticatedRequest): LoginCodeActor {
     return { id: req.user.sub, role: req.user.role };
@@ -32,6 +36,12 @@ export class LoginCodeController {
   @Get('pending')
   pending(@Req() req: AuthenticatedRequest) {
     return this.loginCodeService.listPending(this.actor(req));
+  }
+
+  /** Today's "signed in again without a code" alerts addressed to the caller (21 Nov). */
+  @Get('without-code')
+  withoutCode(@Req() req: AuthenticatedRequest) {
+    return this.signInBells.noCodeSignInsFor(req.user.sub);
   }
 
   @Get('report')

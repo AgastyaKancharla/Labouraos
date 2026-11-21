@@ -8,6 +8,12 @@ ALTER TABLE "Staff" ADD COLUMN "sessionsRevokedAt" TIMESTAMP(3);
 
 -- "Still there?" counts from the last click, key, call or saved work.
 ALTER TABLE "AttendanceDay" ADD COLUMN "lastActiveAt" TIMESTAMP(3);
+-- "Resume my day" presses on the day (the second rings the Team Lead).
+ALTER TABLE "AttendanceDay" ADD COLUMN "resumeCount" INTEGER NOT NULL DEFAULT 0;
+
+-- The refresh token before the last renewal: a second tab is refused softly, other reuse ends the session.
+ALTER TABLE "StaffSession" ADD COLUMN "previousTokenHash" TEXT;
+ALTER TABLE "StaffSession" ADD COLUMN "tokenRotatedAt" TIMESTAMP(3);
 
 -- "Still there?" after 30 minutes with no call and no click (was 10). The
 -- current Settings row moves from the old default only; a value the CEO chose stays.

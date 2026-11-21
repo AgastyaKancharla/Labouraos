@@ -1,5 +1,6 @@
 import { reasonFromMessage, sessionStore } from '../../auth/session';
 import { refreshSession } from '../../auth/refresh';
+import { BACKGROUND_HEADER, isBackgroundNow } from './userActivity';
 import { ApiError, apiErrorFromBody } from './errors';
 import { announceTestMode } from './testMode';
 
@@ -46,6 +47,8 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}, 
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   const token = options.token ?? (auth ? sessionStore.token() : null);
   if (token) headers.Authorization = `Bearer ${token}`;
+  // A poll while nobody uses the page does not keep the session's idle clock alive (21 Nov).
+  if (token && method === 'GET' && isBackgroundNow()) headers[BACKGROUND_HEADER] = '1';
 
   let response: Response;
   try {

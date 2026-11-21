@@ -37,8 +37,11 @@ export function refreshSession(fetchImpl: typeof fetch = (...args) => fetch(...a
     };
     if (response.ok && body.accessToken) {
       sessionStore.replaceToken(body.accessToken, body.refreshToken);
+      shareToken();
       return 'renewed';
     }
+    // Another tab renewed first and its new token reached this tab meanwhile.
+    if (sessionStore.get()?.refreshToken && sessionStore.get()!.refreshToken !== current.refreshToken) return 'renewed';
     if (response.status === 401) {
       const given = body.details?.reason ?? body.reason;
       const message = Array.isArray(body.message) ? body.message[0] : body.message;
@@ -53,4 +56,50 @@ export function refreshSession(fetchImpl: typeof fetch = (...args) => fetch(...a
     if (inflight === running) inflight = null;
   });
   return running;
+}
+
+/**
+ * Tabs of the same session share renewed tokens (21 Nov): a tab that copied
+ * the session (opened from a link) would otherwise present a refresh token
+ * the first tab already used, and be signed out. BroadcastChannel where the
+ * browser has it; nothing otherwise (the bearer refresh still keeps both alive).
+ */
+const CHANNEL = 'laboura-session';
+
+interface SharedToken {
+  sessionId: string;
+  token: string;
+  refreshToken: string | null;
+}
+
+function channel(): BroadcastChannel | null {
+  try {
+    return typeof BroadcastChannel === 'function' ? new BroadcastChannel(CHANNEL) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Tells the other tabs of this session about the token just renewed here. */
+export function shareToken(): void {
+  const current = sessionStore.get();
+  if (!current?.sessionId) return;
+  const ch = channel();
+  if (!ch) return;
+  const message: SharedToken = { sessionId: current.sessionId, token: current.token, refreshToken: current.refreshToken ?? null };
+  ch.postMessage(message);
+  ch.close();
+}
+
+/** Takes in tokens other tabs of the same session renewed. Returns the stop function. */
+export function listenForSharedTokens(): () => void {
+  const ch = channel();
+  if (!ch) return () => undefined;
+  ch.onmessage = (event: MessageEvent<SharedToken>) => {
+    const data = event.data;
+    const current = sessionStore.get();
+    if (!data || !current || data.sessionId !== current.sessionId || data.token === current.token) return;
+    sessionStore.replaceToken(data.token, data.refreshToken ?? undefined);
+  };
+  return () => ch.close();
 }

@@ -12,6 +12,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { NotificationSourcesService } from '../notification/notification-sources.service';
+import { NotificationService } from '../notification/notification.service';
 import { LiveEventsService } from '../../common/live/live-events.service';
 import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 import { AttendanceClock } from './attendance-clock';
@@ -107,6 +108,8 @@ export interface TodayView {
    * night clean-up and on an owner account (it simply logs in again).
    */
   canResume: boolean;
+  /** "Resume my day" presses today. */
+  resumeCount?: number;
   flagged: boolean;
   closedReason: string | null;
   dayType: string;
@@ -141,6 +144,7 @@ export class AttendanceService {
     @Optional() private readonly bells?: NotificationSourcesService,
     @Optional() private readonly live?: LiveEventsService,
     @Optional() private readonly audit?: AuditService,
+    @Optional() private readonly notificationService?: NotificationService,
   ) {}
 
   /** The person's own shift, or the company shift (decided 21 Nov). */
@@ -448,7 +452,8 @@ export class AttendanceService {
         now: now.toISOString(),
       },
       ownShift: shift.own,
-      canResume: !owner && Boolean(day.logoutAt) && day.closedReason === 'logout',
+      canResume: !owner && Boolean(day.logoutAt) && day.closedReason === 'logout' && !day.dayTypeChangedAt,
+      resumeCount: day.resumeCount,
       flagged: day.flagged,
       closedReason: day.closedReason,
       dayType: day.dayType,
@@ -837,8 +842,36 @@ export class AttendanceService {
     if (day.closedReason !== 'logout') {
       throw codedError(HttpStatus.BAD_REQUEST, 'DAY_NOT_RESUMABLE', 'Only a day you ended with Log out today can be resumed');
     }
+    // A senior already changed how this day counts: only they can open it again.
+    if (day.dayTypeChangedAt) {
+      throw codedError(HttpStatus.BAD_REQUEST, 'DAY_CHANGED_BY_SENIOR', 'Ask your Team Lead to reopen your day');
+    }
     await this.reopen(day, staffId, now, { action: 'attendance.day_resumed', actorId: staffId, reason: null });
+    const resumed = await this.prisma.attendanceDay.update({
+      where: { id: day.id },
+      data: { resumeCount: { increment: 1 } },
+      select: { resumeCount: true },
+    });
+    // The second Resume on one day rings the Team Lead (21 Nov).
+    if (resumed.resumeCount >= 2) {
+      await this.bell('day resumed again', (bells) => this.ringResumedAgain(bells, staffId, day.id, resumed.resumeCount, now));
+    }
     return this.today(staffId);
+  }
+
+  private async ringResumedAgain(bells: NotificationSourcesService, staffId: string, dayId: string, count: number, now: Date) {
+    const dir = await bells.directory();
+    const person = dir.get(staffId);
+    if (!person || person.isOwnerAccount) return;
+    const chain = dir.chainOf(staffId);
+    const drafts = bells.drafts([chain.teamLead ?? chain.manager], {
+      kind: 'day_resumed_again',
+      title: `${person.name} (${person.code}) resumed their day ${count} times today`,
+      body: 'They ended the day with Log out and pressed Resume my day again. The time in between is not counted.',
+      subjectType: 'attendance_day',
+      subjectId: `${dayId}:${count}`,
+    });
+    for (const draft of drafts) await this.notificationService?.open(draft, now);
   }
 
   /**
@@ -863,6 +896,10 @@ export class AttendanceService {
         makeUpSeconds: 0,
         lastHeartbeatAt: now,
         lastActiveAt: now,
+        // A senior's earlier Change day no longer holds for an open day (kept in the audit row below).
+        dayTypeChangedById: null,
+        dayTypeChangedAt: null,
+        dayTypeChangeReason: null,
       },
     });
     if (reopened.count !== 1) return;
@@ -880,8 +917,11 @@ export class AttendanceService {
         closedReason: day.closedReason,
         dayType: day.dayType,
         flagged: day.flagged,
+        dayTypeChangedById: day.dayTypeChangedById,
+        dayTypeChangedAt: day.dayTypeChangedAt?.toISOString() ?? null,
+        dayTypeChangeReason: day.dayTypeChangeReason,
       },
-      after: { logoutAt: null, dayType: 'open', reopenedAt: now.toISOString(), staffId },
+      after: { logoutAt: null, dayType: 'open', reopenedAt: now.toISOString(), staffId, dayTypeChangedAt: null },
       ...(record.reason ? { reason: record.reason } : {}),
     });
     this.announce(staffId, 'available', now);

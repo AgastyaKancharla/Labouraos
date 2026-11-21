@@ -13,6 +13,11 @@ import { NotificationClock } from '../../modules/notification/notification-clock
 import { SessionDayService } from './session-day.service';
 import { StaffDeviceService } from '../../modules/staff/staff-device.service';
 import { SignInBellsService } from '../../modules/login-code/sign-in-bells.service';
+import { LiveController } from '../live/live.controller';
+import { JwtService } from '@nestjs/jwt';
+
+const CHROME_ANDROID = 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Mobile Safari/537.36';
+const FIREFOX_WINDOWS = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0';
 
 /**
  * Staying signed in (Master Guide rev 202, decided 21 Nov): the login code is
@@ -66,16 +71,21 @@ describe('Day-long sessions, a login code once a day, sign-in bells (21 Nov)', (
 
   const http = () => request(app.getHttpServer());
 
-  async function signIn(code: string, deviceId: string, app?: 'field' | 'office') {
-    return http().post('/auth/login').set('X-Forwarded-For', freshIp()).send({ staffCode: code, password, deviceId, ...(app ? { app } : {}) });
+  async function signIn(code: string, deviceId: string, app?: 'field' | 'office', opts: { ip?: string; ua?: string; password?: string } = {}) {
+    return http()
+      .post('/auth/login')
+      .set('X-Forwarded-For', opts.ip ?? freshIp())
+      .set('User-Agent', opts.ua ?? CHROME_ANDROID)
+      .send({ staffCode: code, password: opts.password ?? password, deviceId, ...(app ? { app } : {}) });
   }
 
-  async function signInWithCode(code: string, deviceId: string, app?: 'field' | 'office') {
-    const waiting = await signIn(code, deviceId, app);
+  async function signInWithCode(code: string, deviceId: string, app?: 'field' | 'office', opts: { ip?: string; ua?: string } = {}) {
+    const waiting = await signIn(code, deviceId, app, opts);
     expect(waiting.body.status).toBe('awaiting_code');
     const res = await http()
       .post('/auth/login/verify-code')
-      .set('X-Forwarded-For', freshIp())
+      .set('X-Forwarded-For', opts.ip ?? freshIp())
+      .set('User-Agent', opts.ua ?? CHROME_ANDROID)
       .send({
         loginRequestId: waiting.body.loginRequestId,
         code: loginCodeFor(waiting.body.loginRequestId),
@@ -297,5 +307,136 @@ describe('Day-long sessions, a login code once a day, sign-in bells (21 Nov)', (
     now = plus(5 + 60 * 3);
     await app.get(SignInBellsService).syncAll(now);
     expect(await prisma.notification.count({ where: { kind: 'login_code_request', subjectId: waiting.body.loginRequestId, clearedAt: null } })).toBe(0);
+  });
+
+  describe('hardening after the independent check (21 Nov)', () => {
+    it('5 wrong passwords lock the account and the next sign-in needs a login code again', async () => {
+      const { staff, deviceId } = await agent();
+      await signInWithCode(staff.code, deviceId);
+      now = plus(60);
+      for (let i = 0; i < 5; i += 1) expect((await signIn(staff.code, deviceId, undefined, { password: 'Wrong-Password-9' })).status).toBe(401);
+      expect((await prisma.staff.findUniqueOrThrow({ where: { id: staff.id } })).lockedUntil).toBeTruthy();
+      now = plus(60 + 16);
+      expect((await signIn(staff.code, deviceId)).body.status).toBe('awaiting_code');
+    });
+
+    it('the no-code shortcut needs the same browser or app family as the sign-in that had the code', async () => {
+      const { staff, deviceId } = await agent();
+      await signInWithCode(staff.code, deviceId, undefined, { ua: CHROME_ANDROID });
+      now = plus(30);
+      expect((await signIn(staff.code, deviceId, undefined, { ua: FIREFOX_WINDOWS })).body.status).toBe('awaiting_code');
+      // A newer version of the same browser on the same platform is the same family.
+      const newer = CHROME_ANDROID.replace('Chrome/131.0', 'Chrome/132.0');
+      expect((await signIn(staff.code, deviceId, undefined, { ua: newer })).body.accessToken).toEqual(expect.any(String));
+    });
+
+    it('a no-code sign-in that ends a live session or comes from a new network rings the Team Lead and Manager and shows on Login codes', async () => {
+      const { staff, deviceId } = await agent();
+      const first = await signInWithCode(staff.code, deviceId, undefined, { ip: '10.9.9.1' });
+      now = plus(20);
+      // Same network, the first session still in use: it is ended — the seniors hear.
+      const again = await signIn(staff.code, deviceId, undefined, { ip: '10.9.9.1' });
+      expect(again.body.accessToken).toEqual(expect.any(String));
+      const bells = await prisma.notification.findMany({ where: { kind: 'signed_in_without_code', subjectId: again.body.sessionId } });
+      expect(bells.map((b) => b.recipientStaffId).sort()).toEqual([lead.id, manager.id].sort());
+      expect(bells[0].title).toContain('ended the earlier session');
+      expect((await prisma.staffSession.findUniqueOrThrow({ where: { id: first.sessionId } })).endedReason).toBe('replaced');
+      const leadToken = app.get(JwtService).sign({ sub: lead.id, role: 'team_lead', code: lead.code, email: null });
+      const list = await http().get('/login-codes/without-code').set('Authorization', `Bearer ${leadToken}`).expect(200);
+      expect(list.body.some((row: { title: string }) => row.title.includes(staff.code))).toBe(true);
+
+      // Logged out first and the same network: no bell.
+      await http().post('/auth/logout').set('Authorization', `Bearer ${again.body.accessToken}`).expect(200);
+      now = plus(25);
+      const quiet = await signIn(staff.code, deviceId, undefined, { ip: '10.9.9.1' });
+      expect(await prisma.notification.count({ where: { kind: 'signed_in_without_code', subjectId: quiet.body.sessionId } })).toBe(0);
+
+      // A network not seen today: a bell even with no live session.
+      await http().post('/auth/logout').set('Authorization', `Bearer ${quiet.body.accessToken}`).expect(200);
+      now = plus(30);
+      const elsewhere = await signIn(staff.code, deviceId, undefined, { ip: '10.9.9.77' });
+      const far = await prisma.notification.findMany({ where: { kind: 'signed_in_without_code', subjectId: elsewhere.body.sessionId } });
+      expect(far).toHaveLength(2);
+      expect(far[0].title).toContain('from a new network');
+    });
+
+    it('a senior ending one session asks for a code again at the next sign-in', async () => {
+      const { staff, deviceId } = await agent();
+      const s = await signInWithCode(staff.code, deviceId);
+      now = plus(10);
+      await app.get(AuthService).revokeSession(s.sessionId, { sub: ceo.id, role: 'ceo' } as never);
+      now = plus(11);
+      expect((await signIn(staff.code, deviceId)).body.status).toBe('awaiting_code');
+    });
+
+    it('a refresh token used again: a second tab within a minute is refused softly, later reuse ends the session', async () => {
+      const { staff, deviceId } = await agent();
+      const s = await signInWithCode(staff.code, deviceId);
+      const renew = (refreshToken: string) =>
+        http().post('/auth/session/refresh').set('X-Forwarded-For', freshIp()).send({ sessionId: s.sessionId, refreshToken, deviceId });
+      now = plus(20);
+      const first = await renew(s.refreshToken);
+      expect(first.status).toBe(200);
+      const tab = await renew(s.refreshToken);
+      expect(tab.status).toBe(401);
+      expect((await prisma.staffSession.findUniqueOrThrow({ where: { id: s.sessionId } })).revokedAt).toBeNull();
+      now = plus(23);
+      const replay = await renew(s.refreshToken);
+      expect(replay.status).toBe(401);
+      const ended = await prisma.staffSession.findUniqueOrThrow({ where: { id: s.sessionId } });
+      expect(ended.endedReason).toBe('revoked');
+      expect(await prisma.auditLog.count({ where: { action: 'auth.refresh_token_reused', entityCode: s.sessionId } })).toBe(1);
+      // The newer token no longer works either, and the next sign-in needs a code.
+      expect((await renew(first.body.refreshToken)).status).toBe(401);
+      expect((await signIn(staff.code, deviceId)).body.status).toBe('awaiting_code');
+    });
+
+    it('the office refresh follows the day rule: past 2 hours while the day is open, refused after the cap', async () => {
+      const { staff, deviceId } = await agent();
+      const s = await signInWithCode(staff.code, deviceId);
+      await http().post('/attendance/login').set('Authorization', `Bearer ${s.accessToken}`).send({}).expect(201);
+      const renew = (refreshToken: string) =>
+        http().post('/auth/session/refresh').set('X-Forwarded-For', freshIp()).send({ sessionId: s.sessionId, refreshToken, deviceId });
+      now = plus(200);
+      const ok = await renew(s.refreshToken);
+      expect(ok.status).toBe(200);
+      now = new Date('2026-11-24T15:01:00.000Z');
+      const late = await renew(ok.body.refreshToken);
+      expect(late.status).toBe(401);
+      expect(late.body.reason ?? late.body.details?.reason).toBe('max_length');
+    });
+
+    it('the live stream follows the day rule too', async () => {
+      const { staff, deviceId } = await agent();
+      const s = await signInWithCode(staff.code, deviceId);
+      await http().post('/attendance/login').set('Authorization', `Bearer ${s.accessToken}`).send({}).expect(201);
+      const live = app.get(LiveController) as unknown as { sessionIsLive(staffId: string, sid?: string): Promise<boolean> };
+      now = plus(200);
+      expect(await live.sessionIsLive(staff.id, s.sessionId)).toBe(true);
+      await prisma.attendanceDay.updateMany({ where: { staffId: staff.id }, data: { logoutAt: plus(199), dayType: 'full' } });
+      expect(await live.sessionIsLive(staff.id, s.sessionId)).toBe(false);
+    });
+
+    it('background polls do not keep the idle clock alive: outside an open day the 1-hour idle sign-out works', async () => {
+      const { staff, deviceId } = await agent();
+      const s = await signInWithCode(staff.code, deviceId);
+      const poll = (background: boolean) => {
+        const req = http().get('/attendance/today').set('Authorization', `Bearer ${s.accessToken}`);
+        return background ? req.set('X-Laboura-Background', '1') : req;
+      };
+      now = plus(30);
+      await poll(true).expect(200);
+      expect((await prisma.staffSession.findUniqueOrThrow({ where: { id: s.sessionId } })).lastActivityAt.toISOString()).toBe(start.toISOString());
+      now = plus(61);
+      expect((await poll(true)).status).toBe(401);
+      expect((await prisma.staffSession.findUniqueOrThrow({ where: { id: s.sessionId } })).endedReason).toBe('idle');
+
+      // A request the person made (no background header) still counts.
+      const t = (await signIn(staff.code, deviceId)).body as { accessToken: string };
+      now = plus(91);
+      await http().get('/attendance/today').set('Authorization', `Bearer ${t.accessToken}`).expect(200);
+      now = plus(140);
+      await http().get('/attendance/today').set('Authorization', `Bearer ${t.accessToken}`).expect(200);
+    });
   });
 });
