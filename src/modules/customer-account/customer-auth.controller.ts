@@ -8,6 +8,7 @@ import { customerOtpTestModeEnabled } from '../../common/customer-auth/customer-
 import { CustomerSignInService } from './customer-sign-in.service';
 import { appleClientIds, googleClientIds } from './google-id-token.verifier';
 import { requestContext } from './customer-request-context';
+import { referralLeadsOpen } from '../../common/customer-auth/customer-app.constants';
 
 type Body_ = Record<string, unknown>;
 
@@ -37,6 +38,8 @@ export class CustomerAuthController {
       otpResendSeconds: 30,
       otpMaxResends: 3,
       sessionDays: CUSTOMER_SESSION_DAYS,
+      /** Referral partners' "Send a lead" form (CUSTOMER_REFERRAL_LEADS=on once the office picks leads up). */
+      referralLeads: referralLeadsOpen(),
     };
   }
 

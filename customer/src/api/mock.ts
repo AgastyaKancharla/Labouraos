@@ -13,8 +13,7 @@ import type {
   ProfileKind,
   ProfileSummary,
   ReferralHome,
-  VacancySummary,
-} from './types';
+  VacancySummary, ReferralLead } from './types';
 
 /**
  * Pretend data (EXPO_PUBLIC_API_MODE=mock): every screen works with no
@@ -39,6 +38,8 @@ interface State {
   homes: Record<string, ProfileHome>;
   /** Profile id → the business's shifts (17 Nov). */
   shifts: Record<string, BusinessShift[]>;
+  /** Partner profile id → leads sent (contract 7.3b). */
+  leads: Record<string, (ReferralLead & { phone: string })[]>;
   /** Draft id → owner told about the legal minimum. */
   seq: number;
 }
@@ -79,7 +80,7 @@ function checkOtp(otp: OtpProof | { code: string }) {
 }
 
 export function mockCustomerApi({ latencyMs = 250 }: { latencyMs?: number } = {}): CustomerApi {
-  const state: State = { account: null, pendingPhone: null, homes: {}, shifts: {}, seq: 0 };
+  const state: State = { account: null, pendingPhone: null, homes: {}, shifts: {}, leads: {}, seq: 0 };
   const wait = <T,>(value: T | (() => T)): Promise<T> =>
     new Promise((resolve, reject) => {
       const run = () => {
@@ -147,7 +148,7 @@ export function mockCustomerApi({ latencyMs = 250 }: { latencyMs?: number } = {}
   const existing = (kind: ProfileKind) => account().profiles.find((p) => p.kind === kind);
 
   return {
-    config: () => wait({ googleSignIn: true, googleWebClientId: null, googleIosClientId: null, appleSignIn: true, otpTestMode: true }),
+    config: () => wait({ googleSignIn: true, googleWebClientId: null, googleIosClientId: null, appleSignIn: true, otpTestMode: true, referralLeads: true }),
 
     sendSignInOtp: (phone) =>
       wait(() => {
@@ -302,6 +303,17 @@ export function mockCustomerApi({ latencyMs = 250 }: { latencyMs?: number } = {}
         return JSON.parse(JSON.stringify(home)) as ProfileHome;
       }),
 
+    referralLeads: (profileId) =>
+      wait(() => ({ open: true, perDay: 20, leads: (state.leads[profileId] ?? []).map(({ phone: _phone, ...lead }) => lead) })),
+    sendReferralLead: (profileId, input) =>
+      wait(() => {
+        const list = (state.leads[profileId] ??= []);
+        const same = list.find((l) => l.phone === input.phone);
+        if (same) return { leadId: same.id, stage: same.stage };
+        const lead = { id: `lead-${next()}`, firstName: input.name.trim().split(/\s+/)[0] ?? null, kind: input.kind, stage: 'with_team' as const, sentAt: new Date().toISOString(), phone: input.phone };
+        list.unshift(lead);
+        return { leadId: lead.id, stage: lead.stage };
+      }),
     shifts: (profileId) => wait(() => [...(state.shifts[profileId] ?? [])]),
     addShift: (profileId, input) =>
       wait(() => {

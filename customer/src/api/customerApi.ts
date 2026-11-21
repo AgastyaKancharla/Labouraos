@@ -22,8 +22,7 @@ import type {
   StepUpPurpose,
   VacancyDraft,
   VacancySummary,
-  LegalDocumentView,
-} from './types';
+  LegalDocumentView, LeadKind, ReferralLeadsAnswer } from './types';
 
 /**
  * Everything the screens can ask the server. Two implementations:
@@ -82,6 +81,10 @@ export interface CustomerApi {
   createVacancy(profileId: string, draft: VacancyDraft): Promise<VacancySummary>;
   /** `otp` null = retry after the minimum-wage tick with the OTP already checked. */
   confirmVacancy(profileId: string, draftId: string, input: { otp: OtpProof | null; ownerToldMinimumWage: boolean }): Promise<VacancySummary>;
+
+  // Referral partner: send a lead (contract 7.3b) — switched on by the server
+  referralLeads(profileId: string): Promise<ReferralLeadsAnswer>;
+  sendReferralLead(profileId: string, input: { kind: LeadKind; name: string; phone: string; area: string; personAgreed: boolean }): Promise<{ leadId: string; stage: string }>;
 
   // Help and privacy
   requestCallback(request: CallbackRequest): Promise<{ id: string }>;

@@ -17,6 +17,8 @@ export const routes = {
   addVacancy: '/vacancy/new',
   /** Confirm an existing draft vacancy by OTP. */
   confirmVacancy: (vacancyId: string) => `/vacancy/new?vacancyId=${encodeURIComponent(vacancyId)}`,
+  /** Referral partner: send a lead (contract 7.3b). */
+  referralLead: '/referral-lead',
   help: '/help',
   privacy: '/privacy',
   deleteAccount: '/delete-account',

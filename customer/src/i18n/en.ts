@@ -528,6 +528,35 @@ export const en = {
   'kept.payouts': 'Payouts',
 
   'inbox.placeholder': 'Your messages will appear here.',
+
+  // Referral partner: send a lead (21 Nov, contract 7.3b)
+  'refHome.leadTitle': 'Know someone?',
+  'refHome.leadIntro': 'Someone who needs a job, or a shop that needs staff? Send us their name and number. We will call them.',
+  'refHome.leadButton': 'Send a lead',
+  'leads.title': 'Send a lead',
+  'leads.partnerOnly': 'This is for referral partners.',
+  'leads.formTitle': 'Who should we call?',
+  'leads.intro': 'Ask the person first. We will call them and tell them you sent them.',
+  'leads.kind': 'They…',
+  'leads.kindJob': 'need a job',
+  'leads.kindStaff': 'need staff for a business',
+  'leads.kindJobShort': 'Needs a job',
+  'leads.kindStaffShort': 'Needs staff',
+  'leads.name': 'Their name',
+  'leads.nameBusiness': 'Business or owner name',
+  'leads.phone': 'Their mobile number',
+  'leads.area': 'Their area',
+  'leads.agreed': 'This person agreed that Laboura can call them',
+  'leads.reward': 'You get your reward when someone you sent joins a job through Laboura.',
+  'leads.submit': 'Send to Laboura',
+  'leads.sentTitle': 'Sent',
+  'leads.sent': 'Thank you. Our team will call them.',
+  'leads.notOpen': 'Sending leads is not open yet. Share your link instead.',
+  'leads.listTitle': 'People you sent',
+  'leads.none': 'No one yet.',
+  'leads.stage.with_team': 'With our team',
+  'leads.stage.registered': 'Registered',
+  'leads.stage.closed': 'Closed',
 } as const;
 
 export type MessageKey = keyof typeof en;

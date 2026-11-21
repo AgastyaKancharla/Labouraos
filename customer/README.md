@@ -40,6 +40,7 @@ Building blocks, API client pattern, theme and language set-up are **copies** of
 | `/register/referral` | RegisterReferral | Individual or business, area, language, WhatsApp; fresh OTP; then terms, selfie, ID, UPI in the sheet |
 | `/vacancy/new` | AddVacancy | Vacancy draft with the market range and the **legal minimum wage warning + tick**; confirmed by a fresh OTP; `?vacancyId=` confirms a draft from registration |
 | `/home` | Home | By profile kind — job seeker: steps, "Paid — confirming", day X of 30, hits, interview (business name **only once booked**), refund status · business: tracker, visit, approval, vacancies, counts (no candidate data, never a phone number) · partner: link + QR + WhatsApp text, people referred (first name + stage only), money due/approved/paid statement |
+| `/referral-lead` | ReferralLead | Partner sends a lead: needs a job or needs staff, name, mobile, area, the person agreed to be called. Our call team calls; the partner sees first name and stage only. Shown only when the server switches it on (`CUSTOMER_REFERRAL_LEADS=on`, contract 7.3b) |
 | `/help` | Help | "Call me back" (topic; now or a time window 9 AM–9 PM) and short answers |
 | `/privacy` | Privacy | What is kept and never kept, grievance contact, policy link, "Delete my account" |
 | `/delete-account` | DeleteAccount | Big warning + tick while the ₹499 guarantee runs (ends the refund), fresh OTP, what the law keeps |

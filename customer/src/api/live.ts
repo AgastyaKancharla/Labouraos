@@ -25,8 +25,7 @@ import type {
   StepState,
   VacancyStatus,
   VacancySummary,
-  LegalDocumentView,
-} from './types';
+  LegalDocumentView, ReferralLeadsAnswer } from './types';
 
 /**
  * The real API: docs/customer-app-api.md (Agent A, merged in PR #140), under
@@ -357,13 +356,14 @@ export function liveCustomerApi(api: ApiClient, options: Options = {}): Customer
 
   return {
     config: async () => {
-      const c = await api.get<{ googleSignIn?: boolean; googleClientIds?: { web?: string | null; ios?: string | null }; appleSignIn?: boolean; otpTestMode?: boolean }>('/config', { auth: false });
+      const c = await api.get<{ googleSignIn?: boolean; googleClientIds?: { web?: string | null; ios?: string | null }; appleSignIn?: boolean; otpTestMode?: boolean; referralLeads?: boolean }>('/config', { auth: false });
       const result: AppConfig = {
         googleSignIn: !!c.googleSignIn,
         googleWebClientId: c.googleClientIds?.web ?? null,
         googleIosClientId: c.googleClientIds?.ios ?? null,
         appleSignIn: c.appleSignIn === true,
         otpTestMode: !!c.otpTestMode,
+        referralLeads: c.referralLeads === true,
       };
       return result;
     },
@@ -578,6 +578,9 @@ export function liveCustomerApi(api: ApiClient, options: Options = {}): Customer
         belowLegalMinimum: false,
       };
     },
+
+    referralLeads: (profileId) => api.get<ReferralLeadsAnswer>(`${profilePath(profileId)}/referral-leads`),
+    sendReferralLead: (profileId, input) => api.post<{ leadId: string; stage: string }>(`${profilePath(profileId)}/referral-leads`, input),
 
     requestCallback: (r) =>
       api.post<{ id: string }>('/me/callback-requests', {

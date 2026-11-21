@@ -14,16 +14,17 @@ import { CustomerHomeService } from './customer-home.service';
 import { CustomerRegistrationService } from './customer-registration.service';
 import { CustomerRequestsService } from './customer-requests.service';
 import { CustomerOptionsService } from './customer-options.service';
+import { CustomerReferralLeadsService } from './customer-referral-leads.service';
 
 /**
  * Customer app: self-registration, link issuing, Home status, vacancy drafts,
- * call-me-back and deletion requests for job seekers, businesses and referral
+ * call-me-back, partners' leads and deletion requests for job seekers, businesses and referral
  * partners (docs/customer-app-api.md). Calls the existing job seeker,
  * business, referral, consent and vacancy services. Agent A owns this folder.
  */
 @Module({
   imports: [PrismaModule, CustomerAccountModule, JobSeekerModule, BusinessModule, ReferralModule, ConsentModule, PricingModule, VacancyModule, LegalModule],
   controllers: [CustomerAppController],
-  providers: [CustomerRegistrationService, CustomerHomeService, CustomerRequestsService, CustomerOptionsService, RegistrationJourneyService],
+  providers: [CustomerRegistrationService, CustomerHomeService, CustomerRequestsService, CustomerOptionsService, CustomerReferralLeadsService, RegistrationJourneyService],
 })
 export class CustomerAppModule {}

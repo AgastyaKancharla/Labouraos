@@ -84,6 +84,8 @@ export interface AppConfig {
   /** Not in the v1 contract yet: the Apple button stays hidden until the server says true. */
   appleSignIn: boolean;
   otpTestMode: boolean;
+  /** Referral partners' "Send a lead" form is switched on (contract 7.3b). */
+  referralLeads?: boolean;
 }
 
 /** A fresh OTP the person typed, sent inside the request it protects. */
@@ -328,6 +330,21 @@ export interface BusinessHome {
   counts: { interviewsUpcoming: number; placements: number };
   /** D6 (rev 176): suspended by the CEO — no new vacancies, candidates or interviews while it lasts. */
   suspension?: { until: string | null; permanent: boolean; reason: string | null } | null;
+}
+
+/** A lead a referral partner sent (contract 7.3b): first name, kind and stage only. */
+export type LeadKind = 'job_seeker' | 'business';
+export interface ReferralLead {
+  id: string;
+  firstName: string | null;
+  kind: LeadKind;
+  stage: 'with_team' | 'registered' | 'closed';
+  sentAt: string;
+}
+export interface ReferralLeadsAnswer {
+  open: boolean;
+  perDay: number;
+  leads: ReferralLead[];
 }
 
 export interface ReferralPerson {
