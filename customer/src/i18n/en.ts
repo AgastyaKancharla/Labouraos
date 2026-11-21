@@ -7,9 +7,11 @@
  * Notification wording is Agent C's (customer/src/push/), not here.
  */
 import { fixes17En } from './fixes17.en';
+import { verifyEn } from './verify.en';
 
 export const en = {
   ...fixes17En,
+  ...verifyEn,
   'common.brand': 'Laboura',
   'common.back': 'Back',
   'common.retry': 'Try again',
@@ -182,7 +184,7 @@ export const en = {
   'saved.foundTitle': 'Already registered',
   'saved.found': 'We found your registration {code}. We continue it — nothing is created twice.',
   'saved.next': 'Next steps',
-  'saved.secureNote': 'These open in a secure Laboura page inside the app. You come back here when done.',
+  'saved.secureNote': 'Each step is saved as soon as you finish it, so you can stop and come back from your home screen.',
   'saved.later': 'Do it later',
 
   'sheet.failed': 'Could not open the page. Check your internet and try again.',

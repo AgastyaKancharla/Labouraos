@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
+import { router } from 'expo-router';
 import { ApiError } from '@/api/errors';
 import { todayKeyIst } from '@/components/form';
 import { account, bizProfile } from '@/test/fixtures';
@@ -102,6 +103,6 @@ describe('Register a business', () => {
     );
     expect(await screen.findByTestId('biz-saved')).toHaveTextContent(/Sign the Laboura agreement by OTP/);
     await fireEvent.press(screen.getByTestId('biz-saved-continue'));
-    await waitFor(() => expect(api.sheetLink).toHaveBeenCalledWith('p-biz', 'business_agreement', undefined));
+    expect(router.replace).toHaveBeenCalledWith('/verify/business_agreement?profileId=p-biz');
   });
 });

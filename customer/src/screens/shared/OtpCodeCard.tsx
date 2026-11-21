@@ -33,6 +33,8 @@ interface Props {
    * where the code signs or confirms something (a vacancy, updated terms).
    */
   codeSubmits?: boolean;
+  /** Words for a failed send or check (the link endpoints have their own; default: the contract's codes). */
+  describeError?: (err: unknown) => string;
   testID: string;
 }
 
@@ -43,7 +45,7 @@ interface Props {
  * Resend unlocks after 30 seconds, at most 3 times. Errors in the person's
  * language from the contract's codes.
  */
-export function OtpCodeCard({ send, submit, sendLabel, submitLabel, submitVariant = 'primary', sentText, beforeSend, children, onChangeNumber, disabled, codeSubmits, testID }: Props) {
+export function OtpCodeCard({ send, submit, sendLabel, submitLabel, submitVariant = 'primary', sentText, beforeSend, children, onChangeNumber, disabled, codeSubmits, describeError, testID }: Props) {
   const { t } = useI18n();
   const [sent, setSent] = useState<OtpSent | null>(null);
   const [code, setCode] = useState('');
@@ -77,7 +79,7 @@ export function OtpCodeCard({ send, submit, sendLabel, submitLabel, submitVarian
       setCode('');
       if (isResend) setResends((n) => n + 1);
     } catch (err) {
-      setError(errorText(t, err));
+      setError(describeError ? describeError(err) : errorText(t, err));
     } finally {
       setBusy(null);
     }
@@ -93,7 +95,7 @@ export function OtpCodeCard({ send, submit, sendLabel, submitLabel, submitVarian
     try {
       await submit({ requestId: sent.requestId, code: value });
     } catch (err) {
-      setError(errorText(t, err));
+      setError(describeError ? describeError(err) : errorText(t, err));
     } finally {
       setBusy(null);
     }

@@ -21,6 +21,9 @@ export const routes = {
   workers: '/workers',
   /** Referral partner: send a lead (contract 7.3b). */
   referralLead: '/referral-lead',
+  /** The verification steps in the app's own screens (consent, selfie, ID, ₹499; partner terms/ID/UPI; business agreement). */
+  verify: (purpose: 'registration' | 'referral_registration' | 'business_agreement', profileId: string) =>
+    `/verify/${purpose}?profileId=${encodeURIComponent(profileId)}`,
   help: '/help',
   privacy: '/privacy',
   deleteAccount: '/delete-account',

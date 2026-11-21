@@ -10,7 +10,6 @@ import { rupees } from '@/lib/money';
 import { routes } from '@/navigation/routes';
 import { colors } from '@/theme';
 import type { HeroInfo } from './hero';
-import { useSecureSheet } from '../shared/useSecureSheet';
 
 /** Google Maps directions to the interview (opens the maps app or browser). */
 export function directionsUrl(i: NonNullable<JobSeekerHome['interview']>): string {
@@ -26,7 +25,6 @@ export function directionsUrl(i: NonNullable<JobSeekerHome['interview']>): strin
 export function JobSeekerHomeView({ profileId, home, hero }: { profileId: string; home: JobSeekerHome; hero: HeroInfo }) {
   const { t } = useI18n();
   const { account } = useAuth();
-  const sheet = useSecureSheet();
   const registrationDone = home.payment.status !== 'not_paid';
   const g = home.guarantee;
   const hasPartner = (account?.profiles ?? []).some((p) => p.kind === 'referral_partner');
@@ -99,7 +97,7 @@ export function JobSeekerHomeView({ profileId, home, hero }: { profileId: string
             <StepList testID="js-step" steps={steps} />
             {home.stuckReason ? <Banner tone="warn" message={home.stuckReason} testID="js-home-stuck" /> : null}
             <Text variant="muted">{t('jsHome.payLast')}</Text>
-            <Button label={t('jsHome.continue')} loading={sheet.busy} onPress={() => void sheet.open(profileId, 'registration')} testID="js-home-continue" />
+            <Button label={t('jsHome.continue')} onPress={() => router.push(routes.verify('registration', profileId))} testID="js-home-continue" />
             <Button label={t('jsHome.needHelp')} variant="secondary" onPress={() => router.push(routes.help)} testID="js-home-help" />
           </View>
         </Card>
@@ -120,7 +118,7 @@ export function JobSeekerHomeView({ profileId, home, hero }: { profileId: string
         <Card accent="gold" testID="js-home-deactivated">
           <View style={styles.gap}>
             <Banner tone="warn" message={t('jsHome.deactivated', { amount: rupees(home.payment.amountPaise) })} />
-            <Button label={t('jsHome.payAgain', { amount: rupees(home.payment.amountPaise) })} loading={sheet.busy} onPress={() => void sheet.open(profileId, 'registration')} testID="js-home-pay-again" />
+            <Button label={t('jsHome.payAgain', { amount: rupees(home.payment.amountPaise) })} onPress={() => router.push(routes.verify('registration', profileId))} testID="js-home-pay-again" />
           </View>
         </Card>
       ) : null}
@@ -160,8 +158,6 @@ export function JobSeekerHomeView({ profileId, home, hero }: { profileId: string
       {!hasPartner && registrationDone ? (
         <Button label={t('jsHome.referFriend')} variant="secondary" onPress={() => router.push(routes.registerReferral)} testID="js-home-refer" />
       ) : null}
-      {sheet.error ? <Banner tone="error" message={sheet.error} /> : null}
-      {sheet.outcome === 'opened_in_browser' ? <Banner tone="info" message={t('sheet.openedInBrowser')} /> : null}
     </View>
   );
 }
