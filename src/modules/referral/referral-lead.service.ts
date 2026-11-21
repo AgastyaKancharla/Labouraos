@@ -16,6 +16,7 @@ import { mobileLookupValues, parseIndianMobile, sameIndianMobile } from '../../c
 import { MessagingService } from '../message/messaging.service';
 import { ReportingScopeService } from '../staff/reporting-scope.service';
 import { SHARE_SLUG_PATTERN, ensureShareSlug, shareLinkUrl, shareQrSvg } from './referral-share-link';
+import { closeAppLead, markAppLeadContacted } from './referral-lead-sync';
 
 /** What the person who sent the lead is after. */
 export const LEAD_LOOKING_FOR = ['job', 'staff'] as const;
@@ -25,8 +26,6 @@ export const REFERRAL_LEAD_OUTCOMES = ['registered', 'already_registered', 'not_
 /** Spam guards for one share link: leads and codes a day. */
 export const LINK_LEADS_PER_DAY = 30;
 export const LINK_CODES_PER_DAY = 60;
-/** A partner sends at most this many leads a day from the app. */
-export const APP_LEADS_PER_DAY = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface LeadActor {
@@ -54,8 +53,9 @@ function linkToken(slug: string): string {
 /**
  * Referral partners' leads (Master Guide rev 202, 21 Nov): the partner's
  * personal share link and QR, the public page that takes a lead (the person's
- * own number, checked by OTP), the "Submit a lead" API for the Laboura app,
- * and the agent's list (assigned by the WhatsApp sweep like missed calls).
+ * own number, checked by OTP), and the agent's list (assigned by the WhatsApp
+ * sweep like missed calls), which also holds the leads partners send from the
+ * Laboura app (picked up from CustomerReferralLead, referral-lead-sync.ts).
  * Registering the lead fills "referred by" with the partner.
  */
 @Injectable()
@@ -136,43 +136,6 @@ export class ReferralLeadService {
     await this.createLead(partner, input, 'link', now);
     // Never says whether the number is already registered (no oracle).
     return { received: true };
-  }
-
-  /** "Submit a lead" in the Laboura app, for the signed-in partner's own profile. */
-  async submitFromApp(referralId: string, body: LeadInput) {
-    const partner = await this.prisma.referral.findUnique({
-      where: { id: referralId },
-      select: { id: true, code: true, name: true, phone: true, pausedAt: true, anonymisedAt: true },
-    });
-    if (!partner || partner.anonymisedAt) throw new NotFoundException('Profile not found');
-    if (partner.pausedAt) throw codedError(HttpStatus.CONFLICT, 'PARTNER_PAUSED', 'Your partner account is paused, so new leads cannot be sent. Call Laboura for help.');
-    const input = this.validate(body);
-    const now = this.now();
-    const today = await this.prisma.referralLead.count({ where: { referralId: partner.id, source: 'app', createdAt: { gt: new Date(now.getTime() - DAY_MS) } } });
-    if (today >= APP_LEADS_PER_DAY) {
-      throw codedError(HttpStatus.TOO_MANY_REQUESTS, 'LIMIT_REACHED', `At most ${APP_LEADS_PER_DAY} leads a day. Send the rest tomorrow.`);
-    }
-    const lead = await this.createLead(partner, input, 'app', now);
-    return { received: true, leadId: lead?.id ?? null };
-  }
-
-  /** The partner's own leads: first name and stage only (customer app rule for partners). */
-  async appLeads(referralId: string) {
-    const rows = await this.prisma.referralLead.findMany({
-      where: { referralId },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-      select: { id: true, name: true, lookingFor: true, status: true, outcome: true, subjectType: true, createdAt: true },
-    });
-    return {
-      leads: rows.map((r) => ({
-        id: r.id,
-        firstName: firstName(r.name),
-        lookingFor: r.lookingFor,
-        stage: r.status === 'open' ? 'with_our_team' : r.outcome === 'registered' || r.outcome === 'already_registered' ? 'registered' : 'closed',
-        sentAt: r.createdAt.toISOString(),
-      })),
-    };
   }
 
   private validate(body: LeadInput): { name: string; phone: string; lookingFor: LeadLookingFor; area: string | null; note: string | null } {
@@ -305,6 +268,8 @@ export class ReferralLeadService {
       data: { assignedStaffId: actor.id, assignedAt: this.now() },
     });
     if (done.count === 0) throw codedError(HttpStatus.CONFLICT, 'ALREADY_TAKEN', 'Another agent already has it.');
+    const lead = await this.prisma.referralLead.findUnique({ where: { id }, select: { customerLeadId: true } });
+    await markAppLeadContacted(this.prisma, lead?.customerLeadId);
     return { taken: true };
   }
 
@@ -317,6 +282,7 @@ export class ReferralLeadService {
     const team = await this.teamIds(actor);
     if (team && !team.includes(target.id)) throw new ForbiddenException('That agent is not in your team');
     await this.prisma.referralLead.update({ where: { id: lead.id }, data: { assignedStaffId: target.id, assignedAt: this.now() } });
+    await markAppLeadContacted(this.prisma, lead.customerLeadId);
     await this.audit.log({
       actorId: actor.id,
       action: 'referral_lead.assigned',
@@ -366,6 +332,7 @@ export class ReferralLeadService {
         subjectId: subject?.id ?? null,
       },
     });
+    await closeAppLead(this.prisma, lead.customerLeadId, outcome, subject);
     await this.audit.log({
       actorId: actor.id,
       action: 'referral_lead.closed',

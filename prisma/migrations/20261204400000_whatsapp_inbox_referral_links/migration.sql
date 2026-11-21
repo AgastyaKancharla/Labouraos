@@ -65,6 +65,7 @@ CREATE TABLE "ReferralLead" (
     "area" TEXT,
     "note" TEXT,
     "source" TEXT NOT NULL,
+    "customerLeadId" TEXT,
     "status" TEXT NOT NULL DEFAULT 'open',
     "assignedStaffId" TEXT,
     "assignedAt" TIMESTAMP(3),
@@ -79,6 +80,7 @@ CREATE TABLE "ReferralLead" (
 
     CONSTRAINT "ReferralLead_pkey" PRIMARY KEY ("id")
 );
+CREATE UNIQUE INDEX "ReferralLead_customerLeadId_key" ON "ReferralLead"("customerLeadId");
 CREATE INDEX "ReferralLead_referralId_idx" ON "ReferralLead"("referralId");
 CREATE INDEX "ReferralLead_status_assignedStaffId_idx" ON "ReferralLead"("status", "assignedStaffId");
 CREATE INDEX "ReferralLead_phone_idx" ON "ReferralLead"("phone");

@@ -89,9 +89,9 @@ export class ReferralLinkPublicController {
 }
 
 /**
- * The Laboura app, referral partner profiles (docs/customer-app-api.md §
- * "Referral partner: share link and leads"): the personal link and QR, "Submit a
- * lead", and the partner's own leads (first name and stage only).
+ * The Laboura app, referral partner profiles (docs/customer-app-api.md §15):
+ * the personal share link and its QR. "Send a lead" is the customer session's
+ * own route (§7.3b); the office picks those leads up (referral-lead-sync.ts).
  */
 @Controller(CUSTOMER_API_PREFIX)
 export class ReferralLeadCustomerController {
@@ -105,20 +105,5 @@ export class ReferralLeadCustomerController {
   async shareLink(@CurrentCustomer() me: CustomerPrincipal, @Param('profileId') profileId: string) {
     const profile = await this.scope.profile(me.accountId, profileId, 'referral');
     return this.leads.shareLink(profile.referralId!);
-  }
-
-  @Get('me/profiles/:profileId/referral/leads')
-  @CustomerRoute()
-  async myLeads(@CurrentCustomer() me: CustomerPrincipal, @Param('profileId') profileId: string) {
-    const profile = await this.scope.profile(me.accountId, profileId, 'referral');
-    return this.leads.appLeads(profile.referralId!);
-  }
-
-  @Post('me/profiles/:profileId/referral/leads')
-  @HttpCode(201)
-  @CustomerRoute()
-  async submit(@CurrentCustomer() me: CustomerPrincipal, @Param('profileId') profileId: string, @Body() body: Record<string, unknown>) {
-    const profile = await this.scope.profile(me.accountId, profileId, 'referral');
-    return this.leads.submitFromApp(profile.referralId!, body ?? {});
   }
 }

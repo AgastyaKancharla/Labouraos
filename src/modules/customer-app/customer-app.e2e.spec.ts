@@ -507,7 +507,9 @@ describe('Customer app API', () => {
       const home = await auth(http().get(`${API}/me/profiles/${res.body.profileId}/home`), session.accessToken).expect(200);
       expect(home.body.referred).toEqual([expect.objectContaining({ firstName: 'Suresh', stage: 'paid' })]);
       expect(JSON.stringify(home.body.referred)).not.toMatch(/Kumar|Rao|\+91|phone/);
-      expect(home.body.share.link).toContain(referral.code);
+      // The personal share link page (rev 202): a random slug, never the RF code.
+      expect(home.body.share.link).toMatch(/\/p\/ref\/[a-z0-9]{10}$/);
+      expect(home.body.share.whatsappText).toContain(referral.code);
       // Referring yourself is refused — with the same answer as an unknown code (INF-14: no oracle).
       const selfRef = await auth(http().post(`${API}/me/register/job-seeker`), session.accessToken)
         .send({ dateOfBirth: '1995-05-17', referralCode: referral.code, otp: await freshOtp(session.accessToken, 'register') })

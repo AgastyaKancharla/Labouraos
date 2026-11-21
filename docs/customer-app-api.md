@@ -716,9 +716,10 @@ when it is above 0 (§8.2).
   invoice. Business referrals are listed without an amount (not decided).
 - `paused`: true when the CEO has paused the partner: new referrals are refused;
   earned money is still paid.
-- `share.link` (`PUBLIC_APP_URL` + `/r/<RF- code>`) is where a partner's QR
-  points. **No page answers `/r/...` yet**: a landing page (store links, the code
-  pre-filled) is still to be built in `web/`. `qrText` is what the app turns into a QR code.
+- `share.link` is the partner's personal share link page, `PUBLIC_APP_URL` + `/p/ref/<slug>`
+  (21 Nov, rev 202: a random 10-character slug made on first use, never the RF code; the
+  page is built in `web/`, see §15). `qrText` is what the app turns into a QR code;
+  `whatsappText` still carries the RF code for people who use the app.
 
 ### 7.3b Referral partner: send a lead (21 Nov)
 
@@ -760,6 +761,14 @@ leads on the call team's lists (like missed calls, oldest first); when the
 person registers, fill "referred by" from `referralCode` and set
 `status = 'registered'`, `subjectType`, `subjectId`; otherwise `contacted`,
 `not_interested` or `closed`. Then switch `CUSTOMER_REFERRAL_LEADS` on.
+
+**Done (21 Nov, Builder D, §15):** the WhatsApp sweep (every 2 minutes) picks every
+`new` lead up into the office's partner lead list (`ReferralLead`, `customerLeadId`),
+assigns it like a missed call (the partner's own agent if on shift, else the
+on-shift agent with the fewest open items), sets `contacted` when an agent has it,
+and on closing sets `registered` (+ `subjectType` / `subjectId`), `not_interested`
+or `closed`. The agent's Register button fills "referred by" with the partner.
+`CUSTOMER_REFERRAL_LEADS` can be switched on once this is deployed.
 
 ### 7.4 Terms, re-consent and suspension (legal documents, Master Guide rev 176)
 
@@ -1310,75 +1319,38 @@ schema yet (prisma/ belongs to Agent A).
 
 ---
 
-## 15. Referral partner: share link and leads (21 Nov, Master Guide rev 202) — for the customer-app session
+## 15. Referral partner: personal share link (21 Nov, Master Guide rev 202) — for the customer-app session
 
-> **For the customer-app session (Builder D, 21 Nov):** the server side is built
-> (`src/modules/referral/referral-lead.*`); the app screens are yours. Nothing
-> here changes the partner's reward (₹200 when the referred person joins) or any
-> other rule; partners still see only first names and stages (C-rule for partners).
+> **For the customer-app session (Builder D, 21 Nov):** nothing here changes the
+> partner's reward (₹200 when the referred person joins) or any other rule.
+> "Send a lead" stays your route (§7.3b); the office now picks those leads up.
 
 Every partner has a **personal share link and QR**: `https://app.laboura.com/p/ref/<slug>`
-(the slug is random, 10 characters, made on first use; never the RF code). A person
-who opens it on the web leaves their name and their own mobile (checked by a code
-sent from that page), says whether they want a job or staff, and the lead goes to a
-call agent (assigned like a missed call: the partner's own agent if on shift, else
-the on-shift agent with the fewest open items). Registering the person fills
-"referred by" with the partner. The partner gets a WhatsApp (SMS as fallback)
-"We received the lead you sent (<first name>)".
-
-All three routes need the partner's customer token; `profileId` must be one of the
-caller's own **referral** profiles (another person's profile is `404
-PROFILE_NOT_FOUND`, a job seeker or business profile is `400 PROFILE_KIND_MISMATCH`).
+(the slug is random, 10 characters, made on first use; never the RF code, so nobody can
+walk through partners by counting). It is what Home's `share.link` / `share.qrText` now
+return (§7.3), so the app needs no change. A person who opens it on the web leaves their
+name and their own mobile (checked by a code sent from that page), says whether they want
+a job or staff, and the lead goes to the same office list as the app's leads (assigned
+like a missed call); registering them fills "referred by" with the partner. The partner
+gets a WhatsApp (SMS as fallback) "We received the lead you sent (<first name>)".
 
 ### 15.1 `GET /customer-api/v1/me/profiles/:profileId/referral/share-link`
+
+Optional (Home already carries the link): the partner's own referral profile only
+(another person's profile is `404 PROFILE_NOT_FOUND`, a job seeker or business profile
+`400 PROFILE_KIND_MISMATCH`).
 
 ```json
 { "code": "RF-00007", "url": "https://app.laboura.com/p/ref/k7m4q2pxab", "qrSvg": "<svg …>", "paused": false }
 ```
 
-Show the QR (render `qrSvg` as an image, e.g. a `data:image/svg+xml` URI — never as
-markup), a **Copy link** and a **Share** button (system share sheet, WhatsApp first).
-While `paused` is true (the CEO paused the partner) the link page answers "This link
-is not active" and **Submit a lead** is refused: show a short note instead of the buttons.
+Render `qrSvg` as an image (e.g. a `data:image/svg+xml` URI), never as markup. While
+`paused` is true the link page answers "This link is not active".
 
-### 15.2 `POST /customer-api/v1/me/profiles/:profileId/referral/leads` — Submit a lead
-
-Body:
-
-| Field | Required | Notes |
-| --- | --- | --- |
-| `name` | yes | 2–80 characters |
-| `phone` | yes | Indian mobile, any spelling (`9876543210`, `+91 98765 43210`) |
-| `lookingFor` | yes | `job` (a job seeker) or `staff` (a business that needs staff) |
-| `area` | no | up to 80 characters |
-| `note` | no | up to 300 characters |
-
-Answer `201 { "received": true, "leadId": "…" | null }`. The answer is the same
-whether the number is already registered or not (no oracle); sending the same
-person twice adds no second open lead; the partner's own number adds nothing.
-
-| Error | When |
-| --- | --- |
-| `400` | missing or invalid field (message says which) |
-| `409 PARTNER_PAUSED` | the CEO paused this partner |
-| `429 LIMIT_REACHED` | more than 30 leads in 24 hours from the app |
-
-Before sending, tell the partner to ask the person first ("They agree that Laboura
-may call them"); the person's own consent is taken on the call.
-
-### 15.3 `GET /customer-api/v1/me/profiles/:profileId/referral/leads`
-
-```json
-{ "leads": [ { "id": "…", "firstName": "Manju", "lookingFor": "job", "stage": "with_our_team", "sentAt": "2026-11-21T06:30:00.000Z" } ] }
-```
-
-`stage`: `with_our_team` (open), `registered` (the agent registered them, or they
-were already registered), `closed` (not interested, no answer, wrong number). First
-name only, never the phone or the full name. Newest first, at most 100.
-
-### 15.4 Web link page (already built)
+### 15.2 Web link page (built)
 
 `/p/ref/<slug>` is a public page in the office web app (`web/src/screens/public/P-ReferralLink`);
 its API is `GET /referral-links/:slug`, `POST /referral-links/:slug/send-code { phone }`,
-`POST /referral-links/:slug/leads { name, phone, lookingFor, area?, consent: true, requestId, code }`.
-The app does not need these.
+`POST /referral-links/:slug/leads { name, phone, lookingFor: job|staff, area?, consent: true, requestId, code }`
+(always `{ received: true }`, no oracle; at most 30 leads and 60 codes a day per link,
+the usual public-page code limits per number). The app does not need these.

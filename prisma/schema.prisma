@@ -3573,6 +3573,8 @@ model ReferralLead {
   area             String?
   note             String?
   source           String // link, app
+  /// The app's own row (CustomerReferralLead) this was picked up from; its status follows this lead.
+  customerLeadId   String?   @unique
   status           String    @default("open") // open, closed
   assignedStaffId  String?
   assignedAt       DateTime?

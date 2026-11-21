@@ -66,6 +66,8 @@ export const whatsappEn = {
   'wa.leads.from': 'From partner {code} · {name}',
   'wa.leads.job': 'Looking for a job',
   'wa.leads.staff': 'Needs staff',
+  'wa.leads.unknown': 'Ask: job or staff?',
+  'wa.leads.fromApp': 'Sent in the app',
   'wa.leads.already': 'Already registered: {code}',
   'wa.leads.registerSeeker': 'Register job seeker',
   'wa.leads.registerBusiness': 'Register business',

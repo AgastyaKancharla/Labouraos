@@ -23,6 +23,7 @@ import { canAdvanceMessageStatus } from '../message/message-status';
 import { WhatsAppInboxClock } from './whatsapp-inbox.clock';
 import { LeadAgent, loadLeadAgents, ownAgentsOf, pickLeadAgent } from './lead-assignment';
 import { InboundWhatsAppMessage, ParsedWhatsAppWebhook } from './meta-webhook';
+import { markAppLeadContacted, pickUpAppLeads } from '../referral/referral-lead-sync';
 
 /** WhatsApp lets a business reply freely for 24 hours after the person's last message; after that only templates. */
 export const REPLY_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -303,12 +304,14 @@ export class WhatsAppInboxService {
       }
     }
 
-    // Referral partners' leads: same rule (the partner's assigned or registering agent if on shift).
+    // Referral partners' leads (share link page and the app's "Send a lead"): same rule
+    // (the partner's assigned or registering agent if on shift).
+    const appLeadsPicked = await pickUpAppLeads(this.prisma, now);
     const leads = await this.prisma.referralLead.findMany({
       where: { status: 'open' },
       orderBy: { createdAt: 'asc' },
       take: 500,
-      select: { id: true, assignedStaffId: true, referralId: true },
+      select: { id: true, assignedStaffId: true, referralId: true, customerLeadId: true },
     });
     for (const lead of leads) {
       if (lead.assignedStaffId) continue;
@@ -321,6 +324,7 @@ export class WhatsAppInboxService {
       });
       if (done.count > 0) {
         leadsAssigned += 1;
+        await markAppLeadContacted(this.prisma, lead.customerLeadId);
         const agent = agents.find((a) => a.id === pick.staffId);
         if (agent) {
           agent.openItems += 1;
@@ -328,7 +332,7 @@ export class WhatsAppInboxService {
         }
       }
     }
-    return { open: open.length, matched, assigned, leadsAssigned, teamLeadBells, managerBells, anyOnShift };
+    return { open: open.length, matched, assigned, leadsAssigned, appLeadsPicked, teamLeadBells, managerBells, anyOnShift };
   }
 
   /** Team Lead bell after 15 working minutes unanswered, the Manager after 2 hours. */

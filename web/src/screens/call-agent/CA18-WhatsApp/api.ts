@@ -60,7 +60,8 @@ export interface ReferralLeadRow {
   id: string;
   name: string;
   phone: string;
-  lookingFor: 'job' | 'staff';
+  /** unknown: an app lead sent with only name and mobile. */
+  lookingFor: 'job' | 'staff' | 'unknown';
   area: string | null;
   note: string | null;
   source: 'link' | 'app';

@@ -301,8 +301,8 @@ function LeadRow({ lead }: { lead: ReferralLeadRow }) {
   const [outcome, setOutcome] = useState('');
   const mine = lead.assignedTo?.id === session?.staff.id;
   const fail = (e: unknown) => toast.error(isApiError(e) ? e.message : t('error.server'));
-  const register = () => {
-    const isJob = lead.lookingFor === 'job';
+  const register = (asJob: boolean) => {
+    const isJob = asJob;
     const values: Record<string, unknown> = { name: lead.name, heardFrom: 'referral_partner' };
     if (isJob && lead.partner) values.referredBy = { id: lead.partner.id, code: lead.partner.code, name: lead.partner.name };
     const seeded = seedRegistrationDraft(isJob ? 'job-seeker' : 'business', session?.staff.id, values);
@@ -316,7 +316,8 @@ function LeadRow({ lead }: { lead: ReferralLeadRow }) {
         <span className="sub">{formatDateTimeIST(lead.createdAt)}</span>
       </div>
       <div className="wa-row-tags">
-        <span className="tag tn">{t(lead.lookingFor === 'job' ? 'wa.leads.job' : 'wa.leads.staff')}</span>
+        <span className="tag tn">{t(lead.lookingFor === 'job' ? 'wa.leads.job' : lead.lookingFor === 'staff' ? 'wa.leads.staff' : 'wa.leads.unknown')}</span>
+        {lead.source === 'app' && <span className="tag tc">{t('wa.leads.fromApp')}</span>}
         {lead.area && <span className="tag tc">{lead.area}</span>}
         <span className="sub">{lead.phone}</span>
       </div>
@@ -331,8 +332,11 @@ function LeadRow({ lead }: { lead: ReferralLeadRow }) {
         {!lead.assignedTo && (
           <Button className="lb-ca-small" variant="primary" loading={take.isPending} onClick={() => take.mutate({ id: lead.id }, { onError: fail })}>{t('wa.take')}</Button>
         )}
-        {mine && !lead.alreadyRegistered && (
-          <Button className="lb-ca-small" variant="primary" onClick={register}>{t(lead.lookingFor === 'job' ? 'wa.leads.registerSeeker' : 'wa.leads.registerBusiness')}</Button>
+        {mine && !lead.alreadyRegistered && lead.lookingFor !== 'staff' && (
+          <Button className="lb-ca-small" variant="primary" onClick={() => register(true)}>{t('wa.leads.registerSeeker')}</Button>
+        )}
+        {mine && !lead.alreadyRegistered && lead.lookingFor !== 'job' && (
+          <Button className="lb-ca-small" variant={lead.lookingFor === 'staff' ? 'primary' : 'secondary'} onClick={() => register(false)}>{t('wa.leads.registerBusiness')}</Button>
         )}
         {mine && (
           <form

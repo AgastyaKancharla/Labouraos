@@ -41,6 +41,8 @@ describe('Referral partners (rev 202): personal share link and QR, the lead page
   let slug: string;
   let customer: { accountId: string; sessionId: string; profileId: string };
   let otherCustomer: { accountId: string; sessionId: string; profileId: string };
+  let appLeadId: string;
+  let appLeadPhone: string;
 
   const bearer = (s: S) => `Bearer ${jwt.sign({ sub: s.id, role: s.role, code: s.code, email: null })}`;
   const customerBearer = (c: { accountId: string; sessionId: string }) => `Bearer ${tokens.signAccess(c.accountId, c.sessionId).accessToken}`;
@@ -112,6 +114,7 @@ describe('Referral partners (rev 202): personal share link and QR, the lead page
 
   afterAll(async () => {
     await prisma.referralLead.deleteMany({ where: { referralId: { in: referralIds } } });
+    await prisma.customerReferralLead.deleteMany({ where: { referralId: { in: referralIds } } });
     await prisma.messageLog.deleteMany({ where: { subjectId: { in: [...referralIds, ...seekerIds] } } });
     await prisma.customerAccount.deleteMany({ where: { id: { in: accountIds } } });
     await prisma.jobSeeker.deleteMany({ where: { id: { in: seekerIds } } });
@@ -180,30 +183,35 @@ describe('Referral partners (rev 202): personal share link and QR, the lead page
     await api().post(`/referral-links/${otherSlug}/leads`).send({ name: 'Kiran', phone, lookingFor: 'staff', consent: true, requestId, code }).expect(400);
   });
 
-  it('the Laboura app: the partner\'s link, "Submit a lead", and their own leads with first name and stage only', async () => {
+  it('the Laboura app: the partner\'s personal link (also on Home); the app\'s "Send a lead" rows join the office queue', async () => {
     const link = await api().get(`/customer-api/v1/me/profiles/${customer.profileId}/referral/share-link`).set('Authorization', customerBearer(customer)).expect(200);
     expect(link.body.url.split('/').pop()).toBe(slug);
     await api().get(`/customer-api/v1/me/profiles/${customer.profileId}/referral/share-link`).set('Authorization', customerBearer(otherCustomer)).expect(404);
     await api().get(`/customer-api/v1/me/profiles/${customer.profileId}/referral/share-link`).set('Authorization', bearer(agentA)).expect(401);
+    const home = await api().get(`/customer-api/v1/me/profiles/${customer.profileId}/home`).set('Authorization', customerBearer(customer)).expect(200);
+    expect(home.body.share.link).toBe(link.body.url);
 
-    const phone = newPhone();
-    const sent = await api().post(`/customer-api/v1/me/profiles/${customer.profileId}/referral/leads`).set('Authorization', customerBearer(customer))
-      .send({ name: 'Lakshmi Devi', phone: phone.slice(3), lookingFor: 'staff', note: 'Runs a bakery in Jayanagar' }).expect(201);
-    expect(sent.body.received).toBe(true);
-    await api().post(`/customer-api/v1/me/profiles/${customer.profileId}/referral/leads`).set('Authorization', customerBearer(customer)).send({ name: 'X', phone: '123', lookingFor: 'job' }).expect(400);
-
-    const mine = await api().get(`/customer-api/v1/me/profiles/${customer.profileId}/referral/leads`).set('Authorization', customerBearer(customer)).expect(200);
-    expect(mine.body.leads.map((l: { firstName: string; stage: string }) => [l.firstName, l.stage])).toEqual(expect.arrayContaining([['Lakshmi', 'with_our_team'], ['Manju', 'with_our_team']]));
-    expect(JSON.stringify(mine.body)).not.toContain(phone.slice(3));
-    expect(JSON.stringify(mine.body)).not.toContain('Devi');
+    // A lead the partner sent from the app (customer session's table, docs §7.3b).
+    appLeadPhone = newPhone();
+    const appLead = await prisma.customerReferralLead.create({
+      data: { accountId: customer.accountId, profileId: customer.profileId, referralId: partner.id, referralCode: partner.code, kind: 'business', name: 'Lakshmi Bakery', phone: appLeadPhone, personAgreed: true },
+    });
+    appLeadId = appLead.id;
   });
 
   it('the sweep hands partners\' leads to the partner\'s own agent when on shift; agents see their list with masked numbers', async () => {
     await prisma.attendanceDay.create({ data: { staffId: agentA.id, date: SWEEP_DAY, loginAt: SWEEP_AT, dayType: 'open' } });
     const result = await app.get(WhatsAppInboxService).sweep(SWEEP_AT);
+    expect(result.appLeadsPicked).toBeGreaterThanOrEqual(1);
     expect(result.leadsAssigned).toBeGreaterThanOrEqual(2);
     const mine = await prisma.referralLead.findMany({ where: { referralId: partner.id, status: 'open' } });
     expect(mine.every((l) => l.assignedStaffId === agentA.id)).toBe(true);
+    const picked = mine.find((l) => l.customerLeadId === appLeadId);
+    expect(picked).toMatchObject({ source: 'app', lookingFor: 'staff', name: 'Lakshmi Bakery', phone: appLeadPhone });
+    // The partner's app now shows "with our team" (contacted); a second sweep picks nothing twice.
+    expect((await prisma.customerReferralLead.findUniqueOrThrow({ where: { id: appLeadId } })).status).toBe('contacted');
+    await app.get(WhatsAppInboxService).sweep(SWEEP_AT);
+    expect(await prisma.referralLead.count({ where: { customerLeadId: appLeadId } })).toBe(1);
 
     const list = await api().get('/referral-leads').set('Authorization', bearer(agentA)).expect(200);
     expect(list.body.rows.length).toBe(mine.length);
@@ -233,12 +241,17 @@ describe('Referral partners (rev 202): personal share link and QR, the lead page
     await api().post(`/referral-leads/${lead.id}/outcome`).set('Authorization', bearer(agentA)).send({ outcome: 'registered' }).expect(200);
     expect(await prisma.referralLead.findUniqueOrThrow({ where: { id: lead.id } })).toMatchObject({ status: 'closed', outcome: 'registered', subjectType: 'job_seeker', subjectId: seeker.id });
     await api().post(`/referral-leads/${lead.id}/outcome`).set('Authorization', bearer(agentA)).send({ outcome: 'registered' }).expect(409);
-    const mine = await api().get(`/customer-api/v1/me/profiles/${customer.profileId}/referral/leads`).set('Authorization', customerBearer(customer)).expect(200);
-    expect(mine.body.leads.find((l: { id: string }) => l.id === lead.id).stage).toBe('registered');
+
+    // Closing an app lead moves the app's row: the partner sees "closed" (never why).
+    const fromApp = await prisma.referralLead.findFirstOrThrow({ where: { customerLeadId: appLeadId } });
+    await api().post(`/referral-leads/${fromApp.id}/outcome`).set('Authorization', bearer(agentA)).send({ outcome: 'not_interested' }).expect(200);
+    expect((await prisma.customerReferralLead.findUniqueOrThrow({ where: { id: appLeadId } })).status).toBe('not_interested');
   });
 
   it('lead routes refuse another agent and another team\'s Team Lead (404); a Team Lead hands over only inside the team', async () => {
-    const lead = await prisma.referralLead.findFirstOrThrow({ where: { referralId: partner.id, status: 'open', assignedStaffId: agentA.id } });
+    const lead = await prisma.referralLead.create({
+      data: { referralId: partner.id, name: 'Kiran Raj', phone: newPhone(), lookingFor: 'job', source: 'link', status: 'open', assignedStaffId: agentA.id, assignedAt: SWEEP_AT },
+    });
     // Partner lead take: a lead already with another agent is 404
     await api().post(`/referral-leads/${lead.id}/take`).set('Authorization', bearer(agentB)).expect(404);
     // Partner lead outcome: another agent's lead is 404
@@ -251,15 +264,11 @@ describe('Referral partners (rev 202): personal share link and QR, the lead page
     expect(list.body.rows.map((r: { id: string }) => r.id)).not.toContain(lead.id);
   });
 
-  it('a Team Lead hands a lead to a teammate (audited); a paused partner cannot submit from the app', async () => {
-    const lead = await prisma.referralLead.findFirstOrThrow({ where: { referralId: partner.id, status: 'open' } });
+  it('a Team Lead hands a lead to a teammate (audited)', async () => {
+    const lead = await prisma.referralLead.findFirstOrThrow({ where: { referralId: partner.id, status: 'open', assignedStaffId: agentA.id } });
     await api().post(`/referral-leads/${lead.id}/assign`).set('Authorization', bearer(tl)).send({ staffId: agentB.id }).expect(200);
     expect((await prisma.referralLead.findUniqueOrThrow({ where: { id: lead.id } })).assignedStaffId).toBe(agentB.id);
     await api().post(`/referral-leads/${lead.id}/assign`).set('Authorization', bearer(agentA)).send({ staffId: agentA.id }).expect(403);
-    const pausedCustomer = await makeCustomer(pausedPartner.id, (await prisma.referral.findUniqueOrThrow({ where: { id: pausedPartner.id } })).phone);
-    const res = await api().post(`/customer-api/v1/me/profiles/${pausedCustomer.profileId}/referral/leads`).set('Authorization', customerBearer(pausedCustomer))
-      .send({ name: 'Someone Else', phone: newPhone(), lookingFor: 'job' });
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe('PARTNER_PAUSED');
+    expect(await prisma.auditLog.count({ where: { actorId: tl.id, action: 'referral_lead.assigned' } })).toBe(1);
   });
 });
