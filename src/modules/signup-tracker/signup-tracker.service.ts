@@ -717,15 +717,13 @@ export class SignupTrackerService {
     }
     const sameAgent = tracker.assignedStaffId === pick.staffId;
     // The run holds the sign-up's advisory lock, so two runs never put two tasks on the lists.
-    const claimed = await this.prisma.signupTracker.updateMany({
-      where: { id: tracker.id, outcome: 'open' },
-      data: {
-        assignedStaffId: sameAgent ? undefined : pick.staffId,
-        assignedAt: sameAgent ? undefined : ctx.now,
-        assignmentReason: sameAgent ? undefined : pick.reason,
-      },
-    });
-    if (claimed.count !== 1) return this.prisma.signupTracker.findUnique({ where: { id: tracker.id } });
+    if (!sameAgent) {
+      const claimed = await this.prisma.signupTracker.updateMany({
+        where: { id: tracker.id, outcome: 'open' },
+        data: { assignedStaffId: pick.staffId, assignedAt: ctx.now, assignmentReason: pick.reason },
+      });
+      if (claimed.count !== 1) return this.prisma.signupTracker.findUnique({ where: { id: tracker.id } });
+    }
     await this.prisma.callTask.create({
       data: {
         staffId: pick.staffId,
