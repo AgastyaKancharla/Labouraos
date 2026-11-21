@@ -1405,12 +1405,46 @@ model CallbackTask {
   assignedToStaff   Staff?      @relation(fields: [assignedToStaffId], references: [id], onDelete: SetNull)
   recordingUrl      String?
   recordingConsent  Boolean     @default(false)
+  /// 21 Nov fixes: when and why it went to the agent who holds it
+  /// (inbound_routed, own_agent, fewest_open, same_caller, taken, manual, handover, no_show).
+  assignedAt        DateTime?
+  assignmentReason  String?
+  /// The first call back to the caller (target: within 30 minutes of the missed call).
+  firstAttemptAt    DateTime?
+  completedAt       DateTime?
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 
   @@index([phone])
   @@index([status])
   @@index([createdAt])
+  @@index([assignedToStaffId, status])
+}
+
+/// 21 Nov fixes (call results): a person marked "wrong number" or "do not call"
+/// on a call. Both stop automatic retries and messages; "do not call" also
+/// blocks calls. A wrong number lifts by itself when the number changes
+/// (phoneHash no longer matches). A Team Lead, Manager or the CEO can lift
+/// either, with a reason (audited). No personal data: the phone only as a hash.
+model ContactBlock {
+  id              String    @id @default(uuid())
+  subjectType     String    // job_seeker, business, referral
+  subjectId       String
+  /// wrong_number, do_not_call
+  kind            String
+  /// SHA-256 of the 10 national digits the block was recorded on.
+  phoneHash       String
+  callRecordId    String?
+  byStaffId       String?
+  /// "subjectType|subjectId|kind" while live, null once lifted: one live block per kind.
+  liveKey         String?   @unique
+  liftedAt        DateTime?
+  liftedByStaffId String?
+  liftReason      String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([subjectType, subjectId])
 }
 
 model StaffDevice {

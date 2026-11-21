@@ -25,7 +25,9 @@ import { RecordingCopyJob } from './recording-copy.job';
 import { RECORDING_LINK_TTL_SECONDS, RECORDING_STORAGE, RecordingStorage } from './recording-storage';
 import { CALL_ANNOUNCEMENT } from './call-announcement';
 import { CallClock } from './call-clock';
-import { isAgentOutcome, isCallPurpose } from './call-outcomes';
+import { isAgentOutcome, isCallPurpose, NO_ANSWER_OUTCOMES, STOP_OUTCOMES } from './call-outcomes';
+import { ContactBlockKind, callsBlocked, liveKeyOf, phoneHash } from './contact-block';
+import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { isWithinClockWindow } from './call-window';
 import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
@@ -58,6 +60,7 @@ export class CallService {
     private readonly editPolicyService: EditPolicyService,
     private readonly attendance: AttendanceService,
     private readonly followThrough: CallFollowThroughService,
+    private readonly reviewFlags: ReviewFlagService,
   ) {
     this.team = new OwnTeam(prisma);
   }
@@ -295,6 +298,10 @@ export class CallService {
     if (!subject) {
       throw new NotFoundException('The person or business to call was not found');
     }
+    // 21 Nov fixes: "do not call" blocks every call until a Team Lead lifts it.
+    if (await callsBlocked(this.prisma, { subjectType, subjectId: subject.id })) {
+      throw new ForbiddenException('This person asked not to be called (do not call). A Team Lead can lift it.');
+    }
 
     if (subjectType === 'job_seeker' && purpose !== 'consent_explain') {
       const hasCallRecordingConsent = await this.consentService.hasConsent(
@@ -411,12 +418,31 @@ export class CallService {
     if (row.staffId !== actor.id) {
       throw new ForbiddenException('Only the person who made the call can record the outcome');
     }
-    if (!row.answered) {
-      throw new BadRequestException('A call that was not answered cannot have an outcome');
-    }
     const agentOutcome = input.agentOutcome ?? '';
     if (!isAgentOutcome(agentOutcome)) {
       throw new BadRequestException('agentOutcome is not one of the allowed outcomes');
+    }
+    const noAnswer = NO_ANSWER_OUTCOMES.includes(agentOutcome);
+    // "Busy" and "switched off" may be told about a call nobody answered, once it has ended.
+    const ended = (FINAL_CALL_STATUSES as readonly string[]).includes(row.providerStatus);
+    if (!row.answered && !(noAnswer && ended)) {
+      throw new BadRequestException(
+        noAnswer ? 'Wait until the call has ended to mark it busy or switched off' : 'A call that was not answered cannot have an outcome',
+      );
+    }
+    if (noAnswer && !row.answered) {
+      // The phone system already treated it as no answer (retry, WhatsApp): only the label is kept.
+      const at = this.clock.now();
+      await this.prisma.callRecord.update({ where: { id: row.id }, data: { agentOutcome, agentOutcomeReason: input.reason?.trim() || null, agentOutcomeAt: at } });
+      await this.auditService.log({
+        actorId: actor.id,
+        action: 'call.outcome_recorded',
+        entityType: 'call_record',
+        entityCode: row.code,
+        after: { agentOutcome },
+        changedFields: ['agentOutcome'],
+      });
+      return { callRecordId: row.id, agentOutcome };
     }
     const reason = typeof input.reason === 'string' && input.reason.trim() ? input.reason.trim() : null;
     const at = this.clock.now();
@@ -445,6 +471,15 @@ export class CallService {
       reason,
       changedFields: ['agentOutcome'],
     });
+    if (row.subjectType && row.subjectId && noAnswer) {
+      // Answered by a network message: treated as no answer (retry rules, 3-try limit).
+      const updated = await this.prisma.callRecord.findUniqueOrThrow({ where: { id: row.id } });
+      await this.followThrough.onAgentNoAnswer(updated);
+      return { callRecordId: row.id, agentOutcome };
+    }
+    if (row.subjectType && row.subjectId && STOP_OUTCOMES.includes(agentOutcome)) {
+      await this.blockContact(actor, row, agentOutcome as ContactBlockKind, at);
+    }
     if (row.subjectType && row.subjectId) {
       // Whatever he said, earlier callbacks and retries for him are done.
       await this.prisma.callTask.updateMany({
@@ -472,6 +507,107 @@ export class CallService {
       }
     }
     return { callRecordId: row.id, agentOutcome, ...(callbackAt ? { callbackAt: callbackAt.toISOString() } : {}) };
+  }
+
+  /**
+   * "Wrong number" / "do not call" (21 Nov fixes): a live block for the person
+   * (no retries, no automatic messages; do not call also no calls), every open
+   * call task and missed call for him closed, and a wrong number on a paid job
+   * seeker goes to the Team Lead.
+   */
+  private async blockContact(actor: CallActor, row: CallRecord, kind: ContactBlockKind, at: Date): Promise<void> {
+    const subject = { subjectType: row.subjectType!, subjectId: row.subjectId! };
+    const loaded = await this.loadSubject(subject.subjectType, subject.subjectId);
+    const liveKey = liveKeyOf(subject, kind);
+    await this.prisma.contactBlock.upsert({
+      where: { liveKey },
+      create: {
+        subjectType: subject.subjectType,
+        subjectId: subject.subjectId,
+        kind,
+        phoneHash: phoneHash(loaded?.phone),
+        callRecordId: row.id,
+        byStaffId: actor.id,
+        liveKey,
+      },
+      update: { phoneHash: phoneHash(loaded?.phone), callRecordId: row.id, byStaffId: actor.id },
+    });
+    // Sign-up help tasks too: nothing more is planned for him.
+    await this.prisma.callTask.updateMany({
+      where: { subjectType: subject.subjectType, subjectId: subject.subjectId, status: 'open' },
+      data: { status: 'cancelled', doneAt: at, doneCallRecordId: row.id },
+    });
+    const digits = loaded?.phone ? loaded.phone.replace(/\D/g, '').slice(-10) : '';
+    if (digits.length === 10) {
+      await this.prisma.callbackTask.updateMany({
+        where: { status: { in: ['pending', 'assigned'] }, phone: { endsWith: digits } },
+        data: { status: 'completed', completedAt: at },
+      });
+    }
+    await this.auditService.log({
+      actorId: actor.id,
+      action: 'call.contact_blocked',
+      entityType: subject.subjectType,
+      entityCode: subject.subjectId,
+      after: { kind, callRecordId: row.id },
+      changedFields: ['contactBlock'],
+      reason: kind === 'do_not_call' ? 'Asked not to be called' : 'Wrong number',
+    });
+    if (kind === 'wrong_number' && subject.subjectType === 'job_seeker') {
+      const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: subject.subjectId }, select: { paymentReceivedAt: true } });
+      if (seeker?.paymentReceivedAt) {
+        const open = await this.prisma.reviewFlag.findFirst({
+          where: { kind: 'wrong_number_paid', subjectType: 'job_seeker', subjectId: subject.subjectId, status: 'open' },
+          select: { id: true },
+        });
+        if (!open) {
+          await this.reviewFlags.raise({
+            kind: 'wrong_number_paid',
+            subjectType: 'job_seeker',
+            subjectId: subject.subjectId,
+            raisedForStaffId: actor.id,
+            details: { callRecordId: row.id, callCode: row.code },
+          });
+        }
+      }
+    }
+  }
+
+  /**
+   * A Team Lead (own team's people), Manager or the CEO lifts a wrong number or
+   * do not call, with a reason (audited).
+   */
+  async liftContactBlock(actor: CallActor, subjectType: string, subjectId: string, kind: string, reason: string | undefined) {
+    if (!['team_lead', 'manager', 'ceo'].includes(actor.role)) {
+      throw new ForbiddenException('Only a Team Lead, Manager or the CEO lifts a wrong number or do not call');
+    }
+    if (kind !== 'wrong_number' && kind !== 'do_not_call') throw new BadRequestException('kind is wrong_number or do_not_call');
+    const why = typeof reason === 'string' ? reason.trim() : '';
+    if (!why) throw new BadRequestException('A reason is needed');
+    const live = await this.prisma.contactBlock.findUnique({ where: { liveKey: liveKeyOf({ subjectType, subjectId }, kind) } });
+    if (!live) throw new NotFoundException('No live block of that kind for this person');
+    if (actor.role === 'team_lead') {
+      const owner = live.byStaffId;
+      if (!owner || !(await this.team.includes(actor.id, owner))) {
+        throw new ForbiddenException('A Team Lead lifts only blocks recorded by their own team');
+      }
+    }
+    const lifted = await this.prisma.contactBlock.updateMany({
+      where: { id: live.id, liftedAt: null },
+      data: { liftedAt: this.clock.now(), liftedByStaffId: actor.id, liftReason: why.slice(0, 300), liveKey: null },
+    });
+    if (lifted.count !== 1) throw new NotFoundException('No live block of that kind for this person');
+    await this.auditService.log({
+      actorId: actor.id,
+      action: 'call.contact_block_lifted',
+      entityType: subjectType,
+      entityCode: subjectId,
+      before: { kind },
+      after: { lifted: true },
+      changedFields: ['contactBlock'],
+      reason: why,
+    });
+    return { lifted: true, kind };
   }
 
   /** A callback must be in the future and inside the calling hours (IST). */

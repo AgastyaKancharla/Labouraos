@@ -23,7 +23,17 @@ export const AGENT_OUTCOMES = [
   'not_interested',
   'working_now',
   'other',
+  // 21 Nov fixes (Master Guide rev 202, "Call results").
+  'wrong_number',
+  'do_not_call',
+  'busy',
+  'switched_off',
 ] as const;
+
+/** Count as no answer: the retry rules apply as if nobody picked up (never a hit by themselves). */
+export const NO_ANSWER_OUTCOMES: readonly string[] = ['busy', 'switched_off'];
+/** Stop every retry and automatic message; do_not_call also blocks calls (contact-block.ts). */
+export const STOP_OUTCOMES: readonly string[] = ['wrong_number', 'do_not_call'];
 
 export type AgentOutcome = (typeof AGENT_OUTCOMES)[number];
 

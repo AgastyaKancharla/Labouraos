@@ -249,6 +249,9 @@ const FLAG_TITLES: Record<string, string> = {
   other_id_needs_manager: 'An ID card photo waits for a Manager or the CEO: no other Team Lead in the city',
   aadhaar_duplicate_person: 'The same Aadhaar is already verified for another person',
   possible_banned_person: 'Possibly the same person as a banned person',
+  calls_unanswered: 'Three calls unanswered: retries stopped',
+  wrong_number_paid: 'Wrong number on a paid job seeker',
+  signup_call_not_attempted: 'App sign-up call not made',
 };
 
 export function flagTitle(kind: string): string {
