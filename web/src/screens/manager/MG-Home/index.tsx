@@ -16,6 +16,7 @@ import { hm } from '../../ceo/_kit/format';
 import { PlanTable, Verdict, monthLong, monthShort, roleTeam, teamShort } from '../_kit/kit';
 import { headlineGap, headlineTitle, planSourceText, useOverview } from '../_kit/overview';
 import { WaitingCard } from './WaitingCard';
+import { WhatsAppOverview } from '../../team-lead/_kit/WhatsAppOverview';
 import { useWaiting } from '../_kit/requests';
 
 /**
@@ -108,6 +109,7 @@ export default function ManagerHome() {
           </Card>
 
           <WaitingCard />
+          <WhatsAppOverview />
 
           <Card icon="teamAndAccess" tone="royal" title="Teams · people placed" aside={<ButtonLink to={to('MG-Teams')}>Teams</ButtonLink>}>
             <div className="scrollx">

@@ -1,5 +1,6 @@
 import { PRODUCT_LANGUAGE, productLanguage } from '../../common/language/english-only';
 import {
+  ConflictException,
   BadRequestException,
   HttpStatus,
   Inject,
@@ -10,6 +11,7 @@ import { codedError } from '../../common/http/coded-error';
 import { createHash } from 'crypto';
 import { PublicLinkPurpose } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { blocksFor } from '../call/contact-block';
 import { PublicLinkStoreService } from '../../common/public-link-store.service';
 import { ConsentClock } from './consent-clock';
 import { ConsentService } from './consent.service';
@@ -196,6 +198,28 @@ export type ConsentLinkDetails =
       reconsent: LegalStatus | null;
     };
 
+/** How a link goes out: SMS (default) or WhatsApp with SMS as fallback (21 Nov, rev 202). */
+export type LinkSendChannel = 'sms' | 'whatsapp';
+
+/**
+ * Extra options for a link sent on WhatsApp (21 Nov review): the number the
+ * person wrote from (a WhatsApp conversation) and the agent who pressed the
+ * button, kept on the message (relatedType 'sent_by_staff') so a later delivery
+ * failure can tell them and send the link by SMS instead.
+ */
+export interface LinkSendExtras {
+  recipientPhone?: string;
+  sentByStaffId?: string;
+  /**
+   * false: the SMS is not the message leg of a no-pickup hit (the fallback for a
+   * WhatsApp link that failed later). The WhatsApp branch never counts.
+   */
+  contactAttempt?: boolean;
+}
+
+/** MessageLog.relatedType of a link an agent sent on WhatsApp: relatedId is the agent. */
+export const LINK_SENT_BY_STAFF = 'sent_by_staff';
+
 @Injectable()
 export class ConsentLinkService {
   private readonly processingTokens = new Set<string>();
@@ -275,26 +299,44 @@ export class ConsentLinkService {
    * `options.sms: false` (customer app): the link is opened by the signed-in
    * person inside the app, so no SMS is sent; everything else is the same.
    */
-  async createLink(jobSeekerId: string, options: { sms?: boolean; issuedTo?: string; revokeOthers?: boolean } = {}) {
+  /**
+   * 21 Nov fixes (call results): no link goes by SMS to someone marked "do not call" or to a
+   * number marked wrong (src/modules/call/contact-block.ts). A link opened inside the person's
+   * own app is not a send.
+   */
+  private async refuseBlocked(subjectType: 'job_seeker' | 'business' | 'referral', subjectId: string): Promise<void> {
+    const blocks = await blocksFor(this.prisma, { subjectType, subjectId });
+    if (blocks.has('do_not_call')) {
+      throw new ConflictException({ message: 'They asked not to be contacted (do not call): no link is sent. A Team Lead can lift it if they ask again.', reason: 'do_not_call' });
+    }
+    if (blocks.has('wrong_number')) {
+      throw new ConflictException({ message: 'This number was marked as a wrong number: no link is sent until the number is corrected.', reason: 'wrong_number' });
+    }
+  }
+
+  async createLink(jobSeekerId: string, options: { sms?: boolean; issuedTo?: string; revokeOthers?: boolean; channel?: LinkSendChannel } & LinkSendExtras = {}) {
     const seeker = await this.prisma.jobSeeker.findUnique({
       where: { id: jobSeekerId },
     });
     if (!seeker) {
       throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
     }
+    // 21 Nov fixes (call results): nothing is sent to someone marked "do not call" or to a number
+    // marked wrong (src/modules/call/contact-block.ts). A link opened inside his own app is not a send.
+    if (options.sms !== false) await this.refuseBlocked('job_seeker', seeker.id);
 
     const now = this.clock.now();
     const expiresAt = new Date(now.getTime() + (await this.registrationTtl()));
     // A link opened inside the app (revokeOthers: false) leaves the agent's SMS link working.
-    if (options.revokeOthers !== false) await this.publicLinks.revokeActive('registration', 'job_seeker', seeker.id, now);
+    // A link sent on WhatsApp leaves the earlier one working too (WhatsApp may fail it later).
+    if (options.revokeOthers !== false && options.channel !== 'whatsapp') await this.publicLinks.revokeActive('registration', 'job_seeker', seeker.id, now);
     const { token, id } = await this.publicLinks.create({
       purpose: 'registration', subjectType: 'job_seeker', subjectId: seeker.id,
       phone: seeker.phone, expiresAt, metadata: { resumable: true, ...(options.issuedTo ? { issuedTo: options.issuedTo } : {}) },
     });
 
-    // Send single-use link via SMS
-    if (options.sms !== false) await this.messagingService.send({
-      channel: 'sms',
+    // Send single-use link via SMS ("Send on WhatsApp", rev 202: WhatsApp first, SMS as fallback)
+    const sentBy = options.sms === false ? null : await this.sendLinkMessage(options.channel, {
       template: 'consent_link',
       subjectType: 'job_seeker',
       subjectId: seeker.id,
@@ -302,7 +344,7 @@ export class ConsentLinkService {
         token,
         link: publicPageLink('registration', token),
       },
-    });
+    }, options);
 
     // NOTE: Job seeker's phone number must NEVER appear in this response. The token
     // is for the customer app (opened in-app); staff routes strip it (AC-3).
@@ -311,14 +353,46 @@ export class ConsentLinkService {
       token,
       linkId: id,
       expiresAt,
+      sentBy,
     };
   }
 
+  /**
+   * Sends a link message: by SMS as before, or with `channel: 'whatsapp'` on
+   * WhatsApp first and by SMS when WhatsApp is not available or fails (21 Nov).
+   * Returns the channel that carried it, or null when nothing went out.
+   */
+  private async sendLinkMessage(
+    channel: LinkSendChannel | undefined,
+    message: { template: string; subjectType: string; subjectId: string; variables: Record<string, string> },
+    extras: LinkSendExtras = {},
+  ): Promise<'sms' | 'whatsapp' | null> {
+    if (channel === 'whatsapp') {
+      const result = await this.messagingService.sendPreferWhatsApp({
+        ...message,
+        contactAttempt: false,
+        ...(extras.recipientPhone ? { recipientPhone: extras.recipientPhone } : {}),
+        ...(extras.sentByStaffId ? { relatedType: LINK_SENT_BY_STAFF, relatedId: extras.sentByStaffId } : {}),
+      });
+      return result.channel;
+    }
+    const row = await this.messagingService.send({
+      channel: 'sms',
+      ...message,
+      ...(extras.contactAttempt === false ? { contactAttempt: false } : {}),
+      ...(extras.recipientPhone ? { recipientPhone: extras.recipientPhone } : {}),
+    });
+    // A test double may answer nothing (treated as sent); failed or blocked (wrong number / do not call) is not sent.
+    if (!row) return 'sms';
+    return row.status === 'failed' || row.status === 'blocked' ? null : 'sms';
+  }
+
   /** The agreement link, in English (rev 193; a language an older client sends is ignored). */
-  async createAgreementLink(businessId: string, staffId: string | null, _requestedLanguage?: string, options: { sms?: boolean; issuedTo?: string } = {}) {
+  async createAgreementLink(businessId: string, staffId: string | null, _requestedLanguage?: string, options: { sms?: boolean; issuedTo?: string; channel?: LinkSendChannel } & LinkSendExtras = {}) {
     const language = productLanguage(_requestedLanguage);
     const business = await this.prisma.business.findUnique({ where: { id: businessId } });
     if (!business) throw new NotFoundException(`Business '${businessId}' not found`);
+    if (options.sms !== false) await this.refuseBlocked('business', business.id);
 
     const policy = await this.pricingService.current();
     const numbers = {
@@ -356,20 +430,20 @@ export class ConsentLinkService {
     });
 
     // Rev 188: the answer says whether the SMS went, so no screen has to swallow a failure.
-    const sms = !sendsSms ? null : await this.messagingService.send({
-      channel: 'sms',
+    const sentBy = !sendsSms ? null : await this.sendLinkMessage(options.channel, {
       template: 'agreement_link',
       subjectType: 'business',
       subjectId: business.id,
       variables: { token, link: publicPageLink('businessAgreement', token) },
-    });
-    const smsSent = sms ? sms.status === 'sent' : null;
+    }, options);
+    // smsSent keeps its name for the screens: "the link reached the owner" (by SMS or WhatsApp).
+    const smsSent = sendsSms ? sentBy !== null : null;
     if (smsSent === false) {
       // Nothing reached the owner (staff never get the token): the link is withdrawn, so it
       // never counts towards the limit and the previous link stays the live one.
       await this.prisma.publicLink.updateMany({ where: { id: linkId, usedAt: null }, data: { revokedAt: now } });
     }
-    return { success: true, token, expiresAt, linkId, smsSent };
+    return { success: true, token, expiresAt, linkId, smsSent, sentBy };
   }
 
   /** The business's agreement links that count towards the limit (newest first). */
@@ -403,10 +477,11 @@ export class ConsentLinkService {
   }
 
   /** The referral partner terms link, in English (rev 193; a language an older client sends is ignored). */
-  async createReferralTermsLink(referralId: string, staffId: string | null, _requestedLanguage?: string, options: { sms?: boolean; issuedTo?: string; revokeOthers?: boolean } = {}) {
+  async createReferralTermsLink(referralId: string, staffId: string | null, _requestedLanguage?: string, options: { sms?: boolean; issuedTo?: string; revokeOthers?: boolean; channel?: LinkSendChannel } & LinkSendExtras = {}) {
     const language = productLanguage(_requestedLanguage);
     const referral = await this.prisma.referral.findUnique({ where: { id: referralId } });
     if (!referral) throw new NotFoundException(`Referral '${referralId}' not found`);
+    if (options.sms !== false) await this.refuseBlocked('referral', referral.id);
 
     const policy = await this.pricingService.current();
     const referralPayoutPaise = policy.referralPayoutPaise;
@@ -416,7 +491,7 @@ export class ConsentLinkService {
     const termsHtml = rendered.html;
     const termsHash = rendered.hash;
     const now = this.clock.now();
-    if (options.revokeOthers !== false) await this.publicLinks.revokeActive('referral_registration', 'referral', referral.id, now);
+    if (options.revokeOthers !== false && options.channel !== 'whatsapp') await this.publicLinks.revokeActive('referral_registration', 'referral', referral.id, now);
     const expiresAt = new Date(now.getTime() + (await this.registrationTtl(false)));
     const { token } = await this.publicLinks.create({
       purpose: 'referral_registration', subjectType: 'referral', subjectId: referral.id,
@@ -432,16 +507,15 @@ export class ConsentLinkService {
       } },
     });
 
-    if (options.sms !== false) await this.messagingService.send({
-      channel: 'sms',
+    const sentBy = options.sms === false ? null : await this.sendLinkMessage(options.channel, {
       template: 'referral_terms_link',
       subjectType: 'referral',
       subjectId: referral.id,
       // The one link that resumes (P-Partner…): terms and call-recording consent → selfie → ID check → UPI.
       variables: { token, link: publicPageLink('referralRegistration', token), referralCode: referral.code },
-    });
+    }, options);
 
-    return { success: true, token, expiresAt };
+    return { success: true, token, expiresAt, sentBy };
   }
 
   async getSignedAgreementDocument(businessId: string) {

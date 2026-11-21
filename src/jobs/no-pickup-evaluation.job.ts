@@ -9,6 +9,7 @@ import {
 import { Queue, Worker } from 'bullmq';
 import { JobHandler, LABOURA_JOBS_QUEUE, jobQueue, startScheduledJob } from './job-queue';
 import { redisConnectionOptions } from '../common/redis/redis-connections';
+import { messagesBlocked } from '../modules/call/contact-block';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { JobSeekerService } from '../modules/job-seeker/job-seeker.service';
 import {
@@ -167,6 +168,9 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
     const hitJobSeekerIds: string[] = [];
 
     for (const js of activeJobSeekers) {
+      // 21 Nov fixes: a wrong number or "do not call" stops every automatic message and no hit is
+      // ever recorded from calls to a number that is not his (contact-block.ts).
+      if (await messagesBlocked(this.prisma, { subjectType: 'job_seeker', subjectId: js.id })) continue;
       // If candidate has AM and PM no-pickup calls on a day but missing the WhatsApp leg,
       // dispatch automated WhatsApp message through WhatsAppProvider
       if (this.whatsAppProvider) {
@@ -203,7 +207,22 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
             (a) => a.channel === 'whatsapp' || a.channel === 'sms',
           );
 
-          if (amCall && pmCall && !msgAttempt) {
+          // The notice this job already sent for that day (it is dated the next day, so it is not
+          // among the day's attempts): never sent again on later runs.
+          const noticeSent =
+            amCall && pmCall && !msgAttempt
+              ? await this.prisma.messageLog.findFirst({
+                  where: {
+                    subjectType: 'job_seeker',
+                    subjectId: js.id,
+                    template: 'call_attempt_notice',
+                    createdAt: { gte: pmCall.attemptedAt },
+                    status: { not: 'failed' },
+                  },
+                  select: { id: true },
+                })
+              : null;
+          if (amCall && pmCall && !msgAttempt && !noticeSent) {
             if (this.messaging) {
               await this.messaging.send({
                 channel: 'whatsapp',

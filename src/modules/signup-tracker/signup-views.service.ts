@@ -164,7 +164,7 @@ export class SignupViewsService {
     const ids = (type: string) => trackers.filter((t) => t.subjectType === type && t.subjectId).map((t) => t.subjectId!);
     const [seekers, businesses, referrals] = await Promise.all([
       ids('job_seeker').length
-        ? this.prisma.jobSeeker.findMany({ where: { id: { in: ids('job_seeker') }, registeredByStaffId: { in: teamIds } }, select: { id: true } })
+        ? this.prisma.jobSeeker.findMany({ where: { id: { in: ids('job_seeker') }, OR: [{ registeredByStaffId: { in: teamIds } }, { assignedStaffId: { in: teamIds } }] }, select: { id: true } })
         : Promise.resolve([]),
       ids('business').length
         ? this.prisma.business.findMany({
@@ -173,7 +173,7 @@ export class SignupViewsService {
           })
         : Promise.resolve([]),
       ids('referral').length
-        ? this.prisma.referral.findMany({ where: { id: { in: ids('referral') }, registeredByStaffId: { in: teamIds } }, select: { id: true } })
+        ? this.prisma.referral.findMany({ where: { id: { in: ids('referral') }, OR: [{ registeredByStaffId: { in: teamIds } }, { assignedStaffId: { in: teamIds } }] }, select: { id: true } })
         : Promise.resolve([]),
     ]);
     const owned = new Set([...seekers, ...businesses, ...referrals].map((r) => r.id));

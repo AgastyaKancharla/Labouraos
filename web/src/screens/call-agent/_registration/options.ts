@@ -17,6 +17,7 @@ export const HEARD_FROM: readonly Choice[] = [
   { value: 'field_visit', label: 'reg.heard.field_visit' },
   { value: 'social_media', label: 'reg.heard.social_media' },
   { value: 'walk_in', label: 'reg.heard.walk_in' },
+  { value: 'whatsapp', label: 'reg.heard.whatsapp' },
   { value: 'other', label: 'reg.heard.other' },
 ];
 

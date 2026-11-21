@@ -25,6 +25,7 @@ export const registrationEn = {
   "reg.heard.field_visit": "Field visit",
   "reg.heard.social_media": "Social media",
   "reg.heard.walk_in": "Walk-in",
+  "reg.heard.whatsapp": "WhatsApp",
   "reg.heard.other": "Other",
   "reg.time.09-12": "9 AM – 12 PM",
   "reg.time.12-15": "12 PM – 3 PM",

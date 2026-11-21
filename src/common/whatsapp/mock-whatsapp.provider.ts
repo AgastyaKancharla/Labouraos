@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { WhatsAppMessageResult, WhatsAppProvider } from './whatsapp.interface';
+import { FREE_TEXT_TEMPLATE, WhatsAppMessageResult, WhatsAppProvider } from './whatsapp.interface';
 
 /** `******3210`: the last 4 digits only. */
 export function maskForLog(phone: string): string {
@@ -33,6 +33,21 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
       timestamp: new Date(),
     };
 
+    this.sentMessages.push(result);
+    return result;
+  }
+
+  async sendTextMessage(phone: string, text: string): Promise<WhatsAppMessageResult> {
+    const messageId = `wamid_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    // Never the text (it may carry personal details or a link token), never the full number.
+    this.logger.log(`[MOCK WHATSAPP] Sent a text reply (${String(text ?? '').length} characters) to ${maskForLog(phone)} (ID: ${messageId})`);
+    const result: WhatsAppMessageResult = {
+      messageId,
+      status: 'sent',
+      phone,
+      templateName: FREE_TEXT_TEMPLATE,
+      timestamp: new Date(),
+    };
     this.sentMessages.push(result);
     return result;
   }

@@ -47,6 +47,8 @@ export const JOB_CATALOG: readonly JobCatalogEntry[] = [
   { key: 'signupTracker', queue: SHARED_JOB_QUEUE, jobName: 'sweep-signup-tracker', schedulerId: 'signup-tracker-scheduler', runName: 'sweep-signup-tracker', label: 'App sign-ups: reminders, call tasks, closing' },
   { key: 'notificationSweep', queue: SHARED_JOB_QUEUE, jobName: 'sweep-notifications', schedulerId: 'notification-sweep-scheduler', runName: 'sweep-notifications', label: 'Notification bells that change with the clock', legacyQueue: 'notification-sweep' },
   { key: 'customerPush', queue: SHARED_JOB_QUEUE, jobName: 'send-due-customer-pushes', schedulerId: 'customer-push-scheduler', runName: 'send-due-customer-pushes', label: 'Customer app notifications (push)' },
+  { key: 'whatsappInbox', queue: SHARED_JOB_QUEUE, jobName: 'sweep-whatsapp-inbox', schedulerId: 'whatsapp-inbox-scheduler', runName: 'sweep-whatsapp-inbox', label: 'WhatsApp: assign conversations and partner leads, bells, event messages' },
+  { key: 'callWorkSweep', queue: SHARED_JOB_QUEUE, jobName: 'sweep-call-work', schedulerId: 'call-work-sweep-scheduler', runName: 'sweep-call-work', label: 'Missed calls handed out, no-shows covered' },
 ];
 
 /** A job that no longer exists: its schedule may still sit in a Key Value that kept its data. */

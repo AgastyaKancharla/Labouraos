@@ -16,7 +16,7 @@ import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { Kv, Timeline } from '../../ceo/_kit/kit';
 import { roleLabel } from '../../ceo/_kit/format';
-import { firstName, useTeam, waitedFor, type RequestDetail } from '../_kit/api';
+import { firstName, leaveWorkCount, leaveWorkLine, useTeam, waitedFor, type RequestDetail } from '../_kit/api';
 
 /** One request with everything needed to decide — design T-Req-Sneha.dc.html (any kind of request). */
 interface Balance {
@@ -54,7 +54,7 @@ export default function RequestDetailScreen() {
   const fu = r?.followUps;
   const mates = fu?.teammates ?? [];
   // A half day keeps its follow-ups (the server says when a handover is not needed).
-  const offerHandover = Boolean(isLeave && fu && fu.planned > 0 && fu.handoverNeeded !== false && r?.status === 'pending');
+  const offerHandover = Boolean(isLeave && fu && leaveWorkCount(fu) > 0 && fu.handoverNeeded !== false && r?.status === 'pending');
   const handoverChoice = handover || (mates.length > 1 ? 'share' : mates.length === 1 ? mates[0].id : 'keep');
   const followUpsBody =
     handoverChoice === 'keep' ? { mode: 'keep' } : handoverChoice === 'share' ? { mode: 'share' } : { mode: 'teammate', staffId: handoverChoice };
@@ -154,7 +154,7 @@ export default function RequestDetailScreen() {
           </label>
           {offerHandover && (
             <label className="field" style={{ marginTop: 12 }}>
-              Her follow-ups that day go to
+              Her work on those days goes to
               <select value={handoverChoice} onChange={(e) => setHandover(e.target.value)}>
                 {mates.length > 1 && <option value="share">{`Share between ${mates.map((m) => firstName(m.name)).join(' and ')}`}</option>}
                 {mates.map((m) => (
@@ -164,7 +164,7 @@ export default function RequestDetailScreen() {
                 ))}
                 <option value="keep">Keep for her return</option>
               </select>
-              <span className="tl-sub">They move back to {who} after the leave if still not done.</span>
+              <span className="tl-sub">{leaveWorkLine(fu)}. It moves on the morning her leave starts; shared means each item goes to whoever has the fewest open items. People and app sign-ups (and follow-ups not done) move back to {who} after the leave.</span>
             </label>
           )}
           <div className="tl-actions" style={{ marginTop: 12 }}>

@@ -7,7 +7,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { CustomerAuthClock } from '../../common/customer-auth/customer-auth.clock';
 import { CustomerScopeService, ScopedProfile } from '../../common/customer-auth/customer-scope.service';
 import { refundGuaranteeDeadline } from '../../common/money/money';
-import { publicLink } from '../../common/public-link';
+import { ensureShareSlug, shareLinkUrl } from '../referral/referral-share-link';
 import { PricingService } from '../pricing/pricing.service';
 import { RegistrationJourneyService } from '../job-seeker/registration-journey.service';
 import { firstName } from '../customer-account/customer-account.service';
@@ -321,7 +321,8 @@ export class CustomerHomeService {
         select: { amount: true, status: true, createdAt: true, paidAt: true, bankUtr: true, gatewayReference: true },
       }),
     ]);
-    const link = publicLink(`/r/${referral.code}`);
+    // The partner's personal share link page (rev 202): /p/ref/<random slug>, never the RF code.
+    const link = shareLinkUrl(await ensureShareSlug(this.prisma, referralId));
     const statement = payouts
       .filter((p) => !['rejected', 'cancelled', 'reversed', 'failed'].includes(p.status))
       .map((p) => ({

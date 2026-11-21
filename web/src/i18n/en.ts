@@ -14,6 +14,7 @@ import { appSignupsEn } from './appSignups';
 
 import { callAgentEn } from '../screens/call-agent/_lib/i18n.en';
 import { fixes17En } from './fixes17';
+import { whatsappEn } from './whatsapp';
 export const en = {
   "app.name": "Laboura",
   "common.loading": "Loading…",
@@ -447,6 +448,7 @@ export const en = {
   "nav.checkRegistrations": "Check registrations",
   "nav.visitProof": "Visit proof",
   "nav.workList": "Work list",
+  "nav.missedCalls": "Missed calls",
   "nav.moneyToday": "Money today",
   "nav.moneyIn": "Money in",
   "nav.invoices": "Invoices",
@@ -553,6 +555,7 @@ export const en = {
   "screen.T-Verify": "Check registrations",
   "screen.T-Visits": "Visit proof",
   "screen.T-Work": "Work list",
+  "screen.T-MissedCalls": "Missed calls",
   "screen.T-LoginCodes": "Login codes",
   "screen.T-Flags": "Flags",
   "screen.T-Notifications": "Notifications",
@@ -619,6 +622,7 @@ export const en = {
   ...staffPhotoEn,
   ...appSignupsEn,
   ...callAgentEn,
+  ...whatsappEn,
   ...fixes17En,
   ...payslipEn,
   ...attendanceEn,

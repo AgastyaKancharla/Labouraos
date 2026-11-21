@@ -8,10 +8,18 @@ import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { FINAL_CALL_STATUSES } from './call-status';
 import { nextDayRetryAt, nextRetryAt } from './call-retry-time';
 import { CALL_TASK_KIND_SIGNUP_HELP } from '../../common/customer-auth/customer-app.constants';
+import { NO_ANSWER_OUTCOMES } from './call-outcomes';
+import { messagesBlocked } from './contact-block';
 
 /** Purposes whose call belongs to a follow-up task (retried the next day, Team Lead told after 3). */
 const FOLLOW_UP_PURPOSES = ['follow_up', 'check_in', 'refund_check', 'exit_call'];
 export const FOLLOW_UP_UNANSWERED_LIMIT = 3;
+/**
+ * 21 Nov fixes: every kind of retry stops after this many unanswered tries in a
+ * row (callbacks, missed calls called back, automatic retries) and the Team
+ * Lead is told — the follow-up pattern, for all.
+ */
+export const RETRY_UNANSWERED_LIMIT = 3;
 export const NO_ANSWER_WHATSAPP_TEMPLATE = 'call_attempt_notice';
 
 const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
@@ -61,6 +69,13 @@ export class CallFollowThroughService {
     if (call.answered && !before?.answered) {
       await this.closeOpenTasks(call);
     }
+    if (final && call.direction === 'outbound' && call.staffId) {
+      try {
+        await this.closeCalledBackMissedCalls(call);
+      } catch (err) {
+        this.logger.error(`Missed-call close failed for call ${call.id}: ${(err as Error).message}`);
+      }
+    }
     if (final && !call.answered && call.direction === 'outbound' && call.staffId) {
       try {
         await this.onNoAnswer(call);
@@ -69,6 +84,48 @@ export class CallFollowThroughService {
         this.logger.error(`No-answer follow-through failed for call ${call.id}: ${(err as Error).message}`);
       }
     }
+  }
+
+  /**
+   * The agent said "busy" or "switched off" on a call the phone system saw as
+   * answered (a network message picked up): the retry rules apply as for no
+   * answer. Never a contact attempt or a hit: those come only from the phone
+   * system.
+   */
+  async onAgentNoAnswer(call: CallRecord): Promise<void> {
+    if (!call.subjectType || !call.subjectId || !call.staffId || call.direction !== 'outbound') return;
+    await this.onNoAnswer(call);
+  }
+
+  /**
+   * The agent called the person back (answered or not): his open missed calls
+   * are done — the first try is recorded (target: within 30 minutes) and an
+   * unanswered one carries on as an ordinary retry, with the 3-try limit.
+   */
+  private async closeCalledBackMissedCalls(call: CallRecord): Promise<void> {
+    const phone = await this.subjectPhone(call.subjectType!, call.subjectId!);
+    const digits = phone ? phone.replace(/\D/g, '').slice(-10) : '';
+    const or: Prisma.CallbackTaskWhereInput[] = [];
+    if (call.subjectType === 'job_seeker') or.push({ jobSeekerId: call.subjectId! });
+    if (digits.length === 10) or.push({ phone: { endsWith: digits } });
+    if (!or.length) return;
+    const at = call.startedAt ?? call.createdAt;
+    const ended = call.endedAt ?? at;
+    await this.prisma.callbackTask.updateMany({
+      where: { status: { in: ['pending', 'assigned'] }, createdAt: { lte: at }, firstAttemptAt: null, OR: or },
+      data: { firstAttemptAt: at },
+    });
+    await this.prisma.callbackTask.updateMany({
+      where: { status: { in: ['pending', 'assigned'] }, createdAt: { lte: at }, OR: or },
+      data: { status: 'completed', completedAt: ended },
+    });
+  }
+
+  private async subjectPhone(subjectType: string, subjectId: string): Promise<string | null> {
+    if (subjectType === 'job_seeker') return (await this.prisma.jobSeeker.findUnique({ where: { id: subjectId }, select: { phone: true } }))?.phone ?? null;
+    if (subjectType === 'business') return (await this.prisma.business.findUnique({ where: { id: subjectId }, select: { phone: true } }))?.phone ?? null;
+    if (subjectType === 'referral') return (await this.prisma.referral.findUnique({ where: { id: subjectId }, select: { phone: true } }))?.phone ?? null;
+    return null;
   }
 
   /** The person was reached: every open callback or retry for them is done. */
@@ -89,6 +146,8 @@ export class CallFollowThroughService {
     // An app sign-up help call has its own tries (3 over 3 working days, signup-tracker):
     // no automatic retry and no no-answer WhatsApp on top of them.
     if (await this.isSignupHelpCall(call)) return;
+    // Wrong number or do not call: no retry and no message, ever (until lifted).
+    if (await messagesBlocked(this.prisma, { subjectType: call.subjectType!, subjectId: call.subjectId! })) return;
     if (call.subjectType === 'job_seeker') {
       await this.sendWhatsAppOncePerDay(call.subjectId!, missedAt);
     }
@@ -149,7 +208,52 @@ export class CallFollowThroughService {
     return { start: seeker?.preferredCallWindowStart ?? null, end: seeker?.preferredCallWindowEnd ?? null };
   }
 
+  /**
+   * Unanswered tries in a row for this person (any agent), newest first, up to
+   * the last time he was reached. "Busy" and "switched off" count as no answer.
+   */
+  async unansweredInARow(subjectType: string, subjectId: string): Promise<number> {
+    const calls = await this.prisma.callRecord.findMany({
+      where: { subjectType, subjectId, direction: 'outbound', providerStatus: { in: [...FINAL_CALL_STATUSES] } },
+      orderBy: { createdAt: 'desc' },
+      take: RETRY_UNANSWERED_LIMIT + 5,
+      select: { answered: true, agentOutcome: true },
+    });
+    let count = 0;
+    for (const c of calls) {
+      const reached = c.answered && !(c.agentOutcome && NO_ANSWER_OUTCOMES.includes(c.agentOutcome));
+      if (reached) break;
+      count += 1;
+    }
+    return count;
+  }
+
+  /** After 3 unanswered tries: no more retries, open ones cancelled, and the Team Lead told (once). */
+  private async stopRetries(call: CallRecord, missedAt: Date, tries: number): Promise<void> {
+    await this.prisma.callTask.updateMany({
+      where: { subjectType: call.subjectType!, subjectId: call.subjectId!, kind: 'retry', status: 'open' },
+      data: { status: 'cancelled', doneAt: missedAt },
+    });
+    const open = await this.prisma.reviewFlag.findFirst({
+      where: { kind: 'calls_unanswered', subjectType: call.subjectType!, subjectId: call.subjectId!, status: 'open' },
+      select: { id: true },
+    });
+    if (open) return;
+    await this.reviewFlags.raise({
+      kind: 'calls_unanswered',
+      subjectType: call.subjectType!,
+      subjectId: call.subjectId!,
+      raisedForStaffId: call.staffId,
+      details: { unansweredCalls: tries, lastCallRecordId: call.id, purpose: call.purpose },
+    });
+  }
+
   private async scheduleRetry(call: CallRecord, missedAt: Date): Promise<void> {
+    const tries = await this.unansweredInARow(call.subjectType!, call.subjectId!);
+    if (tries >= RETRY_UNANSWERED_LIMIT) {
+      await this.stopRetries(call, missedAt, tries);
+      return;
+    }
     const policy = await this.pricing.current();
     const window = await this.personWindow(call);
     const dueAt = nextRetryAt(missedAt, {
@@ -206,7 +310,13 @@ export class CallFollowThroughService {
       personWindowStart: window.start,
       personWindowEnd: window.end,
     });
-    await this.prisma.followUpTask.update({ where: { id: task.id }, data: { dueAt } });
+    // 21 Nov fixes: retries stop after 3 tries — the follow-up is closed as missed
+    // (as the follow-up sweep does after the grace days) and the Team Lead is told.
+    if (unanswered >= FOLLOW_UP_UNANSWERED_LIMIT) {
+      await this.prisma.followUpTask.updateMany({ where: { id: task.id, status: 'pending' }, data: { status: 'missed' } });
+    } else {
+      await this.prisma.followUpTask.update({ where: { id: task.id }, data: { dueAt } });
+    }
     if (unanswered === FOLLOW_UP_UNANSWERED_LIMIT) {
       await this.reviewFlags.raise({
         kind: 'follow_up_unanswered',

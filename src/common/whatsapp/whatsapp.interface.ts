@@ -21,4 +21,14 @@ export interface WhatsAppProvider {
     templateName: string,
     params: Record<string, string>,
   ): Promise<WhatsAppMessageResult>;
+  /**
+   * A free-form text reply (21 Nov, inbound WhatsApp). WhatsApp allows it only
+   * inside the 24-hour window after the person's last message; after that a
+   * template is needed. Optional so test doubles that only send templates still
+   * fit; a provider without it cannot reply in free text.
+   */
+  sendTextMessage?(phone: string, text: string): Promise<WhatsAppMessageResult>;
 }
+
+/** templateName recorded for a free-form text reply. */
+export const FREE_TEXT_TEMPLATE = 'free_text';

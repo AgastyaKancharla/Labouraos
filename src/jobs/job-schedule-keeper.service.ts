@@ -18,11 +18,13 @@ import { RetentionCleanupJob } from './retention-cleanup.job';
 import { FollowUpJob } from './follow-up.job';
 import { ShortageTasksJob } from './shortage-tasks.job';
 import { WinBackJob } from './win-back.job';
+import { WhatsAppInboxJob } from './whatsapp-inbox.job';
 import { WeeklyReportJob } from './weekly-report.job';
 import { InterviewReplyJob } from './interview-reply.job';
 import { NotificationSweepJob } from './notification-sweep.job';
 import { CustomerPushJob } from './customer-push.job';
 import { SignupTrackerJob } from './signup-tracker.job';
+import { CallWorkSweepJob } from './call-work-sweep.job';
 
 /** How often the keeper checks that every schedule is still in Redis. */
 export const DEFAULT_SCHEDULE_CHECK_INTERVAL_MS = 10 * 60 * 1000;
@@ -115,6 +117,8 @@ export class JobScheduleKeeper implements OnApplicationBootstrap, OnModuleDestro
     notificationSweep: NotificationSweepJob,
     customerPush: CustomerPushJob,
     signupTracker: SignupTrackerJob,
+    whatsappInbox: WhatsAppInboxJob,
+    callWorkSweep: CallWorkSweepJob,
     @Optional() private readonly prisma?: PrismaService,
     @Optional() private readonly alerts?: AlertService,
   ) {
@@ -135,6 +139,8 @@ export class JobScheduleKeeper implements OnApplicationBootstrap, OnModuleDestro
       // Run now queues a round for the worker (never sends from the web process); the round records its own JobRun.
       customerPush: { schedule: () => customerPush.schedule(), run: () => customerPush.queueRunNow(), recordsItself: true },
       signupTracker: { schedule: () => signupTracker.schedule(), run: () => signupTracker.process() },
+      whatsappInbox: { schedule: () => whatsappInbox.schedule(), run: () => whatsappInbox.process() },
+      callWorkSweep: { schedule: () => callWorkSweep.schedule(), run: () => callWorkSweep.process() },
     };
   }
 

@@ -167,6 +167,7 @@ export const teamLeadSidebar: SidebarConfig = {
       items: [
         { screen: 'T-Work', label: 'nav.workList', icon: 'workList' },
         { screen: 'T-AppSignups', label: 'nav.appSignups', icon: 'pipeline' },
+        { screen: 'T-MissedCalls', label: 'nav.missedCalls', icon: 'callCenter' },
         { screen: 'T-LoginCodes', label: 'nav.loginCodes', icon: 'loginCodes', badge: { tone: 'gold', source: 'login-codes' } },
         { screen: 'T-Flags', label: 'nav.flags', icon: 'flags', badge: { tone: 'tomato', source: 'review-flags' } },
       ],
