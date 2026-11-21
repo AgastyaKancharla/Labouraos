@@ -52,6 +52,7 @@ export function SelectField<V extends string>({
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const current = choices.find((c) => c.value === value);
+  const search = useChoiceSearch(choices, open, testID);
   return (
     <View style={styles.field}>
       <FieldLabel label={label} required={required} />
@@ -68,8 +69,9 @@ export function SelectField<V extends string>({
         <Text style={styles.caret}>▾</Text>
       </Pressable>
       <Hint error={error} hint={hint} testID={testID} />
-      <Sheet open={open} onClose={() => setOpen(false)} title={label}>
-        {choices.map((choice) => (
+      <Sheet open={open} onClose={() => setOpen(false)} title={label} header={search.header}>
+        {search.empty}
+        {search.shown.map((choice) => (
           <Pressable
             key={choice.value}
             accessibilityRole="menuitem"
@@ -89,20 +91,62 @@ export function SelectField<V extends string>({
   );
 }
 
-function Sheet({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
+/**
+ * The bottom sheet of choices. The dark backdrop (tap to close) sits BEHIND
+ * the sheet as a sibling, not around it: a list inside a pressable wrapper
+ * cannot be scrolled on Android (the wrapper takes the touch), which is why
+ * long lists — areas, trades — did not scroll (Agastya, 22 Nov).
+ */
+function Sheet({ open, onClose, title, header, children }: { open: boolean; onClose: () => void; title: string; header?: ReactNode; children: ReactNode }) {
   const { t } = useI18n();
   return (
     <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel={t('common.close')}>
-        <Pressable style={styles.sheet} onPress={() => undefined}>
+      <View style={styles.backdrop}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel={t('common.close')} />
+        <View style={styles.sheet}>
           <Text variant="label" style={styles.sheetTitle}>
             {title}
           </Text>
-          <ScrollView style={styles.sheetList}>{children}</ScrollView>
-        </Pressable>
-      </Pressable>
+          {header}
+          <ScrollView style={styles.sheetList} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+            {children}
+          </ScrollView>
+        </View>
+      </View>
     </Modal>
   );
+}
+
+/** Long lists (areas, trades) get a search box at the top of the sheet. */
+const SEARCH_FROM = 10;
+
+function useChoiceSearch<C extends Choice>(choices: readonly C[], open: boolean, testID?: string) {
+  const { t } = useI18n();
+  const [query, setQuery] = useState('');
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setQuery('');
+  }
+  const q = query.trim().toLowerCase();
+  const shown = q ? choices.filter((c) => c.label.toLowerCase().includes(q)) : choices;
+  const header =
+    choices.length >= SEARCH_FROM ? (
+      <View style={[styles.box, styles.searchBox]}>
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder={t('form.search')}
+          placeholderTextColor={colors.faint}
+          accessibilityLabel={t('form.search')}
+          autoCorrect={false}
+          style={styles.input}
+          testID={testID ? `${testID}-search` : undefined}
+        />
+      </View>
+    ) : null;
+  const empty = q && shown.length === 0 ? <Text variant="muted" style={styles.noMatch}>{t('form.noMatch')}</Text> : null;
+  return { shown, header, empty };
 }
 
 /** "12,000" from 1200000 paise; "" for null. */
@@ -283,6 +327,7 @@ export function ChipPicker({ label, values, choices, onChange, required, error, 
 }) {
   const [open, setOpen] = useState(false);
   const left = choices.filter((c) => !values.includes(c.value));
+  const search = useChoiceSearch(left, open, testID);
   return (
     <View style={styles.field}>
       <FieldLabel label={label} required={required} />
@@ -305,8 +350,9 @@ export function ChipPicker({ label, values, choices, onChange, required, error, 
         ) : null}
       </View>
       <Hint error={error} testID={testID} />
-      <Sheet open={open} onClose={() => setOpen(false)} title={label}>
-        {left.map((choice) => (
+      <Sheet open={open} onClose={() => setOpen(false)} title={label} header={search.header}>
+        {search.empty}
+        {search.shown.map((choice) => (
           <Pressable
             key={choice.value}
             accessibilityRole="menuitem"
@@ -550,7 +596,9 @@ const styles = StyleSheet.create({
     maxHeight: '80%',
   },
   sheetTitle: { marginBottom: 8 },
-  sheetList: { flexGrow: 0 },
+  sheetList: { flexGrow: 0, flexShrink: 1 },
+  searchBox: { marginBottom: 8 },
+  noMatch: { paddingVertical: 12, paddingHorizontal: 12 },
   option: { minHeight: touch.min, justifyContent: 'center', paddingHorizontal: 12, borderRadius: radius.md },
   optionOn: { backgroundColor: colors.blue100 },
   optionTextOn: { color: colors.blue, fontFamily: fonts.body700 },

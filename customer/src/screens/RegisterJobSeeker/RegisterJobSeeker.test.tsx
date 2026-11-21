@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react-native';
 import { router } from 'expo-router';
-import { todayKeyIst } from '@/components/form';
+import { addDays, todayKeyIst } from '@/components/form';
 import { openSecureSheet } from '@/sheet/openSheet';
 import { account, jsProfile } from '@/test/fixtures';
 import { fakeApi, renderWithApp } from '@/test/render';
@@ -36,7 +36,7 @@ describe('job seeker form rules', () => {
   it('requires the agent form fields and a sensible salary range', () => {
     const errors = validateJobSeeker({ ...emptyJobSeeker('en'), salaryMinPaise: 2_000_000, salaryMaxPaise: 1_000_000 });
     expect(Object.keys(errors)).toEqual(
-      expect.arrayContaining(['fullName', 'gender', 'bestTimeToCall', 'area', 'pincode', 'travelKm', 'trade0', 'years0', 'availableFrom', 'lookingSince', 'shift', 'jobType', 'languagesSpoken', 'salaryMax']),
+      expect.arrayContaining(['fullName', 'gender', 'bestTimeToCall', 'area', 'pincode', 'travelKm', 'trade0', 'years0', 'availableFrom', 'lookingFor', 'shift', 'jobType', 'languagesSpoken', 'salaryMax']),
     );
     expect(errors.salaryMax).toBe('jobSeeker.maxBelowMin');
   });
@@ -110,8 +110,8 @@ describe('Register a job seeker', () => {
     await fireEvent.changeText(screen.getByTestId('js-years-0'), '5');
     await fireEvent.press(screen.getByTestId('js-available'));
     await fireEvent.press(screen.getByTestId(`js-available-day-${today}`));
-    await fireEvent.press(screen.getByTestId('js-looking'));
-    await fireEvent.press(screen.getByTestId(`js-looking-day-${today}`));
+    // How long he has been looking: a simple choice, sent as a date (today minus 2 weeks).
+    await choose('js-looking', '2w');
     await choose('js-shift', 'day');
     await choose('js-job-type', 'full_time');
     await fireEvent.changeText(screen.getByTestId('js-salary-min'), '30000');
@@ -137,7 +137,7 @@ describe('Register a job seeker', () => {
         pin: { latitude: 12.9166, longitude: 77.6101 }, // no GPS: the area's centre
         travelKm: 10,
         trades: [{ trade: 'Cook', years: 5 }],
-        lookingSince: today,
+        lookingSince: addDays(today, -14),
         salaryMinPaise: 3_000_000,
         salaryMaxPaise: 3_200_000,
         salaryPeriod: 'monthly',

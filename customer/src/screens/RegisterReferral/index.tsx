@@ -149,7 +149,7 @@ export default function RegisterReferral() {
               testID="ref-area"
             />
             <TextField label={t('form.pincode')} value={draft.pincode} onChangeText={(v) => set('pincode', v.replace(/\D/g, '').slice(0, 6))} keyboardType="number-pad" error={err('pincode')} testID="ref-pincode" />
-            <PinField label={t('referral.pin')} value={draft.pin} onChange={(v) => set('pin', v)} testID="ref-pin" />
+            <PinField label={t('referral.pin')} value={draft.pin} onChange={(v) => set('pin', v)} center={areas.find((a) => a.name === draft.area) ?? null} testID="ref-pin" />
             <Checkbox label={t('referral.whatsappSame')} checked={draft.whatsappSame} onChange={(v) => set('whatsappSame', v)} testID="ref-wa-same" />
             {!draft.whatsappSame ? (
               <MobileField label={t('referral.whatsapp')} value={draft.whatsappPhone} onChange={(v) => set('whatsappPhone', v)} required error={err('whatsappPhone')} testID="ref-wa" />
