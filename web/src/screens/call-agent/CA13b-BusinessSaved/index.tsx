@@ -18,6 +18,7 @@ import { qk, useScriptTerms, type BusinessStatus } from '../_registration/api';
 import { StepLegend, StepRow } from '../_registration/kit';
 import { CONTACT_ROLES } from '../_registration/options';
 import { businessScript } from '../_registration/scripts';
+import { SendOnWhatsAppButton } from '../CA18-WhatsApp/SendOnWhatsApp';
 import '../_registration/registration.css';
 
 /**
@@ -129,6 +130,7 @@ export default function BusinessSaved() {
               {s.agreement.state === 'not_started' ? t('reg.biz.sendAgreement') : t('reg.biz.resendAgreement')}
             </Button>
           )}
+          {s.agreement.state !== 'done' && <SendOnWhatsAppButton kind="agreement" id={business.data?.id} />}
           <ButtonLink to={to('CA03-Home')}>{t('reg.backHome')}</ButtonLink>
         </div>
         <p className="muted" style={{ marginTop: 10 }}>

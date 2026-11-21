@@ -18,6 +18,7 @@ import { useScreenPath } from '../../../portals/PortalContext';
 import { qk, useJobSeekerStatus, type JobSeekerStatus, type Step } from '../_registration/api';
 import { StepLegend, StepRow } from '../_registration/kit';
 import { GENDERS, PAYER_RELATIONS, SHIFT_PREFERENCES } from '../_registration/options';
+import { SendOnWhatsAppButton } from '../CA18-WhatsApp/SendOnWhatsApp';
 import '../_registration/registration.css';
 
 /**
@@ -198,6 +199,7 @@ export default function RegistrationProgress() {
               <Button variant="primary" onClick={() => sendLink.mutate()} loading={sendLink.isPending}>
                 {anySent ? t('reg.status.resendFrom', { step: t(NEXT_STEP_LABEL[s.nextStep]) }) : t('reg.status.sendLink')}
               </Button>
+              <SendOnWhatsAppButton kind="registration" id={s.id} onSent={() => void queryClient.invalidateQueries({ queryKey: qk.jobSeeker(id) })} />
               {reachedPayment && steps.payment.state !== 'done' && (
                 <ButtonLink to={to('CA08e-OtherPayer', { id: s.id })}>{t('reg.status.otherNumber')}</ButtonLink>
               )}
