@@ -574,6 +574,7 @@ If something does not open: wait an hour (the Hostinger change may still be spre
 | `NOMINATIM_URL` | empty (uses `https://nominatim.openstreetmap.org`) | "Paste Google Maps link" on the Field business form (17 Nov) fills the address from OpenStreetMap's free Nominatim reverse lookup: at most one request a second, results cached, a User-Agent naming Laboura. Set it only to use another Nominatim server. The server also opens short Google Maps links itself (only Google map addresses, at most 5 redirects): the web service needs outbound https to those hosts |
 | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` | From Meta | WhatsApp messages |
 | `TELEPHONY_VENDOR`, `TOLL_FREE_NUMBER` | From the calling vendor | Calls |
+| `TELECMI_APP_ID`, `TELECMI_SECRET`, `TELECMI_AGENTS`, `TELECMI_WEBHOOK_KEY` | From TeleCMI (with `TELEPHONY_PROVIDER_MODE=telecmi`) | TeleCMI calls (21 Nov): the app id and app secret; `TELECMI_AGENTS` maps each agent's calling phone (10 digits) to their TeleCMI agent id as JSON (`{"9812300001":"101_1111112"}`); `TELECMI_WEBHOOK_KEY` (at least 32 characters) goes in the call-report address below |
 | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `RAZORPAYX_WEBHOOK_SECRET`, `RAZORPAYX_ACCOUNT_NUMBER` | From Razorpay | Card payments (only when a payer picks a card) and payouts |
 | `BANK_FEED_WEBHOOK_SECRET`, `PAYMENT_WEBHOOK_SECRET`, `PAYOUT_WEBHOOK_SECRET`, `TELEPHONY_WEBHOOK_SECRET`, `MESSAGE_WEBHOOK_SECRET` | At least 32 characters each, shared with the vendor | Proves an incoming webhook really came from the vendor |
 
@@ -592,8 +593,11 @@ When a vendor is signed up, give them the matching address below and agree a sig
 | Incoming calls | `https://<your laboura-api address>/telephony/inbound` | `TELEPHONY_WEBHOOK_SECRET` | `X-Telephony-Signature` or `X-Signature` |
 | Missed calls | `https://<your laboura-api address>/telephony/webhook/missed-call` | `TELEPHONY_WEBHOOK_SECRET` | `X-Telephony-Signature` or `X-Signature` |
 | Call status | `https://<your laboura-api address>/telephony/webhook/call-status` | `TELEPHONY_WEBHOOK_SECRET` | `X-Telephony-Signature` or `X-Signature` |
+| TeleCMI call reports (CDR, POST) | `https://<your laboura-api address>/telephony/webhook/telecmi?key=<TELECMI_WEBHOOK_KEY>` | `TELECMI_WEBHOOK_KEY` | none: TeleCMI signs nothing, so the key in the address and the app id (`TELECMI_APP_ID`) are checked |
 | WhatsApp delivery | `https://<your laboura-api address>/messages/webhook/whatsapp` | `MESSAGE_WEBHOOK_SECRET` | `X-Message-Signature`, `X-Signature` or `X-Hub-Signature-256` |
 | SMS delivery | `https://<your laboura-api address>/messages/webhook/sms` | `MESSAGE_WEBHOOK_SECRET` | `X-Message-Signature` or `X-Signature` |
+
+**TeleCMI (21 Nov), what to confirm with TeleCMI before going live.** Built from TeleCMI's public docs (doc.telecmi.com/chub-india): click to call through `POST https://piopiy.telecmi.com/v1/adminConnect` (`agent_id`, `token` = app secret, `to`, `custom` = our call record id) and the call reports (CDR) to the address above. A missed incoming call goes on the missed-call list and the software hands it out; an outgoing report updates its call (answered, length, no answer → retry rules). Still to confirm: (1) that the outgoing call report echoes `custom` (or `request_id`) — until it does, a report is matched only by TeleCMI's own call id and our call may stay "initiated"; (2) how to download a recording from its `filename` (recordings are not copied yet); (3) the TeleCMI agent of an answered incoming call (`user`) is not yet turned into our staff member; (4) live events (incoming call ringing) are not used: the pop-up still needs the existing `/telephony/inbound` webhook; (5) the number of channels and 3-way calls on the plan (phone interviews stay off: `supportsThreeWayCalls` is false).
 
 ---
 

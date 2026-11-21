@@ -84,7 +84,7 @@ disbursement) is bound through NestJS DI to an interface — `OtpProvider`,
 with a mock implementation and a real one. Which one gets injected is
 controlled by a per-provider environment variable (`OTP_PROVIDER_MODE`,
 `PAYMENT_PROVIDER_MODE`, `WHATSAPP_PROVIDER_MODE`, `TELEPHONY_PROVIDER_MODE`),
-each defaulting to `mock` when unset. Never add a second way to pick a
+each defaulting to `mock` when unset (`TELEPHONY_PROVIDER_MODE=telecmi` picks TeleCMI, 21 Nov: `src/modules/telephony/telecmi.ts`, DEPLOY.md). Never add a second way to pick a
 provider implementation — extend this one. ID checks have no outside provider
 at all (guide, 14 Nov): Aadhaar is checked in-house from its Secure QR and
 PAN / driving licence / voter ID by the Team Lead from a live photo of the card.
