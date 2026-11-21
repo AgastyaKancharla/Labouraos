@@ -32,7 +32,7 @@ export const LINK_LEADS_PER_DAY = 30;
 /** Codes one share link sends in 24 hours (all visitors). */
 export const LINK_CODES_PER_DAY = 20;
 /** Codes one visitor address asks for in 24 hours, across every share link (checked first). */
-export const IP_CODES_PER_DAY = 10;
+export const IP_CODES_PER_DAY = 20;
 /** Codes one number gets in 24 hours, across every share link. */
 export const NUMBER_CODES_PER_DAY = 3;
 /** The words of the link page's consent tick; a new wording means a new version. */
@@ -135,8 +135,16 @@ export class ReferralLeadService {
     const now = this.now();
     const since = new Date(now.getTime() - DAY_MS);
     const ipKey = `ref-ip:${ipHash(ip)}`;
-    const fromAddress = await this.prisma.publicOtpSend.count({ where: { linkKey: ipKey, sentAt: { gt: since } } });
-    if (fromAddress >= IP_CODES_PER_DAY) {
+    // Count and record the try for this address in one step (a burst of parallel taps cannot slip through).
+    const allowed = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${ipKey}))`;
+      const fromAddress = await tx.publicOtpSend.count({ where: { linkKey: ipKey, sentAt: { gt: since } } });
+      if (fromAddress >= IP_CODES_PER_DAY) return false;
+      await tx.publicOtpSend.create({ data: { linkKey: ipKey, phoneHash: 'address', sentAt: now } });
+      await tx.publicOtpSend.deleteMany({ where: { linkKey: ipKey, sentAt: { lt: since } } });
+      return true;
+    });
+    if (!allowed) {
       throw codedError(HttpStatus.TOO_MANY_REQUESTS, 'LIMIT_REACHED', 'Too many codes from this connection today. Try again later, or call Laboura.');
     }
     const toNumber = await this.prisma.publicOtpSend.count({ where: { phoneHash: publicOtpPhoneHash(phone), linkKey: { startsWith: 'ref-link:' }, sentAt: { gt: since } } });
@@ -148,9 +156,6 @@ export class ReferralLeadService {
       throw codedError(HttpStatus.TOO_MANY_REQUESTS, 'LIMIT_REACHED', 'This link has been used a lot today. Try again later, or call Laboura.');
     }
     await this.limiter.claimSend(`${linkToken(slug)}:${publicOtpPhoneHash(phone).slice(0, 16)}`, phone, now);
-    // Counted for the address only (no number on this row, so it never touches the per-number wait).
-    await this.prisma.publicOtpSend.create({ data: { linkKey: ipKey, phoneHash: 'address', sentAt: now } });
-    await this.prisma.publicOtpSend.deleteMany({ where: { linkKey: ipKey, sentAt: { lt: since } } });
     const sent = await this.otp.sendPublicPageOtp(phone, linkToken(slug));
     return { success: true, requestId: sent.requestId, ...testModeFields(sent) };
   }

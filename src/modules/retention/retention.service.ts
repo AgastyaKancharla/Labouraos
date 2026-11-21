@@ -4,7 +4,7 @@ import {
   Logger,
   Optional,
 } from '@nestjs/common';
-import { WhatsAppRetentionResult, cleanupWhatsAppData } from '../whatsapp-inbox/whatsapp-retention';
+import { WhatsAppRetentionResult, cleanupWhatsAppData, openDisputeSubjects } from '../whatsapp-inbox/whatsapp-retention';
 import { BUSINESS_PHOTO_STORAGE, BusinessPhotoStorage } from '../business/storefront-photo.storage';
 import { IdCheckPhotoService } from '../aadhaar-qr/id-check-photo.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -148,7 +148,7 @@ export class RetentionService {
       shopVisitsCleaned: 0,
       shopVisitPhotoDeleteFailures: 0,
       aadhaarQrPhotosDeleted: 0,
-      whatsapp: { messagesCleared: 0, conversationsAnonymised: 0, referralLeadsAnonymised: 0 },
+      whatsapp: { messagesCleared: 0, conversationsAnonymised: 0, referralLeadsAnonymised: 0, appLeadsAnonymised: 0 },
     };
 
     try {
@@ -177,8 +177,7 @@ export class RetentionService {
       if (this.aadhaarQrPhotos) summary.aadhaarQrPhotosDeleted = await this.aadhaarQrPhotos.deleteExpiredPhotos(now, dryRun);
 
       // 9. WhatsApp message text (call-recording rule) and the numbers and names of anonymised or stale leads
-      summary.whatsapp = await cleanupWhatsAppData(this.prisma, now, dryRun, (subjectType, subjectId) =>
-        this.isCallProtected({ id: '', subjectType, subjectId, relatedType: null, relatedId: null }));
+      summary.whatsapp = await cleanupWhatsAppData(this.prisma, now, dryRun, () => openDisputeSubjects(this.prisma));
     } catch (err: unknown) {
       // A run that fails part-way is recorded too (start, finish, error), like every scheduled job.
       try {
@@ -234,6 +233,7 @@ export class RetentionService {
               messagesCleared: summary.whatsapp?.messagesCleared ?? 0,
               conversationsAnonymised: summary.whatsapp?.conversationsAnonymised ?? 0,
               referralLeadsAnonymised: summary.whatsapp?.referralLeadsAnonymised ?? 0,
+              appLeadsAnonymised: summary.whatsapp?.appLeadsAnonymised ?? 0,
             },
           },
         },

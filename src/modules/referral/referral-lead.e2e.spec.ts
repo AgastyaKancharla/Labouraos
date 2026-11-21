@@ -291,6 +291,8 @@ describe('Referral partners (rev 202): personal share link and QR, the lead page
     const perNumber = await api().post(`/referral-links/${slug}/send-code`).send({ phone: busy });
     expect(perNumber.status).toBe(429);
     expect(perNumber.body.message).toMatch(/this number/);
+    // (that try counted for this address too: start the address count again)
+    await prisma.publicOtpSend.deleteMany({ where: { linkKey: { startsWith: 'ref-ip:' } } });
     // One visitor address: at most IP_CODES_PER_DAY codes, refused before the link's own cap is used up.
     for (let i = 0; i < IP_CODES_PER_DAY; i += 1) {
       await api().post(`/referral-links/${slug}/send-code`).send({ phone: newPhone() }).expect(200);

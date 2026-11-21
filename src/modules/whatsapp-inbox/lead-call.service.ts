@@ -113,6 +113,12 @@ export class LeadCallService {
     if (await this.doNotCallOnNumber(customerPhone)) {
       throw codedError(HttpStatus.FORBIDDEN, 'DO_NOT_CALL', 'This number asked not to be called (do not call). A Team Lead can lift it.');
     }
+    // Only numbers with no record are called from here: a registered person is called
+    // through their record (call-recording consent, their own calling window).
+    const records = await this.subjectsOnNumber(customerPhone);
+    if (records.length > 0) {
+      throw codedError(HttpStatus.CONFLICT, 'USE_RECORD_CALL', 'Use Call on their record.', { subjectType: records[0].type, subjectId: records[0].id });
+    }
     const now = this.clock.now();
     const policy = await this.pricing.current();
     if (!isWithinClockWindow(now, policy.callingHoursStart, policy.callingHoursEnd)) {

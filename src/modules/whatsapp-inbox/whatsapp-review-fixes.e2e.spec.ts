@@ -252,7 +252,11 @@ describe('WhatsApp review fixes (21 Nov): heard-from, linking, failed links, cal
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('DO_NOT_CONTACT');
     clock.at = DAY_11;
-    // Calling that number is refused too.
+    // A linked conversation is called through the record; unlinked, the number itself is refused (do not call).
+    const viaRecord = await api().post(`/whatsapp/conversations/${conv.id}/call`).set('Authorization', bearer(agentA));
+    expect(viaRecord.status).toBe(409);
+    expect(viaRecord.body.code).toBe('USE_RECORD_CALL');
+    await prisma.whatsAppConversation.update({ where: { id: conv.id }, data: { subjectType: null, subjectId: null } });
     const call = await api().post(`/whatsapp/conversations/${conv.id}/call`).set('Authorization', bearer(agentA));
     expect(call.status).toBe(403);
     expect(call.body.code).toBe('DO_NOT_CALL');
@@ -333,7 +337,7 @@ describe('WhatsApp review fixes (21 Nov): heard-from, linking, failed links, cal
 
   it('S4: WhatsApp fails a link later: a fresh link goes by SMS and the agent who sent it gets a bell; the earlier link keeps working', async () => {
     const s = await makeSeeker({ registeredByStaffId: agentA.id });
-    await app.get(ConsentLinkService).createLink(s.id);
+    await app.get(ConsentLinkService).createLink(s.id, { sms: false });
     const before = await prisma.publicLink.count({ where: { subjectId: s.id, revokedAt: null } });
     await api().post(`/whatsapp/send-link/registration/${s.id}`).set('Authorization', bearer(agentA)).expect(200);
     const waLog = await prisma.messageLog.findFirstOrThrow({ where: { subjectId: s.id, template: 'consent_link', channel: 'whatsapp', status: 'sent' } });
@@ -347,6 +351,63 @@ describe('WhatsApp review fixes (21 Nov): heard-from, linking, failed links, cal
     const bell = await prisma.notification.findFirst({ where: { recipientStaffId: agentA.id, kind: 'whatsapp_link_failed' } });
     expect(bell?.title).toContain('went by SMS');
     expect(await prisma.publicLink.count({ where: { subjectId: s.id, revokedAt: null } })).toBe(before + 2);
+    // Neither the WhatsApp link nor its SMS fallback is the message leg of a no-pickup hit.
+    expect(await prisma.contactAttempt.count({ where: { jobSeekerId: s.id } })).toBe(0);
+  });
+
+  it('S4: a failed status for a message whose record is gone never makes the webhook fail', async () => {
+    const ghost = await prisma.messageLog.create({ data: { channel: 'whatsapp', template: 'consent_link', subjectType: 'job_seeker', subjectId: '00000000-0000-4000-8000-000000000000', status: 'sent', providerMessageId: `wamid.ghost.${stamp}` } });
+    const raw = JSON.stringify({ object: 'whatsapp_business_account', entry: [{ changes: [{ field: 'messages', value: { statuses: [{ id: ghost.providerMessageId, status: 'failed', timestamp: '1' }] } }] }] });
+    await deliver(raw).expect(200);
+    await prisma.messageLog.delete({ where: { id: ghost.id } });
+  });
+
+  it('Send on WhatsApp: at most 3 links a day for one person', async () => {
+    const s = await makeSeeker({ registeredByStaffId: agentA.id });
+    // The day is counted from the rows' own times (written now): count with the real clock.
+    clock.at = new Date();
+    try {
+      for (let i = 0; i < 3; i += 1) await api().post(`/whatsapp/send-link/registration/${s.id}`).set('Authorization', bearer(agentA)).expect(200);
+      const fourth = await api().post(`/whatsapp/send-link/registration/${s.id}`).set('Authorization', bearer(agentA));
+      expect(fourth.status).toBe(429);
+      expect(fourth.body.code).toBe('WHATSAPP_LINK_LIMIT');
+    } finally {
+      clock.at = DAY_11;
+    }
+  });
+
+  it('S2: after a Team Lead links a record with another number, its link goes to the record\'s own number, not the WhatsApp sender', async () => {
+    const phone = newPhone();
+    await deliver(inbound(phone, 'This is my new number')).expect(200);
+    const conv = await prisma.whatsAppConversation.findUniqueOrThrow({ where: { phone } });
+    await prisma.whatsAppConversation.update({ where: { id: conv.id }, data: { assignedStaffId: agentA.id } });
+    const record = await makeSeeker({ registeredByStaffId: agentA.id });
+    await api().post(`/whatsapp/conversations/${conv.id}/link`).set('Authorization', bearer(tl)).send({ code: record.code, reason: 'Says it is him' }).expect(200);
+    const before = wa.sentMessages.length;
+    await api().post(`/whatsapp/conversations/${conv.id}/send-link`).set('Authorization', bearer(agentA)).send({ kind: 'registration' }).expect(200);
+    expect(wa.sentMessages.slice(before).map((m) => m.phone)).toEqual([record.phone]);
+    // A record with the sender's own number gets it on that number.
+    const phone2 = newPhone();
+    await deliver(inbound(phone2, 'hi')).expect(200);
+    const conv2 = await prisma.whatsAppConversation.findUniqueOrThrow({ where: { phone: phone2 } });
+    const own = await makeSeeker({ registeredByStaffId: agentA.id });
+    await prisma.jobSeeker.update({ where: { id: own.id }, data: { whatsappPhone: phone2 } });
+    await prisma.whatsAppConversation.update({ where: { id: conv2.id }, data: { assignedStaffId: agentA.id, subjectType: 'job_seeker', subjectId: own.id } });
+    const before2 = wa.sentMessages.length;
+    await api().post(`/whatsapp/conversations/${conv2.id}/send-link`).set('Authorization', bearer(agentA)).send({ kind: 'registration' }).expect(200);
+    expect(wa.sentMessages.slice(before2).map((m) => m.phone)).toEqual([phone2]);
+  });
+
+  it('S1: a number that belongs to a record is not called from the lead list: the screen uses the record\'s Call', async () => {
+    const existing = await makeSeeker();
+    const partner = await makePartner();
+    const lead = await prisma.referralLead.create({
+      data: { referralId: partner.id, name: 'Known Person', phone: existing.phone, lookingFor: 'job', source: 'link', status: 'open', assignedStaffId: agentA.id, assignedAt: clock.now() },
+    });
+    const res = await api().post(`/referral-leads/${lead.id}/call`).set('Authorization', bearer(agentA));
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ code: 'USE_RECORD_CALL', subjectType: 'job_seeker', subjectId: existing.id });
+    expect(await prisma.callRecord.count({ where: { relatedId: lead.id } })).toBe(0);
   });
 
   describe('S2 and the event messages', () => {
@@ -420,6 +481,21 @@ describe('WhatsApp review fixes (21 Nov): heard-from, linking, failed links, cal
       }
     });
 
+    it('an event message WhatsApp fails later goes once by SMS (never a contact attempt, never again on WhatsApp)', async () => {
+      clock.at = new Date('2027-03-25T06:30:00.000Z');
+      const s = await makeSeeker({ status: 'active', paymentReceivedAt: new Date('2027-03-25T05:00:00Z') });
+      await events.sweep(clock.now());
+      const waLog = await prisma.messageLog.findFirstOrThrow({ where: { subjectId: s.id, template: 'registration_done', channel: 'whatsapp', status: 'sent' } });
+      const raw = JSON.stringify({ object: 'whatsapp_business_account', entry: [{ changes: [{ field: 'messages', value: { statuses: [{ id: waLog.providerMessageId, status: 'failed', timestamp: '1' }] } }] }] });
+      await deliver(raw).expect(200);
+      await deliver(raw).expect(200);
+      expect(await prisma.messageLog.count({ where: { subjectId: s.id, template: 'registration_done', channel: 'sms', status: 'sent' } })).toBe(1);
+      const waBefore = await prisma.messageLog.count({ where: { subjectId: s.id, template: 'registration_done', channel: 'whatsapp' } });
+      await events.sweep(clock.now());
+      expect(await prisma.messageLog.count({ where: { subjectId: s.id, template: 'registration_done', channel: 'whatsapp' } })).toBe(waBefore);
+      expect(await prisma.contactAttempt.count({ where: { jobSeekerId: s.id } })).toBe(0);
+    });
+
     it('stopped part-way: never more than 3 nudges, a day apart', async () => {
       const s = await makeSeeker();
       const nudges = () => prisma.messageLog.count({ where: { subjectId: s.id, template: { in: ['registration_stopped', 'payment_stuck'] }, status: 'sent' } });
@@ -462,7 +538,15 @@ describe('WhatsApp review fixes (21 Nov): heard-from, linking, failed links, cal
     const lead = await prisma.referralLead.create({ data: { referralId: partner.id, name: 'Old Lead', phone: newPhone(), lookingFor: 'job', source: 'link', status: 'closed', closedAt: new Date('2024-01-01T00:00:00Z'), createdAt: new Date('2024-01-01T00:00:00Z') } });
     await prisma.referralLead.update({ where: { id: lead.id }, data: { closedAt: new Date('2024-01-01T00:00:00Z') } });
 
+    const account = await prisma.customerAccount.create({ data: { phone: newPhone(), phoneVerifiedAt: new Date(), createdVia: 'phone', language: 'en' } });
+    const appLead = await prisma.customerReferralLead.create({
+      data: { accountId: account.id, profileId: 'p-none', referralId: partner.id, referralCode: partner.code, name: 'Gone Person Lead', phone: newPhone(), personAgreed: true, status: 'registered', subjectType: 'job_seeker', subjectId: gone.id },
+    });
     const summary = await app.get(RetentionService).runRetentionCleanup({ now: new Date() });
+    const anonApp = await prisma.customerReferralLead.findUniqueOrThrow({ where: { id: appLead.id } });
+    expect(anonApp).toMatchObject({ name: 'Anonymised', phone: `anon:${appLead.id}`, area: null });
+    await prisma.customerReferralLead.delete({ where: { id: appLead.id } });
+    await prisma.customerAccount.delete({ where: { id: account.id } });
     expect(summary.whatsapp?.messagesCleared).toBeGreaterThanOrEqual(1);
     expect((await prisma.whatsAppMessage.findFirstOrThrow({ where: { conversationId: conv.id, direction: 'in' } })).body).toBeNull();
     const anon = await prisma.whatsAppConversation.findUniqueOrThrow({ where: { id: goneConv.id } });

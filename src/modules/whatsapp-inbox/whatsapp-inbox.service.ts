@@ -22,6 +22,7 @@ import { ConsentLinkService, LINK_SENT_BY_STAFF } from '../consent/consent-link.
 import { canAdvanceMessageStatus } from '../message/message-status';
 import { WhatsAppInboxClock } from './whatsapp-inbox.clock';
 import { LeadCallService, issueRegistrationPrefill } from './lead-call.service';
+import { WhatsAppEventsService } from './whatsapp-events.service';
 import { OwnTeam } from '../../common/rbac/own-team';
 import { LeadAgent, loadLeadAgents, ownAgentsOf, pickLeadAgent } from './lead-assignment';
 import { InboundWhatsAppMessage, ParsedWhatsAppWebhook } from './meta-webhook';
@@ -42,6 +43,8 @@ export const WAITING_NOTIFICATION_KIND = 'whatsapp_waiting' as const;
 export const LINK_FAILED_NOTIFICATION_KIND = 'whatsapp_link_failed' as const;
 export const LEAD_WAITING_NOTIFICATION_KIND = 'referral_lead_waiting' as const;
 export const REFERRAL_LEAD_SUBJECT = 'referral_lead';
+/** "Send on WhatsApp": live links one person may get in 24 hours. */
+export const WHATSAPP_LINKS_PER_DAY = 3;
 
 /** Link templates "Send on WhatsApp" uses, and which link each is. */
 const LINK_TEMPLATE_KIND: Record<string, LinkKind> = {
@@ -90,6 +93,7 @@ export class WhatsAppInboxService {
     private readonly clock: WhatsAppInboxClock,
     @Inject(WHATSAPP_PROVIDER) private readonly provider: WhatsAppProvider,
     private readonly leadCalls: LeadCallService,
+    private readonly events: WhatsAppEventsService,
   ) {}
 
   // ------------------------------------------------------------------ inbound
@@ -747,8 +751,12 @@ export class WhatsAppInboxService {
     if ((await this.messaging.messagingBlocked(subject.type, subject.id)) || (await this.leadCalls.messagesBlockedOnNumber(conversation.phone))) {
       throw codedError(HttpStatus.CONFLICT, 'DO_NOT_CONTACT', 'This person asked not to be contacted (or the number is wrong).');
     }
-    // To the number the person wrote from (the record is theirs: matched or linked by that number).
-    const sentBy = await this.sendLinkFor(kind as LinkKind, subject.id, actor.id, conversation.phone);
+    // To the number the person wrote from only when it is the record's own phone or WhatsApp
+    // number; a record a Team Lead linked with another number gets it on its own number.
+    const recipient = (await this.recordNumbers(subject.type, subject.id)).some((p) => mobileLookupValues(conversation.phone).includes(p))
+      ? conversation.phone
+      : undefined;
+    const sentBy = await this.sendLinkFor(kind as LinkKind, subject.id, actor.id, recipient);
     const now = this.clock.now();
     const label = kind === 'registration' ? 'Registration link' : kind === 'agreement' ? 'Agreement link' : 'Partner terms link';
     // The link itself is never stored here (it opens the person's page).
@@ -771,6 +779,14 @@ export class WhatsAppInboxService {
 
   /** "Send on WhatsApp" for a record (next to Resend): WhatsApp first, SMS as fallback. */
   async sendLinkFor(kind: LinkKind, subjectId: string, staffId: string, recipientPhone?: string): Promise<'whatsapp' | 'sms' | null> {
+    // At most WHATSAPP_LINKS_PER_DAY links on WhatsApp for one person in 24 hours.
+    const template = Object.keys(LINK_TEMPLATE_KIND).find((t) => LINK_TEMPLATE_KIND[t] === kind)!;
+    const sentToday = await this.prisma.messageLog.count({
+      where: { subjectId, template, channel: 'whatsapp', relatedType: LINK_SENT_BY_STAFF, status: { notIn: ['failed', 'blocked'] }, createdAt: { gte: new Date(this.clock.now().getTime() - 24 * 60 * 60 * 1000) } },
+    });
+    if (sentToday >= WHATSAPP_LINKS_PER_DAY) {
+      throw codedError(HttpStatus.TOO_MANY_REQUESTS, 'WHATSAPP_LINK_LIMIT', `At most ${WHATSAPP_LINKS_PER_DAY} links on WhatsApp a day for one person. Use Resend (SMS) or call them.`);
+    }
     const extras = { channel: 'whatsapp' as const, sentByStaffId: staffId, ...(recipientPhone ? { recipientPhone } : {}) };
     if (kind === 'registration') return (await this.consentLinks.createLink(subjectId, extras)).sentBy;
     if (kind === 'agreement') return (await this.consentLinks.createAgreementLink(subjectId, staffId, undefined, extras)).sentBy;
@@ -784,28 +800,51 @@ export class WhatsAppInboxService {
    * "failed" status changes nothing).
    */
   private async onLinkMessageFailed(messageLogId: string) {
-    const row = await this.prisma.messageLog.findUnique({ where: { id: messageLogId } });
-    if (!row || row.channel !== 'whatsapp') return;
-    const kind = LINK_TEMPLATE_KIND[row.template];
-    if (!kind || !row.subjectId) return;
-    const staffId = row.relatedType === LINK_SENT_BY_STAFF ? row.relatedId : null;
-    let sms: 'sms' | 'whatsapp' | null = null;
-    if (kind === 'registration') sms = (await this.consentLinks.createLink(row.subjectId, { revokeOthers: false })).sentBy;
-    else if (kind === 'agreement') sms = (await this.consentLinks.createAgreementLink(row.subjectId, staffId, undefined, {}).catch(() => ({ sentBy: null }))).sentBy;
-    else sms = (await this.consentLinks.createReferralTermsLink(row.subjectId, staffId, undefined, { revokeOthers: false })).sentBy;
-    if (!staffId) return;
-    const subject = await this.subjectOf({ subjectType: row.subjectType, subjectId: row.subjectId });
-    const staff = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { role: true } });
-    await this.notifications.open({
-      recipientStaffId: staffId,
-      kind: LINK_FAILED_NOTIFICATION_KIND,
-      title: sms ? `WhatsApp did not reach ${subject?.code ?? 'them'}: the link went by SMS` : `WhatsApp did not reach ${subject?.code ?? 'them'}, and SMS failed too`,
-      body: sms ? 'A fresh link was sent by SMS; the earlier one still works.' : 'Call them and resend the link.',
-      link: staff ? notificationLink(staff.role, LINK_FAILED_NOTIFICATION_KIND) : null,
-      subjectType: 'message_log',
-      subjectId: row.id,
-      once: true,
-    });
+    // The webhook must always answer 200: anything that goes wrong here is logged, never thrown.
+    try {
+      const row = await this.prisma.messageLog.findUnique({ where: { id: messageLogId } });
+      if (!row || row.channel !== 'whatsapp' || !row.subjectId) return;
+      const kind = LINK_TEMPLATE_KIND[row.template];
+      if (!kind) {
+        // An automatic event message to someone without WhatsApp: once by SMS (never again on WhatsApp).
+        await this.events.smsFallbackForFailed(row);
+        return;
+      }
+      const staffId = row.relatedType === LINK_SENT_BY_STAFF ? row.relatedId : null;
+      // A fresh link by SMS; the earlier links keep working; not a contact attempt (hit rule).
+      const fallback = { revokeOthers: false, contactAttempt: false } as const;
+      let sms: 'sms' | 'whatsapp' | null = null;
+      if (kind === 'registration') sms = (await this.consentLinks.createLink(row.subjectId, fallback)).sentBy;
+      else if (kind === 'agreement') sms = (await this.consentLinks.createAgreementLink(row.subjectId, staffId, undefined, { contactAttempt: false })).sentBy;
+      else sms = (await this.consentLinks.createReferralTermsLink(row.subjectId, staffId, undefined, fallback)).sentBy;
+      if (!staffId) return;
+      const subject = await this.subjectOf({ subjectType: row.subjectType, subjectId: row.subjectId });
+      const staff = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { role: true } });
+      await this.notifications.open({
+        recipientStaffId: staffId,
+        kind: LINK_FAILED_NOTIFICATION_KIND,
+        title: sms ? `WhatsApp did not reach ${subject?.code ?? 'them'}: the link went by SMS` : `WhatsApp did not reach ${subject?.code ?? 'them'}, and SMS failed too`,
+        body: sms ? 'A fresh link was sent by SMS; the earlier one still works.' : 'Call them and resend the link.',
+        link: staff ? notificationLink(staff.role, LINK_FAILED_NOTIFICATION_KIND) : null,
+        subjectType: 'message_log',
+        subjectId: row.id,
+        once: true,
+      });
+    } catch (error) {
+      this.logger.warn(`SMS fallback for failed WhatsApp message ${messageLogId} did not go: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /** The record's own phone and WhatsApp numbers (stored form). */
+  private async recordNumbers(subjectType: string, subjectId: string): Promise<string[]> {
+    const row = subjectType === 'job_seeker'
+      ? await this.prisma.jobSeeker.findUnique({ where: { id: subjectId }, select: { phone: true, whatsappPhone: true } }).then((r) => r && [r.phone, r.whatsappPhone])
+      : subjectType === 'business'
+        ? await this.prisma.business.findUnique({ where: { id: subjectId }, select: { phone: true, contactWhatsAppPhone: true } }).then((r) => r && [r.phone, r.contactWhatsAppPhone])
+        : subjectType === 'referral'
+          ? await this.prisma.referral.findUnique({ where: { id: subjectId }, select: { phone: true, whatsappPhone: true } }).then((r) => r && [r.phone, r.whatsappPhone])
+          : null;
+    return (row ?? []).filter((p): p is string => Boolean(p)).map((p) => normaliseIndianMobile(p)!);
   }
 
   /** A live wrong number / do not call on the linked record, or on any record with this number. */
@@ -818,6 +857,10 @@ export class WhatsAppInboxService {
   async callConversation(actor: InboxActor, id: string) {
     const conversation = await this.load(actor, id);
     await this.assertCanAct(actor, conversation);
+    // A linked record is called through its own Call (consent and calling window checks).
+    if (conversation.subjectType && conversation.subjectId) {
+      throw codedError(HttpStatus.CONFLICT, 'USE_RECORD_CALL', 'Use Call on their record.', { subjectType: conversation.subjectType, subjectId: conversation.subjectId });
+    }
     return this.leadCalls.call(actor, conversation.phone, { type: CONVERSATION_SUBJECT, id: conversation.id });
   }
 

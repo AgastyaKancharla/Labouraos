@@ -33,6 +33,15 @@ type Tab = 'open' | 'closed' | 'leads';
 
 const last4 = (phone: string) => phone.replace(/\D/g, '').slice(-4);
 
+/** A registered person is called through their record (consent and calling window checks on the server). */
+function recordToCall(e: unknown): { subjectType: 'job_seeker' | 'business' | 'referral'; subjectId: string } | null {
+  if (!isApiError(e)) return null;
+  const d = e.details as { code?: string; subjectType?: string; subjectId?: string } | undefined;
+  if (d?.code !== 'USE_RECORD_CALL' || !d.subjectId) return null;
+  if (d.subjectType !== 'job_seeker' && d.subjectType !== 'business' && d.subjectType !== 'referral') return null;
+  return { subjectType: d.subjectType, subjectId: d.subjectId };
+}
+
 /**
  * WhatsApp tab of the call agent console (Master Guide rev 202, 21 Nov; no
  * design file — built like CA10 with a list and a thread). Every message
@@ -231,7 +240,20 @@ function ThreadView({ thread: c, onBack, backLabel }: { thread: Thread; onBack: 
                   📞 {t('wa.callNow')}
                 </Button>
               ) : (
-                <Button className="lb-ca-small" loading={callNew.isPending} onClick={() => callNew.mutate(c.id, { onSuccess: () => toast.success(t('wa.calling')), onError: fail })}>
+                <Button
+                  className="lb-ca-small"
+                  loading={callNew.isPending}
+                  onClick={() =>
+                    callNew.mutate(c.id, {
+                      onSuccess: () => toast.success(t('wa.calling')),
+                      onError: (e) => {
+                        const record = recordToCall(e);
+                        if (record) call({ ...record, purpose: 'general' });
+                        else fail(e);
+                      },
+                    })
+                  }
+                >
                   📞 {t('wa.callNow')}
                 </Button>
               )}
@@ -316,6 +338,7 @@ function LeadRow({ lead }: { lead: ReferralLeadRow }) {
   const [outcome, setOutcome] = useState('');
   const mine = lead.assignedTo?.id === session?.staff.id;
   const fail = (e: unknown) => toast.error(isApiError(e) ? e.message : t('error.server'));
+  const { call } = useCallActions();
   const register = (asJob: boolean) => {
     prefill.mutate(lead.id, {
       onSuccess: (p) => {
@@ -353,7 +376,22 @@ function LeadRow({ lead }: { lead: ReferralLeadRow }) {
           <Button className="lb-ca-small" variant="primary" loading={take.isPending} onClick={() => take.mutate({ id: lead.id }, { onError: fail })}>{t('wa.take')}</Button>
         )}
         {mine && (
-          <Button className="lb-ca-small" loading={callLead.isPending} onClick={() => callLead.mutate(lead.id, { onSuccess: () => toast.success(t('wa.calling')), onError: fail })}>📞 {t('wa.leads.call')}</Button>
+          <Button
+            className="lb-ca-small"
+            loading={callLead.isPending}
+            onClick={() =>
+              callLead.mutate(lead.id, {
+                onSuccess: () => toast.success(t('wa.calling')),
+                onError: (e) => {
+                  const record = recordToCall(e);
+                  if (record) call({ ...record, purpose: 'general' });
+                  else fail(e);
+                },
+              })
+            }
+          >
+            📞 {t('wa.leads.call')}
+          </Button>
         )}
         {mine && !lead.alreadyRegistered && lead.lookingFor !== 'staff' && (
           <Button className="lb-ca-small" variant="primary" onClick={() => register(true)}>{t('wa.leads.registerSeeker')}</Button>

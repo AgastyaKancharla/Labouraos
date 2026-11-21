@@ -208,6 +208,11 @@ export type LinkSendChannel = 'sms' | 'whatsapp';
 export interface LinkSendExtras {
   recipientPhone?: string;
   sentByStaffId?: string;
+  /**
+   * false: the SMS is not the message leg of a no-pickup hit (the fallback for a
+   * WhatsApp link that failed later). The WhatsApp branch never counts.
+   */
+  contactAttempt?: boolean;
 }
 
 /** MessageLog.relatedType of a link an agent sent on WhatsApp: relatedId is the agent. */
@@ -351,7 +356,12 @@ export class ConsentLinkService {
       });
       return result.channel;
     }
-    const row = await this.messagingService.send({ channel: 'sms', ...message });
+    const row = await this.messagingService.send({
+      channel: 'sms',
+      ...message,
+      ...(extras.contactAttempt === false ? { contactAttempt: false } : {}),
+      ...(extras.recipientPhone ? { recipientPhone: extras.recipientPhone } : {}),
+    });
     // A test double may answer nothing (treated as sent); failed or blocked (wrong number / do not call) is not sent.
     if (!row) return 'sms';
     return row.status === 'failed' || row.status === 'blocked' ? null : 'sms';

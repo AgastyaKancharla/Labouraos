@@ -35,6 +35,8 @@ const NUDGE_GAP_MS = 20 * 60 * 60 * 1000;
 export const DONE_LOOKBACK_MS = 48 * 60 * 60 * 1000;
 const STUCK_STATUSES = ['lead', 'consented', 'pending_activation'];
 const NUDGE_TEMPLATES = ['registration_stopped', 'payment_stuck'];
+/** Automatic event messages (an SMS goes once when WhatsApp fails one later). */
+export const EVENT_TEMPLATES = ['registration_done', 'partner_registration_done', 'business_registration_done', 'registration_stopped', 'payment_stuck', 'referral_lead_received'];
 
 /** Automatic messages: at most this many tries (WhatsApp, then SMS) per person and template (and step). */
 export const MAX_SEND_TRIES = 3;
@@ -271,6 +273,66 @@ export class WhatsAppEventsService {
       }
     }
     return { stopped, payment };
+  }
+
+  /**
+   * WhatsApp took an event message and failed it later (the person has no
+   * WhatsApp): the same message goes once by SMS, rebuilt from the records (the
+   * variables are not stored). Never a contact attempt; never again on WhatsApp.
+   */
+  async smsFallbackForFailed(row: { id: string; template: string; subjectType: string; subjectId: string; relatedType: string | null; relatedId: string | null; createdAt: Date }): Promise<boolean> {
+    if (!EVENT_TEMPLATES.includes(row.template)) return false;
+    const already = await this.prisma.messageLog.findFirst({
+      where: { subjectType: row.subjectType, subjectId: row.subjectId, template: row.template, channel: 'sms', relatedId: row.relatedId, createdAt: { gte: row.createdAt } },
+      select: { id: true },
+    });
+    if (already) return false;
+    const variables = await this.variablesFor(row);
+    if (!variables) return false;
+    const sent = await this.messaging.send({
+      channel: 'sms',
+      template: row.template,
+      subjectType: row.subjectType,
+      subjectId: row.subjectId,
+      relatedType: row.relatedType,
+      relatedId: row.relatedId,
+      variables,
+      contactAttempt: false,
+    });
+    return sent.status === 'sent';
+  }
+
+  private async variablesFor(row: { template: string; subjectType: string; subjectId: string; relatedId: string | null }): Promise<Record<string, string> | null> {
+    if (row.template === 'registration_done') {
+      const s = await this.prisma.jobSeeker.findUnique({ where: { id: row.subjectId }, select: { name: true, code: true } });
+      return s ? { firstName: firstName(s.name), code: s.code } : null;
+    }
+    if (row.template === 'registration_stopped' || row.template === 'payment_stuck') {
+      const s = await this.prisma.jobSeeker.findUnique({ where: { id: row.subjectId }, select: { name: true, paymentReceivedAt: true } });
+      if (!s || s.paymentReceivedAt) return null;
+      const issued = await this.consentLinks.createLink(row.subjectId, { sms: false, revokeOthers: false, issuedTo: 'whatsapp_nudge' });
+      const link = publicPageLink('registration', issued.token);
+      const step = row.relatedId ?? '';
+      return row.template === 'payment_stuck'
+        ? { firstName: firstName(s.name), link }
+        : { firstName: firstName(s.name), step: STEP_WORDS[step] ?? step.replace(/_/g, ' '), link };
+    }
+    if (row.template === 'partner_registration_done') {
+      const r = await this.prisma.referral.findUnique({ where: { id: row.subjectId }, select: { name: true, code: true } });
+      return r ? { firstName: firstName(r.name), code: r.code, link: shareLinkUrl(await ensureShareSlug(this.prisma, row.subjectId)) } : null;
+    }
+    if (row.template === 'business_registration_done') {
+      const b = await this.prisma.business.findUnique({ where: { id: row.subjectId }, select: { name: true, code: true, ownerName: true } });
+      return b ? { firstName: firstName(b.ownerName), businessName: b.name, code: b.code } : null;
+    }
+    if (row.template === 'referral_lead_received' && row.relatedId) {
+      const [r, lead] = await Promise.all([
+        this.prisma.referral.findUnique({ where: { id: row.subjectId }, select: { name: true } }),
+        this.prisma.referralLead.findUnique({ where: { id: row.relatedId }, select: { name: true } }),
+      ]);
+      return r && lead ? { firstName: firstName(r.name), leadFirstName: firstName(lead.name) } : null;
+    }
+    return null;
   }
 
   /** The last time anything moved in the journey: link, consent, selfie, ID check, payment. */
