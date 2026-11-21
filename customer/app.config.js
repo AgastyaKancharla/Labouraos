@@ -67,9 +67,8 @@ module.exports = () => ({
       foregroundImage: './assets/adaptive-icon.png',
       backgroundColor: '#0055C0',
     },
-    // The camera itself is used inside the secure browser sheet (Chrome), which
-    // asks for its own permission. Location only for "Use my location".
-    permissions: ['ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION'],
+    // Camera: the native selfie, Aadhaar QR scan and ID card photo (21 Nov). Location only for "Use my location".
+    permissions: ['CAMERA', 'ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION'],
     blockedPermissions: ['READ_MEDIA_IMAGES', 'READ_EXTERNAL_STORAGE', 'RECORD_AUDIO', 'ACCESS_BACKGROUND_LOCATION'],
   },
   web: {
@@ -89,6 +88,8 @@ module.exports = () => ({
     'expo-apple-authentication',
     ['@react-native-google-signin/google-signin', { iosUrlScheme: GOOGLE_IOS_URL_SCHEME }],
     ['expo-location', { locationWhenInUsePermission: LOCATION_REASON }],
+    // Native verification steps (21 Nov): live camera only, never the gallery or the microphone.
+    ['expo-camera', { cameraPermission: CAMERA_REASON, microphonePermission: false, recordAudioAndroid: false }],
     // Push (Agent C, customer/src/push/): small icon tint and the default Android channel.
     ['expo-notifications', { color: '#0055C0', defaultChannel: 'service' }],
   ],
