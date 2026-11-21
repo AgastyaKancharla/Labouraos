@@ -11,6 +11,7 @@ import TeamLeadAttendance from '../T-Attendance';
 import TeamLeadVerify from '../T-Verify';
 import TeamLeadDecided from '../T-Decided';
 import TeamLeadAgents from '../T-Agents';
+import TeamLeadWork from '../T-Work';
 import type { RequestView } from './api';
 
 const NOW = new Date('2026-11-11T06:30:00Z');
@@ -441,5 +442,40 @@ describe('Check registrations (T-Verify) and Agents (T-Agents)', () => {
     expect(screen.getByText('85 / 100')).toBeInTheDocument();
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Role' }), 'field_agent');
     expect(await screen.findByText('No rows match these filters. Change a filter to see more.')).toBeInTheDocument();
+  });
+});
+
+describe('Work list (T-Work), 22 Nov', () => {
+  it("lists every stuck person, business and partner of the team with the agent each belongs to and the right buttons", async () => {
+    const row = (over: Record<string, unknown>) => ({ owner: { name: 'Sneha K', code: 'CA-0009' }, ownerId: 'ca-3', state: 'not_started', reason: null, waitingForTeamLead: false, since: '2026-11-11T05:00:00Z', ...over });
+    const api = mockApi({
+      ...common,
+      'GET /team-lead/work': { summary: { stuck: 1, followUpsOverdue: 0, interviewsToday: 0, resultsOverdue: 0 }, stuck: [], interviews: [], businesses: [], fieldAgents: [] },
+      'GET /close-to-refund': { rows: [] },
+      'GET /growth/days-to-first-interview': { total: 0, rows: [] },
+      'GET /growth/shortage-tasks': [],
+      'GET /profile-stuck/list': {
+        rows: [
+          row({ kind: 'job_seeker', id: 'j1', code: 'JS-00003', name: 'Anthony', step: 'id_check', state: 'in_progress', waitingForTeamLead: true, actions: [] }),
+          row({ kind: 'job_seeker', id: 'j2', code: 'JS-00001', name: 'avinash', step: 'payment', actions: ['payment_link', 'someone_else_pays'] }),
+          row({ kind: 'business', id: 'b5', code: 'BZ-00005', name: 'Zoom food court', step: 'agreement', actions: ['agreement_link'] }),
+          row({ kind: 'referral', id: 'r4', code: 'RF-00044', name: 'Antony G', step: 'upi', actions: ['partner_terms_link'] }),
+        ],
+      },
+      'POST /team-lead/remind': { ok: true },
+    });
+    signInAs('team_lead');
+    renderScreen(<TeamLeadWork />, { portal: 'team-lead', path: '/team-lead/work', now: NOW });
+    expect(await screen.findByText('Stuck registrations (4)')).toBeInTheDocument();
+    const rows = screen.getAllByTestId('stuck-row');
+    expect(rows).toHaveLength(4);
+    expect(rows[0]).toHaveTextContent("Waiting for the Team Lead's ID check · Agent: Sneha K");
+    expect(within(rows[0]!).queryByRole('button', { name: /Send|Resend/ })).toBeNull();
+    expect(within(rows[1]!).getByRole('button', { name: 'Send payment link' })).toBeInTheDocument();
+    expect(rows[2]).toHaveTextContent('agreement not signed');
+    expect(within(rows[3]!).getByRole('button', { name: 'Send partner terms link' })).toBeInTheDocument();
+    await userEvent.click(within(rows[2]!).getByRole('button', { name: 'Remind the agent' }));
+    await waitFor(() => expect(api.calls('POST /team-lead/remind')).toHaveLength(1));
+    expect(api.calls('POST /team-lead/remind')[0]!.body).toMatchObject({ staffId: 'ca-3', text: expect.stringContaining('BZ-00005') });
   });
 });

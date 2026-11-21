@@ -10,9 +10,10 @@ import { useT } from '../../../i18n/I18nProvider';
 import type { MessageKey } from '../../../i18n/en';
 import { formatDayMonthIST } from '../../../lib/format/date';
 import { useScreenPath } from '../../../portals/PortalContext';
-import { useHome, useResendRegistration, type MetricView, type WorkCategory } from '../_lib/api';
+import { useHome, type MetricView, type WorkCategory } from '../_lib/api';
 import { CallNextButton } from '../_lib/CallNextButton';
-import { clock12, durationHM, stuckLabel, whenShort } from '../_lib/format';
+import { clock12, durationHM, whenShort } from '../_lib/format';
+import { StuckList, useStuckList } from '../../shared/StuckList';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../../lib/api/client';
 import { useNow } from '../../../lib/useNow';
@@ -44,7 +45,6 @@ export default function CallAgentHome() {
   const to = useScreenPath();
   const toast = useToast();
   const home = useHome();
-  const resend = useResendRegistration();
   const qc = useQueryClient();
   const now = useNow(60_000);
   // "Not a lead": an unknown caller handled without registering (every repeat call from the number goes too).
@@ -55,7 +55,9 @@ export default function CallAgentHome() {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]['key']>('all');
   const data = home.data;
   const newCallers = data?.newCallers ?? [];
-  const stuckCount = data ? data.stuck.filter((s) => !s.waitingForTeamLead).length : 0;
+  // 22 Nov: the count is every row shown (it said 1 with two people listed).
+  const stuckList = useStuckList();
+  const stuckCount = stuckList.data?.rows.length ?? 0;
 
   const items = data ? data.work.items.filter((i) => filter === 'all' || i.category === filter) : [];
   const blockedHint = data && !data.canCall
@@ -209,32 +211,20 @@ export default function CallAgentHome() {
                 <ToneTile icon="requests" tone="orange" size="sm" />
                 {t('ca.stuck.title', { count: stuckCount })}
               </div>
-              {data && data.stuck.length === 0 && <p className="sub">{t('ca.stuck.none')}</p>}
-              {data?.stuck.map((s) => (
-                <div className="row" key={s.jobSeekerId}>
-                  <Link to={to('CA08c-InProgress', { id: s.code })} style={{ color: 'var(--ink)' }}>
-                    {s.name} · {stuckLabel(s.step, s.failures, t)}
-                  </Link>
-                  {/* Waiting for the Team Lead's ID check is not stuck: nothing to resend (21 Nov fixes). */}
-                  {s.waitingForTeamLead ? (
-                    <span className="sub">{t('ca.stuck.waitingNote')}</span>
+              {/* 22 Nov: every stuck job seeker, business and partner of his (GET /profile-stuck/list), with the
+                  profile box's buttons; waiting for the Team Lead's ID check shows that, with no resend. */}
+              <StuckList
+                rows={stuckList.data?.rows}
+                nameCell={(r) =>
+                  r.kind === 'job_seeker' ? (
+                    <Link to={to('CA08c-InProgress', { id: r.code })} style={{ color: 'var(--ink)' }}>
+                      {r.name}
+                    </Link>
                   ) : (
-                  <button
-                    type="button"
-                    className={`tag ${s.step === 'payment_failed' ? 'tr' : 'ta'} lb-ca-chip`}
-                    disabled={resend.isPending}
-                    onClick={() =>
-                      resend.mutate(s.jobSeekerId, {
-                        onSuccess: () => toast.success(t('ca.stuck.sent', { name: s.name })),
-                        onError: (err) => toast.error((err as Error).message),
-                      })
-                    }
-                  >
-                    {t('ca.stuck.resend')}
-                  </button>
-                  )}
-                </div>
-              ))}
+                    <b>{r.name}</b>
+                  )
+                }
+              />
             </div>
             <div className="card">
               <div className="lbl lb-h-tile" style={{ marginBottom: 4 }}>
@@ -286,6 +276,11 @@ function doneText(d: { kind: string; name: string; extra: string | null; status:
       return t('ca.done.interview_booked', { name: d.name });
     case 'vacancy_added':
       return t('ca.done.vacancy_added', { name: d.name, trade: d.extra ?? '' });
+    // 22 Nov: businesses and referral partners registered today too.
+    case 'business_registered':
+      return t('ca.done.business_registered', { name: d.name });
+    case 'partner_registered':
+      return t('ca.done.partner_registered', { name: d.name });
     default:
       return t('ca.done.call_outcome', { name: d.name });
   }
@@ -297,6 +292,8 @@ const SEEKER_STATUSES = ['lead', 'consented', 'pending_activation', 'active', 'p
 function doneTag(d: { kind: string; status: string; extra: string | null }, t: ReturnType<typeof useT>): string {
   if (d.kind === 'interview_booked' && d.extra) return t('ca.done.interviewOn', { date: formatDayMonthIST(d.extra) });
   if (d.kind === 'vacancy_added') return t('ca.done.captured');
+  if (d.kind === 'business_registered') return t('ca.done.businessTag');
+  if (d.kind === 'partner_registered') return t('ca.done.partnerTag');
   if (d.kind === 'call_outcome' && OUTCOMES.includes(d.status)) return t(`ca.outcome.${d.status}` as MessageKey);
   if (d.kind === 'registered' && SEEKER_STATUSES.includes(d.status)) return t(`ca.seekerStatus.${d.status}` as MessageKey);
   return d.status;

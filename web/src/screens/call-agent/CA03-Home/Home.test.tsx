@@ -7,9 +7,16 @@ import Home from './index';
 
 const path = { portal: 'call-agent' as const, path: '/call-agent', now: NOW };
 
+// 22 Nov: the "Stuck registrations" card reads GET /profile-stuck/list (job seekers, businesses, partners).
+const stuckRow = (over: Record<string, unknown> = {}) => ({
+  kind: 'job_seeker', id: 'js9', code: 'JS-00301', name: 'Pooja Nair', owner: { name: 'Me', code: 'CA-1' }, ownerId: 'me',
+  step: 'payment', state: 'stuck', reason: null, waitingForTeamLead: false, actions: ['payment_link', 'someone_else_pays'], since: '2026-11-10T05:00:00Z', ...over,
+});
+const stuckList = (rows = [stuckRow()]) => ({ 'GET /profile-stuck/list': { rows } });
+
 describe('Call agent Home (CA03)', () => {
   it('shows today’s numbers, the work list with the near-refund person first, targets, stuck registrations and counts without rupees', async () => {
-    mockApi({ 'GET /call-work/home': homeData() });
+    mockApi({ 'GET /call-work/home': homeData(), ...stuckList() });
     signInAs('call_agent');
     renderScreen(<Home />, path);
     expect(await screen.findByRole('button', { name: '☎ Call next · Ramesh Gowda' })).toBeEnabled();
@@ -23,8 +30,9 @@ describe('Call agent Home (CA03)', () => {
     expect(screen.getByText('1h 48m')).toBeInTheDocument();
     expect(screen.getByText('team avg 21')).toBeInTheDocument();
     expect(screen.getByText('4%')).toBeInTheDocument();
-    expect(screen.getByText('Stuck registrations (1)')).toBeInTheDocument();
-    expect(screen.getByText(/Pooja Nair · UPI failed 2×/)).toBeInTheDocument();
+    expect(await screen.findByText('Stuck registrations (1)')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Pooja Nair' })).toBeInTheDocument();
+    expect(screen.getByTestId('stuck-row')).toHaveTextContent('Job seeker · JS-00301');
     expect(screen.getByText('1 of your people are near day 30 · no suitable offer yet')).toBeInTheDocument();
     expect(screen.queryByText(/₹1,497/)).not.toBeInTheDocument();
     expect(screen.getByText('Kavya Reddy · registered')).toBeInTheDocument();
@@ -61,12 +69,20 @@ describe('Call agent Home (CA03)', () => {
   });
 
   it('resends a stuck registration link with one tap', async () => {
-    const api = mockApi({ 'GET /call-work/home': homeData(), 'POST /consent/links': { ok: true } });
+    const api = mockApi({
+      'GET /call-work/home': homeData(),
+      ...stuckList([stuckRow(), stuckRow({ id: 'js11', code: 'JS-00311', name: 'Link Person', step: 'selfie', actions: ['registration_link'] })]),
+      'POST /job-seekers/js9/resend-payment': { ok: true },
+      'POST /consent/links': { ok: true },
+    });
     signInAs('call_agent');
     renderScreen(<Home />, path);
-    await userEvent.click(await screen.findByRole('button', { name: 'Resend →' }));
+    // Stuck at payment: the payment link (not the registration link); a link not finished: Resend.
+    await userEvent.click(await screen.findByRole('button', { name: 'Send payment link' }));
+    await waitFor(() => expect(api.calls('POST /job-seekers/js9/resend-payment')).toHaveLength(1));
+    await userEvent.click(screen.getByRole('button', { name: 'Resend registration link' }));
     await waitFor(() => expect(api.calls('POST /consent/links')).toHaveLength(1));
-    expect(api.calls('POST /consent/links')[0]!.body).toEqual({ jobSeekerId: 'js9' });
+    expect(api.calls('POST /consent/links')[0]!.body).toEqual({ jobSeekerId: 'js11' });
   });
 
   it('21 Nov fixes: missed calls show the day and repeats; new callers stay on the list until handled; a do-not-call person is locked', async () => {
@@ -85,6 +101,7 @@ describe('Call agent Home (CA03)', () => {
           { jobSeekerId: 'js10', code: 'JS-00302', name: 'Waiting Wilson', maskedPhone: '******6644', trade: 'Delivery', step: 'id_team_lead_check', failures: 0, linkLive: true, waitingForTeamLead: true, since: '2026-11-10T05:00:00Z' },
         ],
       }),
+      ...stuckList([stuckRow(), stuckRow({ id: 'js10', code: 'JS-00302', name: 'Waiting Wilson', step: 'id_check', state: 'in_progress', waitingForTeamLead: true, actions: [] })]),
       'POST /telephony/callbacks/cb9/complete': { ok: true },
     });
     signInAs('call_agent');
@@ -94,9 +111,10 @@ describe('Call agent Home (CA03)', () => {
     const callers = screen.getByTestId('new-callers');
     expect(within(callers).getByText('New callers (1)')).toBeInTheDocument();
     expect(within(callers).getByRole('link', { name: /New caller \*\*\*\*\*\*7788 — register as…/ })).toHaveAttribute('href', expect.stringContaining('task=cb9'));
-    // Waiting for the Team Lead's ID check: no Resend, not counted as stuck.
-    expect(screen.getByText('Stuck registrations (1)')).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Resend →' })).toHaveLength(1);
+    // 22 Nov: both are listed and counted; waiting for the Team Lead's ID check has no resend.
+    expect(await screen.findByText('Stuck registrations (2)')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Send payment link' })).toHaveLength(1);
+    expect(screen.getByText("Waiting for the Team Lead's ID check")).toBeInTheDocument();
     expect(screen.getByText('nothing to do — the Team Lead checks the ID')).toBeInTheDocument();
     await userEvent.click(within(callers).getByRole('button', { name: 'Not a lead' }));
     await waitFor(() => expect(api.calls('POST /telephony/callbacks/cb9/complete')).toHaveLength(1));
@@ -114,5 +132,35 @@ describe('Call agent Home (CA03)', () => {
     fail = false;
     await userEvent.click(retry);
     expect(await screen.findByText('Nothing on your list right now.')).toBeInTheDocument();
+  });
+
+  it('22 Nov: stuck businesses and referral partners are listed with their buttons; Done today names them too', async () => {
+    const api = mockApi({
+      'GET /call-work/home': homeData({
+        doneToday: [
+          { kind: 'business_registered', at: '2026-11-11T05:00:00Z', name: 'Zoom food court', code: 'BZ-00005', status: 'lead', extra: null },
+          { kind: 'partner_registered', at: '2026-11-11T05:10:00Z', name: 'Antony G', code: 'RF-00044', status: 'registered', extra: null },
+        ],
+      }),
+      ...stuckList([
+        stuckRow({ kind: 'business', id: 'b5', code: 'BZ-00005', name: 'Zoom food court', step: 'agreement', state: 'not_started', actions: ['agreement_link'] }),
+        stuckRow({ kind: 'referral', id: 'rf4', code: 'RF-00044', name: 'Antony G', step: 'selfie', state: 'not_started', actions: ['partner_terms_link'] }),
+      ]),
+      'POST /businesses/b5/agreement-links': { ok: true },
+      'POST /referrals/rf4/terms-links': { ok: true },
+    });
+    signInAs('call_agent');
+    renderScreen(<Home />, path);
+    expect(await screen.findByText('Stuck registrations (2)')).toBeInTheDocument();
+    const [biz, partner] = screen.getAllByTestId('stuck-row');
+    expect(biz).toHaveTextContent('Zoom food court · Business · BZ-00005');
+    expect(biz).toHaveTextContent('agreement not signed');
+    expect(partner).toHaveTextContent('Referral partner · RF-00044');
+    await userEvent.click(within(biz!).getByRole('button', { name: 'Send agreement link' }));
+    await waitFor(() => expect(api.calls('POST /businesses/b5/agreement-links')).toHaveLength(1));
+    await userEvent.click(within(partner!).getByRole('button', { name: 'Send partner terms link' }));
+    await waitFor(() => expect(api.calls('POST /referrals/rf4/terms-links')).toHaveLength(1));
+    expect(screen.getByText('Zoom food court · business registered')).toBeInTheDocument();
+    expect(screen.getByText('Antony G · referral partner registered')).toBeInTheDocument();
   });
 });
