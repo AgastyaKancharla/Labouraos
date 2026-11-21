@@ -147,6 +147,15 @@ export function BusinessHomeView({ profileId, home, hero }: { profileId: string;
         </View>
       </Card>
 
+      {home.counts.workersPlaced > 0 ? (
+        <Card title={t('bizHome.workersTitle')} accent="gold" emoji="👷" testID="biz-home-workers">
+          <View style={styles.gap}>
+            <Text>{t('bizHome.workersIntro')}</Text>
+            <Button label={t('bizHome.workersButton')} variant="secondary" onPress={() => router.push(routes.workers)} testID="biz-home-worker-left" />
+          </View>
+        </Card>
+      ) : null}
+
       <ShiftsCard profileId={profileId} />
 
       {sheet.error ? <Banner tone="error" message={sheet.error} /> : null}

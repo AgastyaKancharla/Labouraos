@@ -8,6 +8,7 @@ import { CustomerHomeService } from './customer-home.service';
 import { CustomerRegistrationService } from './customer-registration.service';
 import { CustomerRequestsService } from './customer-requests.service';
 import { CustomerOptionsService } from './customer-options.service';
+import { CustomerWorkersService } from './customer-workers.service';
 
 type Body_ = Record<string, unknown>;
 
@@ -23,6 +24,7 @@ export class CustomerAppController {
     private readonly homes: CustomerHomeService,
     private readonly requests: CustomerRequestsService,
     private readonly options: CustomerOptionsService,
+    private readonly workerReports: CustomerWorkersService,
   ) {}
 
   @Get('me/form-options')
@@ -168,6 +170,28 @@ export class CustomerAppController {
   @CustomerRoute()
   callbacks(@CurrentCustomer() me: CustomerPrincipal) {
     return this.requests.listCallbacks(me.accountId);
+  }
+
+  /** A business's workers it can report on, and its recent "a worker left" reports. */
+  @Get('me/profiles/:profileId/workers')
+  @CustomerRoute()
+  workers(@CurrentCustomer() me: CustomerPrincipal, @Param('profileId') profileId: string) {
+    return this.workerReports.workers(me.accountId, profileId);
+  }
+
+  /** "A worker left": a report and a call from our team, not the claim itself. */
+  @Post('me/profiles/:profileId/workers/:placementId/left')
+  @CustomerRoute()
+  async workerLeft(
+    @CurrentCustomer() me: CustomerPrincipal,
+    @Param('profileId') profileId: string,
+    @Param('placementId') placementId: string,
+    @Body() body: Body_,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.workerReports.reportLeft(me.accountId, profileId, placementId, body ?? {});
+    res.status(result.created ? 201 : 200);
+    return result.body;
   }
 
   @Get('me/deletion')
