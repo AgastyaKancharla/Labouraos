@@ -49,7 +49,8 @@ async function currentPhone(db: Db, subject: BlockSubject): Promise<string | nul
  */
 export async function liveBlocks(db: Db, subjects: BlockSubject[]): Promise<Map<string, Set<ContactBlockKind>>> {
   const out = new Map<string, Set<ContactBlockKind>>();
-  if (subjects.length === 0) return out;
+  // A hand-built test double without the table has no blocks.
+  if (subjects.length === 0 || !db.contactBlock) return out;
   const rows = await db.contactBlock.findMany({
     where: {
       liftedAt: null,

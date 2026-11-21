@@ -27,6 +27,7 @@ import { AssignmentCandidate, pickAgent } from './signup-assignment';
 import { StageResult, stageIndex } from './signup-stage';
 import { ownerAccountIds } from './signup-owner-accounts';
 import { SIGNUP_REMINDER_SENDER, SignupReminderSender } from './signup-reminder.port';
+import { blocksFor } from '../call/contact-block';
 
 /** Outcomes that mean "closed without finishing". Only `no_response` is nudged again (gave_up never is). */
 export const REENGAGE_OUTCOMES = ['no_response', 'gave_up'];
@@ -217,6 +218,9 @@ export class SignupTrackerService {
     if (tracker.outcome === 'open' && (await this.declinedCalls(tracker))) {
       return this.stop(tracker, ctx, 'Said not interested on a call');
     }
+    // 21 Nov fixes: "do not call" stops the sign-up; a wrong number means no call tasks (below).
+    const blocks = tracker.subjectType && tracker.subjectId ? await blocksFor(this.prisma, { subjectType: tracker.subjectType, subjectId: tracker.subjectId }) : new Set<string>();
+    if (blocks.has('do_not_call')) return this.stop(tracker, ctx, 'Asked not to be called');
     if (tracker.outcome === 'no_response') return this.reengage(tracker, result, ctx);
 
     // The account's own tick is the truth; the tracker's copy only when there is no account.
@@ -229,7 +233,7 @@ export class SignupTrackerService {
     const withdrawn = !consent && (Boolean(account?.contactMeNoticeVersion) || (await this.prisma.signupTrackerEvent.count({ where: { trackerId: tracker.id, kind: 'contact_withdrawn' } })) > 0);
     if (withdrawn) await this.dropNotAttemptedFlags(tracker, ctx);
     const oneHelpCall = !consent && !withdrawn && Boolean(account?.phoneVerifiedAt);
-    const callable = Boolean(tracker.subjectId) && (consent || oneHelpCall);
+    const callable = Boolean(tracker.subjectId) && (consent || oneHelpCall) && !blocks.has('wrong_number');
     const settings = oneHelpCall ? { ...ctx.settings, maxCallTries: 1 } : ctx.settings;
     if (!callable) await this.cancelSignupTasks(tracker, ctx);
     const subject = await this.subjectInfo(tracker);

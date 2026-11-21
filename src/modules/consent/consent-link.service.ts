@@ -1,5 +1,6 @@
 import { PRODUCT_LANGUAGE, productLanguage } from '../../common/language/english-only';
 import {
+  ConflictException,
   BadRequestException,
   HttpStatus,
   Inject,
@@ -10,6 +11,7 @@ import { codedError } from '../../common/http/coded-error';
 import { createHash } from 'crypto';
 import { PublicLinkPurpose } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { blocksFor } from '../call/contact-block';
 import { PublicLinkStoreService } from '../../common/public-link-store.service';
 import { ConsentClock } from './consent-clock';
 import { ConsentService } from './consent.service';
@@ -281,6 +283,17 @@ export class ConsentLinkService {
     });
     if (!seeker) {
       throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
+    }
+    // 21 Nov fixes (call results): nothing is sent to someone marked "do not call" or to a number
+    // marked wrong (src/modules/call/contact-block.ts). A link opened inside his own app is not a send.
+    if (options.sms !== false) {
+      const blocks = await blocksFor(this.prisma, { subjectType: 'job_seeker', subjectId: seeker.id });
+      if (blocks.has('do_not_call')) {
+        throw new ConflictException({ message: 'He asked not to be contacted (do not call): no link is sent. A Team Lead can lift it if he asks again.', reason: 'do_not_call' });
+      }
+      if (blocks.has('wrong_number')) {
+        throw new ConflictException({ message: 'This number was marked as a wrong number: no link is sent until the number is corrected.', reason: 'wrong_number' });
+      }
     }
 
     const now = this.clock.now();

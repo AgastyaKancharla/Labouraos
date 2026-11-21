@@ -21,6 +21,8 @@ import { InboundCallRouter } from '../telephony/inbound-call-router.service';
 import { FollowUpHandoverService } from '../follow-up/follow-up-handover.service';
 import { WorkHandoverService, FIELD_HANDOVER } from '../follow-up/work-handover.service';
 import { CallWorkClock } from './call-work-clock';
+import { NoPickupEvaluationJob } from '../../jobs/no-pickup-evaluation.job';
+import { SignupTrackerService } from '../signup-tracker/signup-tracker.service';
 
 /**
  * 21 Nov fixes (Master Guide rev 202, "Call agent and field agent fixes"), call
@@ -198,6 +200,7 @@ describe('21 Nov fixes: call work and leads', () => {
     await prisma.contactBlock.deleteMany({ where: { subjectId: { in: seekerIds } } });
     await prisma.reviewFlag.deleteMany({ where: { subjectId: { in: seekerIds } } });
     await prisma.contactAttempt.deleteMany({ where: { jobSeekerId: { in: seekerIds } } });
+    await prisma.jobSeekerHit.deleteMany({ where: { jobSeekerId: { in: seekerIds } } });
     await prisma.messageLog.deleteMany({ where: { subjectId: { in: seekerIds } } });
     await prisma.callRecord.deleteMany({ where: { OR: [{ staffId: { in: staffIds } }, { subjectId: { in: seekerIds } }] } });
     await prisma.publicLink.deleteMany({ where: { subjectId: { in: seekerIds } } });
@@ -407,6 +410,38 @@ describe('21 Nov fixes: call work and leads', () => {
     expect(await prisma.contactBlock.findFirst({ where: { subjectId: person.id } })).toMatchObject({ liftedByStaffId: lead1.id, liveKey: null });
     expect(await prisma.auditLog.count({ where: { action: 'call.contact_block_lifted', actorId: lead1.id } })).toBe(1);
     await expect(calls.place({ id: agentA.id, role: 'call_agent' }, { subjectType: 'job_seeker', subjectId: person.id, purpose: 'general' })).resolves.toHaveProperty('callRecordId');
+  });
+
+  it('a blocked person gets no automatic message from any path: the no-pickup job (no notice, no hit), a link resend, the sign-up tracker', async () => {
+    const calls = app.get(CallService);
+    const blocked = await makeSeeker({ name: 'Blocked Everywhere' });
+    const free = await makeSeeker({ name: 'Free Nopickup', paidDaysAgo: 3 });
+    const call = await callRecord({ staffId: agentA.id, subjectId: blocked.id, answered: true, status: 'completed', minutesAgo: 600 });
+    await calls.recordOutcome({ id: agentA.id, role: 'call_agent' }, call.id, { agentOutcome: 'do_not_call' });
+    // An AM and a PM no-pickup yesterday for both.
+    for (const person of [blocked, free]) {
+      for (const [timeOfDay, at] of [['am', '2026-11-10T04:30:00.000Z'], ['pm', '2026-11-10T11:30:00.000Z']] as const) {
+        await prisma.contactAttempt.create({ data: { jobSeekerId: person.id, channel: 'call', outcome: 'no_pickup', attemptedAt: new Date(at), timeOfDay } });
+      }
+    }
+    const job = app.get(NoPickupEvaluationJob);
+    await job.evaluateNoPickups();
+    await job.evaluateNoPickups();
+    expect(await prisma.messageLog.count({ where: { subjectId: blocked.id, template: 'call_attempt_notice' } })).toBe(0);
+    expect(await prisma.jobSeekerHit.count({ where: { jobSeekerId: blocked.id } })).toBe(0);
+    // Someone not blocked gets the notice once, never again on the next run.
+    expect(await prisma.messageLog.count({ where: { subjectId: free.id, template: 'call_attempt_notice' } })).toBe(1);
+
+    // POST /consent/links (Resend): refused with a clear message.
+    const resend = await request(app.getHttpServer()).post('/consent/links').set('Authorization', `Bearer ${token(agentA)}`).send({ jobSeekerId: blocked.id }).expect(409);
+    expect(resend.body.message).toMatch(/do not call/);
+
+    // The sign-up tracker stops.
+    const tracker = await prisma.signupTracker.create({ data: { profileKind: 'job_seeker', subjectType: 'job_seeker', subjectId: blocked.id, stage: 'B', contactConsent: true } });
+    await app.get(SignupTrackerService).onSignupChanged(tracker.id);
+    expect(await prisma.signupTracker.findUniqueOrThrow({ where: { id: tracker.id } })).toMatchObject({ outcome: 'gave_up' });
+    expect(await prisma.callTask.count({ where: { signupTrackerId: tracker.id, status: 'open' } })).toBe(0);
+    await prisma.jobSeekerHit.deleteMany({ where: { jobSeekerId: { in: [blocked.id, free.id] } } });
   });
 
   it(`every retry stops after ${RETRY_UNANSWERED_LIMIT} unanswered tries in a row and the Team Lead is told once`, async () => {
