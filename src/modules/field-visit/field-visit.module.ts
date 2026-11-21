@@ -6,6 +6,7 @@ import { PricingModule } from '../pricing/pricing.module';
 import { ReviewFlagModule } from '../review-flag/review-flag.module';
 import { AttendanceModule } from '../attendance/attendance.module';
 import { BusinessVerificationModule } from '../business/business-verification.module';
+import { ReportingScopeModule } from '../staff/reporting-scope.module';
 import {
   BUSINESS_PHOTO_STORAGE,
   MemoryBusinessPhotoStorage,
@@ -18,7 +19,7 @@ import { FieldHandoverService } from './field-handover.service';
 import { FieldAssignmentsController } from './field-assignments.controller';
 
 @Module({
-  imports: [PrismaModule, AuditModule, OtpModule, PricingModule, ReviewFlagModule, AttendanceModule, BusinessVerificationModule],
+  imports: [PrismaModule, AuditModule, OtpModule, PricingModule, ReviewFlagModule, AttendanceModule, BusinessVerificationModule, ReportingScopeModule],
   controllers: [FieldVisitController, FieldAssignmentsController],
   providers: [
     FieldVisitService,

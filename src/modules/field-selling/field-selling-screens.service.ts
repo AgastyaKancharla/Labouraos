@@ -1,3 +1,4 @@
+import { coversBusiness } from '../field-visit/field-handover.service';
 import { agentViewerFor, businessForViewer, heldByAgent } from '../business/business-agent-view';
 import { isBusinessSuspended } from '../business/business-candidate-access';
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
@@ -146,7 +147,20 @@ export class FieldSellingScreensService {
       select: { id: true },
     });
     if (visit) return;
+    // 21 Nov: covering a teammate's open work of this business (leave handover).
+    if (await coversBusiness(this.prisma, actor.id, business.id)) return;
     throw new NotFoundException('Vacancy not found');
+  }
+
+  /** 21 Nov: a field agent covering this business's work on leave, or sent to attend its interview. */
+  private async coversOrAttends(actor: SellingActor, businessId: string, interviewId?: string): Promise<boolean> {
+    if (await coversBusiness(this.prisma, actor.id, businessId)) return true;
+    if (!interviewId) return false;
+    const visit = await this.prisma.visitAssignment.findFirst({
+      where: { relatedType: 'interview', relatedId: interviewId, assignedStaffId: actor.id, status: { in: ['assigned', 'done'] } },
+      select: { id: true },
+    });
+    return Boolean(visit);
   }
 
   async businesses(actor: SellingActor, q?: string) {
@@ -389,7 +403,10 @@ export class FieldSellingScreensService {
       },
     });
     if (!interview) throw new NotFoundException('Interview not found');
-    if (actor.role === 'field_agent' && interview.business.accountAgentId !== actor.id && interview.proposedByStaffId !== actor.id) {
+    if (
+      actor.role === 'field_agent' && interview.business.accountAgentId !== actor.id && interview.proposedByStaffId !== actor.id &&
+      !(await this.coversOrAttends(actor, interview.businessId, interview.id))
+    ) {
       throw new ForbiddenException('This interview is for another agent\'s business');
     }
     const attendanceVisits = await this.prisma.interview.count({ where: { businessId: interview.businessId, id: { not: interview.id } } });
@@ -471,7 +488,10 @@ export class FieldSellingScreensService {
       },
     });
     if (!placement) throw new NotFoundException('Placement not found');
-    if (actor.role === 'field_agent' && placement.business.accountAgentId !== actor.id && placement.createdByStaffId !== actor.id) {
+    if (
+      actor.role === 'field_agent' && placement.business.accountAgentId !== actor.id && placement.createdByStaffId !== actor.id &&
+      !(await this.coversOrAttends(actor, placement.businessId))
+    ) {
       throw new ForbiddenException('This placement is for another agent\'s business');
     }
     const policy = await this.pricing.current();

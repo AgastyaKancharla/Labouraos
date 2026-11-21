@@ -321,10 +321,13 @@ describe('Phase 13 Task 5 — verification visits and verified gate', () => {
       where: { subjectType: 'business', subjectId: businessId, kind: 'no_documents_check', status: 'open' },
     })).toBe(1);
 
+    // 21 Nov (Master Guide rev 202): a business a field agent verified shows candidates straight
+    // away while it waits for the Team Lead, the same as in-person onboarding.
+    expect((await prisma.business.findUniqueOrThrow({ where: { id: businessId } })).fieldVerifiedAt).not.toBeNull();
     await request(app.getHttpServer())
       .get(`/vacancies/${vacancyId}/shortlist`)
       .set('Authorization', `Bearer ${nearestAgentToken}`)
-      .expect(403);
+      .expect(200);
     await request(app.getHttpServer())
       .post(`/businesses/${businessId}/verification/approve`)
       .set('Authorization', `Bearer ${teamLeadToken}`)

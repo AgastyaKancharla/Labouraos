@@ -1,5 +1,7 @@
 import { BadRequestException, ForbiddenException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { codedError } from '../../common/http/coded-error';
+import { OwnTeam, teamLeadOf } from '../../common/rbac/own-team';
+import { ReportingScopeService } from '../staff/reporting-scope.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { REVISIT_OUTCOMES } from './field-visit.constants';
@@ -87,6 +89,7 @@ export class FieldHandoverService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly clock: FieldVisitClock,
+    private readonly reporting: ReportingScopeService,
   ) {}
 
   async handOver(fromStaffId: string, to: HandoverTarget, options: HandoverOptions): Promise<HandoverResult> {
@@ -228,26 +231,12 @@ export class FieldHandoverService {
 
   private async visibleFieldAgents(actor: { id: string; role: string }): Promise<string[] | null> {
     if (actor.role === 'ceo') return null;
-    if (actor.role === 'team_lead') {
-      const rows = await this.prisma.staff.findMany({
-        where: { role: 'field_agent', OR: [{ teamLeadId: actor.id }, { reportsToId: actor.id }] },
-        select: { id: true },
-      });
-      return rows.map((row) => row.id);
-    }
-    if (actor.role === 'manager') {
-      const leads = await this.prisma.staff.findMany({
-        where: { role: 'team_lead', OR: [{ reportsToId: actor.id }, { teamLeadId: actor.id }] },
-        select: { id: true },
-      });
-      const leadIds = leads.map((l) => l.id);
-      const rows = await this.prisma.staff.findMany({
-        where: { role: 'field_agent', OR: [{ reportsToId: actor.id }, { teamLeadId: { in: leadIds } }, { reportsToId: { in: leadIds } }] },
-        select: { id: true },
-      });
-      return rows.map((row) => row.id);
-    }
-    return [];
+    let ids: string[] = [];
+    if (actor.role === 'team_lead') ids = await new OwnTeam(this.prisma).memberIds(actor.id);
+    else if (actor.role === 'manager') ids = await this.reporting.peopleUnder(actor.id);
+    if (!ids.length) return [];
+    const rows = await this.prisma.staff.findMany({ where: { id: { in: ids }, role: 'field_agent' }, select: { id: true } });
+    return rows.map((row) => row.id);
   }
 
   private async assertMayMove(actor: { id: string; role: string }, staffIds: string[]): Promise<void> {
@@ -262,7 +251,7 @@ export class FieldHandoverService {
   }
 
   /** Teammates who can take the work: the named one, or the same team's active field agents not on leave today. */
-  private async pickPool(from: { id: string; teamLeadId: string | null; reportsToId: string | null; city: string }, to: HandoverTarget, todayKey: string) {
+  private async pickPool(from: { id: string; role: string; teamLeadId: string | null; reportsToId: string | null; city: string }, to: HandoverTarget, todayKey: string) {
     if (to !== 'spread') {
       if (to === from.id) throw new BadRequestException('Pick another field agent');
       const agent = await this.prisma.staff.findUnique({ where: { id: to }, select: { id: true, role: true, status: true, city: true } });
@@ -271,13 +260,13 @@ export class FieldHandoverService {
       const leave = await onApprovedLeave(this.prisma, [agent.id], todayKey);
       return { ids: [agent.id], onLeave: leave.has(agent.id) ? [agent.id] : [] };
     }
-    const lead = from.reportsToId ?? from.teamLeadId;
+    const lead = teamLeadOf(from);
     if (!lead) return { ids: [] as string[], onLeave: [] as string[] };
+    const members = await new OwnTeam(this.prisma).memberIds(lead);
     const team = await this.prisma.staff.findMany({
       where: {
-        role: 'field_agent', status: 'active', city: from.city, id: { not: from.id },
-        lockedByStaffId: null,
-        OR: [{ teamLeadId: lead }, { reportsToId: lead }],
+        id: { in: members.filter((id) => id !== from.id) },
+        role: 'field_agent', status: 'active', city: from.city, lockedByStaffId: null,
       },
       select: { id: true, lockedUntil: true },
     });
