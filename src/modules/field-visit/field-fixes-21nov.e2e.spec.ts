@@ -344,6 +344,18 @@ describe('Laboura Field fixes of 21 Nov (server)', () => {
     expect(await prisma.auditLog.findFirst({ where: { actorId: fa1.id, action: 'interview.offer_accepted_by_arrival', entityCode: interview.code } })).not.toBeNull();
   });
 
+  it('"someone else pays": a clear message when the job seeker has not opened his payment step yet', async () => {
+    const seeker = await prisma.jobSeeker.create({
+      data: {
+        code: `JS-F21P${String(stamp).slice(-5)}`, name: 'Manoj K', phone: `+9193${String(stamp).slice(-8)}`, minSalary: 1500000, maxSalary: 2000000,
+        preferredCallWindowStart: '09:00', preferredCallWindowEnd: '21:00', registeredByStaffId: fa1.id,
+      },
+    });
+    seekerIds.push(seeker.id);
+    const res = await http().post(`/job-seekers/${seeker.id}/payment-only-link`).set(authOf(fa1)).send({ phone: '9876500011', relation: 'parent' }).expect(400);
+    expect(res.body.message).toMatch(/opened the payment step on his link/);
+  });
+
   // ---------------------------------------------------------- shop time (M6)
 
   it('shop time: "onboard now" and the selfie keep him On visit; registering the business ends the shop time (no false short-visit flag)', async () => {
