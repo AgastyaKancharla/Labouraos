@@ -5,7 +5,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { useAfterSave } from '@/api/refresh';
-import { Banner, Button, Card, Emoji, Screen, Text, TextField } from '@/components';
+import { Banner, Button, Card, Emoji, PinFinder, Screen, Text, TextField } from '@/components';
 import { addDays, Checkbox, ChipPicker, DateField, MobileField, MoneyField, SelectField, todayKeyIst } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useLocation } from '@/device/location/useLocation';
@@ -244,6 +244,13 @@ export default function CaptureSeekerScreen() {
             />
           </View>
           {err('pin') ? <Text variant="small" color={colors.tomato}>{err('pin')}</Text> : null}
+          <Text variant="muted">{t('fa10.pinOrFind')}</Text>
+          <PinFinder
+            onConfirm={(found) =>
+              set('place', { ...form.place, latitude: found.latitude, longitude: found.longitude, pincode: form.place.pincode || found.address?.pincode || '' })
+            }
+            testID="pin-finder"
+          />
           <SelectField label={t('fa10.travel')} required value={form.travelKm} choices={TRAVEL_KM.map((k) => ({ value: k, label: k === '20' ? '20 km+' : `${k} km` }))} onChange={(v) => set('travelKm', v)} error={err('travelKm')} testID="travel" />
           <ChipPicker label={t('fa10.preferredAreas')} values={form.preferredAreas} choices={areas.map((a) => ({ value: a.name, label: a.name }))} onChange={(v) => set('preferredAreas', v)} addLabel={t('fa10.addArea')} testID="preferred" />
           <Checkbox label={t('fa10.relocate')} checked={form.relocate} onChange={(v) => set('relocate', v)} />

@@ -7,9 +7,14 @@ import {
   isAllowedMapsUrl,
   isPrivateAddress,
   isShortMapsUrl,
+  looksLikeLink,
   MapsPin,
+  parseCoordinates,
   parseMapsUrl,
+  placeFromNominatimSearch,
+  placeNameOf,
   ReverseAddress,
+  withScheme,
 } from './maps-link';
 
 /** The fetch the service uses (tests replace it; nothing else may be fetched). */
@@ -45,6 +50,34 @@ const CACHE_MAX = 5000;
 
 /** A link that opens a search or a place page without coordinates: the page is never read, so ask for a pin. */
 export const NO_PIN_MESSAGE = 'This link has no map pin. In Google Maps, long-press to drop a pin, then share that.';
+/** A link whose place name OpenStreetMap could not find. */
+export const NAME_NOT_FOUND_MESSAGE = 'Couldn’t find the place in this link on the map. In Google Maps, long-press to drop a pin and share that, or type the address.';
+/** A typed address OpenStreetMap could not find. */
+export const ADDRESS_NOT_FOUND_MESSAGE = 'Couldn’t find that address. Add the area and city (e.g. "24th Main, JP Nagar, Bengaluru"), paste a Google Maps link, or type the coordinates.';
+/** OpenStreetMap could not be reached for a search. */
+export const LOOKUP_UNAVAILABLE_MESSAGE = 'The map lookup is not answering right now. Try again in a minute, or paste a Google Maps link with a pin, or type the coordinates.';
+/** The longest typed address looked up. */
+export const MAX_ADDRESS_LENGTH = 300;
+/**
+ * Bengaluru's box for address searches (left, top, right, bottom): the search
+ * looks inside it first, then anywhere in India (countrycodes=in).
+ */
+export const BENGALURU_VIEWBOX = '77.30,13.25,77.95,12.70';
+
+export type LocateSource = 'coordinates' | 'link' | 'address';
+
+/** "Set the map pin" (21 Nov, rev 204): where the text points, for the agent to confirm on the map. */
+export interface LocatedPin {
+  latitude: number;
+  longitude: number;
+  /** What the agent gave: typed coordinates, a Google Maps link, or a typed address. */
+  source: LocateSource;
+  placeName: string | null;
+  /** The address line it matched (OpenStreetMap), shown under "Is this the right place?". */
+  matched: string | null;
+  address: ReverseAddress | null;
+  shortLink: boolean;
+}
 
 export interface ResolvedMapsLink {
   latitude: number;
@@ -68,6 +101,7 @@ export class MapsLinkService {
   private readonly logger = new Logger(MapsLinkService.name);
   private readonly addressCache = new Map<string, { at: number; value: ReverseAddress | null }>();
   private readonly linkCache = new Map<string, { at: number; value: MapsPin }>();
+  private readonly searchCache = new Map<string, { at: number; value: { latitude: number; longitude: number; address: ReverseAddress | null } | null }>();
   private readonly perAgent = new Map<string, number[]>();
   private nominatimQueue: Promise<unknown> = Promise.resolve();
   private lastNominatimAt = 0;
@@ -100,11 +134,63 @@ export class MapsLinkService {
 
   async resolve(staffId: string, text: unknown): Promise<ResolvedMapsLink> {
     this.claim(staffId);
-    const url = typeof text === 'string' ? parseMapsUrl(text) : null;
+    return this.fromLink(typeof text === 'string' ? withScheme(text) : '');
+  }
+
+  /**
+   * "Set the map pin" everywhere a pin is set (21 Nov, rev 204): coordinates,
+   * any Google Maps link (full or short; a link with only a place name is
+   * looked up by that name), or a typed address looked up with OpenStreetMap
+   * (Bengaluru first, then India). The agent confirms the result on the map.
+   */
+  async locate(staffId: string, text: unknown): Promise<LocatedPin> {
+    this.claim(staffId);
+    const raw = typeof text === 'string' ? text.trim() : '';
+    if (!raw) throw codedError(HttpStatus.BAD_REQUEST, 'MAPS_TEXT_EMPTY', 'Type an address, paste a Google Maps link or type the coordinates');
+    const coordinates = parseCoordinates(raw);
+    if (coordinates) {
+      const address = await this.reverse(coordinates.latitude, coordinates.longitude);
+      return { ...coordinates, source: 'coordinates', placeName: null, matched: address?.displayName ?? null, address, shortLink: false };
+    }
+    if (looksLikeLink(raw)) {
+      const found = await this.fromLink(withScheme(raw));
+      return { ...found, source: 'link', matched: found.address?.displayName ?? found.placeName };
+    }
+    if (raw.length > MAX_ADDRESS_LENGTH) throw codedError(HttpStatus.BAD_REQUEST, 'MAPS_ADDRESS_TOO_LONG', `Keep the address under ${MAX_ADDRESS_LENGTH} characters`);
+    const { place, reached } = await this.searchPlace(raw);
+    if (!place && !reached) throw codedError(HttpStatus.BAD_GATEWAY, 'MAPS_LOOKUP_UNAVAILABLE', LOOKUP_UNAVAILABLE_MESSAGE);
+    if (!place) throw codedError(HttpStatus.UNPROCESSABLE_ENTITY, 'MAPS_ADDRESS_NOT_FOUND', ADDRESS_NOT_FOUND_MESSAGE);
+    return {
+      latitude: place.latitude,
+      longitude: place.longitude,
+      source: 'address',
+      placeName: null,
+      matched: place.address?.displayName ?? null,
+      address: place.address,
+      shortLink: false,
+    };
+  }
+
+  /** The pin a Google Maps link points at, and its address. */
+  private async fromLink(text: string): Promise<ResolvedMapsLink> {
+    const url = parseMapsUrl(text);
     if (!url) throw codedError(HttpStatus.BAD_REQUEST, 'MAPS_LINK_INVALID', 'Paste a Google Maps link (google.com/maps, google.co.in/maps, maps.google.com, maps.app.goo.gl or goo.gl/maps)');
     const shortLink = isShortMapsUrl(url);
     let pin = extractPin(url);
-    if (!pin) pin = await this.follow(url);
+    let name = placeNameOf(url);
+    // A short link (or a full one with neither pin nor name) is opened, hop by hop, to read where it leads.
+    if (!pin && (shortLink || !name)) {
+      const followed = await this.follow(url);
+      pin = followed.pin;
+      name = followed.last ? placeNameOf(followed.last) ?? name : name;
+    }
+    if (!pin && name) {
+      // The final link has only a place name: look that name up (OpenStreetMap, Bengaluru first).
+      const { place, reached } = await this.searchPlace(name);
+      if (!place && !reached) throw codedError(HttpStatus.BAD_GATEWAY, 'MAPS_LOOKUP_UNAVAILABLE', LOOKUP_UNAVAILABLE_MESSAGE);
+      if (!place) throw codedError(HttpStatus.UNPROCESSABLE_ENTITY, 'MAPS_LINK_NO_LOCATION', NAME_NOT_FOUND_MESSAGE);
+      return { latitude: place.latitude, longitude: place.longitude, placeName: name, address: place.address, shortLink };
+    }
     if (!pin) throw codedError(HttpStatus.UNPROCESSABLE_ENTITY, 'MAPS_LINK_NO_LOCATION', NO_PIN_MESSAGE);
     const address = await this.reverse(pin.latitude, pin.longitude);
     return { latitude: pin.latitude, longitude: pin.longitude, placeName: pin.placeName, address, shortLink };
@@ -134,10 +220,10 @@ export class MapsLinkService {
    * address, at most MAX_REDIRECTS, TIMEOUT_MS for the whole chain. The body
    * is never read.
    */
-  private async follow(start: URL): Promise<MapsPin | null> {
+  private async follow(start: URL): Promise<{ pin: MapsPin | null; last: URL | null }> {
     const key = start.toString();
     const cached = this.linkCache.get(key);
-    if (cached && this.now() - cached.at < CACHE_TTL_MS) return cached.value;
+    if (cached && this.now() - cached.at < CACHE_TTL_MS) return { pin: cached.value, last: null };
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
     try {
@@ -149,7 +235,7 @@ export class MapsLinkService {
         const found = extractPin(current);
         if (found) {
           this.remember(this.linkCache, key, found);
-          return found;
+          return { pin: found, last: current };
         }
         if (hop === MAX_REDIRECTS) break;
         const ips = await this.addresses(current.hostname);
@@ -162,7 +248,7 @@ export class MapsLinkService {
         });
         await res.body?.cancel?.().catch(() => undefined);
         const location = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
-        if (!location) return null;
+        if (!location) return { pin: null, last: current };
         current = new URL(location, current);
       }
       throw codedError(HttpStatus.UNPROCESSABLE_ENTITY, 'MAPS_LINK_NO_LOCATION', NO_PIN_MESSAGE);
@@ -173,6 +259,71 @@ export class MapsLinkService {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /**
+   * OpenStreetMap Nominatim search for a typed address or a place name: inside
+   * Bengaluru's box first, then anywhere in India; cached; one request a
+   * second (shared with the reverse lookups); null when nothing is found or
+   * Nominatim cannot be reached.
+   */
+  async search(text: string): Promise<{ latitude: number; longitude: number; address: ReverseAddress | null } | null> {
+    return (await this.searchPlace(text)).place;
+  }
+
+  /** The search, and whether Nominatim answered at all (so "not found" and "could not look it up" differ). */
+  private async searchPlace(text: string): Promise<{ place: { latitude: number; longitude: number; address: ReverseAddress | null } | null; reached: boolean }> {
+    const q = text.replace(/\s+/g, ' ').trim().slice(0, MAX_ADDRESS_LENGTH);
+    if (!q) return { place: null, reached: true };
+    const key = q.toLowerCase();
+    const cached = this.searchCache.get(key);
+    if (cached && this.now() - cached.at < CACHE_TTL_MS) return { place: cached.value, reached: true };
+    const base = `${this.nominatimBase()}/search?format=jsonv2&q=${encodeURIComponent(q)}&countrycodes=in&addressdetails=1&limit=1&accept-language=en`;
+    let reached = false;
+    let found: { latitude: number; longitude: number; address: ReverseAddress | null } | null = null;
+    for (const url of [`${base}&viewbox=${BENGALURU_VIEWBOX}&bounded=1`, base]) {
+      const body = await this.nominatim(url);
+      if (body === undefined) continue;
+      reached = true;
+      found = placeFromNominatimSearch(body);
+      if (found) break;
+    }
+    // A miss is remembered too (not a failure to reach Nominatim, which is tried again next time).
+    if (reached) this.remember(this.searchCache, key, found);
+    return { place: found, reached };
+  }
+
+  /** One Nominatim request, one at a time with the gap; the parsed JSON, or undefined when it failed. */
+  private nominatim(url: string): Promise<unknown> {
+    const run = async (): Promise<unknown> => {
+      const wait = this.lastNominatimAt + NOMINATIM_GAP_MS - this.now();
+      if (wait > 0) await this.sleep(wait);
+      this.lastNominatimAt = this.now();
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+      try {
+        const res = await this.fetcher()(url, {
+          method: 'GET',
+          redirect: 'manual',
+          signal: controller.signal,
+          headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+        });
+        if (res.status !== 200) {
+          await res.body?.cancel?.().catch(() => undefined);
+          this.logger.warn(`Nominatim answered ${res.status}`);
+          return undefined;
+        }
+        return await res.json();
+      } catch (error) {
+        this.logger.warn(`Nominatim not reached: ${(error as Error)?.name ?? 'error'}`);
+        return undefined;
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+    const next = this.nominatimQueue.then(run, run);
+    this.nominatimQueue = next.catch(() => undefined);
+    return next;
   }
 
   /** OpenStreetMap Nominatim reverse lookup; cached; one request a second; null when it has nothing or fails. */

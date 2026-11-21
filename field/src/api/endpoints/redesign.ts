@@ -143,6 +143,16 @@ export interface AllVisitsPage {
   nextBefore: string | null;
 }
 
+/**
+ * POST /maps-link/locate (21 Nov, rev 204): the same reader everywhere a pin is
+ * set — a typed address, any Google Maps link (short links too) or coordinates.
+ */
+export interface LocatedPin extends ResolvedMapsLink {
+  source: 'coordinates' | 'link' | 'address';
+  /** The address line it matched, shown under "Is this the right place?". */
+  matched: string | null;
+}
+
 /** POST /maps-link/resolve (17 Nov): the pin from a Google Maps link and its address from OpenStreetMap. */
 export interface ResolvedMapsLink {
   latitude: number;
@@ -417,6 +427,7 @@ export const redesignApi = (api: ApiClient) => ({
   addShift: (businessId: string, body: { name: string; startTime: string; endTime: string }) => api.post<BusinessShift>(`/businesses/${enc(businessId)}/shifts`, body),
   removeShift: (businessId: string, shiftId: string) => api.delete<{ removed: true }>(`/businesses/${enc(businessId)}/shifts/${enc(shiftId)}`),
   resolveMapsLink: (url: string) => api.post<ResolvedMapsLink>('/maps-link/resolve', { url }),
+  locatePin: (text: string) => api.post<LocatedPin>('/maps-link/locate', { text }),
   changeResult: (id: string, body: ChangeResultBody) => api.post<VisitDetails>(`/field-visits/${enc(id)}/change-result`, body),
   myBusinesses: (q?: string) => api.get<{ query: string; results: MyBusinessRow[] }>('/field-work/businesses', { query: { q: q || undefined } }),
   businessPage: (ref: string) => api.get<BusinessPage>(`/field-work/businesses/${enc(ref)}/page`),

@@ -7,6 +7,7 @@ export { HeroCard, HeroPill, HeroStat } from './HeroCard';
 export { Icon, type IconName } from './Icon';
 export { IconTile } from './IconTile';
 export { ListRow } from './ListRow';
+export { PinFinder } from './PinFinder';
 export { ProgressBar } from './ProgressBar';
 export { Screen } from './Screen';
 export { SearchBar } from './SearchBar';

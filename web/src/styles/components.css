@@ -1721,3 +1721,48 @@ img.lb-staffphoto {
 .lb-dob__picker {
   margin-top: 6px;
 }
+
+/* ---------- map pin preview (21 Nov): "Is this the right place?" ---------- */
+.lb-pinmap {
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid var(--line, #d9dfeb);
+  background: #e8eef3;
+}
+.lb-pinmap__centre {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+}
+.lb-pinmap__centre img {
+  position: absolute;
+  max-width: none;
+  user-select: none;
+  pointer-events: none;
+}
+.lb-pinmap__pin {
+  position: absolute;
+  left: -14px;
+  top: -30px;
+  font-size: 28px;
+  line-height: 1;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35));
+}
+.lb-pinmap__credit {
+  position: absolute;
+  right: 4px;
+  bottom: 2px;
+  font-size: 10px;
+  background: rgba(255, 255, 255, 0.8);
+  padding: 0 4px;
+  border-radius: 4px;
+}
+.lb-pin-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}

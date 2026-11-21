@@ -66,6 +66,24 @@ describe('FA10 Register a job seeker', () => {
     expect(screen.getByTestId('dob-calendar')).toBeTruthy();
   });
 
+  it('sets the pin from a typed address after confirming it on the map (21 Nov)', async () => {
+    const { route, calls } = routeTable({
+      ...base,
+      'POST /maps-link/locate': { latitude: 12.9063, longitude: 77.5857, source: 'address', placeName: null, matched: '24th Main Road, JP Nagar, Bengaluru, 560078, India', address: { shopNumber: null, street: '24th Main Road', area: 'JP Nagar', city: 'Bengaluru', state: 'Karnataka', pincode: '560078', displayName: 'x' }, shortLink: false },
+    });
+    await renderWithApp(<CaptureSeekerScreen />, { signedInAs: kiran, route });
+    expect(screen.getByTestId('pin')).toHaveTextContent(/No pin yet/);
+    await fireEvent.changeText(screen.getByTestId('pin-finder-text'), '24th Main, JP Nagar');
+    await fireEvent.press(screen.getByTestId('pin-finder-find'));
+    await waitFor(() => screen.getByTestId('pin-finder-confirm'));
+    expect(screen.getByTestId('pin-finder-matched')).toHaveTextContent('24th Main Road, JP Nagar, Bengaluru, 560078, India');
+    expect(calls).toContainEqual({ method: 'POST', path: '/maps-link/locate', body: { text: '24th Main, JP Nagar' } });
+    expect(screen.getByTestId('pin')).toHaveTextContent(/No pin yet/);
+    await fireEvent.press(screen.getByTestId('pin-finder-use'));
+    await waitFor(() => expect(screen.getByTestId('pin')).toHaveTextContent(/Pin set/));
+    expect(screen.getByTestId('pincode').props.value).toBe('560078');
+  });
+
   it('maps the form onto POST /job-seekers in paise (the call agent\'s payload)', () => {
     expect(validate(EMPTY_FORM)).toContain('name');
     const body = createBody({ ...EMPTY_FORM, name: ' Kavya Reddy ', mobile: '9845012345', minSalaryPaise: 1300000, trades: [{ trade: 'Housekeeping', other: '', years: '6-10' }] }, 'req-1');

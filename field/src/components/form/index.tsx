@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useI18n } from '@/i18n';
 import { monthName, weekdayName } from '@/lib/format';
@@ -383,11 +383,12 @@ export function DateField({
     const key = dobTextToKey(next) ?? '';
     return key && (!min || key >= min) && (!max || key <= max) ? key : '';
   };
-  useEffect(() => {
-    if (!typed) return;
+  // A value set from outside (the calendar, a restored draft) shows as typed text (adjusted while rendering).
+  const [seenValue, setSeenValue] = useState(value);
+  if (typed && value !== seenValue) {
+    setSeenValue(value);
     if (value !== usable(text)) setText(keyToDobText(value));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the value changes
-  }, [value, typed]);
+  }
   const typedProblem = (() => {
     if (!typed || !text) return null;
     const problem = dobTextProblem(text, today);

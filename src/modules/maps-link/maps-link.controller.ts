@@ -20,4 +20,17 @@ export class MapsLinkController {
   resolve(@Req() req: Authed, @Body() body: { url?: unknown }) {
     return this.maps.resolve(req.user.sub, body?.url);
   }
+
+  /**
+   * "Set the map pin" (21 Nov, rev 204), the same reader everywhere a pin is set
+   * (job seeker, business and partner forms in the console and in Laboura Field):
+   * a typed address, any Google Maps link (short links followed, Google hosts
+   * only) or coordinates. The agent confirms the answer on the map before it is used.
+   */
+  @Post('locate')
+  @HttpCode(200)
+  @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
+  locate(@Req() req: Authed, @Body() body: { text?: unknown }) {
+    return this.maps.locate(req.user.sub, body?.text);
+  }
 }
