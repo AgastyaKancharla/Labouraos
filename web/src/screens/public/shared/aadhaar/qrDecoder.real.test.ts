@@ -52,3 +52,18 @@ describe('zxing-wasm reads a dense Aadhaar Secure QR', () => {
     }, 30000);
   }
 });
+
+describe('which QR is sent when the camera sees several (22 Nov)', () => {
+  it('the Aadhaar Secure QR (a long run of digits) wins over a UPI or shop QR next to it', async () => {
+    const { pickAadhaarQrText } = await import('./qrDecoder');
+    const upi = 'upi://pay?pa=shop@upi&pn=Shop&am=10';
+    expect(pickAadhaarQrText([upi, UIDAI_SAMPLE_SECURE_QR])).toBe(UIDAI_SAMPLE_SECURE_QR);
+    expect(pickAadhaarQrText([UIDAI_SAMPLE_SECURE_QR, '12345'])).toBe(UIDAI_SAMPLE_SECURE_QR);
+    // An old XML Aadhaar QR is sent (the server says it is an older card), before any other QR.
+    const xml = '<?xml version="1.0"?><PrintLetterBarcodeData name="Test"/>';
+    expect(pickAadhaarQrText([upi, xml])).toBe(xml);
+    // Anything else still goes (the server answers "Couldn't read this QR"); nothing → keep scanning.
+    expect(pickAadhaarQrText([upi])).toBe(upi);
+    expect(pickAadhaarQrText([null, '', undefined])).toBeNull();
+  });
+});

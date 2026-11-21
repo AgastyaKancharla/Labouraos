@@ -44,8 +44,10 @@ export class SecureQrError extends Error {
 export const SECURE_QR_MESSAGES: Record<SecureQrFailure, string> = {
   old_unsigned_qr:
     "This is an older Aadhaar QR code without UIDAI's digital signature, so it can't be checked. Download your free e-Aadhaar from UIDAI, or use another ID.",
-  unreadable: "This doesn't look like an Aadhaar Secure QR code. Scan the QR code on your Aadhaar again, or use another ID.",
-  bad_signature: "This Aadhaar QR code failed UIDAI's digital signature check. Scan the QR code on your own Aadhaar card again, or use another ID.",
+  // 22 Nov (owner testing): a QR that can't be read, or whose UIDAI signature fails or is missing, is
+  // refused with one plain message; nothing read from it is shown or kept.
+  unreadable: "Couldn't read this QR. It isn't an Aadhaar Secure QR code. Try again with the big QR code on your Aadhaar, or use another ID.",
+  bad_signature: "Couldn't read this QR: it failed UIDAI's digital signature check, so nothing from it was used. Try again with the QR code on your own Aadhaar, or use another ID.",
   cert_missing: 'This Aadhaar is newer than our check supports. Please use another ID.',
 };
 

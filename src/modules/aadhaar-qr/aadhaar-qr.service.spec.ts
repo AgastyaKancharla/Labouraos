@@ -194,6 +194,18 @@ describe('AadhaarQrService (guide: Aadhaar verification, 14 Nov)', () => {
     expect(prisma.aadhaarQrAttempt.rows[0]).toMatchObject({ outcome: 'bad_signature' });
   });
 
+  it('22 Nov: in every QR format a QR not signed by UIDAI shows and keeps nothing read from it (no name, no reference)', async () => {
+    for (const version of [null, 'V2', 'V3'] as const) {
+      const { service, prisma } = setup();
+      const out = await service.checkJobSeeker('js-1', buildSecureQr(stranger, { version, name: 'Test Person Two', mobile: '9876500001' }), { channel: 'link', now: NOW });
+      expect(out).toMatchObject({ status: 'failed', result: 'bad_signature', verifiedByUidai: false, person: null, maskedReference: null, offerOtherId: true });
+      expect(out.failureReason).toMatch(/Couldn't read this QR/);
+      expect(JSON.stringify(out)).not.toContain('Test Person Two');
+      expect(prisma.identityVerification.rows).toHaveLength(0);
+      expect(prisma.idCheckDetail.rows).toHaveLength(0);
+    }
+  });
+
   it('refuses an old unsigned (XML) QR with its own result, and unreadable text', async () => {
     const { service } = setup();
     const old = await service.checkJobSeeker('js-1', '<?xml version="1.0"?><PrintLetterBarcodeData name="X"/>', { channel: 'link', now: NOW });
