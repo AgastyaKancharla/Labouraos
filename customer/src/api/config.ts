@@ -11,7 +11,6 @@ interface Extra {
   linkPagesUrl?: string;
   googleWebClientId?: string;
   googleIosClientId?: string;
-  androidMap?: boolean;
 }
 
 function extra(): Extra {
@@ -19,13 +18,6 @@ function extra(): Extra {
 }
 
 const trim = (url: string) => url.replace(/\/+$/, '');
-
-/** The "Locate me" map: Apple Maps on iPhone (no key); Google Maps on Android only when the build has a key. */
-export function mapAvailable(os: string): boolean {
-  if (os === 'ios') return true;
-  if (os === 'android') return extra().androidMap === true;
-  return false;
-}
 
 /** Where the Nest API is, e.g. https://app.laboura.com (test setup). */
 export function apiBaseUrl(): string {

@@ -158,7 +158,7 @@ export default function RegisterBusiness() {
               testID="biz-area"
             />
             <TextField label={t('form.pincode')} value={draft.pincode} onChangeText={(v) => set('pincode', v.replace(/\D/g, '').slice(0, 6))} keyboardType="number-pad" error={err('pincode')} testID="biz-pincode" />
-            <PinField label={t('business.shopPin')} value={draft.pin} onChange={(v) => set('pin', v)} center={areas.find((a) => a.name === draft.area) ?? null} testID="biz-pin" />
+            <PinField label={t('business.shopPin')} value={draft.pin} onChange={(v) => set('pin', v)} testID="biz-pin" />
           </View>
         </Card>
 

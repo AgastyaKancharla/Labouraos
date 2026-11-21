@@ -52,7 +52,7 @@ Building blocks, API client pattern and theme are **copies** of Laboura Field's,
 | `/inbox` | InboxScreen (`src/push/`) | Every notification, newest first, mark read, and the three switches (Service, Job updates, Promotions) |
 | — | UpdatedTerms | Shown on top of Home when the terms changed: read "In short", accept with a fresh OTP |
 
-Large-text friendly: one step larger than Field, 52 px touch targets, everything grows with the phone's font setting. Low data: no images downloaded; the map downloads only when the person taps **Locate me** (GPS first, then a small map where they move the pin onto the exact door: Google Maps on Android, Apple Maps on iPhone; a build without `GOOGLE_MAPS_ANDROID_API_KEY` keeps the GPS-only pin); fonts bundled, answers cached 60 s, no refetch on every focus.
+Large-text friendly: one step larger than Field, 52 px touch targets, everything grows with the phone's font setting. Low data: no maps or images downloaded (**Locate me** is one GPS reading; the drag-the-pin map asked for on 22 Nov is on hold: the first try with `react-native-maps` 1.29.11 made the test APK close itself on opening, so it was removed until the Google Maps key exists and it can be tried on a real phone — `expo-maps` is the next candidate); fonts bundled, answers cached 60 s, no refetch on every focus.
 
 ## The verification steps (native screens, 21 Nov)
 
@@ -90,7 +90,6 @@ Documents (a referral partner's papers) and the e-Aadhaar PDF still open the **e
 | `EXPO_PUBLIC_PRIVACY_URL` | Privacy policy page (default `https://laboura.com/privacy`) |
 | `GOOGLE_SERVICES_JSON` | Path to Firebase's `google-services.json` (Android push). On EAS a "file" environment variable; locally `./google-services.json` if present. Never committed; without it the app still builds, just without Android push |
 | `EAS_PROJECT_ID` | Overrides the Expo project id. Default: `4bd5337d-e2c5-458a-ab29-928d6c582e35` = **@agastyaks-team/laboura** (created 21 Nov), written to `extra.eas.projectId` (EAS builds and push tokens need it) |
-| `GOOGLE_MAPS_ANDROID_API_KEY` | Google *Maps SDK for Android* key for the Locate me map. An **EAS environment variable** (preview and production), never committed; restrict it in Google Cloud to the package `com.laboura.app` and the app's signing SHA-1 |
 
 The HTTP client sends `X-Laboura-Installation` (a random id per install) on every request, renews the 15-minute access token with the refresh token on `401 CUSTOMER_TOKEN_EXPIRED` (once, then retries), and signs out on any other 401. Screens never show the server's English `message`: they choose their own words from the error `code` (`src/api/errorText.ts`).
 

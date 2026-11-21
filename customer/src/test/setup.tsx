@@ -140,12 +140,3 @@ jest.mock('expo-file-system', () => {
   return { File, __deleted: deleted };
 });
 
-// The "Locate me" map: a plain view; tests move the map with `global.__moveMap(region)`.
-jest.mock('react-native-maps', () => {
-  const { View } = require('react-native');
-  function MapView(props: { onRegionChangeComplete?: (r: unknown) => void; testID?: string }) {
-    (globalThis as { __moveMap?: (r: unknown) => void }).__moveMap = (region: unknown) => props.onRegionChangeComplete?.(region);
-    return <View testID={props.testID} />;
-  }
-  return { __esModule: true, default: MapView, PROVIDER_GOOGLE: 'google' };
-});
