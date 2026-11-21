@@ -163,7 +163,7 @@ export function mockCustomerApi({ latencyMs = 250 }: { latencyMs?: number } = {}
         return { ...result, account: snapshot(), linkedExisting: linked };
       }),
     signInWithGoogle: () => wait(() => signedIn(newAccount({ name: 'Test Person', email: 'test.person@example.com', signInMethods: ['google'] }))),
-    signInWithApple: ({ fullName }) => wait(() => signedIn(newAccount({ name: fullName, signInMethods: ['apple'] }))),
+    signInWithApple: ({ name }) => wait(() => signedIn(newAccount({ name, signInMethods: ['apple'] }))),
     signOut: () =>
       wait(() => {
         state.account = null;
