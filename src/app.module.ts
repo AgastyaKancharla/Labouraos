@@ -54,6 +54,7 @@ import { FieldVisitModule } from './modules/field-visit/field-visit.module';
 import { ScreensFieldModule } from './modules/screens-field/screens-field.module';
 import { MapsLinkModule } from './modules/maps-link/maps-link.module';
 import { RegistrationDraftModule } from './modules/registration-draft/registration-draft.module';
+import { ProfileStuckModule } from './modules/profile-stuck/profile-stuck.module';
 import { RequestsModule } from './modules/requests/requests.module';
 import { CompanyPlanModule } from './modules/company-plan/company-plan.module';
 import { TargetSplitHooksModule } from './modules/company-plan/target-split.hooks';
@@ -126,6 +127,7 @@ import { PublicRateLimitGuard } from './common/http/public-rate-limit.guard';
     ScreensFieldModule,
     MapsLinkModule,
     RegistrationDraftModule,
+    ProfileStuckModule,
     RequestsModule,
     CompanyPlanModule,
     TargetSplitHooksModule,
