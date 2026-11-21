@@ -72,7 +72,6 @@ For this first version the verification steps are the **existing link pages** (`
 | `EXPO_PUBLIC_LINK_PAGES_URL` | Where `/p/...` pages live (defaults to the API address) |
 | `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`, `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` | Optional: otherwise taken from the server's `GET /config` |
 | `GOOGLE_IOS_URL_SCHEME` | iPhone only, at build time: the iOS client id reversed |
-| `LABOURA_ANDROID_PACKAGE`, `LABOURA_IOS_BUNDLE_ID` | Override the placeholder ids (`com.laboura.app`) |
 | `EXPO_PUBLIC_PRIVACY_URL` | Privacy policy page (default `https://laboura.com/privacy`) |
 | `GOOGLE_SERVICES_JSON` | Path to Firebase's `google-services.json` (Android push). On EAS a "file" environment variable; locally `./google-services.json` if present. Never committed; without it the app still builds, just without Android push |
 | `EAS_PROJECT_ID` | The Expo project id from `eas init`; written to `extra.eas.projectId` (push tokens need it). Set it in the EAS project's environment variables or `eas.json` `env` |
@@ -111,7 +110,7 @@ EAS builds in the cloud (free plan: 15 Android builds a month) and gives a downl
 ## What the owner sets up (plain words)
 
 1. **Expo account** (free) at expo.dev with a Laboura email. Then Claude runs `eas init` once.
-2. **Confirm the app ids.** Placeholders: Android package `com.laboura.app`, iPhone bundle id `com.laboura.app`. They can never change after the first store upload.
+2. **App ids (final, confirmed 21 Nov):** Android package `com.laboura.app`, iPhone bundle id `com.laboura.app`. They can never change after the first store upload.
 3. **Google project** (free) at console.firebase.google.com (or console.cloud.google.com), with a Google account made for Laboura. In "APIs & Services → Credentials" create OAuth client ids:
    - **Web application** — its id goes on the server as `GOOGLE_CLIENT_ID_WEB` (the app reads it from `GET /config`).
    - **Android** — package `com.laboura.app` plus the **SHA-1 fingerprint**: after the first `eas build`, run `eas credentials -p android` → the build profile → copy "SHA1 Fingerprint", paste it into the Android client. Put this id on the server as `GOOGLE_CLIENT_ID_ANDROID`. (Later, the Play Store's own "App signing" SHA-1 must be added too.)
