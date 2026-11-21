@@ -18,6 +18,7 @@ import { SHORTAGE_TASKS_QUEUE, SHORTAGE_TASKS_SWEEP } from './shortage-tasks.job
 import { WEEKLY_REPORT_QUEUE, WEEKLY_REPORT_RUN } from './weekly-report.job';
 import { WIN_BACK_QUEUE, WIN_BACK_SWEEP } from './win-back.job';
 import { SIGNUP_TRACKER_QUEUE, SIGNUP_TRACKER_SWEEP } from './signup-tracker.job';
+import { WHATSAPP_INBOX_QUEUE, WHATSAPP_INBOX_SWEEP } from './whatsapp-inbox.job';
 import { CALL_WORK_SWEEP_QUEUE, CALL_WORK_SWEEP } from './call-work-sweep.job';
 import { RETENTION_JOB_NAME } from '../modules/retention/retention.service';
 
@@ -42,6 +43,7 @@ describe('Job catalog: every repeating job, as plain data for the schedule keepe
       weeklyReport: [WEEKLY_REPORT_QUEUE, WEEKLY_REPORT_RUN],
       winBack: [WIN_BACK_QUEUE, WIN_BACK_SWEEP],
       signupTracker: [SIGNUP_TRACKER_QUEUE, SIGNUP_TRACKER_SWEEP],
+      whatsappInbox: [WHATSAPP_INBOX_QUEUE, WHATSAPP_INBOX_SWEEP],
       callWorkSweep: [CALL_WORK_SWEEP_QUEUE, CALL_WORK_SWEEP],
     };
     expect(Object.keys(byKey).sort()).toEqual(Object.keys(expected).sort());
@@ -67,6 +69,7 @@ describe('Job catalog: every repeating job, as plain data for the schedule keepe
       weeklyReport: WEEKLY_REPORT_RUN,
       winBack: WIN_BACK_SWEEP,
       signupTracker: SIGNUP_TRACKER_SWEEP,
+      whatsappInbox: WHATSAPP_INBOX_SWEEP,
       callWorkSweep: CALL_WORK_SWEEP,
     };
     for (const entry of JOB_CATALOG) {

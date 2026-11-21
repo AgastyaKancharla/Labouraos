@@ -1,0 +1,43 @@
+/* WhatsApp tab (CA18-WhatsApp): conversation list on the left, the thread on the right; one column on a phone. */
+.wa-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.wa-tab {
+  border: 1px solid var(--line); background: var(--panel); color: var(--text);
+  border-radius: 999px; padding: 7px 16px; font: inherit; font-weight: 700; cursor: pointer; min-height: 38px;
+}
+.wa-tab.on { background: var(--royal); border-color: var(--royal); color: #fff; }
+.wa-grid { display: grid; grid-template-columns: minmax(260px, 360px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.wa-rows { list-style: none; margin: 0; padding: 0; }
+.wa-row {
+  display: flex; flex-direction: column; gap: 4px; width: 100%; text-align: left; background: none;
+  border: 0; border-bottom: 1px solid var(--line); padding: 12px 16px; font: inherit; color: inherit; cursor: pointer;
+}
+.wa-row.on, .wa-row:hover { background: var(--sky-bg); }
+.wa-row-top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.wa-row-tags { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.wa-preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.wa-pick { display: flex; align-items: center; justify-content: center; min-height: 160px; }
+.wa-thread { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.wa-thread-head { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+.wa-back { display: none; border: 0; background: none; color: var(--royal); font: inherit; font-weight: 700; cursor: pointer; padding: 0; }
+.wa-messages { list-style: none; margin: 0; padding: 12px; display: flex; flex-direction: column; gap: 10px; background: var(--bg); border-radius: 12px; max-height: 420px; overflow-y: auto; }
+.wa-msg { display: flex; flex-direction: column; gap: 3px; max-width: 85%; }
+.wa-msg.in { align-self: flex-start; }
+.wa-msg.out { align-self: flex-end; text-align: right; }
+.wa-bubble { display: inline-block; padding: 9px 12px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); white-space: pre-wrap; overflow-wrap: anywhere; text-align: left; }
+.wa-msg.out .wa-bubble { background: var(--green100, #e7f6ec); }
+.wa-msg.auto .wa-bubble { background: var(--amber-bg); }
+.wa-failed { color: var(--tomato); }
+.wa-reply, .wa-section { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
+.wa-inline { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+.wa-inline > .fld, .wa-inline > div:first-child { flex: 1 1 200px; min-width: 0; }
+.wa-lead { padding: 12px 16px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+@media (max-width: 760px) {
+  .wa-grid { grid-template-columns: minmax(0, 1fr); }
+  .wa-grid.has-thread .wa-list { display: none; }
+  .wa-grid:not(.has-thread) .wa-thread-col { display: none; }
+  .wa-back { display: inline; }
+  .wa-msg { max-width: 95%; }
+}
+.wa-share { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+.wa-share img { background: #fff; border-radius: 8px; }
+.wa-share-url { overflow-wrap: anywhere; font-size: 12.5px; }

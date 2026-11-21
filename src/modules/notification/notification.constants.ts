@@ -12,6 +12,12 @@ export const NOTIFICATION_KINDS = [
   'break_overrun',
   'system_problem',
   'agent_idle',
+  // Inbound WhatsApp unanswered: Team Lead after 15 working minutes, Manager after 2 hours (rev 202).
+  'whatsapp_waiting',
+  // A link sent on WhatsApp failed later; it went by SMS (for the agent who sent it).
+  'whatsapp_link_failed',
+  // A referral partner's lead waits for a first call: Team Lead after 15 working minutes, Manager after 2 hours.
+  'referral_lead_waiting',
   // Review flags.
   'review_flag',
   'hit_reversed',
@@ -81,7 +87,7 @@ export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
  * Kinds that tell someone something rather than ask them to do something.
  * Reading them is the work: marking one as seen clears it.
  */
-export const INFORMATIONAL_KINDS: readonly NotificationKind[] = ['request_decided', 'hit_reversed', 'stuck_work_reminder', 'agent_reminder', 'payslip_ready', 'weekly_report', 'fee_unpaid_reminder', 'new_match_registered', 'password_reset', 'signed_in_without_code', 'day_resumed_again', 'job_seeker_assigned', 'referral_assigned', 'business_assigned', 'field_visit_assigned', 'field_agreement_signed', 'field_work_handed_over'];
+export const INFORMATIONAL_KINDS: readonly NotificationKind[] = ['request_decided', 'hit_reversed', 'stuck_work_reminder', 'agent_reminder', 'payslip_ready', 'weekly_report', 'fee_unpaid_reminder', 'new_match_registered', 'password_reset', 'signed_in_without_code', 'day_resumed_again', 'job_seeker_assigned', 'referral_assigned', 'business_assigned', 'whatsapp_link_failed', 'field_visit_assigned', 'field_agreement_signed', 'field_work_handed_over'];
 
 /** Kinds that carry rupee amounts. They only ever go to the CEO or Finance. */
 export const MONEY_KINDS: readonly NotificationKind[] = [
@@ -148,6 +154,9 @@ const LINKS: Record<NotificationKind, LinkTable> = {
   break_overrun: { team_lead: 'attendance/live', manager: 'attendance/live', ceo: 'attendance/live' },
   system_problem: { team_lead: 'attendance/live', manager: 'attendance/live', ceo: 'attendance/live' },
   agent_idle: { team_lead: 'attendance/live', manager: 'attendance/live', ceo: 'attendance/live' },
+  whatsapp_waiting: { team_lead: '', manager: '', ceo: '' },
+  whatsapp_link_failed: { call_agent: 'whatsapp', team_lead: '', manager: '', ceo: '' },
+  referral_lead_waiting: { team_lead: '', manager: '', ceo: '' },
   review_flag: { team_lead: 'flags', manager: 'flags', ceo: 'flags', finance: 'money-in' },
   hit_reversed: { manager: 'flags', ceo: 'flags' },
   hit_reversal_needs_manager: { manager: 'flags', ceo: 'flags' },

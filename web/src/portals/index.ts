@@ -38,6 +38,7 @@ export const PORTALS: readonly PortalDef[] = [
     topNav: [
       { screen: 'CA03-Home', label: 'screen.CA03-Home' },
       { screen: 'CA10-FollowUps', label: 'screen.CA10-FollowUps' },
+      { screen: 'CA18-WhatsApp', label: 'screen.CA18-WhatsApp' },
       { screen: 'CA11-Targets', label: 'screen.CA11-Targets' },
       { screen: 'CA14b-AttendanceActive', label: 'screen.CA14b-AttendanceActive' },
     ],

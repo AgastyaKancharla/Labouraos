@@ -14,6 +14,7 @@ import { appSignupsEn } from './appSignups';
 
 import { callAgentEn } from '../screens/call-agent/_lib/i18n.en';
 import { fixes17En } from './fixes17';
+import { whatsappEn } from './whatsapp';
 export const en = {
   "app.name": "Laboura",
   "common.loading": "Loading…",
@@ -621,6 +622,7 @@ export const en = {
   ...staffPhotoEn,
   ...appSignupsEn,
   ...callAgentEn,
+  ...whatsappEn,
   ...fixes17En,
   ...payslipEn,
   ...attendanceEn,
