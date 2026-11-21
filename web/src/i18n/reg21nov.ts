@@ -28,4 +28,13 @@ export const reg21NovEn = {
   'reg.pin.fromAddress': 'Found from the address · {lat}, {lng}',
   'reg.pin.fromLink': 'From the Google Maps link · {lat}, {lng}',
   'reg.pin.fromCoords': 'From the coordinates · {lat}, {lng}',
+
+  // 3. Payment page: "Or pay with" UPI app buttons (direct UPI, no gateway)
+  'pub.upiApps.title': 'Or pay with',
+  'pub.upiApps.phonepe': 'PhonePe',
+  'pub.upiApps.gpay': 'Google Pay',
+  'pub.upiApps.paytm': 'Paytm',
+  'pub.upiApps.bhim': 'BHIM',
+  'pub.upiApps.other': 'Other UPI app',
+  'pub.upiApps.desktopNote': 'Scan the QR code with any UPI app on your phone (PhonePe, Google Pay, Paytm, BHIM…). Or open this link on your phone to pay with one tap.',
 } as const;

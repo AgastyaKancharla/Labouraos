@@ -1,5 +1,6 @@
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { afterEach } from 'vitest';
 import { mockApi, renderScreen } from '../../../test/utils';
 import { openStatus, QR_SVG, TOKEN, verifiedInThisTab } from '../shared/testData';
 import Payment from './index';
@@ -14,6 +15,10 @@ const summary = {
   jobSeeker: { firstName: 'Kavya', code: 'JS-01042' }, placement: null,
   pay: { amountPaise: 49900, payeeName: 'LABOURA PRIVATE LIMITED', upiReference: 'PAY-1042-K7Q2', upiUri: 'upi://pay?am=499.00&tr=PAY-1042-K7Q2', qrSvg: QR_SVG },
 };
+const ANDROID = 'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Mobile Safari/537.36';
+const realUa = navigator.userAgent;
+const setUa = (ua: string) => Object.defineProperty(window.navigator, 'userAgent', { value: ua, configurable: true });
+afterEach(() => setUa(realUa));
 const render = () => renderScreen(<Payment />, { portal: 'public', path: `/p/register/${TOKEN}/payment`, route: '/p/register/:token/payment' });
 
 describe('P02-Payment', () => {
@@ -51,8 +56,37 @@ describe('P02-Payment', () => {
     expect(api.calls(`POST /registration/${TOKEN}/terms-and-payment`)[0]!.body).toEqual({ requestId: 'req-1', acceptTerms: true, language: 'en' });
     expect(await screen.findByRole('img', { name: 'UPI QR code' })).toBeInTheDocument();
     expect(screen.getByText('To: LABOURA PRIVATE LIMITED · ref PAY-1042-K7Q2')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Pay with a UPI app' })).toHaveAttribute('href', summary.pay.upiUri);
+    // On a laptop (the test browser): the QR and a short note, no app buttons (21 Nov).
+    expect(screen.getByText(/Scan the QR code with any UPI app on your phone/)).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Or pay with' })).not.toBeInTheDocument();
     expect(screen.getByText(/A screenshot is not proof of payment/)).toBeInTheDocument();
+  });
+
+  it('21 Nov: on a phone, "Or pay with" PhonePe, Google Pay, Paytm, BHIM and other UPI apps — same payee, amount and reference as the QR', async () => {
+    setUa(ANDROID);
+    verifiedInThisTab();
+    const upiUri = 'upi://pay?pa=laboura%40icici&pn=Laboura+Staffing&am=499.00&tn=PAY-01042&tr=PAY-1042-K7Q2&cu=INR';
+    mockApi({
+      [`GET /registration/${TOKEN}/status`]: openStatus({
+        currentStep: 'payment', steps, termsAcceptedAt: '2026-11-11T05:00:00Z', payPageToken: 'PPT-1042',
+        payment: { state: 'pending', amountPaise: 49900, upiReference: 'PAY-1042-K7Q2', confirmedAt: null, guaranteeEndsAt: null, paymentId: null },
+      }),
+      [`GET /registration/${TOKEN}/terms`]: { ...terms, termsAcceptedAt: '2026-11-11T05:00:00Z' },
+      'GET /payments/request/PPT-1042/summary': { ...summary, pay: { ...summary.pay, upiUri, extraMethods: [], confirmsAutomatically: false } },
+    });
+    render();
+    expect(await screen.findByRole('img', { name: 'UPI QR code' })).toBeInTheDocument();
+    const group = screen.getByRole('group', { name: 'Or pay with' });
+    expect(group).toBeInTheDocument();
+    const names = ['PhonePe', 'Google Pay', 'Paytm', 'BHIM', 'Other UPI app'];
+    for (const name of names) {
+      const href = screen.getByRole('link', { name }).getAttribute('href')!;
+      for (const part of ['pa=laboura%40icici', 'am=499.00', 'tr=PAY-1042-K7Q2', 'cu=INR']) expect([name, href.includes(part)]).toEqual([name, true]);
+    }
+    expect(screen.getByRole('link', { name: 'PhonePe' }).getAttribute('href')).toMatch(/^intent:\/\/pay\?.*#Intent;scheme=upi;package=com\.phonepe\.app;/);
+    expect(screen.getByRole('link', { name: 'Other UPI app' })).toHaveAttribute('href', upiUri.replace('upi://pay?', 'upi://pay?'));
+    // No card or netbanking without a bank API.
+    expect(screen.queryByRole('link', { name: /card|netbanking/i })).not.toBeInTheDocument();
   });
 
   it('rev 181 (H2): while his details are checked there is no QR or pay button, only a neutral "being checked"', async () => {
@@ -68,7 +102,7 @@ describe('P02-Payment', () => {
     render();
     expect(await screen.findByText('Your details are being checked by our team. We will call you soon.')).toBeInTheDocument();
     expect(screen.queryByRole('img', { name: 'UPI QR code' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Pay with a UPI app' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Or pay with' })).not.toBeInTheDocument();
     expect(screen.queryByText(/ban/i)).not.toBeInTheDocument();
   });
 

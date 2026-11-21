@@ -1,5 +1,5 @@
 import { productLanguage } from '../../common/language/english-only';
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { Payment, Prisma } from '@prisma/client';
 import * as qrcode from 'qrcode-generator';
@@ -10,6 +10,7 @@ import { IdService } from '../../common/id/id.service';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { MessagingService } from '../message/messaging.service';
 import { PaymentService } from './payment.service';
+import { BANK_COLLECTION_PROVIDER, BankCollectionProvider, safeExtraMethods } from './bank-collection-provider';
 import { ensurePayPageToken, payPageExpired, payPageTokenFor, payPageTokenHash } from './pay-page-token';
 import { assertNoOpenBanReview, openBanReview, UNDER_REVIEW_MESSAGE } from '../conduct/permanent-ban.check';
 import { assertIdReadyForPayment, PAYMENT_STOPPED_MESSAGE, PAYMENT_STOPPED_REASON, stopActivationIfIdGateFails } from '../job-seeker/id-payment-gate';
@@ -74,6 +75,7 @@ export class UpiCollectionService {
     private readonly messagingService: MessagingService,
     @Optional() private readonly paymentService?: PaymentService,
     @Optional() private readonly pricing?: PricingService,
+    @Optional() @Inject(BANK_COLLECTION_PROVIDER) private readonly bank?: BankCollectionProvider,
   ) {}
 
   private getConfiguration() {
@@ -343,6 +345,12 @@ export class UpiCollectionService {
     const { uri, payeeName } = this.buildUpiUri({
       code: payment.code, upiReference: payment.upiReference!, expectedAmountPaise: payment.expectedAmountPaise,
     });
+    // 21 Nov (rev 204): card / netbanking only when a bank API offers them (none today); direct UPI always.
+    const extraMethods = this.bank
+      ? safeExtraMethods(await this.bank.extraMethods({
+        paymentId: payment.id, paymentCode: payment.code, amountPaise: payment.expectedAmountPaise, upiReference: payment.upiReference!,
+      }))
+      : [];
     return {
       type: payment.type,
       description: payment.type === 'activation' ? 'Job seeker registration' : payment.type === 'bypass_charge' ? 'No-bypass charge (agreement)' : payment.type === 'replacement_upgrade' ? 'Replacement salary difference' : 'Placement fee',
@@ -350,8 +358,11 @@ export class UpiCollectionService {
       amount: amountInRupees(payment.expectedAmountPaise),
       payeeName,
       upiReference: payment.upiReference,
+      // The QR and every "Or pay with" app button open this same request: payee, exact amount, reference.
       upiUri: uri,
       qrSvg: buildUpiQr(uri).svg,
+      extraMethods,
+      confirmsAutomatically: this.bank?.confirmsAutomatically ?? false,
     };
   }
 
