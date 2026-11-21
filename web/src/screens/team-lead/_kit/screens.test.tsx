@@ -369,6 +369,15 @@ describe('Check registrations (T-Verify) and Agents (T-Agents)', () => {
     expect(screen.queryByText('Aadhaar verified by UIDAI')).not.toBeInTheDocument();
     await userEvent.click(screen.getAllByRole('button', { name: 'Show photos' })[0]!);
     expect(await screen.findByRole('img', { name: 'Photo of the PAN card of Manju K' })).toHaveAttribute('src', 'https://signed/card.jpg');
+    // 22 Nov: after "Show photos" both pictures are there and open large (zoom) when clicked.
+    expect(screen.getByRole('img', { name: 'Selfie of Manju K' })).toHaveAttribute('src', 'https://signed/selfie.jpg');
+    await userEvent.click(screen.getByRole('button', { name: 'Open large: Photo of the PAN card of Manju K' }));
+    const large = screen.getByTestId('photo-lightbox');
+    expect(within(large).getByRole('img', { name: 'Photo of the PAN card of Manju K' })).toHaveAttribute('src', 'https://signed/card.jpg');
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByTestId('photo-lightbox')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Open large: Selfie of Manju K' }));
+    await userEvent.click(within(screen.getByTestId('photo-lightbox')).getByRole('button', { name: 'Close' }));
     await userEvent.click(screen.getAllByRole('button', { name: 'Looks right' })[0]!);
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText(/Approves the PAN .* deletes the photo of the card/)).toBeInTheDocument();

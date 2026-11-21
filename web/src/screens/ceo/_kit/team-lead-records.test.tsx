@@ -137,6 +137,38 @@ describe('Profiles: Assign and real photos', () => {
     expect(api.calls('GET /ceo/job-seekers/js9/selfie')).toHaveLength(0);
   });
 
+  it('22 Nov: on the job seeker page the Team Lead opens the ID photos large and "Looks right" decides the PAN', async () => {
+    signInAs('team_lead');
+    const api = mockApi({
+      'GET /team-lead/job-seekers/js9': seekerDetail,
+      'GET /team-lead/job-seekers/js9/selfie': { kept: true, url: 'https://photos.example/selfie.jpg?token=x', expiresInSeconds: 300 },
+      'GET /legal/acceptances/job_seeker/js9': legal,
+      'GET /identity/job-seekers/js9/aadhaar-check': {
+        check: {
+          method: 'pan', status: 'pending', verifiedByUidai: false, maskedReference: null, checkedAt: '2026-11-22T01:49:00Z', idNumberLast4: '701P',
+          nameMatches: null, isAdult: null, phoneLinked: null, nameOnId: null, dateOfBirth: null, gender: null, area: null, pincode: null,
+          photo: { kind: 'id_card_photo', kept: true, deletedReason: null, deletedAt: null, expiresAt: '2026-12-22T01:49:00Z' },
+        },
+        decision: { canDecide: true, mode: 'own_team', reason: null },
+        idPhotoUrl: 'https://photos.example/card.jpg', qrPhotoUrl: 'https://photos.example/card.jpg', selfieUrl: 'https://photos.example/selfie.jpg',
+      },
+      'POST /identity/job-seekers/js9/other-id/decision': { verdict: 'ok', otherIdDecided: 'verified' },
+      'POST /app-signups/labels': {},
+    });
+    renderScreen(<JobSeekerDetail />, { portal: 'team-lead', path: '/team-lead/job-seekers/js9', route: '/team-lead/job-seekers/:id' });
+    await userEvent.click(await screen.findByRole('button', { name: 'Show the ID check' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Open large: Live photo of the ID card' }));
+    const large = screen.getByTestId('photo-lightbox');
+    expect(within(large).getByRole('img', { name: 'Live photo of the ID card' })).toHaveAttribute('src', 'https://photos.example/card.jpg');
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(screen.getByRole('button', { name: 'Open large: Live selfie' }));
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(screen.getByRole('button', { name: 'Looks right' }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(within(dialog).getByRole('button', { name: /looks right/i }));
+    await waitFor(() => expect(api.calls('POST /identity/job-seekers/js9/other-id/decision')[0].body).toEqual({ verdict: 'ok' }));
+  });
+
   it('a selfie that is gone says "Photo no longer kept" (CEO)', async () => {
     signInAs('ceo');
     mockApi({
