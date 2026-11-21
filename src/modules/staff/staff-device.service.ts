@@ -9,6 +9,7 @@ import {
 import { Prisma, StaffDevice } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { SignInBellsService } from '../login-code/sign-in-bells.service';
 import { LiveEventsService } from '../../common/live/live-events.service';
 import {
   BELOW_MANAGER_ROLES,
@@ -38,7 +39,13 @@ export class StaffDeviceService {
     private readonly auditService: AuditService,
     private readonly reportingScope: ReportingScopeService,
     @Optional() private readonly live?: LiveEventsService,
+    @Optional() private readonly signInBells?: SignInBellsService,
   ) {}
+
+  /** The approvers' bell follows the device (decided 21 Nov); never blocks the request. */
+  private async ring(deviceRowId: string): Promise<void> {
+    await this.signInBells?.syncDevice(deviceRowId);
+  }
 
   async findApproved(staffId: string, deviceId: string): Promise<StaffDevice | null> {
     return this.prisma.staffDevice.findFirst({
@@ -96,6 +103,7 @@ export class StaffDeviceService {
         status: reopened.status,
         deviceId: reopened.deviceId,
       });
+      await this.ring(reopened.id);
       return reopened;
     }
 
@@ -114,6 +122,7 @@ export class StaffDeviceService {
         status: created.status,
         deviceId: created.deviceId,
       });
+      await this.ring(created.id);
       return created;
     } catch (error) {
       if (
@@ -178,6 +187,7 @@ export class StaffDeviceService {
       deviceId: updated.deviceId,
       approvedByStaffId: approver.id,
     });
+    await this.ring(updated.id);
     return updated;
   }
 
@@ -228,6 +238,7 @@ export class StaffDeviceService {
         sessionsEnded,
       });
     }
+    await this.ring(device.id);
     return updated;
   }
 

@@ -4,8 +4,10 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
+import { SignInBellsService } from '../../modules/login-code/sign-in-bells.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -35,8 +37,9 @@ import { ReportingScopeService } from '../../modules/staff/reporting-scope.servi
 import {
   minutesToMs,
   sessionEndMessage,
-  sessionLifetimeEnd,
 } from './session-lifetime';
+import { SessionDayService } from './session-day.service';
+import { istClockOn } from '../../modules/attendance/staff-shift';
 import { appForRole, appLabel, FIELD_APP_ONLY_MESSAGE, isStaffApp, roleAllowedInApp, StaffApp, UNKNOWN_APP_MESSAGE, wrongAppMessage } from './staff-app';
 
 export interface StaffSessionView {
@@ -74,11 +77,17 @@ export const DEVICE_NO_LONGER_APPROVED = 'This device is no longer approved. Ask
 
 /**
  * Laboura Field keeps the session on the phone, so closing the app does not
- * log the agent out (guide decision). Only field agents get a refresh token;
- * office sessions keep ending when the browser closes.
+ * log the agent out (guide decision). Field sessions are field agents only.
+ * Since 21 Nov every session on a device gets a single-use refresh token, so
+ * the apps can renew a 15-minute token that ran out (a laptop asleep, a phone
+ * in a pocket) instead of signing out; the office web app keeps it in the
+ * tab's sessionStorage, so closing the browser still signs out there.
  */
 export const FIELD_SESSION_ROLES: readonly string[] = ['field_agent'];
 export const FIELD_SESSION_REFUSED = 'Session not found';
+
+/** Ended reasons after which the next sign-in needs a login code again (decided 21 Nov). */
+const CODE_AGAIN_REASONS = ['revoked', 'locked'];
 
 export function hashRefreshToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
@@ -134,6 +143,8 @@ export class AuthService {
     private readonly pricingService: PricingService,
     private readonly clock: AuthClock,
     private readonly reportingScope: ReportingScopeService,
+    private readonly sessionDay: SessionDayService,
+    @Optional() private readonly signInBells?: SignInBellsService,
   ) {}
 
   /**
@@ -283,6 +294,12 @@ export class AuthService {
       throw new UnauthorizedException(await this.devicePendingMessage(staff));
     }
 
+    // A login code once a day (decided 21 Nov): signed in with a code today on
+    // this approved device and app, and nothing since asked for a new code.
+    if (await this.signedInWithCodeToday(staff, device, app)) {
+      return this.issueSession(staff, deviceId, metadata, null, app, 'code_accepted_earlier_today');
+    }
+
     const request = await this.loginCodeService.create(staff.id, device.id, metadata?.ip ?? '', app);
     await this.auditAttempt(staff.id, staff.code, 'auth.login.awaiting_code', {
       loginRequestId: request.id,
@@ -295,6 +312,38 @@ export class AuthService {
       codeFrom: await this.agentSenior(staff),
     };
     return awaiting;
+  }
+
+  /**
+   * True when a login code was accepted today (IST) for this person on this
+   * device and app, after the device was (last) approved and after any
+   * password change, reset, lock, deactivation or session a senior ended
+   * (Staff.sessionsRevokedAt). Then the day's later sign-ins on that device
+   * need only the password (Master Guide rev 202: the login code is needed
+   * once, at the first sign-in of the day).
+   */
+  private async signedInWithCodeToday(
+    staff: Staff,
+    device: { deviceId: string; approvedAt: Date | null },
+    app: StaffApp,
+  ): Promise<boolean> {
+    const now = this.clock.now();
+    const since = Math.max(
+      istClockOn(now, '00:00').getTime(),
+      staff.sessionsRevokedAt?.getTime() ?? 0,
+      device.approvedAt?.getTime() ?? 0,
+    );
+    const earlier = await this.prisma.staffSession.findFirst({
+      where: {
+        staffId: staff.id,
+        deviceId: device.deviceId,
+        app,
+        loginCodeRequestId: { not: null },
+        createdAt: { gte: new Date(since), lte: now },
+      },
+      select: { id: true },
+    });
+    return Boolean(earlier);
   }
 
   /**
@@ -560,10 +609,15 @@ export class AuthService {
   }
 
   async endOpenSessions(staffId: string, endedReason: string): Promise<number> {
+    const now = this.clock.now();
     const result = await this.prisma.staffSession.updateMany({
       where: { staffId, revokedAt: null },
-      data: { revokedAt: this.clock.now(), endedReason },
+      data: { revokedAt: now, endedReason },
     });
+    // A password change or reset, a lock or a deactivation: the next sign-in needs a login code again.
+    if (CODE_AGAIN_REASONS.includes(endedReason)) {
+      await this.prisma.staff.update({ where: { id: staffId }, data: { sessionsRevokedAt: now } });
+    }
     return result.count;
   }
 
@@ -581,12 +635,27 @@ export class AuthService {
   /**
    * Laboura Field: a new access token for a session kept on the phone, also
    * after the 15-minute token has run out while the app was closed. The
-   * session's own limits still decide: 1 hour without activity and 2 hours
-   * after login (PricingPolicy idleLogoutMinutes / maxSessionMinutes). A
-   * refresh is not activity, so it never moves the idle clock. The refresh
-   * token is single use: each refresh hands out the next one.
+   * session's own limits still decide: while the person's attendance day is
+   * open on that approved device it lasts the working day (decided 21 Nov,
+   * SessionDayService); otherwise 1 hour without activity and 2 hours after
+   * login (PricingPolicy idleLogoutMinutes / maxSessionMinutes). A refresh is
+   * not activity, so it never moves the idle clock. The refresh token is
+   * single use: each refresh hands out the next one.
    */
   async refreshFieldSession(input: FieldRefreshInput): Promise<FieldRefreshResult> {
+    return this.refreshSession(input, 'field');
+  }
+
+  /**
+   * The same for the office web app (POST /auth/session/refresh, decided
+   * 21 Nov): the tab renews a token that ran out (laptop asleep) before it
+   * would sign the person out. Office sessions only.
+   */
+  async refreshOfficeSession(input: FieldRefreshInput): Promise<FieldRefreshResult> {
+    return this.refreshSession(input, 'office');
+  }
+
+  private async refreshSession(input: FieldRefreshInput, app: StaffApp): Promise<FieldRefreshResult> {
     const sessionId = typeof input?.sessionId === 'string' ? input.sessionId.trim() : '';
     const refreshToken = typeof input?.refreshToken === 'string' ? input.refreshToken.trim() : '';
     const deviceId = typeof input?.deviceId === 'string' ? input.deviceId.trim() : '';
@@ -600,13 +669,15 @@ export class AuthService {
       include: { staff: true },
     });
     const presented = hashRefreshToken(refreshToken);
+    const sessionApp = session ? (isStaffApp(session.app) ? session.app : appForRole(session.staff.role)) : null;
     if (
       !session ||
       !session.tokenHash ||
       !sameHash(session.tokenHash, presented) ||
       session.deviceId !== deviceId ||
-      !FIELD_SESSION_ROLES.includes(session.staff.role) ||
-      (session.app !== null && session.app !== 'field')
+      sessionApp !== app ||
+      !roleAllowedInApp(session.staff.role, app) ||
+      (app === 'field' && !FIELD_SESSION_ROLES.includes(session.staff.role))
     ) {
       throw refuse(FIELD_SESSION_REFUSED, 'unknown');
     }
@@ -624,8 +695,7 @@ export class AuthService {
       throw refuse(this.lockedMessage(staff), 'locked');
     }
     const now = this.clock.now();
-    const policy = await this.pricingService.current();
-    const end = sessionLifetimeEnd(session, now, policy.idleLogoutMinutes);
+    const end = await this.sessionDay.endFor(session, now);
     if (end) {
       await this.endSession(session.id, end);
       throw refuse(sessionEndMessage(end), end);
@@ -651,7 +721,7 @@ export class AuthService {
         email: staff.email,
         code: staff.code,
         teamLeadId: staff.teamLeadId,
-        app: 'field',
+        app,
       },
       session.id,
     );
@@ -687,6 +757,8 @@ export class AuthService {
       where: { id: sessionId },
       data: { revokedAt, endedReason: 'revoked' },
     });
+    // Ended by a senior: the next sign-in needs a login code again (decided 21 Nov).
+    await this.prisma.staff.update({ where: { id: session.staffId }, data: { sessionsRevokedAt: revokedAt } });
 
     await this.auditService.log({
       actorId: actor.sub,
@@ -781,16 +853,16 @@ export class AuthService {
     metadata: LoginMetadata | undefined,
     loginCodeRequestId: string | null,
     app: StaffApp = appForRole(staff.role),
+    /** Set when an agent signed in without a login code because one was accepted earlier today. */
+    withoutCode: 'code_accepted_earlier_today' | null = null,
   ): Promise<LoginResponseDto> {
     const now = this.clock.now();
     const policy = await this.pricingService.current();
     const expiresAt = new Date(now.getTime() + ACCESS_SESSION_MS);
     const absoluteExpiresAt = new Date(now.getTime() + minutesToMs(policy.maxSessionMinutes));
     await this.endOpenSessions(staff.id, 'replaced');
-    const refreshToken =
-      deviceId && app === 'field' && FIELD_SESSION_ROLES.includes(staff.role)
-        ? randomBytes(32).toString('hex')
-        : null;
+    // Every session on a device can be renewed with a single-use refresh token (decided 21 Nov).
+    const refreshToken = deviceId ? randomBytes(32).toString('hex') : null;
     const session = await this.prisma.staffSession.create({
       data: {
         staffId: staff.id,
@@ -822,6 +894,7 @@ export class AuthService {
     await this.auditAttempt(staff.id, staff.code, 'auth.login.succeeded', {
       role: staff.role,
       ...(loginCodeRequestId ? { loginRequestId: loginCodeRequestId } : {}),
+      ...(withoutCode ? { withoutCode } : {}),
     });
     const passwordResetNotice = await this.takePasswordResetNotice(staff);
 
@@ -912,7 +985,14 @@ export class AuthService {
     return row;
   }
 
+  /** Records (or reopens) the device approval request and rings the approvers' bell (decided 21 Nov). */
   private async ensurePendingDevice(staffId: string, deviceId: string, app: StaffApp) {
+    const row = await this.pendingDeviceRow(staffId, deviceId, app);
+    if (row.status === 'pending') await this.signInBells?.syncDevice(row.id, this.clock.now());
+    return row;
+  }
+
+  private async pendingDeviceRow(staffId: string, deviceId: string, app: StaffApp) {
     const existing = await this.prisma.staffDevice.findUnique({
       where: { staffId_deviceId: { staffId, deviceId } },
     });
@@ -962,8 +1042,7 @@ export class AuthService {
       throw new UnauthorizedException('Session has been revoked');
     }
     const now = this.clock.now();
-    const policy = await this.pricingService.current();
-    const end = sessionLifetimeEnd(session, now, policy.idleLogoutMinutes);
+    const end = await this.sessionDay.endFor(session, now);
     if (end) {
       await this.endSession(session.id, end);
       throw new UnauthorizedException(sessionEndMessage(end));
