@@ -11,7 +11,6 @@ import { rupees } from '@/lib/money';
 import { routes } from '@/navigation/routes';
 import type { Accent, Tone } from '@/theme';
 import type { HeroInfo } from './hero';
-import { useSecureSheet } from '../shared/useSecureSheet';
 import { ShiftsCard } from '../shared/Shifts';
 
 /** Hero chip tone for a tracker step: done green, waiting amber, booked cyan, not started grey, paused red. */
@@ -44,7 +43,6 @@ const VACANCY_ACCENT: Record<VacancyStatus, Accent> = {
  */
 export function BusinessHomeView({ profileId, home, hero }: { profileId: string; home: BusinessHome; hero: HeroInfo }) {
   const { t } = useI18n();
-  const sheet = useSecureSheet();
   const api = useCustomerApi();
   // "Report a worker left" shows only once the server switches it on (contract 8.2).
   const config = useQuery({ queryKey: queryKeys.config, queryFn: () => api.config(), staleTime: 10 * 60_000 });
@@ -109,7 +107,7 @@ export function BusinessHomeView({ profileId, home, hero }: { profileId: string;
             ]}
           />
           {tr.agreement !== 'signed' ? (
-            <Button label={t('bizHome.signAgreement')} loading={sheet.busy} onPress={() => void sheet.open(profileId, 'business_agreement')} testID="biz-home-sign" />
+            <Button label={t('bizHome.signAgreement')} onPress={() => router.push(routes.verify('business_agreement', profileId))} testID="biz-home-sign" />
           ) : null}
           {tr.visit === 'requested' ? <Text testID="biz-home-visit-requested">{t('bizHome.visitRequested')}</Text> : null}
           {tr.visit === 'booked' && tr.visitAt ? (
@@ -164,8 +162,6 @@ export function BusinessHomeView({ profileId, home, hero }: { profileId: string;
 
       <ShiftsCard profileId={profileId} />
 
-      {sheet.error ? <Banner tone="error" message={sheet.error} /> : null}
-      {sheet.outcome === 'opened_in_browser' ? <Banner tone="info" message={t('sheet.openedInBrowser')} /> : null}
     </View>
   );
 }

@@ -149,8 +149,8 @@ describe('Register a job seeker', () => {
     const saved = await screen.findByTestId('js-saved');
     expect(within(saved).getByText('Your Laboura ID is JS-2001.')).toBeTruthy();
     await fireEvent.press(screen.getByTestId('js-saved-continue'));
-    await waitFor(() => expect(api.sheetLink).toHaveBeenCalledWith('p-js', 'registration', undefined));
-    expect(openSecureSheet).toHaveBeenCalledWith('https://app.test/p/register/tok');
-    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/home'));
+    // The steps open in the app's own screens (the link is asked for there).
+    expect(router.replace).toHaveBeenCalledWith('/verify/registration?profileId=p-js');
+    expect(openSecureSheet).not.toHaveBeenCalled();
   });
 });
