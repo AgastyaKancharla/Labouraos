@@ -21,8 +21,11 @@ export interface TodayPolicy {
   lateGraceMinutes: number;
   shortBreakMinutes: number;
   lunchMinutes: number;
+  /** "Still there?" after this many minutes Available with no call and no click (CEO setting, 30 by default). */
   idleAfterMinutes: number;
   idlePromptMinutes: number;
+  /** A console not open and visible for this long counts as away (Idle). */
+  presenceMinutes?: number;
 }
 
 /** GET /attendance/today (AttendanceService TodayView). */
@@ -36,7 +39,12 @@ export interface AttendanceToday {
   breakSeconds: number;
   idleSeconds: number;
   shortfallSeconds: number;
+  /** The person's own shift (decided 21 Nov) or the company shift. */
   clocks: { shiftStart: string; shiftEnd: string; now: string };
+  /** True when clocks are the person's own shift. */
+  ownShift?: boolean;
+  /** Ended with Log out today: "Resume my day" is offered (decided 21 Nov). */
+  canResume?: boolean;
   flagged: boolean;
   closedReason: string | null;
   dayType: string;
@@ -221,6 +229,54 @@ export function useAttendanceActions() {
     void qc.invalidateQueries({ queryKey: ['attendance', 'month'] });
   } });
   const setStatus = useMutation({ mutationFn: (status: string) => api.post<AttendanceToday>('/attendance/status', { status }), onSuccess: settle });
-  const heartbeat = useMutation({ mutationFn: () => api.post<AttendanceToday>('/attendance/heartbeat', {}), onSuccess: settle });
-  return { start, end, setStatus, heartbeat };
+  /** presence: the console is open and visible (about once a minute); activity: a click or key (decided 21 Nov). */
+  const heartbeat = useMutation({
+    mutationFn: (kind: 'presence' | 'activity' = 'activity') => api.post<AttendanceToday>('/attendance/heartbeat', { kind }),
+    onSuccess: settle,
+  });
+  /** "Resume my day" after a Log out by mistake, the same day (recorded). */
+  const resume = useMutation({ mutationFn: () => api.post<AttendanceToday>('/attendance/resume', {}), onSuccess: settle });
+  return { start, end, setStatus, heartbeat, resume };
+}
+
+/** One person on GET /attendance/shifts (decided 21 Nov: own shifts). */
+export interface ShiftRow {
+  staffId: string;
+  code: string;
+  name: string;
+  role: string;
+  shiftStart: string;
+  shiftEnd: string;
+  own: boolean;
+}
+
+export const shiftKeys = { team: ['attendance', 'shifts'] as const };
+
+/** The people whose shift the Team Lead, Manager or CEO sets. */
+export function useTeamShifts(enabled = true) {
+  return useQuery({
+    queryKey: shiftKeys.team,
+    queryFn: () => api.get<{ companyShift: { start: string; end: string }; people: ShiftRow[] }>('/attendance/shifts'),
+    enabled,
+  });
+}
+
+/** Set ("HH:MM", "HH:MM") or clear (null, null) a person's own shift. */
+export function useSetShift() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { staffId: string; shiftStart: string | null; shiftEnd: string | null }) =>
+      api.put<ShiftRow>(`/attendance/shifts/${encodeURIComponent(body.staffId)}`, { shiftStart: body.shiftStart, shiftEnd: body.shiftEnd }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: shiftKeys.team }),
+  });
+}
+
+/** A Team Lead, Manager or the CEO reopens today's closed day of someone in their team, with a reason. */
+export function useReopenDay() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { dayId: string; reason: string }) =>
+      api.post<{ reopened: true }>(`/attendance/days/${encodeURIComponent(body.dayId)}/reopen`, { reason: body.reason }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['attendance'] }),
+  });
 }

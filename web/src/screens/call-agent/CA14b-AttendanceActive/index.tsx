@@ -312,6 +312,14 @@ function DayEnded({ today }: { today: AttendanceToday }) {
     <div className="lb-att-ended">
       <div className="card">
         <div className="lb-att-ok">{t('att.ended.title', { time: today.logoutAt ? clockTime(today.logoutAt) : '' })}</div>
+        {today.canResume ? (
+          <div className="lb-att-row">
+            <span className="lb-att-muted">{t('att.resume.banner')}</span>
+            <button type="button" className="btn bg lb-btn" onClick={() => void attendance.resume()} disabled={attendance.busy}>
+              {t('att.resume.button')}
+            </button>
+          </div>
+        ) : null}
         <div className="lb-att-row lb-att-row--split">
           <span>{t('att.ended.loggedIn')}</span>
           <strong>{today.loginAt ? clockTime(today.loginAt) : '—'}</strong>

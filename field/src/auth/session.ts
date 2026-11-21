@@ -3,17 +3,17 @@ import type { KeyValueStore } from '@/lib/storage/types';
 /**
  * The signed-in field agent, kept on the phone (Keychain/Keystore on the
  * phone app, localStorage in the installed web app) so closing the app does
- * not sign him out before the session limits.
+ * not sign him out.
  *
- * The server is the authority on every limit (it answers 401). The phone
- * also ends the session itself when a limit has clearly passed, so a phone
- * left in a pocket shows the sign-in screen instead of failing requests:
- * - 1 hour without activity (guide: "Automatic logout after 1 hour"),
- * - 2 hours after login (guide: "every login lasts at most 2 hours"),
- * - the access token expired (it lives 15 minutes and is refreshed while
- *   the app is in use) — unless the session has a refresh token: then the
- *   app asks POST /auth/field/refresh for a new one when it is reopened, and
- *   the server answers with the idle or 2-hour reason once a limit passed.
+ * The server is the authority on every limit (it answers 401). Since 21 Nov
+ * (Master Guide rev 202) the session lasts the working day while his
+ * attendance day is open on this approved phone — no 1-hour-idle or 2-hour
+ * sign-out — so a session with a refresh token (every field agent's) is never
+ * ended by the phone's own clock: when the 15-minute access token has run out
+ * the app asks POST /auth/field/refresh for a new one, and the server answers
+ * with the idle or maximum-length reason once its rules end the session.
+ * A session without a refresh token (older sign-ins) still ends here after
+ * 1 hour without activity, 2 hours after login or when the token expired.
  */
 export const SESSION_STORAGE_KEY = 'laboura_field_session';
 export const IDLE_LIMIT_MS = 60 * 60 * 1000;
@@ -87,10 +87,12 @@ export function decodeJwt(token: string): JwtClaims | null {
 
 /** Which limit (if any) has passed for this session at `now`. */
 export function sessionLimitReached(session: Session, now: number): SignOutReason | null {
+  // With a refresh token the server decides (a day-long session while the day
+  // is open; decided 21 Nov): an expired access token is renewed, not the end.
+  if (session.refreshToken) return null;
   if (now - session.loginAt > MAX_SESSION_MS) return 'max_length';
   if (now - session.lastActivityAt > IDLE_LIMIT_MS) return 'idle';
-  // With a refresh token an expired access token is renewed, not the end.
-  if (now >= session.tokenExpiresAt && !session.refreshToken) return 'expired';
+  if (now >= session.tokenExpiresAt) return 'expired';
   return null;
 }
 

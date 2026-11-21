@@ -17,6 +17,7 @@ import { hm, timeOrDash } from '../../ceo/_kit/format';
 import { roleTeam, teamShort } from '../_kit/kit';
 import { AttendanceTabs } from '../_kit/tabs';
 import { formatLateMinutes } from '../../../lib/format/late';
+import { ShiftsPanel } from '../../../attendance/ShiftsPanel';
 
 interface Row {
   staff: { id: string; code: string; name: string; role: string; isIntern: boolean };
@@ -192,6 +193,7 @@ export default function ManagerAttendance() {
           <Button onClick={() => void downloadMonth()}>Download month (Excel)</Button>
         </div>
       </div>
+      <ShiftsPanel />
     </div>
   );
 }

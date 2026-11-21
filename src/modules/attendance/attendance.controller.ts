@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
@@ -6,6 +6,7 @@ import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { AttendanceService } from './attendance.service';
 import { AttendanceDaysService } from './attendance-days.service';
+import { AttendanceShiftsService } from './attendance-shifts.service';
 
 const STAFF_ROLES = ['ceo', 'manager', 'team_lead', 'call_agent', 'field_agent', 'finance'] as const;
 
@@ -17,6 +18,7 @@ export class AttendanceController {
   constructor(
     private readonly attendance: AttendanceService,
     private readonly days: AttendanceDaysService,
+    private readonly shifts: AttendanceShiftsService,
   ) {}
 
   @Post('login')
@@ -40,10 +42,46 @@ export class AttendanceController {
     return this.attendance.setStatus(req.user.sub, body?.status ?? '');
   }
 
+  /**
+   * { kind: 'presence' } while the console / Laboura Field is open and visible
+   * (about once a minute); { kind: 'activity' } (or no body) for a click, key or tap.
+   */
   @Post('heartbeat')
   @RequireRoles('manager', 'team_lead', 'call_agent', 'field_agent', 'finance')
-  heartbeat(@Req() req: Authed) {
-    return this.attendance.heartbeat(req.user.sub);
+  heartbeat(@Req() req: Authed, @Body() body: { kind?: string }) {
+    return this.attendance.heartbeat(req.user.sub, body?.kind === 'presence' ? 'presence' : 'activity');
+  }
+
+  /** "Resume my day": the person ended today with Log out by mistake (decided 21 Nov, recorded). */
+  @Post('resume')
+  @RequireRoles('manager', 'team_lead', 'call_agent', 'field_agent', 'finance')
+  resume(@Req() req: Authed) {
+    return this.attendance.resumeDay(req.user.sub);
+  }
+
+  /** Reopen today's closed day: the person's Team Lead, a Manager over them or the CEO, with a reason. */
+  @Post('days/:dayId/reopen')
+  @RequireRoles('ceo', 'manager', 'team_lead')
+  reopen(@Req() req: Authed, @Param('dayId') dayId: string, @Body() body: { reason?: string }) {
+    return this.days.reopenDay({ id: req.user.sub, role: req.user.role }, dayId, body ?? {});
+  }
+
+  /** Own shifts (decided 21 Nov): the people whose shift the caller sets. */
+  @Get('shifts')
+  @RequireRoles('ceo', 'manager', 'team_lead')
+  listShifts(@Req() req: Authed) {
+    return this.shifts.list({ id: req.user.sub, role: req.user.role });
+  }
+
+  /** Set (HH:MM, HH:MM) or clear (null, null) a person's own shift. */
+  @Put('shifts/:staffId')
+  @RequireRoles('ceo', 'manager', 'team_lead')
+  setShift(
+    @Req() req: Authed,
+    @Param('staffId') staffId: string,
+    @Body() body: { shiftStart?: unknown; shiftEnd?: unknown; reason?: unknown },
+  ) {
+    return this.shifts.set({ id: req.user.sub, role: req.user.role }, staffId, body ?? {});
   }
 
   @Get('today')

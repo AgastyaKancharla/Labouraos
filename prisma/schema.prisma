@@ -986,6 +986,14 @@ model Staff {
   /// cleared when the person finishes setting their own password.
   tempPasswordHash  String?
   tempPasswordExpiresAt DateTime?
+  /// Own shift (decided 21 Nov): "HH:MM" IST, set by the Team Lead, a Manager or the CEO.
+  /// Null = the company shift from Settings (PricingPolicy.shiftStart / shiftEnd).
+  shiftStart        String?
+  shiftEnd          String?
+  /// Last time every session was ended by a password change, reset, lock or
+  /// deactivation: a login code accepted before it no longer counts as the day's
+  /// first sign-in (decided 21 Nov: a login code once a day).
+  sessionsRevokedAt DateTime?
   tempPasswordIssuedByStaffId String?
   tempPasswordIssuedBy Staff?        @relation("TempPasswordIssuedBy", fields: [tempPasswordIssuedByStaffId], references: [id], onDelete: SetNull)
   tempPasswordsIssued Staff[]        @relation("TempPasswordIssuedBy")
@@ -1473,9 +1481,15 @@ model StaffSession {
   id                 String            @id @default(uuid())
   staffId            String
   staff              Staff             @relation(fields: [staffId], references: [id], onDelete: Cascade)
-  /// Laboura Field only: SHA-256 of the refresh token that restores the session
-  /// when the app is reopened. Office sessions never get one.
+  /// SHA-256 of the refresh token that restores the session (Laboura Field
+  /// after the app was closed; the office web app after its 15-minute token
+  /// ran out, decided 21 Nov). Single use: each refresh hands out the next one.
   tokenHash          String?
+  /// The refresh token's hash before the last renewal and when it was renewed (21 Nov):
+  /// a second tab that used the old one within a minute is refused softly; any other
+  /// reuse of an old token ends the session.
+  previousTokenHash  String?
+  tokenRotatedAt     DateTime?
   /// The app the session belongs to: office (app.laboura.com) or field (Laboura Field).
   /// A token works only in its own app. Null on sessions from before 14 Nov (the role's own app).
   app                String?
@@ -1649,7 +1663,8 @@ model PricingPolicy {
   lateGraceMinutes             Int       @default(10)
   shortBreakMinutes            Int       @default(15)
   lunchMinutes                 Int       @default(30)
-  idleAfterMinutes             Int       @default(10)
+  /// "Still there?" is asked after this many minutes Available with no call and no click (decided 21 Nov: 30, a CEO setting, can be 45).
+  idleAfterMinutes             Int       @default(30)
   casualLeavePerMonth          Int       @default(1)
   emergencyLeavePerMonth       Int       @default(1)
   refundPriorityWindowDays     Int       @default(15)
@@ -1718,6 +1733,11 @@ model AttendanceDay {
   idleSeconds       Int                 @default(0)
   dayType           String              @default("open") // full, half, absent, leave, off, open
   closedReason      String?             // logout, auto_closed_no_logout, no_login
+  /// Last click, key, call or saved work (decided 21 Nov): "Still there?" counts from
+  /// this. lastHeartbeatAt is any sign of an open, visible console or Laboura Field.
+  lastActiveAt      DateTime?
+  /// Times the person pressed "Resume my day" on this day (21 Nov); the second rings the Team Lead.
+  resumeCount       Int                 @default(0)
   flagged           Boolean             @default(false)
   /// Production below the full-day line on a full day. Zero on a half day,
   /// inside the tolerance, and after a Team Lead or Manager changes the day.

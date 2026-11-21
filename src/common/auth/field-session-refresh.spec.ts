@@ -116,13 +116,36 @@ describe('Laboura Field: session restore with a refresh token', () => {
     expect(row.tokenHash).not.toBe(s.refreshToken);
   });
 
-  it('office staff get no refresh token (their session still ends when the browser closes)', async () => {
+  it('office staff get a refresh token too (decided 21 Nov) that only the office app can use', async () => {
     const s = await signIn('call_agent');
-    expect(s.refreshToken).toBeUndefined();
+    expect(s.refreshToken).toMatch(/^[0-9a-f]{64}$/);
     const row = await prisma.staffSession.findUniqueOrThrow({ where: { id: s.sessionId } });
-    expect(row.tokenHash).toBeNull();
-    const res = await refresh({ sessionId: s.sessionId, refreshToken: 'a'.repeat(64), deviceId: s.deviceId });
-    expect(res.status).toBe(401);
+    expect(row.tokenHash).toBe(hashRefreshToken(s.refreshToken!));
+    // Not at the Laboura Field address …
+    const field = await refresh({ sessionId: s.sessionId, refreshToken: s.refreshToken, deviceId: s.deviceId });
+    expect(field.status).toBe(401);
+    // … but the office app renews its token there, also after it ran out.
+    now = minutes(30);
+    const office = await request(app.getHttpServer())
+      .post('/auth/session/refresh')
+      .set('X-Forwarded-For', freshIp())
+      .send({ sessionId: s.sessionId, refreshToken: s.refreshToken, deviceId: s.deviceId });
+    expect(office.status).toBe(200);
+    expect(office.body.refreshToken).toMatch(/^[0-9a-f]{64}$/);
+    expect(office.body.refreshToken).not.toBe(s.refreshToken);
+    // Single use: the old one is refused.
+    const reused = await request(app.getHttpServer())
+      .post('/auth/session/refresh')
+      .set('X-Forwarded-For', freshIp())
+      .send({ sessionId: s.sessionId, refreshToken: s.refreshToken, deviceId: s.deviceId });
+    expect(reused.status).toBe(401);
+    // A field agent's session is never renewed by the office route.
+    const f = await signIn();
+    const wrong = await request(app.getHttpServer())
+      .post('/auth/session/refresh')
+      .set('X-Forwarded-For', freshIp())
+      .send({ sessionId: f.sessionId, refreshToken: f.refreshToken, deviceId: f.deviceId });
+    expect(wrong.status).toBe(401);
   });
 
   it('inside both limits (app reopened 50 minutes later, token long expired): a new access token that works, and the next refresh token', async () => {

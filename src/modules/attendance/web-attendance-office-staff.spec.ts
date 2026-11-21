@@ -121,8 +121,9 @@ describe('Web attendance: today view, live status and office staff days', () => 
       lateGraceMinutes: 10,
       shortBreakMinutes: 15,
       lunchMinutes: 30,
-      idleAfterMinutes: 10,
+      idleAfterMinutes: 30,
       idlePromptMinutes: 1,
+      presenceMinutes: 10,
     });
 
     at(0);

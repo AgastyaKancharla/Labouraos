@@ -92,10 +92,10 @@ describe('Team & access', () => {
     expect(within(box).getByTestId('temp-password')).toHaveTextContent('K7M4-Q2PX');
     expect(within(box).getByText('CA-0020')).toBeInTheDocument();
     expect(within(box).getByText(/Shown only once/)).toBeInTheDocument();
-    expect(within(box).getByText(/Valid until .* \(24 hours\)/)).toBeInTheDocument();
+    expect(within(box).getByText(/Valid until .* \(72 hours\)/)).toBeInTheDocument();
     const share = screen.getByTestId('temp-password-whatsapp');
     expect(decodeURIComponent(share.getAttribute('href') ?? '')).toContain(
-      'Your Laboura staff code is CA-0020 and temporary password is K7M4-Q2PX. Open app.laboura.com/login (field agents: field.laboura.com) within 24 hours to set your password.',
+      'Your Laboura staff code is CA-0020 and temporary password is K7M4-Q2PX. Open app.laboura.com/login (field agents: field.laboura.com) within 72 hours to set your password.',
     );
   });
 

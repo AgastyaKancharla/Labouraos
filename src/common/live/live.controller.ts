@@ -1,4 +1,4 @@
-import { Controller, Req, Sse, UseGuards } from '@nestjs/common';
+import { Controller, Optional, Req, Sse, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { Observable, catchError, concatMap, filter, from, interval, map, merge, of, take, takeUntil, timer } from 'rxjs';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -9,6 +9,8 @@ import { ALL_STAFF_ROLES } from '../rbac/rbac.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { PricingService } from '../../modules/pricing/pricing.service';
 import { sessionLifetimeEnd } from '../auth/session-lifetime';
+import { SessionDayService } from '../auth/session-day.service';
+import { AuthClock } from '../auth/auth.service';
 import { LiveEventsService } from './live-events.service';
 
 /** Keeps proxies (Render, Cloudflare) from closing a quiet connection. */
@@ -36,6 +38,8 @@ export class LiveController {
     private readonly live: LiveEventsService,
     private readonly prisma: PrismaService,
     private readonly pricing: PricingService,
+    @Optional() private readonly sessionDay?: SessionDayService,
+    @Optional() private readonly clock?: AuthClock,
   ) {}
 
   /**
@@ -79,6 +83,9 @@ export class LiveController {
       const session = await this.prisma.staffSession.findUnique({
         where: { id: sessionId },
         select: {
+          staffId: true,
+          deviceId: true,
+          createdAt: true,
           revokedAt: true,
           lastActivityAt: true,
           absoluteExpiresAt: true,
@@ -86,8 +93,11 @@ export class LiveController {
         },
       });
       if (!session || session.revokedAt || session.staff.status !== 'active') return false;
+      // Day-long while the attendance day is open on an approved device (decided 21 Nov).
+      const now = this.clock?.now() ?? new Date();
+      if (this.sessionDay) return (await this.sessionDay.endFor(session, now)) === null;
       const policy = await this.pricing.current();
-      return sessionLifetimeEnd(session, new Date(), policy.idleLogoutMinutes) === null;
+      return sessionLifetimeEnd(session, now, policy.idleLogoutMinutes) === null;
     }
     const staff = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { status: true } });
     return staff?.status === 'active';

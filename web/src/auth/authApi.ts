@@ -14,10 +14,14 @@ import { getDeviceId } from './device';
  *   POST /auth/password-reset/request  { staffCode, deviceId } → the same answer for every staff code
  *   POST /auth/password-reset/complete { resetRequestId, resetRequestProof, deviceId, code, newPassword, totpCode? }
  *   POST /auth/refresh            (Bearer) → { accessToken, sessionId }
+ *   POST /auth/session/refresh    { sessionId, refreshToken, deviceId } → { accessToken, refreshToken, sessionId }
  *   POST /auth/logout             (Bearer)
  *
- * Tokens last 15 minutes; the session lasts at most 2 hours and ends after
- * 60 minutes without activity (both enforced by the API).
+ * Tokens last 15 minutes. The session lasts the working day while the
+ * person's attendance day is open on this approved device (decided 21 Nov;
+ * a safety cap at the end of their shift + 2 hours); otherwise at most 2
+ * hours and 60 minutes without activity (all enforced by the API). A sign-in
+ * later the same day on this device needs no login code.
  */
 export interface LoginStaff {
   id: string;
@@ -38,6 +42,8 @@ export interface PasswordResetNotice {
 export interface TokenResponse {
   accessToken: string;
   sessionId?: string;
+  /** Single-use refresh token (decided 21 Nov): renews the session at POST /auth/session/refresh. */
+  refreshToken?: string;
   passwordResetNotice?: PasswordResetNotice;
   staff: LoginStaff;
 }

@@ -117,8 +117,24 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(AuthThrottlerGuard)
   @Throttle({ default: { limit: 20, ttl: 60000 } })
-  refreshField(@Body() body: FieldRefreshDto) {
-    return this.authService.refreshFieldSession(body);
+  refreshField(@Body() body: FieldRefreshDto, @Req() req: Request) {
+    return this.authService.refreshFieldSession(body, { userAgent: req.headers['user-agent'] });
+  }
+
+  /**
+   * The office web app renews its token with its single-use refresh token
+   * (decided 21 Nov) — also after the 15-minute token ran out while the
+   * laptop slept. Office sessions only; the day-long and idle / 2-hour rules
+   * still decide. The token lives in the tab's sessionStorage, so closing the
+   * browser still signs out.
+   */
+  @Post('session/refresh')
+  @Public('the office web app renews a session with its single-use refresh token; the session rules still apply')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(AuthThrottlerGuard)
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  refreshOffice(@Body() body: FieldRefreshDto, @Req() req: Request) {
+    return this.authService.refreshOfficeSession(body, { userAgent: req.headers['user-agent'] });
   }
 
   @Post('logout')

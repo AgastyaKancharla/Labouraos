@@ -12,6 +12,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { NotificationSourcesService } from '../notification/notification-sources.service';
+import { NotificationService } from '../notification/notification.service';
 import { LiveEventsService } from '../../common/live/live-events.service';
 import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 import { AttendanceClock } from './attendance-clock';
@@ -20,15 +21,47 @@ import {
   BREAK_STATUSES,
   IDLE_PROMPT_MINUTES,
   IDLE_STATUS,
+  PRESENCE_TIMEOUT_MINUTES,
   PRODUCTION_STATUSES,
   isStaffPickedStatus,
 } from './attendance.constants';
+import { AuditService } from '../../common/audit/audit.service';
+import { shiftFor, withShift, type StaffShift } from './staff-shift';
 import { dayResultFor, lateMinutesFor, productionTargetSeconds } from './day-rules';
 import { WorkingDaysService } from './working-days.service';
 import { isOwnerAccount } from '../staff/owner-account';
 import { codedError } from '../../common/http/coded-error';
 
 const AGENT_ROLES = ['call_agent', 'field_agent'];
+
+/** On call with no open call record behind it ends after this grace (the end webhook is late or never comes). */
+export const CALL_STATUS_GRACE_MS = 2 * 60 * 1000;
+/** "Resume my day" waits this long after Log out (no Log out / Resume loops). */
+export const RESUME_COOLDOWN_MS = 2 * 60 * 1000;
+/** On call never lasts longer than this, even with a call record still open. */
+export const CALL_STATUS_MAX_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * When an Available person becomes Idle (decided 21 Nov), whichever comes first:
+ * - away: no sign of an open, visible console or Laboura Field (any heartbeat)
+ *   for PRESENCE_TIMEOUT_MINUTES (+ the prompt minute);
+ * - quiet: no click, key, call or saved work for the "Still there?" setting
+ *   (idleAfterMinutes, 30 by default) and no answer in the prompt minute.
+ * Both count from the start of the current Available period at the earliest,
+ * so a call (On call → After-call notes → Available) starts them again.
+ */
+export function idleDeadline(
+  day: { lastHeartbeatAt: Date | null; lastActiveAt: Date | null },
+  availableSince: Date,
+  stillThereMinutes: number,
+): Date {
+  const since = availableSince.getTime();
+  const seen = Math.max(day.lastHeartbeatAt?.getTime() ?? since, since);
+  const active = Math.max(day.lastActiveAt?.getTime() ?? day.lastHeartbeatAt?.getTime() ?? since, since);
+  const awayAt = seen + (PRESENCE_TIMEOUT_MINUTES + IDLE_PROMPT_MINUTES) * 60_000;
+  const quietAt = active + (stillThereMinutes + IDLE_PROMPT_MINUTES) * 60_000;
+  return new Date(Math.min(awayAt, quietAt));
+}
 
 /** Meetings, training and one-to-ones: production, shown apart on the attendance screen. */
 const MEETING_STATUSES = ['team_meeting', 'training', 'one_to_one'];
@@ -50,8 +83,11 @@ export interface TodayPolicy {
   lateGraceMinutes: number;
   shortBreakMinutes: number;
   lunchMinutes: number;
+  /** "Still there?" after this many minutes Available with no call and no click (CEO setting, 30 by default). */
   idleAfterMinutes: number;
   idlePromptMinutes: number;
+  /** A console or Laboura Field not open and visible for this long counts as away (Idle). */
+  presenceMinutes: number;
 }
 
 export interface TodayView {
@@ -64,7 +100,18 @@ export interface TodayView {
   breakSeconds: number;
   idleSeconds: number;
   shortfallSeconds: number;
+  /** The person's own shift (decided 21 Nov), or the company shift when they have none. */
   clocks: { shiftStart: string; shiftEnd: string; now: string };
+  /** True when shiftStart / shiftEnd are the person's own shift, false for the company shift. */
+  ownShift: boolean;
+  /**
+   * The day ended with Log out today: the person may press "Resume my day"
+   * (decided 21 Nov, recorded). False before login, while open, after the
+   * night clean-up and on an owner account (it simply logs in again).
+   */
+  canResume: boolean;
+  /** "Resume my day" presses today. */
+  resumeCount?: number;
   flagged: boolean;
   closedReason: string | null;
   dayType: string;
@@ -98,7 +145,18 @@ export class AttendanceService {
     private readonly workingDays: WorkingDaysService,
     @Optional() private readonly bells?: NotificationSourcesService,
     @Optional() private readonly live?: LiveEventsService,
+    @Optional() private readonly audit?: AuditService,
+    @Optional() private readonly notificationService?: NotificationService,
   ) {}
+
+  /** The person's own shift, or the company shift (decided 21 Nov). */
+  async shiftOf(staffId: string, policy?: PricingPolicy): Promise<StaffShift> {
+    const [staff, current] = await Promise.all([
+      this.prisma.staff.findUnique({ where: { id: staffId }, select: { shiftStart: true, shiftEnd: true } }),
+      policy ? Promise.resolve(policy) : this.pricing.current(),
+    ]);
+    return shiftFor(staff, current);
+  }
 
   /**
    * Tells the person's open screens that their status changed (live channel
@@ -162,7 +220,14 @@ export class AttendanceService {
       // status, so starting again reopens it (owner decision 14 Nov).
       if (owner) return this.reopenOwnerDay(existing.id, staffId, now);
       // Log in once a day (17 Nov): the day ended with Log out (or was closed at night).
-      throw codedError(HttpStatus.BAD_REQUEST, 'DAY_ALREADY_ENDED', 'This day is already closed: log in again tomorrow');
+      // After Log out the same day the person presses "Resume my day" instead (decided 21 Nov).
+      throw codedError(
+        HttpStatus.BAD_REQUEST,
+        'DAY_ALREADY_ENDED',
+        existing.closedReason === 'logout'
+          ? 'This day was ended with Log out: press Resume my day to carry on'
+          : 'This day is already closed: log in again tomorrow',
+      );
     }
     if (existing?.loginAt) {
       return this.today(staffId);
@@ -186,7 +251,9 @@ export class AttendanceService {
     // A login on a leave day (full day, or two halves joined) makes it a working day with normal
     // lateness; on a half day of leave the working half starts mid-shift when the first half is off.
     // Owner accounts are never late (owner decision 14 Nov).
-    const lateMinutes = owner ? 0 : this.lateMinutes(now, policy, existing?.leaveKind ? existing.leaveHalf : null);
+    // Lateness counts from the person's own shift (decided 21 Nov).
+    const shift = shiftFor(staff, policy);
+    const lateMinutes = owner ? 0 : this.lateMinutes(now, withShift(policy, shift), existing?.leaveKind ? existing.leaveHalf : null);
     if (existing) {
       // A day marked absent or leave before the person logged in becomes a
       // working day. The leave fields stay so the leave flow can see them.
@@ -198,6 +265,7 @@ export class AttendanceService {
           loginLng,
           lateMinutes,
           lastHeartbeatAt: now,
+          lastActiveAt: now,
           dayType: 'open',
           closedReason: null,
           segments: {
@@ -237,6 +305,7 @@ export class AttendanceService {
         loginLng,
         lateMinutes,
         lastHeartbeatAt: now,
+        lastActiveAt: now,
         dayType: 'open',
         segments: {
           create: {
@@ -283,19 +352,55 @@ export class AttendanceService {
     return this.today(staffId);
   }
 
-  async heartbeat(staffId: string): Promise<TodayView> {
+  /**
+   * POST /attendance/heartbeat (decided 21 Nov). Two kinds:
+   * - `presence`: the console or Laboura Field is open and visible (sent about
+   *   once a minute without any input). Keeps the person present; never ends Idle.
+   * - `activity` (the default, also what older apps send): a click, a key or a
+   *   tap. Starts the "Still there?" clock again and brings an Idle person back.
+   */
+  async heartbeat(staffId: string, kind: 'presence' | 'activity' = 'activity'): Promise<TodayView> {
     const now = this.clock.now();
     await this.applyAutomatic(staffId, now);
     const day = await this.openDay(staffId, now);
-    const current = await this.openSegment(day.id);
-    if (current?.status === IDLE_STATUS) {
-      await this.switchStatus(day.id, staffId, 'available', 'staff', now);
+    if (kind === 'activity') {
+      const current = await this.openSegment(day.id);
+      if (current?.status === IDLE_STATUS) {
+        await this.switchStatus(day.id, staffId, 'available', 'staff', now);
+      }
     }
-    await this.prisma.attendanceDay.update({
-      where: { id: day.id },
-      data: { lastHeartbeatAt: now },
-    });
+    if (kind === 'activity') {
+      await this.prisma.attendanceDay.update({ where: { id: day.id }, data: { lastHeartbeatAt: now, lastActiveAt: now } });
+    } else {
+      await this.prisma.attendanceDay.update({ where: { id: day.id }, data: { lastHeartbeatAt: now } });
+    }
     return this.today(staffId);
+  }
+
+  /**
+   * Saved work counts as activity (decided 21 Nov: in Laboura Field interview
+   * attendance, registrations and selections are work, not idle): the person
+   * is present, the "Still there?" clock starts again and Idle ends. Called for
+   * the person's own writes (AttendanceActivityInterceptor). A day that is not
+   * open is left alone; never throws.
+   */
+  async noteActivity(staffId: string): Promise<void> {
+    try {
+      const now = this.clock.now();
+      const day = await this.findOpenDay(staffId, now);
+      if (!day) return;
+      await this.applyAutomatic(staffId, now);
+      const current = await this.openSegment(day.id);
+      if (current?.status === IDLE_STATUS) {
+        await this.switchStatus(day.id, staffId, 'available', 'staff', now);
+      }
+      await this.prisma.attendanceDay.update({
+        where: { id: day.id },
+        data: { lastHeartbeatAt: now, lastActiveAt: now },
+      });
+    } catch (error) {
+      this.logger.warn(`Activity note failed: ${(error as Error).message}`);
+    }
   }
 
   async today(staffId: string): Promise<TodayView> {
@@ -306,10 +411,15 @@ export class AttendanceService {
       where: { staffId_date: { staffId, date: this.istDate(now) } },
       include: { segments: { orderBy: { startedAt: 'asc' } } },
     });
-    const owner = isOwnerAccount(await this.prisma.staff.findUnique({ where: { id: staffId }, select: { isOwnerAccount: true } }));
+    const person = await this.prisma.staff.findUnique({
+      where: { id: staffId },
+      select: { isOwnerAccount: true, shiftStart: true, shiftEnd: true },
+    });
+    const owner = isOwnerAccount(person);
+    const shift = shiftFor(person, policy);
     if (!day || !day.loginAt) {
       const leaveHalf = day?.leaveKind ? (day.leaveHalf ?? null) : null;
-      const empty = this.emptyToday(now, policy, Boolean(leaveHalf));
+      const empty = this.emptyToday(now, policy, Boolean(leaveHalf), shift);
       return { ...empty, dayType: day?.dayType ?? 'open', leaveHalf, ownerAccount: owner, ...(owner ? { shortfallSeconds: 0 } : {}) };
     }
     const end = day.logoutAt ?? now;
@@ -339,10 +449,13 @@ export class AttendanceService {
           ? day.shortfallSeconds
           : Math.max(0, fullSeconds - totals.productionSeconds),
       clocks: {
-        shiftStart: policy.shiftStart,
-        shiftEnd: policy.shiftEnd,
+        shiftStart: shift.start,
+        shiftEnd: shift.end,
         now: now.toISOString(),
       },
+      ownShift: shift.own,
+      canResume: !owner && Boolean(day.logoutAt) && day.closedReason === 'logout' && !day.dayTypeChangedAt,
+      resumeCount: day.resumeCount,
       flagged: day.flagged,
       closedReason: day.closedReason,
       dayType: day.dayType,
@@ -439,6 +552,7 @@ export class AttendanceService {
       lunchMinutes: policy.lunchMinutes,
       idleAfterMinutes: policy.idleAfterMinutes,
       idlePromptMinutes: IDLE_PROMPT_MINUTES,
+      presenceMinutes: PRESENCE_TIMEOUT_MINUTES,
     };
   }
 
@@ -499,14 +613,79 @@ export class AttendanceService {
     await this.switchStatus(day.id, staffId, 'on_call', 'phone_system', now);
   }
 
+  /**
+   * The call ended. A field agent who was at a shop or travelling when the
+   * call started goes straight back to On visit / Travelling (21 Nov, Builder
+   * C's request: the shop time keeps counting, no false Available); anyone
+   * else gets the 2 minutes of After-call notes, then Available.
+   */
   async onCallEnded(staffId: string | null): Promise<void> {
     if (!staffId) return;
     const now = this.clock.now();
     const day = await this.findOpenDay(staffId, now);
     if (!day) return;
-    const current = await this.openSegment(day.id);
-    if (current?.status === 'after_call_notes') return;
-    await this.switchStatus(day.id, staffId, 'after_call_notes', 'phone_system', now);
+    await this.endCallStatus(day.id, staffId, now);
+  }
+
+  /** Ends On call (or After-call notes) at `at`: back to the visit status from before the call, else After-call notes. */
+  private async endCallStatus(dayId: string, staffId: string, at: Date): Promise<void> {
+    const current = await this.openSegment(dayId);
+    if (!current || (current.status !== 'on_call' && current.status !== 'after_call_notes')) {
+      // Ended without a status of its own (an answered-and-ended event, a status picked meanwhile):
+      // only a call that left nothing else open shows After-call notes, as before.
+      if (!current || current.status === 'available') await this.switchStatus(dayId, staffId, 'after_call_notes', 'phone_system', at);
+      return;
+    }
+    const before = await this.statusBeforeCall(dayId, current.startedAt);
+    if (before) {
+      await this.switchStatus(dayId, staffId, before, 'phone_system', at);
+      return;
+    }
+    if (current.status === 'after_call_notes') return;
+    await this.switchStatus(dayId, staffId, 'after_call_notes', 'phone_system', at);
+  }
+
+  /**
+   * On visit or Travelling when the call (chain of On call / After-call notes
+   * segments ending at `callStartedAt`) began, or null.
+   */
+  private async statusBeforeCall(dayId: string, callStartedAt: Date): Promise<'on_visit' | 'travelling' | null> {
+    const earlier = await this.prisma.attendanceSegment.findMany({
+      where: { dayId, startedAt: { lte: callStartedAt } },
+      orderBy: { startedAt: 'desc' },
+      take: 12,
+      select: { status: true, startedAt: true, endedAt: true },
+    });
+    for (const segment of earlier) {
+      if (segment.status === 'on_call' || segment.status === 'after_call_notes') continue;
+      // A status replaced in the same instant (zero length) was never really held.
+      if (segment.endedAt && segment.endedAt.getTime() <= segment.startedAt.getTime()) continue;
+      return segment.status === 'on_visit' || segment.status === 'travelling' ? segment.status : null;
+    }
+    return null;
+  }
+
+  /**
+   * On call that no call record keeps open (the phone system never sent the
+   * end, e.g. with the mock telephony): ended at the call's own end time if
+   * it has one, else now. A call still open longer than CALL_STATUS_MAX_MS is
+   * ended too, so On call can never stick.
+   */
+  private async endStaleCall(dayId: string, staffId: string, since: Date, now: Date): Promise<boolean> {
+    const open = await this.prisma.callRecord.findFirst({
+      where: { staffId, answeredAt: { not: null }, endedAt: null, createdAt: { gte: new Date(since.getTime() - CALL_STATUS_MAX_MS) } },
+      orderBy: { answeredAt: 'desc' },
+      select: { answeredAt: true },
+    });
+    if (open?.answeredAt && now.getTime() - open.answeredAt.getTime() < CALL_STATUS_MAX_MS) return false;
+    if (!open && now.getTime() - since.getTime() < CALL_STATUS_GRACE_MS) return false;
+    const last = await this.prisma.callRecord.findFirst({
+      where: { staffId, endedAt: { gte: since, lte: now } },
+      orderBy: { endedAt: 'desc' },
+      select: { endedAt: true },
+    });
+    await this.endCallStatus(dayId, staffId, open ? now : (last?.endedAt ?? now));
+    return true;
   }
 
   async isAvailable(staffId: string): Promise<boolean> {
@@ -532,9 +711,16 @@ export class AttendanceService {
     return null;
   }
 
+  /**
+   * Closes days left open, at the last activity, flagged for a correction.
+   * Only days BEFORE today (IST) — decided 21 Nov: the clean-up never closes
+   * the day someone is working now, even when the night job runs late or is
+   * run by hand in the morning.
+   */
   async closeForgottenDays(staffId?: string): Promise<{ closed: number }> {
+    const today = this.istDate(this.clock.now());
     const open = await this.prisma.attendanceDay.findMany({
-      where: { logoutAt: null, dayType: 'open', ...(staffId ? { staffId } : {}) },
+      where: { logoutAt: null, dayType: 'open', date: { lt: today }, ...(staffId ? { staffId } : {}) },
       include: { segments: true },
     });
     let closed = 0;
@@ -617,10 +803,16 @@ export class AttendanceService {
     if (!day) return;
     const current = await this.openSegment(day.id);
     if (!current) return;
+    if (current.status === 'on_call') {
+      await this.endStaleCall(day.id, staffId, current.startedAt, now);
+      return;
+    }
     if (current.status === 'after_call_notes') {
       const backAt = new Date(current.startedAt.getTime() + AFTER_CALL_NOTES_MS);
       if (now.getTime() >= backAt.getTime()) {
-        await this.switchStatus(day.id, staffId, 'available', 'phone_system', backAt);
+        // Back to On visit / Travelling when the call came in during a visit, else Available.
+        const before = await this.statusBeforeCall(day.id, current.startedAt);
+        await this.switchStatus(day.id, staffId, before ?? 'available', 'phone_system', backAt);
       }
       return;
     }
@@ -630,15 +822,123 @@ export class AttendanceService {
     }
     if (current.status !== 'available') return;
     const policy = await this.pricing.current();
-    const idleAfterMs = (policy.idleAfterMinutes + IDLE_PROMPT_MINUTES) * 60 * 1000;
-    const sinceMs = Math.max(
-      (day.lastHeartbeatAt ?? current.startedAt).getTime(),
-      current.startedAt.getTime(),
-    );
-    const idleAt = new Date(sinceMs + idleAfterMs);
+    const idleAt = idleDeadline(day, current.startedAt, policy.idleAfterMinutes);
     if (now.getTime() >= idleAt.getTime()) {
       await this.switchStatus(day.id, staffId, IDLE_STATUS, 'idle_detector', idleAt);
     }
+  }
+
+  /**
+   * "Resume my day" (decided 21 Nov): the person ended today with Log out by
+   * mistake and carries on, the same day. The time in between is not counted
+   * (no status), the day is open again as Available, and it is recorded
+   * (audit row, and the Team Lead sees the gap on the day's timeline).
+   */
+  async resumeDay(staffId: string): Promise<TodayView> {
+    const now = this.clock.now();
+    const day = await this.prisma.attendanceDay.findUnique({
+      where: { staffId_date: { staffId, date: this.istDate(now) } },
+    });
+    if (!day?.loginAt) throw codedError(HttpStatus.BAD_REQUEST, 'DAY_NOT_STARTED', 'Log in before resuming your day');
+    if (!day.logoutAt) return this.today(staffId);
+    if (day.closedReason !== 'logout') {
+      throw codedError(HttpStatus.BAD_REQUEST, 'DAY_NOT_RESUMABLE', 'Only a day you ended with Log out today can be resumed');
+    }
+    // A senior already changed how this day counts: only they can open it again.
+    if (day.dayTypeChangedAt) {
+      throw codedError(HttpStatus.BAD_REQUEST, 'DAY_CHANGED_BY_SENIOR', 'Ask your Team Lead to reopen your day');
+    }
+    // A short cool-down after Log out, so Log out / Resume cannot be looped.
+    if (now.getTime() - day.logoutAt.getTime() < RESUME_COOLDOWN_MS) {
+      throw codedError(HttpStatus.BAD_REQUEST, 'RESUME_TOO_SOON', 'Wait 2 minutes after Log out before resuming your day');
+    }
+    await this.reopen(day, staffId, now, { action: 'attendance.day_resumed', actorId: staffId, reason: null });
+    const resumed = await this.prisma.attendanceDay.update({
+      where: { id: day.id },
+      data: { resumeCount: { increment: 1 } },
+      select: { resumeCount: true },
+    });
+    // The second Resume on one day rings the Team Lead (21 Nov).
+    if (resumed.resumeCount >= 2) {
+      await this.bell('day resumed again', (bells) => this.ringResumedAgain(bells, staffId, day.id, resumed.resumeCount, now));
+    }
+    return this.today(staffId);
+  }
+
+  private async ringResumedAgain(bells: NotificationSourcesService, staffId: string, dayId: string, count: number, now: Date) {
+    const dir = await bells.directory();
+    const person = dir.get(staffId);
+    if (!person || person.isOwnerAccount) return;
+    const chain = dir.chainOf(staffId);
+    const title = `${person.name} (${person.code}) resumed their day ${count} times today`;
+    const body = 'They ended the day with Log out and pressed Resume my day again. The time in between is not counted.';
+    // One bell per person per day, updated in place with the count (seen or not).
+    const existing = await this.prisma.notification.updateMany({
+      where: { kind: 'day_resumed_again', subjectType: 'attendance_day', subjectId: dayId },
+      data: { title, body },
+    });
+    if (existing.count > 0) return;
+    const drafts = bells.drafts([chain.teamLead ?? chain.manager], {
+      kind: 'day_resumed_again',
+      title,
+      body,
+      subjectType: 'attendance_day',
+      subjectId: dayId,
+    });
+    for (const draft of drafts) await this.notificationService?.open(draft, now);
+  }
+
+  /**
+   * Opens a closed day again as Available from now (Resume my day, or a Team
+   * Lead's Reopen). Only today's day; the earlier closing is kept in the audit
+   * row and the segments (the gap shows on the timeline).
+   */
+  async reopen(
+    day: AttendanceDay,
+    staffId: string,
+    now: Date,
+    record: { action: string; actorId: string; reason: string | null },
+  ): Promise<void> {
+    const reopened = await this.prisma.attendanceDay.updateMany({
+      where: { id: day.id, logoutAt: { not: null } },
+      data: {
+        logoutAt: null,
+        dayType: 'open',
+        closedReason: null,
+        flagged: false,
+        shortfallSeconds: 0,
+        makeUpSeconds: 0,
+        lastHeartbeatAt: now,
+        lastActiveAt: now,
+        // A senior's earlier Change day no longer holds for an open day (kept in the audit row below).
+        dayTypeChangedById: null,
+        dayTypeChangedAt: null,
+        dayTypeChangeReason: null,
+      },
+    });
+    if (reopened.count !== 1) return;
+    await this.prisma.attendanceSegment.create({
+      data: { staffId, dayId: day.id, status: 'available', startedAt: now, source: 'staff' },
+    });
+    await this.audit?.log({
+      actorId: record.actorId,
+      action: record.action,
+      entityType: 'attendance_day',
+      entityCode: day.id,
+      before: {
+        date: this.dateLabel(day.date),
+        logoutAt: day.logoutAt?.toISOString() ?? null,
+        closedReason: day.closedReason,
+        dayType: day.dayType,
+        flagged: day.flagged,
+        dayTypeChangedById: day.dayTypeChangedById,
+        dayTypeChangedAt: day.dayTypeChangedAt?.toISOString() ?? null,
+        dayTypeChangeReason: day.dayTypeChangeReason,
+      },
+      after: { logoutAt: null, dayType: 'open', reopenedAt: now.toISOString(), staffId, dayTypeChangedAt: null },
+      ...(record.reason ? { reason: record.reason } : {}),
+    });
+    this.announce(staffId, 'available', now);
   }
 
   private async switchStatus(
@@ -750,7 +1050,7 @@ export class AttendanceService {
   }
 
   /** Before login. On a day with a half day of leave half the production is needed (owner decision 12 Nov). */
-  private emptyToday(now: Date, policy: PricingPolicy, halfDayLeave = false): TodayView {
+  private emptyToday(now: Date, policy: PricingPolicy, halfDayLeave = false, shift: StaffShift = shiftFor(null, policy)): TodayView {
     const fullSeconds = productionTargetSeconds(policy, halfDayLeave);
     return {
       date: this.dateLabel(this.istDate(now)),
@@ -762,7 +1062,9 @@ export class AttendanceService {
       breakSeconds: 0,
       idleSeconds: 0,
       shortfallSeconds: fullSeconds,
-      clocks: { shiftStart: policy.shiftStart, shiftEnd: policy.shiftEnd, now: now.toISOString() },
+      clocks: { shiftStart: shift.start, shiftEnd: shift.end, now: now.toISOString() },
+      ownShift: shift.own,
+      canResume: false,
       flagged: false,
       closedReason: null,
       dayType: 'open',
@@ -795,6 +1097,15 @@ export class AttendanceService {
     throw codedError(HttpStatus.BAD_REQUEST, 'DAY_NOT_STARTED', 'Log in before changing status');
   }
 
+  /** True when the person's attendance day is open right now (logged in, not logged out). */
+  async dayIsOpen(staffId: string, now: Date = this.clock.now()): Promise<boolean> {
+    const day = await this.prisma.attendanceDay.findFirst({
+      where: { staffId, date: this.istDate(now), logoutAt: null, dayType: 'open', loginAt: { not: null } },
+      select: { id: true },
+    });
+    return Boolean(day);
+  }
+
   private findOpenDay(staffId: string, now: Date): Promise<AttendanceDay | null> {
     return this.prisma.attendanceDay.findFirst({
       where: { staffId, date: this.istDate(now), logoutAt: null, dayType: 'open' },
@@ -814,10 +1125,12 @@ export class AttendanceService {
     reportsToId: string | null;
     teamLeadId: string | null;
     isOwnerAccount: boolean;
+    shiftStart: string | null;
+    shiftEnd: string | null;
   }> {
     const staff = await this.prisma.staff.findUnique({
       where: { id },
-      select: { id: true, role: true, reportsToId: true, teamLeadId: true, isOwnerAccount: true },
+      select: { id: true, role: true, reportsToId: true, teamLeadId: true, isOwnerAccount: true, shiftStart: true, shiftEnd: true },
     });
     if (!staff) throw new NotFoundException('Staff account not found');
     return staff;
