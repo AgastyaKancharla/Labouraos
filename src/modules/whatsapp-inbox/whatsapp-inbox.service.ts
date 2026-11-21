@@ -25,6 +25,7 @@ import { LeadCallService, issueRegistrationPrefill } from './lead-call.service';
 import { WhatsAppEventsService } from './whatsapp-events.service';
 import { OwnTeam } from '../../common/rbac/own-team';
 import { LeadAgent, loadLeadAgents, ownAgentsOf, pickLeadAgent } from './lead-assignment';
+import { PricingService } from '../pricing/pricing.service';
 import { InboundWhatsAppMessage, ParsedWhatsAppWebhook } from './meta-webhook';
 import { markAppLeadContacted, pickUpAppLeads } from '../referral/referral-lead-sync';
 
@@ -94,7 +95,13 @@ export class WhatsAppInboxService {
     @Inject(WHATSAPP_PROVIDER) private readonly provider: WhatsAppProvider,
     private readonly leadCalls: LeadCallService,
     private readonly events: WhatsAppEventsService,
+    private readonly pricing: PricingService,
   ) {}
+
+  /** Every call agent with whether they are on shift now (their own shift, 21 Nov). */
+  private async leadAgentsAt(now: Date): Promise<LeadAgent[]> {
+    return loadLeadAgents(this.prisma, now, await this.pricing.current());
+  }
 
   // ------------------------------------------------------------------ inbound
 
@@ -225,7 +232,7 @@ export class WhatsAppInboxService {
    * message, the person gets the "an agent will call you when our next shift starts" reply.
    */
   private async assign(conversation: WhatsAppConversation, now: Date, options: { allowAutoReply: boolean; agents?: LeadAgent[] }) {
-    const agents = options.agents ?? (await loadLeadAgents(this.prisma, now));
+    const agents = options.agents ?? (await this.leadAgentsAt(now));
     const current = conversation.assignedStaffId ? agents.find((a) => a.id === conversation.assignedStaffId) : undefined;
     if (current?.onShift) return conversation;
     const own = await ownAgentsOf(this.prisma, conversation.subjectType, conversation.subjectId);
@@ -283,7 +290,7 @@ export class WhatsAppInboxService {
    * count working waiting time and ring the Team Lead / Manager bells.
    */
   async sweep(now: Date = this.clock.now()) {
-    const agents = await loadLeadAgents(this.prisma, now);
+    const agents = await this.leadAgentsAt(now);
     const anyOnShift = agents.some((a) => a.onShift);
     let matched = 0;
     let assigned = 0;
@@ -1074,7 +1081,7 @@ export class WhatsAppInboxService {
       take: 500,
     });
     const team = await this.teamIds(actor);
-    const agents = (await loadLeadAgents(this.prisma, now)).filter((a) => !team || team.includes(a.id));
+    const agents = (await this.leadAgentsAt(now)).filter((a) => !team || team.includes(a.id));
     const staff = agents.length
       ? await this.prisma.staff.findMany({ where: { id: { in: agents.map((a) => a.id) } }, select: { id: true, code: true, name: true } })
       : [];

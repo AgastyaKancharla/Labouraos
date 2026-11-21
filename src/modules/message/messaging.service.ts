@@ -13,8 +13,8 @@ import { canAdvanceMessageStatus } from './message-status';
 import { dltTemplateId, SMS_PROVIDER, SmsProvider } from './sms.provider';
 import { callStatusSignatureMatches } from '../call/call-signature';
 import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
-import { isIndianMobile, nationalMobileDigits, normaliseIndianMobile } from '../../common/phone/indian-mobile';
-import { createHash } from 'crypto';
+import { normaliseIndianMobile } from '../../common/phone/indian-mobile';
+import { blocksFor, ContactBlockKind, phoneHash } from '../call/contact-block';
 import { recordTestModeLink } from '../../common/test-mode-link';
 
 export interface SendMessageInput {
@@ -53,9 +53,9 @@ export interface PreferWhatsAppResult {
   smsMessageId: string | null;
 }
 
-/** Call outcomes after which no message goes to that person (Builder B adds them, 21 Nov). */
+/** The ContactBlock kinds that stop messages to a person (src/modules/call/contact-block.ts). */
 export const MESSAGE_BLOCKING_OUTCOMES = ['do_not_call', 'wrong_number'] as const;
-export type MessageBlockKind = (typeof MESSAGE_BLOCKING_OUTCOMES)[number];
+export type MessageBlockKind = ContactBlockKind;
 
 /**
  * Templates that still go to a blocked person (21 Nov review; owner to confirm).
@@ -68,12 +68,8 @@ export const MESSAGE_BLOCK_EXEMPT_TEMPLATES: Record<MessageBlockKind, readonly s
   do_not_call: ['payment_receipt', 'refund_notice', 'refund_paid'],
 };
 
-/** SHA-256 of the 10 national digits (same as ContactBlock.phoneHash, src/modules/call/contact-block.ts). */
-export function contactPhoneHash(phone: string | null | undefined): string {
-  const raw = String(phone ?? '');
-  const digits = isIndianMobile(raw) ? nationalMobileDigits(raw) : raw.replace(/\D/g, '').slice(-10);
-  return createHash('sha256').update(digits).digest('hex');
-}
+/** SHA-256 of the 10 national digits (ContactBlock.phoneHash). */
+export const contactPhoneHash = phoneHash;
 
 export interface MessageActor {
   id: string;
@@ -112,9 +108,9 @@ export class MessagingService {
   }
 
   /**
-   * True when no message may go to this person: any call ended in "do not call",
-   * or the latest call with an outcome ended in "wrong number" (a later answered
-   * call with another outcome clears it).
+   * True when no message may go to this person: a live "wrong number" or "do not
+   * call" block (messagesBlocked in src/modules/call/contact-block.ts), unless the
+   * template is exempt from that kind of block (MESSAGE_BLOCK_EXEMPT_TEMPLATES).
    */
   async messagingBlocked(subjectType: string | null | undefined, subjectId: string | null | undefined, template?: string): Promise<boolean> {
     if (!subjectType || !subjectId || !PERSON_SUBJECTS.has(subjectType)) return false;
@@ -126,51 +122,13 @@ export class MessagingService {
   }
 
   /**
-   * The live "wrong number" / "do not call" blocks for one person.
-   *
-   * INTEGRATION POINT (Builder B, PR #166): once ContactBlock is on main this whole
-   * body becomes `blocksFor(this.prisma, { subjectType, subjectId })` from
-   * src/modules/call/contact-block.ts (messagesBlocked is "size > 0"). Until then:
-   * - when the ContactBlock table exists (B's migration ran), the same rule as B's
-   *   helper, read with SQL: live rows only (a lift ends a block), and a wrong
-   *   number counts only while the record still has the number it was recorded on;
-   * - otherwise the call outcomes: the latest call with an outcome decides, so a
-   *   later answered call with another outcome lifts a wrong number or do not call.
+   * The live "wrong number" / "do not call" blocks for one person: Builder B's
+   * ContactBlock rows (src/modules/call/contact-block.ts). A lift ends a block,
+   * and a wrong number counts only while the record still has the number it was
+   * recorded on.
    */
   async contactBlocksFor(subjectType: string, subjectId: string): Promise<Set<MessageBlockKind>> {
-    const out = new Set<MessageBlockKind>();
-    if (await this.contactBlockTablePresent()) {
-      const rows = await this.prisma.$queryRaw<Array<{ kind: string; phoneHash: string }>>`
-        SELECT "kind", "phoneHash" FROM "ContactBlock"
-        WHERE "subjectType" = ${subjectType} AND "subjectId" = ${subjectId} AND "liftedAt" IS NULL`;
-      for (const row of rows) {
-        if (row.kind === 'wrong_number') {
-          const phone = await this.phoneFor(subjectType, subjectId);
-          if (contactPhoneHash(phone) !== row.phoneHash) continue;
-        }
-        if (row.kind === 'wrong_number' || row.kind === 'do_not_call') out.add(row.kind);
-      }
-      return out;
-    }
-    const latest = await this.prisma.callRecord.findFirst({
-      where: { subjectType, subjectId, agentOutcome: { not: null } },
-      orderBy: [{ agentOutcomeAt: 'desc' }, { createdAt: 'desc' }],
-      select: { agentOutcome: true },
-    });
-    if (latest?.agentOutcome === 'wrong_number' || latest?.agentOutcome === 'do_not_call') out.add(latest.agentOutcome);
-    return out;
-  }
-
-  private contactBlockTable: Promise<boolean> | null = null;
-
-  private contactBlockTablePresent(): Promise<boolean> {
-    if (!this.contactBlockTable) {
-      this.contactBlockTable = this.prisma
-        .$queryRaw<Array<{ present: boolean }>>`SELECT to_regclass('public."ContactBlock"') IS NOT NULL AS "present"`
-        .then((rows) => Boolean(rows[0]?.present))
-        .catch(() => false);
-    }
-    return this.contactBlockTable;
+    return blocksFor(this.prisma, { subjectType, subjectId });
   }
 
   async send(input: SendMessageInput) {

@@ -19,6 +19,10 @@ import { WhatsAppInboxClock } from './whatsapp-inbox.clock';
 import { WhatsAppInboxService } from './whatsapp-inbox.service';
 import { WhatsAppEventsService, MAX_SEND_TRIES } from './whatsapp-events.service';
 import { resolveRegistrationPrefill } from './lead-call.service';
+import { loadLeadAgents } from './lead-assignment';
+import { PricingService } from '../pricing/pricing.service';
+import { CallService } from '../call/call.service';
+import { liveKeyOf, phoneHash } from '../call/contact-block';
 
 const APP_SECRET = 'whatsapp_app_secret_for_review_tests_32';
 /** Wednesday 24 March 2027, 11:00 IST: a date no other suite opens attendance days on. */
@@ -130,6 +134,13 @@ describe('WhatsApp review fixes (21 Nov): heard-from, linking, failed links, cal
     return r;
   }
 
+  /** A live block as Builder B's call outcome writes it (src/modules/call/call.service.ts blockContact). */
+  async function blockPerson(subjectType: string, subjectId: string, kind: 'do_not_call' | 'wrong_number', phone: string) {
+    await prisma.contactBlock.create({
+      data: { subjectType, subjectId, kind, phoneHash: phoneHash(phone), byStaffId: agentA.id, liveKey: liveKeyOf({ subjectType, subjectId }, kind) },
+    });
+  }
+
   async function onShift(staff: S) {
     await app.get(AttendanceService).login(staff.id, {});
     await app.get(AttendanceService).setStatus(staff.id, 'available');
@@ -182,6 +193,7 @@ describe('WhatsApp review fixes (21 Nov): heard-from, linking, failed links, cal
     await prisma.notification.deleteMany({ where: { OR: [{ recipientStaffId: { in: staffIds } }, { subjectId: { in: [...convIds, ...leadIds] } }] } });
     await prisma.whatsAppConversation.deleteMany({ where: { id: { in: convIds } } });
     await prisma.referralLead.deleteMany({ where: { referralId: { in: referralIds } } });
+    await prisma.contactBlock.deleteMany({ where: { subjectId: { in: [...seekerIds, ...referralIds, ...businessIds] } } });
     await prisma.callRecord.deleteMany({ where: { OR: [{ staffId: { in: staffIds } }, { subjectId: { in: seekerIds } }] } });
     await prisma.messageLog.deleteMany({ where: { subjectId: { in: [...seekerIds, ...referralIds, ...businessIds, ...convIds] } } });
     await prisma.contactAttempt.deleteMany({ where: { jobSeekerId: { in: seekerIds } } });
@@ -239,9 +251,7 @@ describe('WhatsApp review fixes (21 Nov): heard-from, linking, failed links, cal
   it('S3/S9: the block is checked on the conversation\'s number too, not only on the linked record', async () => {
     const phone = newPhone();
     const blocked = await makeSeeker({ phone });
-    await prisma.callRecord.create({
-      data: { code: `CL-R1${stamp.slice(-6)}`, provider: 'mock', providerCallId: `wr-dnc-${stamp}`, providerStatus: 'completed', subjectType: 'job_seeker', subjectId: blocked.id, agentOutcome: 'do_not_call', agentOutcomeAt: clock.now() },
-    });
+    await blockPerson('job_seeker', blocked.id, 'do_not_call', phone);
     await deliver(inbound(phone, 'Who is this?')).expect(200);
     const conv = await prisma.whatsAppConversation.findUniqueOrThrow({ where: { phone } });
     // Pretend it was linked to someone else: templates still refused because of the number.
@@ -262,20 +272,43 @@ describe('WhatsApp review fixes (21 Nov): heard-from, linking, failed links, cal
     expect(call.body.code).toBe('DO_NOT_CALL');
   });
 
-  it('S9: lift-aware stand-in: a later answered call lifts a block; a do-not-call still gets its payment receipt', async () => {
+  it('S9: messages follow the ContactBlock rows: a lift ends a block, a wrong number on an old phone no longer counts, a do-not-call still gets its payment receipt', async () => {
     const s = await makeSeeker();
-    await prisma.callRecord.create({
-      data: { code: `CL-R2${stamp.slice(-6)}`, provider: 'mock', providerCallId: `wr-dnc2-${stamp}`, providerStatus: 'completed', subjectType: 'job_seeker', subjectId: s.id, agentOutcome: 'do_not_call', agentOutcomeAt: new Date(DAY_11.getTime() - 60 * MIN) },
-    });
+    await blockPerson('job_seeker', s.id, 'do_not_call', s.phone);
     expect(await messaging.messagingBlocked('job_seeker', s.id)).toBe(true);
     expect(await messaging.messagingBlocked('job_seeker', s.id, 'payment_receipt')).toBe(false);
     expect(await messaging.messagingBlocked('job_seeker', s.id, 'consent_link')).toBe(true);
     const receipt = await messaging.send({ channel: 'sms', template: 'payment_receipt', subjectType: 'job_seeker', subjectId: s.id, variables: { link: 'x' } });
     expect(receipt.status).toBe('sent');
-    await prisma.callRecord.create({
-      data: { code: `CL-R3${stamp.slice(-6)}`, provider: 'mock', providerCallId: `wr-lift-${stamp}`, providerStatus: 'completed', answered: true, subjectType: 'job_seeker', subjectId: s.id, agentOutcome: 'interested', agentOutcomeAt: DAY_11 },
-    });
+    const nudge = await messaging.send({ channel: 'sms', template: 'consent_link', subjectType: 'job_seeker', subjectId: s.id, variables: { link: 'x' } });
+    expect(nudge.status).toBe('blocked');
+    // Lifted by a Manager through Builder B's lift (with a reason): messages go again.
+    await app.get(CallService).liftContactBlock({ id: manager.id, role: 'manager' }, 'job_seeker', s.id, 'do_not_call', 'Called back and asked to hear from us');
     expect(await messaging.messagingBlocked('job_seeker', s.id)).toBe(false);
+
+    // A wrong number blocks everything, even a receipt, until the record's number changes.
+    const w = await makeSeeker();
+    await blockPerson('job_seeker', w.id, 'wrong_number', w.phone);
+    expect(await messaging.messagingBlocked('job_seeker', w.id, 'payment_receipt')).toBe(true);
+    await prisma.jobSeeker.update({ where: { id: w.id }, data: { phone: newPhone() } });
+    expect(await messaging.messagingBlocked('job_seeker', w.id)).toBe(false);
+  });
+
+  it('own shifts: an agent logged in before their own shift starts is not on shift for WhatsApp items; inside it they are', async () => {
+    await prisma.staff.update({ where: { id: agentB.id }, data: { shiftStart: '15:00', shiftEnd: '21:00' } });
+    try {
+      await onShift(agentB);
+      const policy = await app.get(PricingService).current();
+      const at11 = (await loadLeadAgents(prisma, clock.now(), policy)).find((a) => a.id === agentB.id);
+      expect(at11?.onShift).toBe(false); // 11:00 IST, his shift starts at 15:00
+      const at1530 = (await loadLeadAgents(prisma, new Date(DAY_11.getTime() + 270 * MIN), policy)).find((a) => a.id === agentB.id);
+      expect(at1530?.onShift).toBe(true);
+      // agentA has no own shift: the company shift (09:30–18:30 by default) counts.
+      expect((await loadLeadAgents(prisma, clock.now(), policy)).find((a) => a.id === agentA.id)?.onShift).toBe(true);
+    } finally {
+      await prisma.staff.update({ where: { id: agentB.id }, data: { shiftStart: null, shiftEnd: null } });
+      await prisma.attendanceDay.updateMany({ where: { staffId: agentB.id }, data: { logoutAt: clock.now() } });
+    }
   });
 
   it('S1: a new WhatsApp contact is called by conversation id and registered with a prefill reference (never the number)', async () => {

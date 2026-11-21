@@ -1,6 +1,7 @@
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { istDateKey } from '../signup-tracker/signup-timing';
 import { ownerAccountIds } from '../signup-tracker/signup-owner-accounts';
+import { ShiftPolicy, onShiftAt, shiftFor } from '../attendance/staff-shift';
 
 /**
  * Who gets an inbound WhatsApp conversation or a referral partner's lead
@@ -13,9 +14,11 @@ import { ownerAccountIds } from '../signup-tracker/signup-owner-accounts';
  *   3. Nobody on shift: it waits unassigned and is handed out when the next
  *      shift starts (the sweep runs every few minutes).
  *
- * "On shift" is the same as for sign-up help calls: the agent's attendance day
- * is open today and is not a leave day; an owner account (no attendance) counts
- * while it is signed in.
+ * "On shift" is the same as for sign-up help calls and missed calls: the agent's
+ * attendance day is open today and is not a leave day, and now is inside the
+ * agent's own shift (src/modules/attendance/staff-shift.ts; the company shift for
+ * someone without one). An owner account (no attendance) counts while it is
+ * signed in.
  */
 export interface LeadAgent {
   id: string;
@@ -45,7 +48,7 @@ export function pickLeadAgent(candidates: LeadAgent[], ownAgentIds: Array<string
 }
 
 /** Every active call agent, with whether they are on shift now and how many open WhatsApp items they hold. */
-export async function loadLeadAgents(prisma: PrismaService, now: Date): Promise<LeadAgent[]> {
+export async function loadLeadAgents(prisma: PrismaService, now: Date, policy: ShiftPolicy): Promise<LeadAgent[]> {
   const staff = await prisma.staff.findMany({
     where: {
       role: 'call_agent',
@@ -53,7 +56,7 @@ export async function loadLeadAgents(prisma: PrismaService, now: Date): Promise<
       lockedByStaffId: null,
       OR: [{ lockedUntil: null }, { lockedUntil: { lte: now } }],
     },
-    select: { id: true, code: true, teamLeadId: true },
+    select: { id: true, code: true, teamLeadId: true, shiftStart: true, shiftEnd: true },
   });
   if (staff.length === 0) return [];
   const ids = staff.map((s) => s.id);
@@ -90,7 +93,7 @@ export async function loadLeadAgents(prisma: PrismaService, now: Date): Promise<
     id: s.id,
     code: s.code,
     teamLeadId: s.teamLeadId,
-    onShift: owners.has(s.id) ? signedIn.has(s.id) : onDay.has(s.id),
+    onShift: owners.has(s.id) ? signedIn.has(s.id) : onDay.has(s.id) && onShiftAt(now, shiftFor(s, policy)),
     openItems: open.get(s.id) ?? 0,
     lastAssignedAt: last.get(s.id) ?? null,
   }));

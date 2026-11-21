@@ -14,6 +14,7 @@ import { WhatsAppEventsService } from './whatsapp-events.service';
 import { ConsentLinkService } from '../consent/consent-link.service';
 import { WhatsAppInboxJob } from '../../jobs/whatsapp-inbox.job';
 import { MessagingService } from '../message/messaging.service';
+import { liveKeyOf, phoneHash } from '../call/contact-block';
 
 const APP_SECRET = 'whatsapp_app_secret_for_e2e_tests_32ch';
 const VERIFY_TOKEN = 'verify-token-for-e2e-tests';
@@ -88,6 +89,13 @@ describe('WhatsApp (rev 202): inbound conversations as tracked leads, the WhatsA
     });
     staffIds.push(s.id);
     return { id: s.id, role: s.role, code: s.code };
+  }
+
+  /** A live "do not call" as Builder B's call outcome writes it (src/modules/call/call.service.ts blockContact). */
+  async function blockPerson(subjectType: string, subjectId: string, phone: string) {
+    await prisma.contactBlock.create({
+      data: { subjectType, subjectId, kind: 'do_not_call', phoneHash: phoneHash(phone), liveKey: liveKeyOf({ subjectType, subjectId }, 'do_not_call') },
+    });
   }
 
   async function onShift(staff: S, date = DAY1) {
@@ -168,6 +176,7 @@ describe('WhatsApp (rev 202): inbound conversations as tracked leads, the WhatsA
     await prisma.whatsAppConversation.deleteMany({ where: { id: { in: convIds } } });
     await prisma.contactAttempt.deleteMany({ where: { jobSeekerId: { in: seekerIds } } });
     await prisma.messageLog.deleteMany({ where: { OR: [{ subjectId: { in: [...seekerIds, ...convIds] } }, { relatedId: { in: convIds } }] } });
+    await prisma.contactBlock.deleteMany({ where: { subjectId: { in: seekerIds } } });
     await prisma.callRecord.deleteMany({ where: { subjectId: { in: seekerIds } } });
     await prisma.publicLink.deleteMany({ where: { subjectId: { in: seekerIds } } });
     await prisma.jobSeeker.deleteMany({ where: { id: { in: seekerIds } } });
@@ -379,9 +388,7 @@ describe('WhatsApp (rev 202): inbound conversations as tracked leads, the WhatsA
 
   it('a do-not-call person gets no template', async () => {
     const conv = await conversation(seeker.phone);
-    await prisma.callRecord.create({
-      data: { code: `CL-W${stamp.slice(-6)}`, provider: 'mock', providerCallId: `wa-dnc-${stamp}`, providerStatus: 'completed', subjectType: 'job_seeker', subjectId: seeker.id, agentOutcome: 'do_not_call', agentOutcomeAt: clock.now() },
-    });
+    await blockPerson('job_seeker', seeker.id, seeker.phone);
     const res = await api().post(`/whatsapp/conversations/${conv.id}/template`).set('Authorization', bearer(agentA)).send({ template: 'whatsapp_missed_you' });
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('DO_NOT_CONTACT');
@@ -389,8 +396,10 @@ describe('WhatsApp (rev 202): inbound conversations as tracked leads, the WhatsA
     const before = provider.sentMessages.length;
     const auto = await app.get(MessagingService).send({ channel: 'whatsapp', template: 'call_attempt_notice', subjectType: 'job_seeker', subjectId: seeker.id, variables: {} });
     expect(auto.status).toBe('blocked');
-    const link = await api().post(`/whatsapp/send-link/registration/${seeker.id}`).set('Authorization', bearer(agentA)).expect(200);
-    expect(link.body).toEqual({ sentBy: null });
+    // Send on WhatsApp goes through ConsentLinkService, which refuses links to a blocked person (Builder B).
+    const link = await api().post(`/whatsapp/send-link/registration/${seeker.id}`).set('Authorization', bearer(agentA));
+    expect(link.status).toBe(409);
+    expect(link.body.reason).toBe('do_not_call');
     expect(provider.sentMessages.length).toBe(before);
     // ...and no off-shift automatic reply either, while an agent may still answer him (he wrote first).
     await prisma.attendanceDay.updateMany({ where: { staffId: { in: [agentA.id, agentB.id] }, date: DAY1 }, data: { logoutAt: clock.now() } });
@@ -400,7 +409,7 @@ describe('WhatsApp (rev 202): inbound conversations as tracked leads, the WhatsA
     await api().post(`/whatsapp/conversations/${conv.id}/reply`).set('Authorization', bearer(agentA)).send({ text: 'Noted, we will only message you here.' }).expect(200);
     expect(provider.sentMessages.length).toBe(before + 1);
     await prisma.attendanceDay.updateMany({ where: { staffId: { in: [agentA.id, agentB.id] }, date: DAY1 }, data: { logoutAt: null } });
-    await prisma.callRecord.deleteMany({ where: { subjectId: seeker.id } });
+    await prisma.contactBlock.deleteMany({ where: { subjectId: seeker.id } });
   });
 
   it('delivery statuses move a sent message forward, once', async () => {
@@ -498,9 +507,7 @@ describe('WhatsApp (rev 202): inbound conversations as tracked leads, the WhatsA
       await linkSentAt(recent.id, at('2027-03-11T06:00:00.000Z'));
       const dnc = await makeSeeker();
       await linkSentAt(dnc.id, at('2027-03-11T03:00:00.000Z'));
-      await prisma.callRecord.create({
-        data: { code: `CL-E${stamp.slice(-6)}`, provider: 'mock', providerCallId: `wa-dnc2-${stamp}`, providerStatus: 'completed', subjectType: 'job_seeker', subjectId: dnc.id, agentOutcome: 'do_not_call', agentOutcomeAt: clock.now() },
-      });
+      await blockPerson('job_seeker', dnc.id, dnc.phone);
 
       const before = provider.sentMessages.length;
       const result = await events.sweep(clock.now());
