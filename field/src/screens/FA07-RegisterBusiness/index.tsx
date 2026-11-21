@@ -27,7 +27,7 @@ import { StepHeader } from '../_visits/StepHeader';
 import { businessBody, DEFAULT_CITY, formErrors, type FormState, type MobileState, type StaffRow } from './form';
 
 const ROLES = ['owner', 'manager', 'hr', 'supervisor', 'other'] as const;
-const HEARD = ['toll_free_missed_call', 'ad', 'referral_partner', 'field_visit', 'social_media', 'walk_in', 'other'] as const;
+const HEARD = ['toll_free_missed_call', 'ad', 'referral_partner', 'field_visit', 'social_media', 'whatsapp', 'walk_in', 'other'] as const;
 const BTYPES = [
   'restaurant_hotel', 'bakery', 'retail_shop', 'supermarket', 'apartment_society', 'household', 'office',
   'factory', 'warehouse', 'hospital_clinic', 'construction', 'security_agency', 'salon', 'other',

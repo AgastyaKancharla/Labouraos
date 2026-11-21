@@ -86,6 +86,10 @@ export const fixes21En = {
   'fa07.belowMinimumOnce': 'The legal minimum for this work is about ₹{amount} a month. You can still save. Tell the owner now: you confirm it when you send this vacancy to him. The business is the employer and is responsible for wages, PF and ESI.',
   'fa07.tradeHintLegal': 'The legal minimum is about ₹{amount} a month: never offer less.',
 
+  // "How did they hear about Laboura": WhatsApp (Builder D, rev 202; the server accepts it with PR #168).
+  'heard.whatsapp': 'WhatsApp',
+  'fa10.heard.whatsapp': 'WhatsApp',
+
   // Come-back time and handed-over work (item 15, item 13)
   'fa06c.revisitTime': 'Come-back time (optional)',
   'needs.coverFor': 'covering for {name}',
