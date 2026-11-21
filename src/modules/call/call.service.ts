@@ -618,10 +618,13 @@ export class CallService {
     const live = await this.prisma.contactBlock.findUnique({ where: { liveKey: liveKeyOf({ subjectType, subjectId }, kind) } });
     if (!live) throw new NotFoundException('No live block of that kind for this person');
     if (actor.role === 'team_lead') {
-      const owner = live.byStaffId;
-      if (!owner || !(await this.team.includes(actor.id, owner))) {
-        throw new ForbiddenException('A Team Lead lifts only blocks recorded by their own team');
-      }
+      // Decided by who looks after the person (assigned, else registering agent; a business's
+      // account agent, else lead creator); only a person nobody looks after falls back to who recorded it.
+      const owners = await this.ownersOf(subjectType, subjectId);
+      const candidates = owners.length ? owners : [live.byStaffId].filter((x): x is string => Boolean(x));
+      let mine = false;
+      for (const owner of candidates) if (await this.team.includes(actor.id, owner)) mine = true;
+      if (!mine) throw new ForbiddenException("A Team Lead lifts a block only for their own team's people");
     }
     const lifted = await this.prisma.contactBlock.updateMany({
       where: { id: live.id, liftedAt: null },
@@ -639,6 +642,23 @@ export class CallService {
       reason: why,
     });
     return { lifted: true, kind };
+  }
+
+  private async ownersOf(subjectType: string, subjectId: string): Promise<string[]> {
+    if (subjectType === 'job_seeker' || subjectType === 'referral') {
+      const row =
+        subjectType === 'job_seeker'
+          ? await this.prisma.jobSeeker.findUnique({ where: { id: subjectId }, select: { assignedStaffId: true, registeredByStaffId: true } })
+          : await this.prisma.referral.findUnique({ where: { id: subjectId }, select: { assignedStaffId: true, registeredByStaffId: true } });
+      const owner = row?.assignedStaffId ?? row?.registeredByStaffId;
+      return owner ? [owner] : [];
+    }
+    if (subjectType === 'business') {
+      const b = await this.prisma.business.findUnique({ where: { id: subjectId }, select: { accountAgentId: true, leadCreatedByStaffId: true } });
+      const owner = b?.accountAgentId ?? b?.leadCreatedByStaffId;
+      return owner ? [owner] : [];
+    }
+    return [];
   }
 
   /** A callback must be in the future and inside the calling hours (IST). */

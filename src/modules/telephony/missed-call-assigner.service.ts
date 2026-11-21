@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { AuditService } from '../../common/audit/audit.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { teamLeadOf } from '../../common/rbac/own-team';
 import { PricingService } from '../pricing/pricing.service';
@@ -51,6 +52,7 @@ export class MissedCallAssigner {
     private readonly pricing: PricingService,
     private readonly router: InboundCallRouter,
     private readonly notifications: NotificationService,
+    @Optional() private readonly audit?: AuditService,
   ) {}
 
   private async callingWindow(now: Date): Promise<{ inHours: boolean; startsAt: Date }> {
@@ -87,6 +89,7 @@ export class MissedCallAssigner {
     });
     const lastGiven = new Map(last.map((l) => [l.assignedToStaffId!, l._max.assignedAt]));
     let given = 0;
+    const handed: Array<{ callbackTaskId: string; to: string; reason: string }> = [];
     for (const task of unassigned) {
       const caller = await this.router.identify(task.phone);
       let pick: { staffId: string; reason: string } | null = null;
@@ -120,17 +123,29 @@ export class MissedCallAssigner {
       });
       if (moved.count !== 1) continue;
       given += 1;
+      handed.push({ callbackTaskId: task.id, to: pick.staffId, reason: pick.reason });
       counts.set(pick.staffId, (counts.get(pick.staffId) ?? 0) + 1);
       lastGiven.set(pick.staffId, now);
     }
-    if (given) this.logger.log(`Missed calls handed out: ${given}`);
+    if (given) {
+      this.logger.log(`Missed calls handed out: ${given}`);
+      // One audit row per sweep (actor: the system), with who got which missed call and why.
+      await this.audit?.log({
+        actorId: 'system',
+        action: 'missed_call.handed_out',
+        entityType: 'callback_task',
+        entityCode: `sweep-${now.toISOString()}`,
+        after: { count: given, items: handed.slice(0, 200) },
+        reason: 'Missed calls handed out by the software (own agent on shift, else fewest open items)',
+      });
+    }
     return given;
   }
 
   /**
    * Bells for missed calls with no first call back yet: the holder's Team
-   * Lead after 15 minutes, their Manager after an hour; every open bell whose
-   * missed call has been called back (or closed) clears by itself.
+   * Lead after 15 minutes, their Manager after an hour — one bell per person
+   * with the count of callers waiting; it clears by itself when none is left.
    */
   async ringBells(now: Date, callingStartsAt: Date): Promise<{ waiting: number; bells: number }> {
     const open = await this.prisma.callbackTask.findMany({
@@ -140,6 +155,7 @@ export class MissedCallAssigner {
       select: { id: true, phone: true, createdAt: true, assignedToStaffId: true, callerName: true },
     });
     const drafts: NotificationDraft[] = [];
+    const perRecipient = new Map<string, { role: string; callers: number; unheld: number; oldest: number }>();
     const leadsCache = new Map<string, { teamLeadId: string | null; managerId: string | null }>();
     let allLeads: string[] | null = null;
     let allManagers: string[] | null = null;
@@ -152,7 +168,7 @@ export class MissedCallAssigner {
       if (group) group.count += 1;
       else groups.set(key, { task, count: 1 });
     }
-    for (const { task, count } of groups.values()) {
+    for (const { task } of groups.values()) {
       const since = task.createdAt.getTime() > callingStartsAt.getTime() ? task.createdAt : callingStartsAt;
       const minutes = Math.floor((now.getTime() - since.getTime()) / 60_000);
       if (minutes < MISSED_CALL_TL_BELL_MINUTES) continue;
@@ -173,16 +189,24 @@ export class MissedCallAssigner {
         }
       }
       for (const r of recipients) {
-        drafts.push({
-          recipientStaffId: r.id,
-          kind: 'missed_call_waiting',
-          title: `Missed call${count > 1 ? ` (${count}×)` : ''} waiting ${minutes} min (…${tenDigits(task.phone).slice(-4)})`,
-          body: task.assignedToStaffId ? 'Not called back yet by the agent who holds it.' : 'Nobody holds it yet: give it to an agent.',
-          link: notificationLink(r.role, 'missed_call_waiting'),
-          subjectType: 'callback_task',
-          subjectId: task.id,
-        });
+        const sum = perRecipient.get(r.id) ?? { role: r.role, callers: 0, unheld: 0, oldest: 0 };
+        sum.callers += 1;
+        if (!task.assignedToStaffId) sum.unheld += 1;
+        sum.oldest = Math.max(sum.oldest, minutes);
+        perRecipient.set(r.id, sum);
       }
+    }
+    // One bell per person per sweep, with the count (21 Nov fixes): never one per caller.
+    for (const [recipientStaffId, sum] of perRecipient) {
+      drafts.push({
+        recipientStaffId,
+        kind: 'missed_call_waiting',
+        title: `${sum.callers} missed call${sum.callers === 1 ? '' : 's'} waiting for a call back (oldest ${sum.oldest} min)`,
+        body: sum.unheld ? `${sum.unheld} held by nobody yet: give them to an agent.` : 'Not called back yet by the agents who hold them.',
+        link: notificationLink(sum.role, 'missed_call_waiting'),
+        subjectType: 'missed_calls',
+        subjectId: recipientStaffId,
+      });
     }
     const { opened } = await this.notifications.reconcileKind('missed_call_waiting', drafts, () => ({ reason: 'Called back or closed' }), now);
     return { waiting, bells: opened };

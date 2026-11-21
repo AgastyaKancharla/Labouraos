@@ -209,6 +209,7 @@ describe('21 Nov fixes: call work and leads', () => {
     await prisma.jobSeeker.deleteMany({ where: { id: { in: seekerIds } } });
     await prisma.auditLog.deleteMany({ where: { actorId: { in: [...staffIds, 'system'] }, createdAt: { gte: new Date(stamp - 60_000) }, action: { startsWith: 'call' } } });
     await prisma.auditLog.deleteMany({ where: { actorId: { in: staffIds } } });
+    await prisma.auditLog.deleteMany({ where: { action: { in: ['missed_call.handed_out', 'call_work.handed_over'] }, actorId: 'system' } });
     await prisma.leaveRequest.deleteMany({ where: { staffId: { in: staffIds } } });
     await prisma.attendanceSegment.deleteMany({ where: { day: { staffId: { in: staffIds } } } });
     await prisma.attendanceDay.deleteMany({ where: { staffId: { in: staffIds } } });
@@ -220,6 +221,7 @@ describe('21 Nov fixes: call work and leads', () => {
   // ------------------------------------------------------------------ missed calls
 
   it('hands out missed calls: the same caller to one agent, his own agent if on shift, else the fewest open items; repeats are one row and unknown numbers a "New caller" row', async () => {
+    await onlyOurMissedCalls();
     const assigner = app.get(MissedCallAssigner);
     const own = await makeSeeker({ name: 'Own Missedcall', registeredByStaffId: agentA.id });
     // agentA already has more open work than agentB.
@@ -231,14 +233,16 @@ describe('21 Nov fixes: call work and leads', () => {
     const repeat = await missedCall(unknown, 25);
     const known = await missedCall(own.phone, 30);
 
-    expect(await assigner.assignWaiting(NOW)).toBeGreaterThanOrEqual(3);
+    expect(await assigner.assignWaiting(NOW)).toBe(3);
     const rows = await prisma.callbackTask.findMany({ where: { id: { in: [first.id, repeat.id, known.id] } } });
     const byId = new Map(rows.map((r) => [r.id, r]));
     expect(byId.get(first.id)).toMatchObject({ assignedToStaffId: agentB.id, assignmentReason: 'fewest_open', status: 'assigned' });
     expect(byId.get(repeat.id)).toMatchObject({ assignedToStaffId: agentB.id, assignmentReason: 'same_caller' });
     expect(byId.get(known.id)).toMatchObject({ assignedToStaffId: agentA.id, assignmentReason: 'own_agent', jobSeekerId: own.id });
-    // A repeat run gives nothing out twice.
+    // A repeat run gives nothing out twice; each run that gives some out leaves one audit row (actor: the system).
     expect(await assigner.assignWaiting(NOW)).toBe(0);
+    const audit = await prisma.auditLog.findFirst({ where: { action: 'missed_call.handed_out', actorId: 'system' }, orderBy: { createdAt: 'desc' } });
+    expect(JSON.stringify(audit?.after)).toContain(first.id);
 
     const homeB = await request(app.getHttpServer()).get('/call-work/home').set('Authorization', `Bearer ${token(agentB)}`).expect(200);
     expect(homeB.body.newCallers).toHaveLength(1);
@@ -262,30 +266,43 @@ describe('21 Nov fixes: call work and leads', () => {
     expect(order).toEqual([dueNow.id, caller.id, dueLater.id]);
   });
 
-  it('bells the Team Lead after 15 minutes without a first call back and the Manager after an hour; the bells clear once he is called back', async () => {
+  /** Only this file's missed calls stay open (rows other suites left behind would ring every Team Lead too). */
+  const onlyOurMissedCalls = () =>
+    prisma.callbackTask.updateMany({ where: { status: { in: ['pending', 'assigned'] }, phone: { notIn: phones } }, data: { status: 'completed' } });
+  const openBells = (recipients: string[]) =>
+    prisma.notification.findMany({ where: { kind: 'missed_call_waiting', recipientStaffId: { in: recipients }, clearedAt: null }, select: { recipientStaffId: true, title: true, body: true } });
+
+  it('bells the Team Lead after 15 minutes without a first call back and the Manager after an hour — one bell each with the count — and clears once they are called back', async () => {
+    await onlyOurMissedCalls();
     const assigner = app.get(MissedCallAssigner);
     const caller = await makeSeeker({ name: 'Bell Missedcall', registeredByStaffId: agentA.id });
+    const other = await makeSeeker({ name: 'Bell Missedcall Two', registeredByStaffId: agentA.id });
     const task = await missedCall(caller.phone, 10, agentA.id);
+    await missedCall(other.phone, 10, agentA.id);
     await assigner.sweep(NOW);
-    expect(await prisma.notification.count({ where: { kind: 'missed_call_waiting', subjectId: task.id, clearedAt: null } })).toBe(0);
+    expect(await openBells([lead1.id, manager.id])).toEqual([]);
 
     await assigner.sweep(new Date(NOW.getTime() + 6 * MIN));
-    expect(await prisma.notification.findMany({ where: { kind: 'missed_call_waiting', subjectId: task.id, clearedAt: null }, select: { recipientStaffId: true } })).toEqual([{ recipientStaffId: lead1.id }]);
+    const first = await openBells([lead1.id, manager.id]);
+    expect(first).toHaveLength(1);
+    expect(first[0]).toMatchObject({ recipientStaffId: lead1.id, title: '2 missed calls waiting for a call back (oldest 16 min)' });
 
     await assigner.sweep(new Date(NOW.getTime() + 55 * MIN));
-    const open = await prisma.notification.findMany({ where: { kind: 'missed_call_waiting', subjectId: task.id, clearedAt: null }, select: { recipientStaffId: true } });
-    expect(open.map((n) => n.recipientStaffId).sort()).toEqual([lead1.id, manager.id].sort());
-    expect(open.map((n) => n.recipientStaffId)).not.toContain(lead2.id);
+    const later = await openBells([lead1.id, lead2.id, manager.id]);
+    expect(later.map((n) => n.recipientStaffId).sort()).toEqual([lead1.id, manager.id].sort());
 
-    // agentA calls him back (no answer): the missed call is done, with its first try recorded.
-    const call = await callRecord({ staffId: agentA.id, subjectId: caller.id, answered: false, status: 'no_answer', minutesAgo: -56 });
-    await app.get(CallFollowThroughService).onStatusChanged(null, call);
-    expect(await prisma.callbackTask.findUniqueOrThrow({ where: { id: task.id } })).toMatchObject({ status: 'completed', firstAttemptAt: call.startedAt });
+    // agentA calls both back (no answer): the missed calls are done, with their first try recorded.
+    for (const person of [caller, other]) {
+      const call = await callRecord({ staffId: agentA.id, subjectId: person.id, answered: false, status: 'no_answer', minutesAgo: -56 });
+      await app.get(CallFollowThroughService).onStatusChanged(null, call);
+      if (person === caller) expect(await prisma.callbackTask.findUniqueOrThrow({ where: { id: task.id } })).toMatchObject({ status: 'completed', firstAttemptAt: call.startedAt });
+    }
     await assigner.sweep(new Date(NOW.getTime() + 60 * MIN));
-    expect(await prisma.notification.count({ where: { kind: 'missed_call_waiting', subjectId: task.id, clearedAt: null } })).toBe(0);
+    expect(await openBells([lead1.id, manager.id])).toEqual([]);
   });
 
   it('a missed call nobody holds rings every Team Lead; nothing is handed out or rung outside the calling hours', async () => {
+    await onlyOurMissedCalls();
     const assigner = app.get(MissedCallAssigner);
     const night = new Date('2026-11-11T17:00:00.000Z'); // 22:30 IST
     const task = await missedCall(`+91${digits(91)}`, 30);
@@ -295,8 +312,9 @@ describe('21 Nov fixes: call work and leads', () => {
     try {
       await assigner.sweep(NOW);
       expect(await prisma.callbackTask.findUniqueOrThrow({ where: { id: task.id } })).toMatchObject({ assignedToStaffId: null });
-      const leads = await prisma.notification.findMany({ where: { kind: 'missed_call_waiting', subjectId: task.id, clearedAt: null }, select: { recipientStaffId: true } });
-      expect(leads.map((l) => l.recipientStaffId)).toEqual(expect.arrayContaining([lead1.id, lead2.id]));
+      const leads = await openBells([lead1.id, lead2.id]);
+      expect(leads.map((l) => l.recipientStaffId).sort()).toEqual([lead1.id, lead2.id].sort());
+      expect(leads[0].body).toMatch(/held by nobody/);
     } finally {
       await prisma.attendanceDay.updateMany({ where: { staffId: { in: [agentA.id, agentB.id, agentD.id] } }, data: { logoutAt: null } });
     }
@@ -345,6 +363,23 @@ describe('21 Nov fixes: call work and leads', () => {
     await prisma.callTask.create({ data: { staffId: agentD.id, subjectType: 'job_seeker', subjectId: someone.id, kind: 'retry', dueAt: NOW } });
     // B: 1 task + 1 missed call = 2, D: 2 tasks, A: 3. D was never rung, B was rung a minute ago.
     expect(await router.pickAgent({}, null)).toBe(agentD.id);
+  });
+
+  it('a second inbound call never rings an agent whose first call is still ringing', async () => {
+    const router = app.get(InboundCallRouter);
+    const one = await missedCall(`+91${digits(85)}`, 0);
+    const two = await missedCall(`+91${digits(86)}`, 0);
+    const first = await router.route(one.id, one.callId, one.phone, {});
+    const second = await router.route(two.id, two.callId, two.phone, {});
+    expect(first.staffId).toBeTruthy();
+    expect(second.staffId).toBeTruthy();
+    expect(second.staffId).not.toBe(first.staffId);
+    // A call the phone system reports ringing makes the agent busy too.
+    const someone = await makeSeeker({ name: 'Ringing Out' });
+    const ringing = await callRecord({ staffId: agentA.id, subjectId: someone.id, answered: false, status: 'ringing' });
+    await prisma.callRecord.update({ where: { id: ringing.id }, data: { createdAt: new Date(), endedAt: null } });
+    for (let i = 0; i < 3; i += 1) expect(await router.pickAgent({}, null, `+91${digits(87 + i)}`)).not.toBe(agentA.id);
+    await prisma.callRecord.update({ where: { id: ringing.id }, data: { providerStatus: 'completed' } });
   });
 
   // ------------------------------------------------------------------ call results
@@ -443,6 +478,17 @@ describe('21 Nov fixes: call work and leads', () => {
     expect(await prisma.signupTracker.findUniqueOrThrow({ where: { id: tracker.id } })).toMatchObject({ outcome: 'gave_up' });
     expect(await prisma.callTask.count({ where: { signupTrackerId: tracker.id, status: 'open' } })).toBe(0);
     await prisma.jobSeekerHit.deleteMany({ where: { jobSeekerId: { in: [blocked.id, free.id] } } });
+  });
+
+  it("a Team Lead lifts a block for the people their team looks after, whoever recorded it", async () => {
+    const calls = app.get(CallService);
+    const theirs = await makeSeeker({ name: 'Other Team Person', registeredByStaffId: agentC.id });
+    const call = await callRecord({ staffId: agentA.id, subjectId: theirs.id, answered: true, status: 'completed' });
+    await calls.recordOutcome({ id: agentA.id, role: 'call_agent' }, call.id, { agentOutcome: 'do_not_call' });
+    const lift = (who: { id: string; role: string; code: string }) =>
+      request(app.getHttpServer()).post('/contact-blocks/lift').set('Authorization', `Bearer ${token(who)}`).send({ subjectType: 'job_seeker', subjectId: theirs.id, kind: 'do_not_call', reason: 'asked again' });
+    await lift(lead1).expect(403);
+    await lift(lead2).expect(201);
   });
 
   it(`every retry stops after ${RETRY_UNANSWERED_LIMIT} unanswered tries in a row and the Team Lead is told once`, async () => {
