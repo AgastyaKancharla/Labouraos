@@ -26,17 +26,30 @@ export const NO_SHOW_AFTER_MINUTES = 60;
 
 /**
  * Field items (visits, interviews to attend, revisits, joinings) are Builder C's
- * (Laboura Field). Their service is found under this token when it is provided
- * (`{ provide: FIELD_HANDOVER, useExisting: FieldHandoverService }`, exported by
- * its module); until then field items stay where they are and the answer says so.
+ * (Laboura Field): `FieldHandoverService.handOver(agentId, pickedTeammateId | 'spread',
+ * { reason, actorId, leaveRequestId, until })`, exported by FieldVisitModule
+ * (src/modules/field-visit/field-handover.service.ts, PR #169). It is looked up at
+ * run time (that file may not be on this branch yet), under its class or under
+ * the FIELD_HANDOVER token; until it is there, field items stay where they are
+ * and the answer says `field: 'not_connected'`.
  */
 export const FIELD_HANDOVER = 'FIELD_HANDOVER';
 export interface FieldHandoverPort {
   handOver(
     fromStaffId: string,
     to: string | 'spread',
-    context?: { reason: 'leave' | 'no_show'; leaveRequestId?: string | null; actorId?: string | null; from?: Date; to?: Date },
+    options: { reason: string; actorId?: string | null; leaveRequestId?: string | null; until?: Date | null },
   ): Promise<unknown>;
+}
+
+/** The FieldHandoverService class, when its file is in this build. */
+function fieldHandoverClass(): unknown {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return (require('../field-visit/field-handover.service') as { FieldHandoverService?: unknown }).FieldHandoverService ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export interface WorkMoved {
@@ -94,11 +107,16 @@ export class WorkHandoverService {
 
   private fieldHandover(): FieldHandoverPort | null {
     if (!this.moduleRef) return null;
-    try {
-      return this.moduleRef.get<FieldHandoverPort>(FIELD_HANDOVER, { strict: false }) ?? null;
-    } catch {
-      return null;
+    for (const token of [fieldHandoverClass(), FIELD_HANDOVER]) {
+      if (!token) continue;
+      try {
+        const found = this.moduleRef.get<FieldHandoverPort>(token as string, { strict: false });
+        if (found) return found;
+      } catch {
+        // Not provided in this build: try the next way, else not connected.
+      }
     }
+    return null;
   }
 
   /** Counts for T-Req-Sneha: what is open for the person in the leave days. */
@@ -124,7 +142,6 @@ export class WorkHandoverService {
     if (mode !== 'share' && mode !== 'teammate') return null;
     const from = (leave.approvedFromDate ?? leave.fromDate).toISOString().slice(0, 10);
     const to = (leave.approvedToDate ?? leave.toDate).toISOString().slice(0, 10);
-    const start = new Date(`${from}T00:00:00+05:30`);
     const end = new Date(new Date(`${to}T00:00:00+05:30`).getTime() + DAY_MS);
     const mates = await this.followUps.teammates(leave.staffId, from, to);
     const takers = mode === 'teammate' ? mates.filter((m) => m.id === choice?.staffId).map((m) => m.id) : mates.map((m) => m.id);
@@ -146,8 +163,8 @@ export class WorkHandoverService {
       reason: 'leave',
       leaveRequestId: leave.id,
       actorId,
-      from: start,
-      to: end,
+      // Any instant on the last leave day: FieldHandoverService reads its IST date.
+      until: new Date(`${to}T12:00:00+05:30`),
     });
     return moved;
   }
@@ -387,7 +404,7 @@ export class WorkHandoverService {
       });
       // Field items of someone on leave moved with the approval itself.
       if (!already && !onLeave) {
-        const field = await this.moveField(agent.id, 'spread', { reason: 'no_show', actorId: null, from: istDayStartUtc(now), to: new Date(istDayStartUtc(now).getTime() + DAY_MS) });
+        const field = await this.moveField(agent.id, 'spread', { reason: 'no_show', actorId: null, leaveRequestId: null, until: now });
         if (field !== 'not_connected') {
           await this.prisma.workHandover.create({
             data: { reason: 'no_show', recordType: 'field', recordId: field, fromStaffId: agent.id, toStaffId: 'spread', mode: 'share', movedAt: now },

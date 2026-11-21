@@ -501,7 +501,8 @@ describe('21 Nov fixes: call work and leads', () => {
     const moved = await service.onLeaveApproved(lead1.id, leave.id, { mode: 'teammate', staffId: agentB.id }, NOW);
     expect(moved).toMatchObject({ callTasks: 1, missedCalls: 1, signups: 1, field: 'moved' });
     expect(moved!.people).toBeGreaterThanOrEqual(2);
-    expect(field.handOver).toHaveBeenCalledWith(agentA.id, agentB.id, expect.objectContaining({ reason: 'leave', leaveRequestId: leave.id }));
+    // Builder C's FieldHandoverService signature: (agent, teammate | 'spread', { reason, actorId, leaveRequestId, until }).
+    expect(field.handOver).toHaveBeenCalledWith(agentA.id, agentB.id, { reason: 'leave', actorId: lead1.id, leaveRequestId: leave.id, until: new Date('2026-11-12T06:30:00.000Z') });
     expect(await prisma.callTask.findUniqueOrThrow({ where: { id: task.id } })).toMatchObject({ staffId: agentB.id });
     expect(await prisma.callbackTask.findUniqueOrThrow({ where: { id: missed.id } })).toMatchObject({ assignedToStaffId: agentB.id, assignmentReason: 'handover' });
     expect(await prisma.jobSeeker.findUniqueOrThrow({ where: { id: person.id } })).toMatchObject({ assignedStaffId: agentB.id, registeredByStaffId: agentA.id });
