@@ -1453,6 +1453,25 @@ model WorkHandover {
   @@index([returnedAt, returnAfter])
 }
 
+/// 21 Nov fixes (leave): the Team Lead's choice at approval for where an
+/// agent's open work goes. Nothing moves at approval: the call-work sweep moves
+/// the work at the start of the first approved leave day (and anything new
+/// during the leave), and it comes back after. mode keep = nothing moves.
+model WorkHandoverPlan {
+  id              String    @id @default(uuid())
+  leaveRequestId  String    @unique
+  staffId         String
+  /// teammate, share, keep
+  mode            String
+  /// The teammate picked (mode teammate).
+  toStaffId       String?
+  decidedByStaffId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([staffId])
+}
+
 /// 21 Nov fixes (call results): a person marked "wrong number" or "do not call"
 /// on a call. Both stop automatic retries and messages; "do not call" also
 /// blocks calls. A wrong number lifts by itself when the number changes

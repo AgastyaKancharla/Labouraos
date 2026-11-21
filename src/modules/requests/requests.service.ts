@@ -343,9 +343,10 @@ export class RequestsService {
       });
       if (handover) {
         await this.handovers.handOver(actor.id, id, handover, this.clock.now());
-        // Leave-approval hook (21 Nov fixes): every other open call item, and the field items
-        // (FieldHandoverService), go the same way in the same approval.
-        await this.workHandover.onLeaveApproved(actor.id, id, handover, this.clock.now());
+        // Leave-approval hook (21 Nov fixes): the choice is recorded; every other open call item,
+        // the field items (FieldHandoverService) and WhatsApp conversations move the same way when
+        // the leave starts (WorkHandoverService.sweepLeaves, call-work sweep).
+        await this.workHandover.onLeaveApproved(actor.id, id, handover);
       }
     } else if (kind === 'device') {
       if (decision === 'approved') await this.devices.approve(id, actor);

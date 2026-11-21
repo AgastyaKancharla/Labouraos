@@ -70,8 +70,11 @@ export class FollowUpHandoverService {
         staffId: { in: candidates.map((c) => c.id) },
         status: 'approved',
         overturnedAt: null,
-        fromDate: { lte: new Date(`${toDay}T00:00:00.000Z`) },
-        toDate: { gte: new Date(`${fromDay}T00:00:00.000Z`) },
+        // The approved days (a part approval leaves the rest worked).
+        OR: [
+          { approvedFromDate: null, approvedToDate: null, fromDate: { lte: new Date(`${toDay}T00:00:00.000Z`) }, toDate: { gte: new Date(`${fromDay}T00:00:00.000Z`) } },
+          { approvedFromDate: { lte: new Date(`${toDay}T00:00:00.000Z`) }, approvedToDate: { gte: new Date(`${fromDay}T00:00:00.000Z`) } },
+        ],
       },
       select: { staffId: true, half: true, fromDate: true },
     });

@@ -53,11 +53,22 @@ export class CallWorkSweepJob implements OnModuleInit, OnModuleDestroy {
     );
   }
 
+  /** Counts per kind, so "Run now" shows what the run did. */
   async process(now: Date = new Date()) {
+    const leaves = await this.handover.sweepLeaves(now);
     const noShows = await this.handover.sweepNoShows(now);
     const missed = await this.missedCalls.sweep(now);
     const back = await this.handover.returnAfterLeave(now);
-    return { missed, noShows, returned: back.returned };
+    return {
+      missedCallsAssigned: missed.assigned,
+      missedCallsWaiting: missed.waiting,
+      missedCallBells: missed.bells,
+      leaveAgents: leaves.agents,
+      leaveItemsMoved: leaves.moved,
+      noShowAgents: noShows.agents,
+      noShowItemsMoved: noShows.moved,
+      returnedAfterLeave: back.returned,
+    };
   }
 
   async onModuleInit(): Promise<void> {

@@ -52,6 +52,31 @@ function fieldHandoverClass(): unknown {
   }
 }
 
+export const WHATSAPP_HANDOVER = 'WHATSAPP_HANDOVER';
+export interface WhatsAppHandoverPort {
+  handOver(fromStaffId: string, toStaffId: string | null): Promise<unknown>;
+}
+
+/** The WhatsAppInboxService class (Builder D), when its file is in this build. */
+function whatsAppInboxClass(): unknown {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return (require('../whatsapp-inbox/whatsapp-inbox.service') as { WhatsAppInboxService?: unknown }).WhatsAppInboxService ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Leave rows that cover `date` on their APPROVED dates (part approval: only those days). */
+export function approvedOn(date: Date): Prisma.LeaveRequestWhereInput {
+  return {
+    OR: [
+      { approvedFromDate: null, approvedToDate: null, fromDate: { lte: date }, toDate: { gte: date } },
+      { approvedFromDate: { lte: date }, approvedToDate: { gte: date } },
+    ],
+  };
+}
+
 export interface WorkMoved {
   callTasks: number;
   missedCalls: number;
@@ -81,12 +106,14 @@ interface MoveParams {
 /**
  * Leave and no-show handover of ALL open call items (21 Nov fixes, Master
  * Guide rev 202, "Assign and leave"):
- * - on an approved full-day leave, everything open — call tasks (callbacks,
- *   retries, sign-up help), missed calls, follow-ups (FollowUpHandoverService),
- *   the people the agent looks after (stuck registrations, close to a refund)
- *   and their app sign-ups — goes to the teammate the Team Lead picked, or is
- *   spread across the team, each item to whoever has the fewest open items;
- *   people and sign-ups go back after the leave if still with the teammate;
+ * - on an approved full-day leave the Team Lead's choice is recorded at
+ *   approval (WorkHandoverPlan); from the first approved leave day (the
+ *   approved dates) everything open — call tasks (callbacks, retries, sign-up
+ *   help), missed calls, follow-ups, the people the agent looks after (stuck
+ *   registrations, close to a refund) and their app sign-ups — goes to the
+ *   teammate picked, or is spread across the team, each item to whoever has
+ *   the fewest open items; "keep" moves nothing; people and sign-ups go back
+ *   after the leave if still with the teammate;
  * - an agent not logged in an hour after their shift start: today's open
  *   items are spread across the teammates on shift the same way (once a day,
  *   repeat runs only move what is still theirs).
@@ -105,18 +132,22 @@ export class WorkHandoverService {
     @Optional() private readonly moduleRef?: ModuleRef,
   ) {}
 
-  private fieldHandover(): FieldHandoverPort | null {
+  private lookUp<T>(...tokens: unknown[]): T | null {
     if (!this.moduleRef) return null;
-    for (const token of [fieldHandoverClass(), FIELD_HANDOVER]) {
+    for (const token of tokens) {
       if (!token) continue;
       try {
-        const found = this.moduleRef.get<FieldHandoverPort>(token as string, { strict: false });
+        const found = this.moduleRef.get<T>(token as string, { strict: false });
         if (found) return found;
       } catch {
         // Not provided in this build: try the next way, else not connected.
       }
     }
     return null;
+  }
+
+  private fieldHandover(): FieldHandoverPort | null {
+    return this.lookUp<FieldHandoverPort>(fieldHandoverClass(), FIELD_HANDOVER);
   }
 
   /** Counts for T-Req-Sneha: what is open for the person in the leave days. */
@@ -131,42 +162,108 @@ export class WorkHandoverService {
   }
 
   /**
-   * After an approved leave (requests leave-approval hook): every open call
-   * item moves as the Team Lead chose (teammate or share). "keep" moves nothing.
+   * After an approved leave (requests leave-approval hook): records the Team
+   * Lead's choice (teammate, share, keep). Nothing moves now: the call-work
+   * sweep moves the work when the first approved leave day starts
+   * (sweepLeaves), so a leave approved a week ahead leaves today's list alone.
    */
-  async onLeaveApproved(actorId: string, leaveId: string, choice: HandoverChoice | undefined, now: Date): Promise<WorkMoved | null> {
+  async onLeaveApproved(actorId: string, leaveId: string, choice: HandoverChoice | undefined): Promise<{ planned: string } | null> {
     const leave = await this.prisma.leaveRequest.findUnique({ where: { id: leaveId } });
     if (!leave || leave.status !== 'approved') return null;
     if (!(await this.followUps.isFullDayLeave(leave))) return null;
-    const mode = (choice?.mode ?? 'keep') as string;
-    if (mode !== 'share' && mode !== 'teammate') return null;
-    const from = (leave.approvedFromDate ?? leave.fromDate).toISOString().slice(0, 10);
-    const to = (leave.approvedToDate ?? leave.toDate).toISOString().slice(0, 10);
-    const end = new Date(new Date(`${to}T00:00:00+05:30`).getTime() + DAY_MS);
-    const mates = await this.followUps.teammates(leave.staffId, from, to);
-    const takers = mode === 'teammate' ? mates.filter((m) => m.id === choice?.staffId).map((m) => m.id) : mates.map((m) => m.id);
-    if (takers.length === 0) return null;
-    const moved = await this.move({
-      fromStaffId: leave.staffId,
-      reason: 'leave',
-      mode,
-      takers,
-      leaveRequestId: leave.id,
-      actorId,
-      now,
-      dueBefore: end,
-      includePeople: true,
-      includeFollowUps: false,
-      returnAfter: end,
+    const mode = choice?.mode === 'share' || choice?.mode === 'teammate' ? choice.mode : 'keep';
+    const toStaffId = mode === 'teammate' ? (choice?.staffId ?? null) : null;
+    await this.prisma.workHandoverPlan.upsert({
+      where: { leaveRequestId: leave.id },
+      create: { leaveRequestId: leave.id, staffId: leave.staffId, mode, toStaffId, decidedByStaffId: actorId },
+      update: { mode, toStaffId, decidedByStaffId: actorId },
     });
-    moved.field = await this.moveField(leave.staffId, mode === 'teammate' ? takers[0] : 'spread', {
-      reason: 'leave',
-      leaveRequestId: leave.id,
-      actorId,
-      // Any instant on the last leave day: FieldHandoverService reads its IST date.
-      until: new Date(`${to}T12:00:00+05:30`),
+    return { planned: mode };
+  }
+
+  /**
+   * Agents on a full day of approved leave today (the approved dates, not the
+   * asked ones): their open work moves as the Team Lead planned — to the picked
+   * teammate (when working today, else spread), spread across the teammates
+   * by fewest open items, or nothing for "keep". Runs from midnight of each
+   * leave day, so it is done before the teammates' shift starts, and keeps
+   * moving anything new during the leave. A leave approved without a choice is
+   * spread. People and app sign-ups come back after the leave.
+   */
+  async sweepLeaves(now: Date): Promise<{ agents: number; moved: number }> {
+    const today = istDateValue(now);
+    const todayKey = today.toISOString().slice(0, 10);
+    const leaves = await this.prisma.leaveRequest.findMany({
+      where: { status: 'approved', overturnedAt: null, ...approvedOn(today) },
+      select: { id: true, staffId: true, half: true, fromDate: true, toDate: true, approvedFromDate: true, approvedToDate: true },
     });
-    return moved;
+    let agents = 0;
+    let moved = 0;
+    for (const leave of leaves) {
+      if (!(await this.followUps.isFullDayLeave(leave))) continue;
+      const staff = await this.prisma.staff.findUnique({ where: { id: leave.staffId }, select: { status: true, role: true } });
+      if (!staff || staff.status !== 'active' || !['call_agent', 'field_agent'].includes(staff.role)) continue;
+      const plan = await this.prisma.workHandoverPlan.findUnique({ where: { leaveRequestId: leave.id } });
+      if (plan?.mode === 'keep') continue;
+      const mates = (await this.followUps.teammates(leave.staffId, todayKey, todayKey)).map((m) => m.id);
+      if (mates.length === 0) continue;
+      const teammate = plan?.mode === 'teammate' && plan.toStaffId && mates.includes(plan.toStaffId) ? plan.toStaffId : null;
+      const lastDay = (leave.approvedToDate ?? leave.toDate).toISOString().slice(0, 10);
+      const end = new Date(new Date(`${lastDay}T00:00:00+05:30`).getTime() + DAY_MS);
+      const result = await this.move({
+        fromStaffId: leave.staffId,
+        reason: 'leave',
+        mode: teammate ? 'teammate' : 'share',
+        takers: teammate ? [teammate] : mates,
+        leaveRequestId: leave.id,
+        actorId: plan?.decidedByStaffId ?? null,
+        now,
+        dueBefore: end,
+        includePeople: true,
+        includeFollowUps: true,
+        returnAfter: end,
+      });
+      // Field items (Builder C) once per leave; WhatsApp conversations (Builder D) every run.
+      const fieldDone = await this.prisma.workHandover.findFirst({ where: { leaveRequestId: leave.id, recordType: 'field' }, select: { id: true } });
+      if (!fieldDone) {
+        const field = await this.moveField(leave.staffId, teammate ?? 'spread', {
+          reason: 'leave',
+          leaveRequestId: leave.id,
+          actorId: plan?.decidedByStaffId ?? null,
+          // Any instant on the last leave day: FieldHandoverService reads its IST date.
+          until: new Date(`${lastDay}T12:00:00+05:30`),
+        });
+        if (field !== 'not_connected') {
+          await this.prisma.workHandover.create({
+            data: { reason: 'leave', leaveRequestId: leave.id, recordType: 'field', recordId: field, fromStaffId: leave.staffId, toStaffId: teammate ?? 'spread', mode: teammate ? 'teammate' : 'share', movedAt: now },
+          });
+        }
+      }
+      await this.moveWhatsApp(leave.staffId, teammate);
+      const count = result.callTasks + result.missedCalls + result.followUps + result.people + result.signups;
+      if (count) {
+        agents += 1;
+        moved += count;
+      }
+    }
+    return { agents, moved };
+  }
+
+  /**
+   * Builder D's WhatsApp inbox (PR #168): `WhatsAppInboxService.handOver(from, to | null)` moves the
+   * agent's open conversations (null = back to the software's own assignment). Looked up at run time;
+   * until it is in the build nothing happens here.
+   */
+  private async moveWhatsApp(fromStaffId: string, toStaffId: string | null): Promise<'moved' | 'not_connected' | 'failed'> {
+    const inbox = this.lookUp<WhatsAppHandoverPort>(whatsAppInboxClass(), WHATSAPP_HANDOVER);
+    if (!inbox) return 'not_connected';
+    try {
+      await inbox.handOver(fromStaffId, toStaffId);
+      return 'moved';
+    } catch (err) {
+      this.logger.error(`WhatsApp handover for ${fromStaffId} failed: ${(err as Error).message}`);
+      return 'failed';
+    }
   }
 
   private async moveField(fromStaffId: string, to: string | 'spread', context: Parameters<FieldHandoverPort['handOver']>[2]): Promise<WorkMoved['field']> {
@@ -354,7 +451,7 @@ export class WorkHandoverService {
     const [days, leaves] = await Promise.all([
       this.prisma.attendanceDay.findMany({ where: { staffId: { in: ids }, date }, select: { staffId: true, loginAt: true, logoutAt: true, dayType: true } }),
       this.prisma.leaveRequest.findMany({
-        where: { staffId: { in: ids }, status: 'approved', overturnedAt: null, fromDate: { lte: date }, toDate: { gte: date } },
+        where: { staffId: { in: ids }, status: 'approved', overturnedAt: null, ...approvedOn(date) },
         select: { staffId: true, half: true },
       }),
     ]);
@@ -368,17 +465,15 @@ export class WorkHandoverService {
     let agentsMoved = 0;
     let moved = 0;
     for (const agent of agents) {
-      if (halfDay.has(agent.id)) continue;
-      // On leave today: anything that reached them after the leave was approved (new retries,
-      // missed calls, tasks due today) is spread the same way, so nothing waits for their return.
-      const onLeave = away.has(agent.id);
+      // On leave today: sweepLeaves moves their work as the Team Lead planned (keep = nothing).
+      if (halfDay.has(agent.id) || away.has(agent.id)) continue;
       const day = dayOf.get(agent.id);
-      if (!onLeave && (day?.loginAt || day?.dayType === 'leave')) continue;
+      if (day?.loginAt || day?.dayType === 'leave') continue;
       const shift = shiftOf(policy);
       const start = clockMinutes(shift.start);
       const end = clockMinutes(shift.end);
       if (start === null || end === null) continue;
-      if (minute < (onLeave ? start : start + NO_SHOW_AFTER_MINUTES) || minute >= end) continue;
+      if (minute < start + NO_SHOW_AFTER_MINUTES || minute >= end) continue;
       const lead = teamLeadOf(agent);
       if (!lead) continue;
       const team = await new OwnTeam(this.prisma).memberIds(lead);
@@ -386,7 +481,7 @@ export class WorkHandoverService {
       if (takers.length === 0) continue;
       const result = await this.move({
         fromStaffId: agent.id,
-        reason: onLeave ? 'leave' : 'no_show',
+        reason: 'no_show',
         mode: 'share',
         takers,
         leaveRequestId: null,
@@ -402,9 +497,9 @@ export class WorkHandoverService {
         where: { fromStaffId: agent.id, reason: 'no_show', recordType: 'field', movedAt: { gte: istDayStartUtc(now) } },
         select: { id: true },
       });
-      // Field items of someone on leave moved with the approval itself.
-      if (!already && !onLeave) {
+      if (!already) {
         const field = await this.moveField(agent.id, 'spread', { reason: 'no_show', actorId: null, leaveRequestId: null, until: now });
+        await this.moveWhatsApp(agent.id, null);
         if (field !== 'not_connected') {
           await this.prisma.workHandover.create({
             data: { reason: 'no_show', recordType: 'field', recordId: field, fromStaffId: agent.id, toStaffId: 'spread', mode: 'share', movedAt: now },

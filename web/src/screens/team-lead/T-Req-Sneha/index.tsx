@@ -164,7 +164,7 @@ export default function RequestDetailScreen() {
                 ))}
                 <option value="keep">Keep for her return</option>
               </select>
-              <span className="tl-sub">{leaveWorkLine(fu)}. Shared means each item goes to whoever has the fewest open items. People and app sign-ups (and follow-ups not done) move back to {who} after the leave.</span>
+              <span className="tl-sub">{leaveWorkLine(fu)}. It moves on the morning her leave starts; shared means each item goes to whoever has the fewest open items. People and app sign-ups (and follow-ups not done) move back to {who} after the leave.</span>
             </label>
           )}
           <div className="tl-actions" style={{ marginTop: 12 }}>
