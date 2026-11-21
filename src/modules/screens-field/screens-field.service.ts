@@ -491,7 +491,7 @@ export class ScreensFieldService {
   private async revisitsDue(staffId: string, byKey: string) {
     // 21 Nov: revisits handed over to me come in, mine handed away go out, and a verification
     // visit still open is shown once, as its planned verification (not again as a revisit).
-    const [handedIn, away] = await Promise.all([handedTo(this.prisma, staffId, 'revisit'), handedAwayIds(this.prisma, staffId, 'revisit')]);
+    const [handedIn, away] = await Promise.all([handedTo(this.prisma, staffId, 'revisit', this.clock.now()), handedAwayIds(this.prisma, staffId, 'revisit', this.clock.now())]);
     const rows = await this.prisma.businessVisit.findMany({
       where: {
         OR: [{ staffId }, { id: { in: handedIn.map((h) => h.recordId) } }],

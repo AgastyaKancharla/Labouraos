@@ -1,4 +1,4 @@
-import { coversBusiness } from '../field-visit/field-handover.service';
+import { coversPiece } from '../field-visit/field-handover.service';
 import { agentViewerFor, businessForViewer, heldByAgent } from '../business/business-agent-view';
 import { isBusinessSuspended } from '../business/business-candidate-access';
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
@@ -147,15 +147,14 @@ export class FieldSellingScreensService {
       select: { id: true },
     });
     if (visit) return;
-    // 21 Nov: covering a teammate's open work of this business (leave handover).
-    if (await coversBusiness(this.prisma, actor.id, business.id)) return;
     throw new NotFoundException('Vacancy not found');
   }
 
-  /** 21 Nov: a field agent covering this business's work on leave, or sent to attend its interview. */
-  private async coversOrAttends(actor: SellingActor, businessId: string, interviewId?: string): Promise<boolean> {
-    if (await coversBusiness(this.prisma, actor.id, businessId)) return true;
-    if (!interviewId) return false;
+  /** 21 Nov: a field agent covering this handed-over piece (interview or joining), or sent to attend this interview. */
+  private async coversOrAttends(actor: SellingActor, piece: { kind: 'interview' | 'joining'; recordId: string }): Promise<boolean> {
+    if (await coversPiece(this.prisma, actor.id, piece.kind, piece.recordId, this.clock.now())) return true;
+    if (piece.kind !== 'interview') return false;
+    const interviewId = piece.recordId;
     const visit = await this.prisma.visitAssignment.findFirst({
       where: { relatedType: 'interview', relatedId: interviewId, assignedStaffId: actor.id, status: { in: ['assigned', 'done'] } },
       select: { id: true },
@@ -405,7 +404,7 @@ export class FieldSellingScreensService {
     if (!interview) throw new NotFoundException('Interview not found');
     if (
       actor.role === 'field_agent' && interview.business.accountAgentId !== actor.id && interview.proposedByStaffId !== actor.id &&
-      !(await this.coversOrAttends(actor, interview.businessId, interview.id))
+      !(await this.coversOrAttends(actor, { kind: 'interview', recordId: interview.id }))
     ) {
       throw new ForbiddenException('This interview is for another agent\'s business');
     }
@@ -490,7 +489,7 @@ export class FieldSellingScreensService {
     if (!placement) throw new NotFoundException('Placement not found');
     if (
       actor.role === 'field_agent' && placement.business.accountAgentId !== actor.id && placement.createdByStaffId !== actor.id &&
-      !(await this.coversOrAttends(actor, placement.businessId))
+      !(await this.coversOrAttends(actor, { kind: 'joining', recordId: placement.id }))
     ) {
       throw new ForbiddenException('This placement is for another agent\'s business');
     }

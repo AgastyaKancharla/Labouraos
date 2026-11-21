@@ -3518,8 +3518,10 @@ model FieldHandover {
   leaveRequestId   String?
   createdByStaffId String?
   createdAt        DateTime  @default(now())
-  /// Set when a later handover moves the same piece again (only one live row per piece).
+  /// Set when a later handover moves the same piece again, the agent is back, or the piece is done.
   endedAt          DateTime?
+  /// 21 Nov review: the cover ends at this instant (the start of the IST day after the leave's last day).
+  until            DateTime?
 
   @@index([toStaffId, kind, endedAt])
   @@index([fromStaffId, kind, endedAt])

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, Req, UseGuards, UseInterceptors } from '@nestjs/common';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
@@ -35,10 +35,19 @@ export class FieldAssignmentsController {
     return this.handover.reassign(id, actorOf(req), body ?? {});
   }
 
-  /** Body: { fromStaffId, toStaffId? (empty = spread across the team), reason }. */
+  /** Body: { fromStaffId, toStaffId? (empty = spread across the team), until (last day away, YYYY-MM-DD), reason }. */
   @Post('hand-over')
   @RequireRoles('team_lead', 'manager', 'ceo')
-  handOver(@Req() req: Authed, @Body() body: { fromStaffId?: unknown; toStaffId?: unknown; reason?: unknown }) {
+  handOver(@Req() req: Authed, @Body() body: { fromStaffId?: unknown; toStaffId?: unknown; reason?: unknown; until?: unknown }) {
     return this.handover.handOverByHand(actorOf(req), body ?? {});
+  }
+
+  /** Body: { fromStaffId }. The agent is back: every live cover of his work ends (open visits go back to him). */
+  @Post('hand-back')
+  @RequireRoles('team_lead', 'manager', 'ceo')
+  handBack(@Req() req: Authed, @Body() body: { fromStaffId?: unknown }) {
+    const fromStaffId = typeof body?.fromStaffId === 'string' ? body.fromStaffId : '';
+    if (!fromStaffId) throw new BadRequestException('fromStaffId is required');
+    return this.handover.handBack(actorOf(req), fromStaffId);
   }
 }

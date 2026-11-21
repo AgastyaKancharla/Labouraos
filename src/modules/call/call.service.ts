@@ -1,3 +1,4 @@
+import { coversPieceAt } from '../field-visit/field-handover.service';
 import { OwnTeam } from '../../common/rbac/own-team';
 import {
   BadRequestException,
@@ -724,7 +725,7 @@ export class CallService {
     const [visit, task, cover] = await Promise.all([
       this.prisma.visitAssignment.findFirst({ where: { businessId, assignedStaffId: staffId, status: 'assigned' }, select: { id: true } }),
       this.prisma.followUpTask.findFirst({ where: { subjectType: 'business', subjectId: businessId, assignedStaffId: staffId, status: 'pending' }, select: { id: true } }),
-      this.prisma.fieldHandover.findFirst({ where: { businessId, toStaffId: staffId, endedAt: null }, select: { id: true } }),
+      coversPieceAt(this.prisma, staffId, businessId, ['revisit', 'joining', 'interview', 'visit_assignment'], this.clock.now()),
     ]);
     return Boolean(visit || task || cover);
   }

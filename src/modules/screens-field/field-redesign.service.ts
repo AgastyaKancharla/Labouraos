@@ -394,7 +394,7 @@ export class FieldRedesignService {
       orderBy: { slotStartsAt: 'asc' },
       select: { id: true, code: true, slotStartsAt: true, jobSeeker: { select: { name: true } }, business: { select: { id: true, name: true, locality: true } } },
     });
-    const interviewsAway = await handedAwayIds(this.prisma, staffId, 'interview');
+    const interviewsAway = await handedAwayIds(this.prisma, staffId, 'interview', now);
     for (const i of interviewsToday) {
       if (interviewsAway.has(i.id) && !interviewAssignments.some((a) => a.relatedId === i.id)) continue;
       items.push({
@@ -459,7 +459,7 @@ export class FieldRedesignService {
 
     // Joinings to confirm by tomorrow.
     // 21 Nov: joinings handed over to me on a teammate's leave come in; mine handed away go out.
-    const [joiningsIn, joiningsAway] = await Promise.all([handedTo(this.prisma, staffId, 'joining'), handedAwayIds(this.prisma, staffId, 'joining')]);
+    const [joiningsIn, joiningsAway] = await Promise.all([handedTo(this.prisma, staffId, 'joining', now), handedAwayIds(this.prisma, staffId, 'joining', now)]);
     const joinings = await this.prisma.placement.findMany({
       where: {
         joinedDate: null,
@@ -1354,7 +1354,7 @@ export class FieldRedesignService {
   private async revisitsDue(staffId: string, byKey: string) {
     // 21 Nov: revisits handed over to me on a teammate's leave come in; mine handed away go out;
     // a verification visit still open is its job card, not a revisit (no double row, M2).
-    const [handedIn, away] = await Promise.all([handedTo(this.prisma, staffId, 'revisit'), handedAwayIds(this.prisma, staffId, 'revisit')]);
+    const [handedIn, away] = await Promise.all([handedTo(this.prisma, staffId, 'revisit', this.clock.now()), handedAwayIds(this.prisma, staffId, 'revisit', this.clock.now())]);
     const rows = await this.prisma.businessVisit.findMany({
       where: {
         OR: [{ staffId }, { id: { in: handedIn.map((h) => h.recordId) } }],

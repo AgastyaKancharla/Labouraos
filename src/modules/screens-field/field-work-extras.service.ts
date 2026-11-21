@@ -319,9 +319,9 @@ export class FieldWorkExtrasService {
         include: { business: { select: { id: true, name: true } } },
         take: 50,
       }),
-      handedTo(this.prisma, staffId, 'revisit').then(async (revisits) => [
+      handedTo(this.prisma, staffId, 'revisit', now).then(async (revisits) => [
         ...revisits.map((r) => ({ ...r, kind: 'revisit' as const })),
-        ...(await handedTo(this.prisma, staffId, 'joining')).map((r) => ({ ...r, kind: 'joining' as const })),
+        ...(await handedTo(this.prisma, staffId, 'joining', now)).map((r) => ({ ...r, kind: 'joining' as const })),
       ]),
     ]);
     for (const a of assignments) {

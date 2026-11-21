@@ -1,4 +1,4 @@
-import { coversBusiness } from '../field-visit/field-handover.service';
+import { coversPiece } from '../field-visit/field-handover.service';
 import { LegalDocumentService } from '../legal/legal-document.service';
 import { BUSINESS_SUSPENDED_MESSAGE, isBusinessSuspended } from '../business/business-candidate-access';
 import { ReconsentRequiredException } from '../legal/legal-status';
@@ -146,12 +146,14 @@ export class FieldSellingService {
   private async assertActsOnBusiness(
     actor: SellingActor,
     business: { id?: string; accountAgentId: string | null; leadCreatedByStaffId: string | null },
+    piece?: { kind: 'interview' | 'joining'; recordId: string },
   ) {
     await this.staff(actor);
-    // 21 Nov: a field agent covering a teammate's open work (leave handover) acts on that business too.
+    // 21 Nov: a field agent covering one handed-over piece (an interview to attend, a joining) acts
+    // on that piece only — never on the rest of the business.
     if (
       actor.role === 'field_agent' && business.accountAgentId !== actor.id &&
-      !(business.id && (await this.worksOnBusiness(actor.id, business.id)))
+      !(piece && (await this.worksOnPiece(actor.id, piece)))
     ) {
       throw new ForbiddenException('Field agents act only on their own account businesses');
     }
@@ -179,7 +181,7 @@ export class FieldSellingService {
       include: { business: true, jobSeeker: true, vacancy: { include: { branch: true } } },
     });
     if (!interview) throw new NotFoundException('Interview not found');
-    await this.assertActsOnBusiness(actor, interview.business);
+    await this.assertActsOnBusiness(actor, interview.business, { kind: 'interview', recordId: interview.id });
     return interview;
   }
 
@@ -240,11 +242,12 @@ export class FieldSellingService {
     });
   }
 
-  /** A field agent covering this business's work (leave handover) or sent to it for an interview. */
-  private async worksOnBusiness(staffId: string, businessId: string): Promise<boolean> {
-    if (await coversBusiness(this.prisma, staffId, businessId)) return true;
+  /** A field agent covering this handed-over piece, or sent to attend this very interview. */
+  private async worksOnPiece(staffId: string, piece: { kind: 'interview' | 'joining'; recordId: string }): Promise<boolean> {
+    if (await coversPiece(this.prisma, staffId, piece.kind, piece.recordId, this.clock.now())) return true;
+    if (piece.kind !== 'interview') return false;
     const visit = await this.prisma.visitAssignment.findFirst({
-      where: { businessId, assignedStaffId: staffId, status: 'assigned', purpose: 'interview_attendance' },
+      where: { relatedType: 'interview', relatedId: piece.recordId, assignedStaffId: staffId, status: 'assigned', purpose: 'interview_attendance' },
       select: { id: true },
     });
     return Boolean(visit);
@@ -757,7 +760,7 @@ export class FieldSellingService {
       include: { business: true, jobSeeker: true },
     });
     if (!placement) throw new NotFoundException('Placement not found');
-    await this.assertActsOnBusiness(actor, placement.business);
+    await this.assertActsOnBusiness(actor, placement.business, { kind: 'joining', recordId: placement.id });
     if (placement.status !== 'confirmed' || !placement.joiningDate) {
       throw new BadRequestException('Joining is confirmed only after the fee is paid');
     }

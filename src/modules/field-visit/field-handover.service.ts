@@ -32,32 +32,87 @@ export interface HandoverResult {
   toOnLeave: string[];
 }
 
-type Db = Pick<PrismaService, 'fieldHandover' | 'leaveRequest'>;
+type Db = Pick<PrismaService, 'fieldHandover' | 'leaveRequest' | 'visitAssignment' | 'interview' | 'businessVisit' | 'placement'>;
+
+type HandoverRow = { id: string; kind: string; recordId: string; fromStaffId: string; toStaffId: string; businessId: string | null; until: Date | null };
+
+/** Is the handed-over piece finished (so the cover's row ends)? */
+async function pieceDone(prisma: Db, row: HandoverRow): Promise<boolean> {
+  switch (row.kind) {
+    case 'visit_assignment': {
+      const a = await prisma.visitAssignment.findUnique({ where: { id: row.recordId }, select: { status: true, assignedStaffId: true } });
+      return !a || a.status !== 'assigned' || a.assignedStaffId !== row.toStaffId;
+    }
+    case 'interview': {
+      const i = await prisma.interview.findUnique({ where: { id: row.recordId }, select: { status: true, candidateArrivedAt: true, resultRecordedAt: true } });
+      return !i || Boolean(i.candidateArrivedAt) || Boolean(i.resultRecordedAt) || !['offered', 'confirmed'].includes(i.status);
+    }
+    case 'revisit': {
+      const v = await prisma.businessVisit.findUnique({ where: { id: row.recordId }, select: { id: true, businessId: true, visitedAt: true } });
+      if (!v) return true;
+      const later = v.businessId
+        ? await prisma.businessVisit.findFirst({ where: { businessId: v.businessId, visitedAt: { gt: v.visitedAt } }, select: { id: true } })
+        : await prisma.businessVisit.findFirst({ where: { revisitOfVisitId: v.id }, select: { id: true } });
+      return Boolean(later);
+    }
+    case 'joining': {
+      const p = await prisma.placement.findUnique({ where: { id: row.recordId }, select: { joinedDate: true, status: true } });
+      return !p || Boolean(p.joinedDate) || !['confirmed', 'active'].includes(p.status);
+    }
+    default:
+      return true;
+  }
+}
+
+/**
+ * Live handover rows matching `where` (21 Nov review): a row ends when its `until` (the day after
+ * the leave's last day) has passed, or when the piece is finished — those rows are closed here
+ * (endedAt) and left out.
+ */
+export async function liveHandovers(
+  prisma: Db,
+  where: { toStaffId?: string; fromStaffId?: string; kind?: HandoverKind | { in: HandoverKind[] }; recordId?: string; businessId?: string },
+  now: Date,
+): Promise<HandoverRow[]> {
+  const rows = await prisma.fieldHandover.findMany({
+    where: { ...where, endedAt: null },
+    select: { id: true, kind: true, recordId: true, fromStaffId: true, toStaffId: true, businessId: true, until: true },
+    take: 500,
+  });
+  const live: HandoverRow[] = [];
+  const ended: string[] = [];
+  for (const row of rows) {
+    if ((row.until && row.until.getTime() <= now.getTime()) || (await pieceDone(prisma, row))) ended.push(row.id);
+    else live.push(row);
+  }
+  if (ended.length) await prisma.fieldHandover.updateMany({ where: { id: { in: ended }, endedAt: null }, data: { endedAt: now } });
+  return live;
+}
 
 /** Live handover rows of one kind that reached this agent. */
-export async function handedTo(prisma: Db, staffId: string, kind: HandoverKind): Promise<Array<{ recordId: string; fromStaffId: string; businessId: string | null }>> {
-  return prisma.fieldHandover.findMany({
-    where: { toStaffId: staffId, kind, endedAt: null },
-    select: { recordId: true, fromStaffId: true, businessId: true },
-  });
+export async function handedTo(prisma: Db, staffId: string, kind: HandoverKind, now: Date): Promise<Array<{ recordId: string; fromStaffId: string; businessId: string | null }>> {
+  return liveHandovers(prisma, { toStaffId: staffId, kind }, now);
 }
 
 /** Record ids of one kind this agent handed away (live rows): they leave his lists. */
-export async function handedAwayIds(prisma: Db, staffId: string, kind: HandoverKind): Promise<Set<string>> {
-  const rows = await prisma.fieldHandover.findMany({
-    where: { fromStaffId: staffId, kind, endedAt: null },
-    select: { recordId: true },
-  });
+export async function handedAwayIds(prisma: Db, staffId: string, kind: HandoverKind, now: Date): Promise<Set<string>> {
+  const rows = await liveHandovers(prisma, { fromStaffId: staffId, kind }, now);
   return new Set(rows.map((row) => row.recordId));
 }
 
-/** True when this agent covers some open work of the business (a live handover row for it). */
-export async function coversBusiness(prisma: Db, staffId: string, businessId: string): Promise<boolean> {
-  const row = await prisma.fieldHandover.findFirst({
-    where: { toStaffId: staffId, businessId, endedAt: null },
-    select: { id: true },
-  });
-  return Boolean(row);
+/** True when this agent covers this one handed-over piece (21 Nov review: only that piece's actions). */
+export async function coversPiece(prisma: Db, staffId: string, kind: HandoverKind, recordId: string, now: Date): Promise<boolean> {
+  return (await liveHandovers(prisma, { toStaffId: staffId, kind, recordId }, now)).length > 0;
+}
+
+/** True when this agent covers a handed-over piece of these kinds at the business (calling its owner, a revisit there). */
+export async function coversPieceAt(prisma: Db, staffId: string, businessId: string, kinds: HandoverKind[], now: Date): Promise<boolean> {
+  return (await liveHandovers(prisma, { toStaffId: staffId, businessId, kind: { in: kinds } }, now)).length > 0;
+}
+
+/** The instant a handover ends: the start of the IST day after `lastDay` ("YYYY-MM-DD" or a date in it). */
+export function handoverEnd(lastDay: Date): Date {
+  return new Date(istDayStart(lastDay).getTime() + DAY_MS);
 }
 
 /** Staff on approved leave on this IST day (a whole or half day). */
@@ -102,7 +157,10 @@ export class FieldHandoverService {
 
     const todayKey = istDateKey(now);
     const pool = await this.pickPool(from, to, todayKey);
-    const pieces = await this.openPieces(fromStaffId, now, options.until ?? null);
+    // 21 Nov review: the cover ends with the leave (default: the end of today); nothing due after it moves.
+    const until = options.until ?? now;
+    const untilAt = handoverEnd(until);
+    const pieces = await this.openPieces(fromStaffId, now, until);
     const result: HandoverResult = { fromStaffId, moved: [], left: [], toOnLeave: pool.onLeave };
     const load = new Map(pool.ids.map((id) => [id, 0]));
     for (const id of pool.ids) load.set(id, await this.openItemCount(id));
@@ -115,7 +173,7 @@ export class FieldHandoverService {
         result.left.push({ kind: piece.kind, recordId: piece.recordId });
         continue;
       }
-      await this.movePiece(piece, fromStaffId, target, reason, options, now);
+      await this.movePiece(piece, fromStaffId, target, reason, options, now, untilAt);
       load.set(target, (load.get(target) ?? 0) + 1);
       result.moved.push({ kind: piece.kind, recordId: piece.recordId, toStaffId: target });
     }
@@ -131,6 +189,7 @@ export class FieldHandoverService {
         left: result.left.length,
         leaveRequestId: options.leaveRequestId ?? null,
         toOnLeave: result.toOnLeave,
+        until: untilAt.toISOString(),
       },
       changedFields: ['handover'],
       reason,
@@ -177,6 +236,7 @@ export class FieldHandoverService {
       reason,
       { reason, actorId: actor.id },
       now,
+      null,
     );
     return {
       assignmentId: assignment.id,
@@ -185,13 +245,67 @@ export class FieldHandoverService {
     };
   }
 
-  /** A Team Lead, Manager or CEO runs the handover by hand (also used where no leave request exists). */
-  async handOverByHand(actor: { id: string; role: string }, body: { fromStaffId?: unknown; toStaffId?: unknown; reason?: unknown }) {
+  /**
+   * A Team Lead, Manager or CEO runs the handover by hand: `until` is the last day the agent is
+   * away ("YYYY-MM-DD", today up to 90 days ahead); nothing due after it moves and the cover ends then.
+   */
+  async handOverByHand(actor: { id: string; role: string }, body: { fromStaffId?: unknown; toStaffId?: unknown; reason?: unknown; until?: unknown }) {
     const fromStaffId = typeof body?.fromStaffId === 'string' ? body.fromStaffId : '';
     const toRaw = typeof body?.toStaffId === 'string' && body.toStaffId ? body.toStaffId : 'spread';
     if (!fromStaffId) throw new BadRequestException('fromStaffId is required');
+    const now = this.clock.now();
+    const untilKey = typeof body?.until === 'string' ? body.until.trim() : '';
+    const todayKey = istDateKey(now);
+    const maxKey = istDateKey(new Date(now.getTime() + 90 * DAY_MS));
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(untilKey) || untilKey < todayKey || untilKey > maxKey) {
+      throw new BadRequestException('Pick the last day the field agent is away (today or later, at most 90 days ahead)');
+    }
     await this.assertMayMove(actor, toRaw === 'spread' ? [fromStaffId] : [fromStaffId, toRaw]);
-    return this.handOver(fromStaffId, toRaw, { reason: typeof body?.reason === 'string' ? body.reason : '', actorId: actor.id });
+    // Noon IST of the last day: its IST day is the one picked.
+    const until = new Date(`${untilKey}T06:30:00.000Z`);
+    return this.handOver(fromStaffId, toRaw, { reason: typeof body?.reason === 'string' ? body.reason : '', actorId: actor.id, until });
+  }
+
+  /**
+   * The agent is back (21 Nov review): every live cover of his work ends. Visits still open go
+   * back to him; interview attendance the cover was given for him is cancelled; his revisits and
+   * joinings are his again.
+   */
+  async handBack(actor: { id: string; role: string } | null, fromStaffId: string, reason = 'Back at work'): Promise<{ ended: number }> {
+    if (actor) await this.assertMayMove(actor, [fromStaffId]);
+    const now = this.clock.now();
+    const rows = await liveHandovers(this.prisma, { fromStaffId }, now);
+    for (const row of rows) {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.fieldHandover.updateMany({ where: { id: row.id, endedAt: null }, data: { endedAt: now } });
+        if (row.kind === 'visit_assignment') {
+          await tx.visitAssignment.updateMany({
+            where: { id: row.recordId, status: 'assigned', assignedStaffId: row.toStaffId },
+            data: { assignedStaffId: fromStaffId, assignedByStaffId: actor?.id ?? null },
+          });
+        }
+        if (row.kind === 'interview') {
+          await tx.visitAssignment.updateMany({
+            where: { relatedType: 'interview', relatedId: row.recordId, assignedStaffId: row.toStaffId, status: 'assigned', purpose: 'interview_attendance' },
+            data: { status: 'cancelled' },
+          });
+        }
+      });
+    }
+    const from = await this.prisma.staff.findUnique({ where: { id: fromStaffId }, select: { code: true, city: true } });
+    if (rows.length) {
+      await this.audit.log({
+        actorId: actor?.id ?? fromStaffId,
+        action: 'field_agent.work_handed_back',
+        entityType: 'staff',
+        entityCode: from?.code ?? fromStaffId,
+        after: { ended: rows.length },
+        changedFields: ['handover'],
+        reason,
+        city: from?.city,
+      });
+    }
+    return { ended: rows.length };
   }
 
   /** Open assigned visits a Team Lead (own team), Manager (own line) or the CEO can move, with who is on leave today. */
@@ -280,31 +394,33 @@ export class FieldHandoverService {
   private async openItemCount(staffId: string): Promise<number> {
     const [visits, covered] = await Promise.all([
       this.prisma.visitAssignment.count({ where: { assignedStaffId: staffId, status: 'assigned' } }),
-      this.prisma.fieldHandover.count({ where: { toStaffId: staffId, endedAt: null, kind: { in: ['revisit', 'joining', 'interview'] } } }),
+      liveHandovers(this.prisma, { toStaffId: staffId, kind: { in: ['revisit', 'joining', 'interview'] } }, this.clock.now()).then((rows) => rows.length),
     ]);
     return visits + covered;
   }
 
   /** Everything open on the agent that moves, oldest first. */
-  private async openPieces(staffId: string, now: Date, until: Date | null): Promise<Array<{ kind: HandoverKind; recordId: string; businessId: string | null }>> {
+  private async openPieces(staffId: string, now: Date, until: Date): Promise<Array<{ kind: HandoverKind; recordId: string; businessId: string | null }>> {
     const pieces: Array<{ kind: HandoverKind; recordId: string; businessId: string | null }> = [];
     const dayStart = istDayStart(now);
-    const lastDay = until ? istDateKey(until) : null;
-    const byEnd = lastDay ? new Date(new Date(`${lastDay}T00:00:00.000Z`).getTime() + DAY_MS) : null;
+    const lastDay = istDateKey(until);
+    // Calendar dates (revisitOn, joiningDate) are stored at UTC midnight; instants end with the IST day.
+    const byEnd = new Date(new Date(`${lastDay}T00:00:00.000Z`).getTime() + DAY_MS);
+    const untilAt = handoverEnd(until);
 
     const assignments = await this.prisma.visitAssignment.findMany({
-      where: { assignedStaffId: staffId, status: 'assigned' },
+      where: { assignedStaffId: staffId, status: 'assigned', OR: [{ requestedFor: null }, { requestedFor: { lt: untilAt } }] },
       orderBy: { createdAt: 'asc' },
       select: { id: true, businessId: true },
     });
     for (const a of assignments) pieces.push({ kind: 'visit_assignment', recordId: a.id, businessId: a.businessId });
 
-    const away = await handedAwayIds(this.prisma, staffId, 'interview');
+    const away = await handedAwayIds(this.prisma, staffId, 'interview', now);
     const interviews = await this.prisma.interview.findMany({
       where: {
         proposedByStaffId: staffId, agentWillAttend: true, status: { in: ['offered', 'confirmed'] },
         candidateArrivedAt: null, resultRecordedAt: null,
-        slotStartsAt: { gte: dayStart, ...(byEnd ? { lt: byEnd } : {}) },
+        slotStartsAt: { gte: dayStart, lt: untilAt },
       },
       orderBy: { slotStartsAt: 'asc' },
       select: { id: true, businessId: true },
@@ -320,10 +436,10 @@ export class FieldHandoverService {
       pieces.push({ kind: 'interview', recordId: i.id, businessId: i.businessId });
     }
 
-    const revisitsAway = await handedAwayIds(this.prisma, staffId, 'revisit');
+    const revisitsAway = await handedAwayIds(this.prisma, staffId, 'revisit', now);
     const revisits = await this.prisma.businessVisit.findMany({
       where: {
-        staffId, outcome: { in: [...REVISIT_OUTCOMES] }, revisitOn: { not: null, ...(lastDay ? { lte: new Date(`${lastDay}T00:00:00.000Z`) } : {}) },
+        staffId, outcome: { in: [...REVISIT_OUTCOMES] }, revisitOn: { not: null, lte: new Date(`${lastDay}T00:00:00.000Z`) },
       },
       orderBy: { visitedAt: 'desc' },
       take: 200,
@@ -344,10 +460,10 @@ export class FieldHandoverService {
       pieces.push({ kind: 'revisit', recordId: v.id, businessId: v.businessId });
     }
 
-    const joiningsAway = await handedAwayIds(this.prisma, staffId, 'joining');
+    const joiningsAway = await handedAwayIds(this.prisma, staffId, 'joining', now);
     const joinings = await this.prisma.placement.findMany({
       where: {
-        joinedDate: null, joiningDate: { not: null, ...(byEnd ? { lt: byEnd } : {}) }, status: { in: ['confirmed', 'active'] },
+        joinedDate: null, joiningDate: { not: null, lt: byEnd }, status: { in: ['confirmed', 'active'] },
         OR: [{ createdByStaffId: staffId }, { business: { accountAgentId: staffId } }],
       },
       orderBy: { joiningDate: 'asc' },
@@ -365,6 +481,7 @@ export class FieldHandoverService {
     reason: string,
     options: HandoverOptions,
     now: Date,
+    untilAt: Date | null,
   ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       await tx.fieldHandover.updateMany({ where: { kind: piece.kind, recordId: piece.recordId, endedAt: null }, data: { endedAt: now } });
@@ -399,6 +516,7 @@ export class FieldHandoverService {
           reason,
           leaveRequestId: options.leaveRequestId ?? null,
           createdByStaffId: options.actorId ?? null,
+          until: untilAt,
         },
       });
     });

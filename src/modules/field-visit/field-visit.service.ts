@@ -43,7 +43,7 @@ import { dateFromKey, DAY_MS, FieldVisitClock, istDateKey, keyFromDate } from '.
 import { gpsSuspicions, isShortVisit, noOnboardingPattern, Reading, travelCheck } from './visit-fraud';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { ownerVisitOtpPurpose } from '../../common/otp/bound-otp-purposes';
-import { coversBusiness } from './field-handover.service';
+import { coversPiece, coversPieceAt } from './field-handover.service';
 
 export interface UploadedPhoto {
   buffer: Buffer;
@@ -190,7 +190,7 @@ export class FieldVisitService {
     const business = businessId ? await this.prisma.business.findUnique({ where: { id: businessId } }) : null;
     if (businessId && !business) throw new NotFoundException('Business not found');
     // Rev 188: another agent's business is view-only (an assigned visit is his to do).
-    if (business && !assignmentId && business.accountAgentId && business.accountAgentId !== staffId && !(await coversBusiness(this.prisma, staffId, business.id))) {
+    if (business && !assignmentId && business.accountAgentId && business.accountAgentId !== staffId && !(await coversPieceAt(this.prisma, staffId, business.id, ['revisit'], now))) {
       throw codedError(HttpStatus.FORBIDDEN, 'NOT_YOUR_BUSINESS', "This business belongs to another field agent. You can view it but not record visits.");
     }
 
@@ -730,8 +730,7 @@ export class FieldVisitService {
   }
 
   private async revisitHandedTo(staffId: string, visitId: string): Promise<boolean> {
-    const row = await this.prisma.fieldHandover.findFirst({ where: { kind: 'revisit', recordId: visitId, toStaffId: staffId, endedAt: null }, select: { id: true } });
-    return Boolean(row);
+    return coversPiece(this.prisma, staffId, 'revisit', visitId, this.clock.now());
   }
 
   /** "Onboard now" was chosen and the onboarding has not finished: the agent is still in the shop. */
