@@ -18,6 +18,8 @@ import { encryptCallRoutingPhone } from '../staff/call-routing-key';
 import { FieldVisitClock } from './field-visit-clock';
 import { FieldVisitService } from './field-visit.service';
 import { FieldHandoverService } from './field-handover.service';
+import { OtpService } from '../../common/otp/otp.service';
+import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 
 /** 11:30 IST, Monday 23 Nov 2026 (inside calling hours). */
 const START = new Date('2026-11-23T06:00:00.000Z');
@@ -186,6 +188,7 @@ describe('Laboura Field fixes of 21 Nov (server)', () => {
     await prisma.business.deleteMany({ where: { id: { in: businessIds } } });
     await prisma.jobSeeker.deleteMany({ where: { id: { in: seekerIds } } });
     await prisma.leaveRequest.deleteMany({ where: { staffId: { in: staffIds } } });
+    await prisma.fieldCheckIn.deleteMany({ where: { staffId: { in: staffIds } } });
     await prisma.idempotencyRecord.deleteMany({ where: { staffId: { in: staffIds } } });
     await prisma.auditLog.deleteMany({ where: { actorId: { in: staffIds } } });
     await prisma.attendanceSegment.deleteMany({ where: { day: { staffId: { in: staffIds } } } });
@@ -266,11 +269,16 @@ describe('Laboura Field fixes of 21 Nov (server)', () => {
     await http().post(path).set(authOf(fa1)).send({ ...SHOP, accuracy: 8, reason: '' }).expect(400);
     await http().post(path).set(authOf(fa2)).send({ ...SHOP, accuracy: 8, reason: 'Pin is on the next street' }).expect(404);
     await http().post(path).set(authOf(fa1)).send({ latitude: 12.97, longitude: 77.6201, accuracy: 8, reason: 'Pin is on the next street' }).expect(400);
+    // The GPS accuracy is required.
+    await http().post(path).set(authOf(fa1)).send({ ...SHOP, reason: 'Pin is on the next street' }).expect(400);
     const moved = await http().post(path).set(authOf(fa1)).send({ ...SHOP, accuracy: 8, reason: 'Pin is on the next street' }).expect(201);
     expect(moved.body.movedMeters).toBeGreaterThan(300);
     expect(await prisma.business.findUniqueOrThrow({ where: { id: lead.id } })).toMatchObject(SHOP);
     const audit = await prisma.auditLog.findFirst({ where: { actorId: fa1.id, action: 'business.pin_updated_at_visit', entityCode: lead.code } });
     expect(audit).toMatchObject({ reason: 'Pin is on the next street' });
+    // Every move rings the Team Lead; a second move on the same visit is refused (no walking the pin away).
+    expect(await prisma.reviewFlag.findFirst({ where: { kind: 'gps_mismatch', subjectId: lead.id, raisedForStaffId: fa1.id } })).not.toBeNull();
+    await http().post(path).set(authOf(fa1)).send({ latitude: SHOP.latitude + 0.012, longitude: SHOP.longitude, accuracy: 8, reason: 'Moving it once more' }).expect(400);
   });
 
   // ------------------------------------------------------------- B2 calls
@@ -336,6 +344,13 @@ describe('Laboura Field fixes of 21 Nov (server)', () => {
     });
     const path = `/field-selling/interviews/${interview.id}/arrival`;
     await http().post(path).set(authOf(fa1)).send({ arrived: false, ...SHOP }).expect(400);
+    // The old arrival route refuses an unanswered offer (only the interview day screen accepts by arrival).
+    await http().post(`/field-visits/interviews/${interview.id}/arrived`).set(authOf(fa1)).send({ ...SHOP, accuracy: 8 }).expect(400);
+    // A suspended business interviews no one: no accepting by arrival.
+    await prisma.business.update({ where: { id: biz.id }, data: { suspendedAt: START } });
+    await http().post(path).set(authOf(fa1)).send({ arrived: true, ...SHOP, accuracyM: 8 }).expect(400);
+    expect((await prisma.interview.findUniqueOrThrow({ where: { id: interview.id } })).status).toBe('offered');
+    await prisma.business.update({ where: { id: biz.id }, data: { suspendedAt: null } });
     await http().post(path).set(authOf(fa1)).send({ arrived: true, ...SHOP, accuracyM: 8 }).expect(201);
     const after = await prisma.interview.findUniqueOrThrow({ where: { id: interview.id } });
     expect(after.status).toBe('confirmed');
@@ -415,29 +430,80 @@ describe('Laboura Field fixes of 21 Nov (server)', () => {
     expect(businessCandidateAccess({ verificationStatus: 'pending_tl_check' }).allowed).toBe(false);
 
     clock.at = START;
-    const lead = await makeBusiness({ suffix: '11', leadCreatedByStaffId: null, verificationStatus: 'pending_visit' });
+    // Proof at the shop: GPS inside the geofence, live photos, a stored selfie, a map pin.
+    const verified = await verifiedByRows('11', { geofenceFlag: false, photoLive: true, selfieHash: 'h-11' });
+    expect(verified.fieldVerifiedAt).not.toBeNull();
+    expect(businessCandidateAccess(verified).allowed).toBe(true);
+    expect(await prisma.auditLog.findFirst({ where: { action: 'business.field_verified', entityCode: verified.code } })).not.toBeNull();
+    // The old route's text selfie (photoLive false, no hash): waits for the Team Lead.
+    const oldRoute = await verifiedByRows('16', { geofenceFlag: false, photoLive: false, selfieHash: null });
+    expect(oldRoute.verificationStatus).toBe('pending_tl_check');
+    expect(oldRoute.fieldVerifiedAt).toBeNull();
+    expect(businessCandidateAccess(oldRoute).allowed).toBe(false);
+    // Far from the pin: waits for the Team Lead too.
+    const far = await verifiedByRows('17', { geofenceFlag: true, photoLive: true, selfieHash: 'h-17' });
+    expect(far.fieldVerifiedAt).toBeNull();
+  });
+
+  async function verifiedByRows(suffix: string, proof: { geofenceFlag: boolean; photoLive: boolean; selfieHash: string | null }) {
+    const lead = await makeBusiness({ suffix, leadCreatedByStaffId: null, verificationStatus: 'pending_visit' });
     const assignment = await prisma.visitAssignment.create({ data: { businessId: lead.id, purpose: 'verification', assignedStaffId: fa1.id, status: 'assigned' } });
     const visit = await prisma.businessVisit.create({
-      data: { businessId: lead.id, staffId: fa1.id, latitude: SHOP.latitude, longitude: SHOP.longitude, purpose: 'verification', assignmentId: assignment.id, ownerOtpRequestId: 'otp-x', selfieUrl: 'visits/x/selfie.jpg' },
+      data: {
+        businessId: lead.id, staffId: fa1.id, latitude: SHOP.latitude, longitude: SHOP.longitude, purpose: 'verification', assignmentId: assignment.id,
+        ownerOtpRequestId: `otp-${suffix}`, selfieUrl: `visits/${suffix}/selfie.jpg`, ...proof,
+      },
     });
     await prisma.visitAssignment.update({ where: { id: assignment.id }, data: { status: 'done', visitId: visit.id } });
+    await signAgreement(lead);
+    await app.get(BusinessVerificationService).advanceToPendingTlCheckIfReady(lead.id, fa1.id);
+    return prisma.business.findUniqueOrThrow({ where: { id: lead.id } });
+  }
+
+  async function signAgreement(lead: { id: string; phone: string }) {
     await prisma.businessAgreement.create({
       data: {
         businessId: lead.id, version: 'v1', termsHash: 'h', noBypassMonths: 12, noBypassPenaltyPercent: 25, feePercent: 50, gstPercent: 18,
-        signedName: 'Ramesh', signedPhone: lead.phone, otpRequestId: 'otp-y', signedAt: START, documentStoragePath: 'a/b.html',
+        signedName: 'Ramesh', signedPhone: lead.phone, otpRequestId: `otp-sign-${lead.id}`, signedAt: START, documentStoragePath: 'a/b.html',
       },
     });
-    await app.get(BusinessVerificationService).advanceToPendingTlCheckIfReady(lead.id, fa1.id);
-    const after = await prisma.business.findUniqueOrThrow({ where: { id: lead.id } });
-    expect(after.verificationStatus).toBe('pending_tl_check');
-    expect(after.fieldVerifiedAt).not.toBeNull();
-    expect(businessCandidateAccess(after).allowed).toBe(true);
+  }
+
+  it('BLOCKER: a verification done 778 m or 40 km from the pin (through Laboura Field) never unlocks candidates; the Team Lead is flagged', async () => {
+    for (const [suffix, offset] of [['18', 0.007], ['19', 0.36]] as const) {
+      clock.at = new Date(START.getTime() + 400 * MIN + Number(suffix) * 60 * MIN);
+      const lead = await makeBusiness({ suffix, verificationStatus: 'pending_visit' });
+      const assignment = await prisma.visitAssignment.create({ data: { businessId: lead.id, purpose: 'verification', assignedStaffId: fa1.id, status: 'assigned' } });
+      await signAgreement(lead);
+      const at = { latitude: SHOP.latitude + offset, longitude: SHOP.longitude };
+      const id = randomUUID();
+      await startVisit(fa1, { id, assignmentId: assignment.id, ...at }).expect(201);
+      clock.at = new Date(clock.at.getTime() + MIN);
+      await http().post(`/field-visits/${id}/proof`).set(authOf(fa1))
+        .field('latitude', String(at.latitude + 0.00003)).field('longitude', String(at.longitude)).field('accuracy', '6')
+        .field('source', 'live_camera').field('takenAt', clock.at.toISOString())
+        .attach('photo', photo(), { filename: 'selfie.jpg', contentType: 'image/jpeg' }).expect(201);
+      const sent = await http().post(`/businesses/${lead.id}/visit-assignments/${assignment.id}/owner-otp`).set(authOf(fa1)).expect(201);
+      const code = (app.get(OtpService).getProvider() as MockOtpProvider).getCode(sent.body.requestId)!;
+      await http().post(`/field-visits/${id}/verify`).set(authOf(fa1)).send({ ownerOtpRequestId: sent.body.requestId, ownerOtpCode: code }).expect(201);
+      const after = await prisma.business.findUniqueOrThrow({ where: { id: lead.id } });
+      expect(after.verificationStatus).toBe('pending_tl_check');
+      expect(after.fieldVerifiedAt).toBeNull();
+      expect(businessCandidateAccess(after).allowed).toBe(false);
+      expect(await prisma.reviewFlag.findFirst({ where: { kind: 'gps_mismatch', subjectId: id } })).not.toBeNull();
+      // Two minutes from the shop photo to the owner's code: the short-visit check ran.
+      expect(await prisma.reviewFlag.findFirst({ where: { kind: 'visit_short', subjectId: id } })).not.toBeNull();
+    }
   });
 
   // ------------------------------------------------------------- similar shop
 
   it('similar shop nearby: a business with a similar name within the duplicate radius is shown before a second record', async () => {
     await makeBusiness({ suffix: '12', name: 'Lakshmi Tiffin Centre', latitude: 12.9316, longitude: 77.6301 });
+    // Not seen anywhere today yet: nothing (the check is never a way to search the map).
+    expect((await http().get('/field-work/similar-shops').query({ name: 'Lakshmi Tiffin', lat: 12.9316, lng: 77.6301 }).set(authOf(fb1)).expect(200)).body.matches).toEqual([]);
+    await prisma.fieldCheckIn.create({ data: { staffId: fa1.id, latitude: 12.9316, longitude: 77.6301, accuracyMeters: 8, checkedInAt: clock.at } });
+    expect((await http().get('/field-work/similar-shops').query({ name: 'Lak', lat: 12.9316, lng: 77.6301 }).set(authOf(fa1)).expect(200)).body.matches).toEqual([]);
     const near = await http().get('/field-work/similar-shops').query({ name: 'Lakshmi Tiffin', lat: 12.9316, lng: 77.6301 }).set(authOf(fa1)).expect(200);
     expect(near.body.matches[0]).toMatchObject({ name: 'Lakshmi Tiffin Centre', distanceMeters: 0 });
     const far = await http().get('/field-work/similar-shops').query({ name: 'Lakshmi Tiffin', lat: 12.99, lng: 77.70 }).set(authOf(fa1)).expect(200);
@@ -473,7 +539,17 @@ describe('Laboura Field fixes of 21 Nov (server)', () => {
       },
     });
 
+    // A revisit due 5 Dec (after a 2-day leave) stays with him.
+    const later = await makeBusiness({ suffix: '20', accountAgentId: fa1.id, verificationStatus: 'verified' });
+    const lateRevisit = await prisma.businessVisit.create({
+      data: { staffId: fa1.id, businessId: later.id, latitude: SHOP.latitude, longitude: SHOP.longitude, outcome: 'interested_later', revisitOn: new Date('2026-12-05T00:00:00.000Z'), purpose: 'shop_visit', visitedAt: new Date(START.getTime() - 2 * 24 * 60 * MIN) },
+    });
+    // By hand, the last day away is required.
+    await http().post('/field-assignments/hand-over').set(authOf(leadA)).send({ fromStaffId: fa1.id, reason: 'Approved leave' }).expect(400);
+
     const result = await app.get(FieldHandoverService).handOver(fa1.id, 'spread', { reason: 'Approved leave', actorId: leadA.id, until: new Date(`${TOMORROW}T06:00:00.000Z`) });
+    expect(result.moved.some((m) => m.recordId === lateRevisit.id)).toBe(false);
+    expect(await prisma.fieldHandover.findFirst({ where: { recordId: revisit.id, endedAt: null } })).toMatchObject({ until: new Date('2026-11-24T18:30:00.000Z') });
     const moved = new Map(result.moved.map((m) => [`${m.kind}:${m.recordId}`, m.toStaffId]));
     expect(moved.get(`visit_assignment:${assignment.id}`)).toBe(fa2.id);
     expect(moved.get(`revisit:${revisit.id}`)).toBe(fa2.id);
@@ -493,10 +569,23 @@ describe('Laboura Field fixes of 21 Nov (server)', () => {
     expect(coverToday.body.needsYou.some((n: { id: string }) => n.id === `revisit_due:${revisit.id}`)).toBe(true);
     const leaverToday = await http().get('/field-work/today').set(authOf(fa1)).expect(200);
     expect(leaverToday.body.needsYou.some((n: { id: string }) => n.id === `joining_due:${placement.id}` || n.id === `interview_today:${interview.id}`)).toBe(false);
-    // He can act on the business he covers and start the handed-over revisit.
+    // He acts on the handed-over pieces only: the joining yes, the business's vacancies no.
     await http().get(`/screens/field-selling/placements/${placement.id}`).set(authOf(fa2)).expect(200);
-    await startVisit(fa2, { id: randomUUID(), revisitOfVisitId: revisit.id }).expect(201);
+    await http().get(`/screens/field-selling/interviews/${interview.id}`).set(authOf(fa2)).expect(200);
+    // Nothing else of the agent's businesses: a vacancy at another of his businesses stays closed to the cover.
+    const otherVacancy = await prisma.vacancy.create({ data: { code: `VC-F21L${String(stamp).slice(-5)}`, businessId: later.id, tradeSkill: 'Cook', status: 'open' } });
+    await http().get(`/screens/field-selling/vacancies/${otherVacancy.id}/matches`).set(authOf(fa2)).expect(404);
     await http().get(`/screens/field-selling/placements/${placement.id}`).set(authOf(fa3)).expect(403);
+
+    // Two agreements signed on his business: one bell each (per agreement, not per business).
+    const signedBiz = await makeBusiness({ suffix: '21', accountAgentId: fa2.id, verificationStatus: 'verified' });
+    await signAgreement(signedBiz);
+    await prisma.businessAgreement.create({
+      data: {
+        businessId: signedBiz.id, version: 'v2', termsHash: 'h2', noBypassMonths: 12, noBypassPenaltyPercent: 25, feePercent: 50, gstPercent: 18,
+        signedName: 'Ramesh', signedPhone: signedBiz.phone, otpRequestId: `otp-sign2-${signedBiz.id}`, signedAt: START, documentStoragePath: 'a/c.html',
+      },
+    });
 
     // The Field bell catches up: the visit assigned to him and the work handed over.
     const bell = await http().get('/field-work/notifications').set(authOf(fa2)).expect(200);
@@ -507,12 +596,43 @@ describe('Laboura Field fixes of 21 Nov (server)', () => {
       `field_work_handed_over:placement:${placement.id}`,
     ]));
     expect(bell.body.unseenCount).toBeGreaterThanOrEqual(3);
+    expect(kinds.filter((k: string) => k === `field_agreement_signed:business:${signedBiz.id}`)).toHaveLength(2);
+    // "Visit assigned" carries the visit itself: purpose, business, still his to do.
+    expect(bell.body.items.find((n: { kind: string; target: { id: string } | null }) => n.kind === 'field_visit_assigned' && n.target?.id === assignment.id).target)
+      .toMatchObject({ purpose: 'verification', businessId: lead.id, open: true });
     const first = bell.body.items[0];
     await http().post(`/notifications/${first.id}/seen`).set(authOf(fa2)).expect(201);
     const again = await http().get('/field-work/notifications').set(authOf(fa2)).expect(200);
     expect(again.body.unseenCount).toBe(bell.body.unseenCount - 1);
     // Read once, it never comes back as new.
     expect(again.body.items.filter((n: { id: string }) => n.id === first.id)).toHaveLength(1);
+
+    // He does the handed-over revisit: that piece is done and his cover of it ends.
+    await startVisit(fa2, { id: randomUUID(), revisitOfVisitId: revisit.id }).expect(201);
+    await http().get('/field-work/visits').set(authOf(fa2)).expect(200);
+    expect((await prisma.fieldHandover.findFirstOrThrow({ where: { kind: 'revisit', recordId: revisit.id } })).endedAt).not.toBeNull();
+
+    // After the last day away the cover ends by itself: the joining is the agent's again.
+    clock.at = new Date('2026-11-24T19:00:00.000Z');
+    expect((await http().get('/field-work/today').set(authOf(fa2)).expect(200)).body.needsYou.some((n: { id: string }) => n.id === `joining_due:${placement.id}`)).toBe(false);
+    expect((await http().get('/field-work/today').set(authOf(fa1)).expect(200)).body.needsYou.some((n: { id: string }) => n.id === `joining_due:${placement.id}`)).toBe(true);
+    await http().get(`/screens/field-selling/placements/${placement.id}`).set(authOf(fa2)).expect(403);
+    clock.at = START;
+  });
+
+  it('hand back: the agent is back, every cover of his work ends and his open visits return to him', async () => {
+    clock.at = START;
+    const lead = await makeBusiness({ suffix: '22', verificationStatus: 'pending_visit' });
+    const assignment = await prisma.visitAssignment.create({ data: { businessId: lead.id, purpose: 'verification', assignedStaffId: fb1.id, status: 'assigned' } });
+    const out = await http().post('/field-assignments/hand-over').set(authOf(leadB)).send({ fromStaffId: fb1.id, toStaffId: leadB.id, reason: 'Leave', until: TOMORROW });
+    expect(out.status).toBe(403); // only the team's field agents take field work
+    const other = await makeStaff('field_agent', leadB.id);
+    const done = await http().post('/field-assignments/hand-over').set(authOf(leadB)).send({ fromStaffId: fb1.id, toStaffId: other.id, reason: 'Leave', until: TOMORROW }).expect(201);
+    expect(done.body.moved).toEqual([{ kind: 'visit_assignment', recordId: assignment.id, toStaffId: other.id }]);
+    await http().post('/field-assignments/hand-back').set(authOf(leadA)).send({ fromStaffId: fb1.id }).expect(403);
+    const back = await http().post('/field-assignments/hand-back').set(authOf(leadB)).send({ fromStaffId: fb1.id }).expect(201);
+    expect(back.body).toEqual({ ended: 1 });
+    expect((await prisma.visitAssignment.findUniqueOrThrow({ where: { id: assignment.id } })).assignedStaffId).toBe(fb1.id);
   });
 
   it('reassign: a Team Lead moves one planned visit between his agents (warning for someone on leave); another team\'s Team Lead is refused', async () => {

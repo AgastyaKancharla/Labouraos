@@ -85,7 +85,16 @@ export async function liveHandovers(
     if ((row.until && row.until.getTime() <= now.getTime()) || (await pieceDone(prisma, row))) ended.push(row.id);
     else live.push(row);
   }
-  if (ended.length) await prisma.fieldHandover.updateMany({ where: { id: { in: ended }, endedAt: null }, data: { endedAt: now } });
+  if (ended.length) {
+    await prisma.fieldHandover.updateMany({ where: { id: { in: ended }, endedAt: null }, data: { endedAt: now } });
+    // An interview the cover was sent to for the agent and never attended: his attendance visit ends with the cover.
+    for (const row of rows.filter((r) => r.kind === 'interview' && ended.includes(r.id))) {
+      await prisma.visitAssignment.updateMany({
+        where: { relatedType: 'interview', relatedId: row.recordId, assignedStaffId: row.toStaffId, status: 'assigned', purpose: 'interview_attendance' },
+        data: { status: 'cancelled' },
+      });
+    }
+  }
   return live;
 }
 
