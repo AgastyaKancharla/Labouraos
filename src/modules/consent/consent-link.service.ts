@@ -196,6 +196,9 @@ export type ConsentLinkDetails =
       reconsent: LegalStatus | null;
     };
 
+/** How a link goes out: SMS (default) or WhatsApp with SMS as fallback (21 Nov, rev 202). */
+export type LinkSendChannel = 'sms' | 'whatsapp';
+
 @Injectable()
 export class ConsentLinkService {
   private readonly processingTokens = new Set<string>();
@@ -275,7 +278,7 @@ export class ConsentLinkService {
    * `options.sms: false` (customer app): the link is opened by the signed-in
    * person inside the app, so no SMS is sent; everything else is the same.
    */
-  async createLink(jobSeekerId: string, options: { sms?: boolean; issuedTo?: string; revokeOthers?: boolean } = {}) {
+  async createLink(jobSeekerId: string, options: { sms?: boolean; issuedTo?: string; revokeOthers?: boolean; channel?: LinkSendChannel } = {}) {
     const seeker = await this.prisma.jobSeeker.findUnique({
       where: { id: jobSeekerId },
     });
@@ -292,9 +295,8 @@ export class ConsentLinkService {
       phone: seeker.phone, expiresAt, metadata: { resumable: true, ...(options.issuedTo ? { issuedTo: options.issuedTo } : {}) },
     });
 
-    // Send single-use link via SMS
-    if (options.sms !== false) await this.messagingService.send({
-      channel: 'sms',
+    // Send single-use link via SMS ("Send on WhatsApp", rev 202: WhatsApp first, SMS as fallback)
+    const sentBy = options.sms === false ? null : await this.sendLinkMessage(options.channel, {
       template: 'consent_link',
       subjectType: 'job_seeker',
       subjectId: seeker.id,
@@ -311,11 +313,29 @@ export class ConsentLinkService {
       token,
       linkId: id,
       expiresAt,
+      sentBy,
     };
   }
 
+  /**
+   * Sends a link message: by SMS as before, or with `channel: 'whatsapp'` on
+   * WhatsApp first and by SMS when WhatsApp is not available or fails (21 Nov).
+   * Returns the channel that carried it, or null when nothing went out.
+   */
+  private async sendLinkMessage(
+    channel: LinkSendChannel | undefined,
+    message: { template: string; subjectType: string; subjectId: string; variables: Record<string, string> },
+  ): Promise<'sms' | 'whatsapp' | null> {
+    if (channel === 'whatsapp') {
+      const result = await this.messagingService.sendPreferWhatsApp({ ...message, contactAttempt: false });
+      return result.channel;
+    }
+    const row = await this.messagingService.send({ channel: 'sms', ...message });
+    return row.status === 'failed' ? null : 'sms';
+  }
+
   /** The agreement link, in English (rev 193; a language an older client sends is ignored). */
-  async createAgreementLink(businessId: string, staffId: string | null, _requestedLanguage?: string, options: { sms?: boolean; issuedTo?: string } = {}) {
+  async createAgreementLink(businessId: string, staffId: string | null, _requestedLanguage?: string, options: { sms?: boolean; issuedTo?: string; channel?: LinkSendChannel } = {}) {
     const language = productLanguage(_requestedLanguage);
     const business = await this.prisma.business.findUnique({ where: { id: businessId } });
     if (!business) throw new NotFoundException(`Business '${businessId}' not found`);
@@ -356,20 +376,20 @@ export class ConsentLinkService {
     });
 
     // Rev 188: the answer says whether the SMS went, so no screen has to swallow a failure.
-    const sms = !sendsSms ? null : await this.messagingService.send({
-      channel: 'sms',
+    const sentBy = !sendsSms ? null : await this.sendLinkMessage(options.channel, {
       template: 'agreement_link',
       subjectType: 'business',
       subjectId: business.id,
       variables: { token, link: publicPageLink('businessAgreement', token) },
     });
-    const smsSent = sms ? sms.status === 'sent' : null;
+    // smsSent keeps its name for the screens: "the link reached the owner" (by SMS or WhatsApp).
+    const smsSent = sendsSms ? sentBy !== null : null;
     if (smsSent === false) {
       // Nothing reached the owner (staff never get the token): the link is withdrawn, so it
       // never counts towards the limit and the previous link stays the live one.
       await this.prisma.publicLink.updateMany({ where: { id: linkId, usedAt: null }, data: { revokedAt: now } });
     }
-    return { success: true, token, expiresAt, linkId, smsSent };
+    return { success: true, token, expiresAt, linkId, smsSent, sentBy };
   }
 
   /** The business's agreement links that count towards the limit (newest first). */
@@ -403,7 +423,7 @@ export class ConsentLinkService {
   }
 
   /** The referral partner terms link, in English (rev 193; a language an older client sends is ignored). */
-  async createReferralTermsLink(referralId: string, staffId: string | null, _requestedLanguage?: string, options: { sms?: boolean; issuedTo?: string; revokeOthers?: boolean } = {}) {
+  async createReferralTermsLink(referralId: string, staffId: string | null, _requestedLanguage?: string, options: { sms?: boolean; issuedTo?: string; revokeOthers?: boolean; channel?: LinkSendChannel } = {}) {
     const language = productLanguage(_requestedLanguage);
     const referral = await this.prisma.referral.findUnique({ where: { id: referralId } });
     if (!referral) throw new NotFoundException(`Referral '${referralId}' not found`);
@@ -432,8 +452,7 @@ export class ConsentLinkService {
       } },
     });
 
-    if (options.sms !== false) await this.messagingService.send({
-      channel: 'sms',
+    const sentBy = options.sms === false ? null : await this.sendLinkMessage(options.channel, {
       template: 'referral_terms_link',
       subjectType: 'referral',
       subjectId: referral.id,
@@ -441,7 +460,7 @@ export class ConsentLinkService {
       variables: { token, link: publicPageLink('referralRegistration', token), referralCode: referral.code },
     });
 
-    return { success: true, token, expiresAt };
+    return { success: true, token, expiresAt, sentBy };
   }
 
   async getSignedAgreementDocument(businessId: string) {

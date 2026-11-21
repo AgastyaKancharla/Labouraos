@@ -12,6 +12,8 @@ export const NOTIFICATION_KINDS = [
   'break_overrun',
   'system_problem',
   'agent_idle',
+  // Inbound WhatsApp unanswered: Team Lead after 15 working minutes, Manager after 2 hours (rev 202).
+  'whatsapp_waiting',
   // Review flags.
   'review_flag',
   'hit_reversed',
@@ -132,6 +134,7 @@ const LINKS: Record<NotificationKind, LinkTable> = {
   break_overrun: { team_lead: 'attendance/live', manager: 'attendance/live', ceo: 'attendance/live' },
   system_problem: { team_lead: 'attendance/live', manager: 'attendance/live', ceo: 'attendance/live' },
   agent_idle: { team_lead: 'attendance/live', manager: 'attendance/live', ceo: 'attendance/live' },
+  whatsapp_waiting: { team_lead: '', manager: '', ceo: '' },
   review_flag: { team_lead: 'flags', manager: 'flags', ceo: 'flags', finance: 'money-in' },
   hit_reversed: { manager: 'flags', ceo: 'flags' },
   hit_reversal_needs_manager: { manager: 'flags', ceo: 'flags' },

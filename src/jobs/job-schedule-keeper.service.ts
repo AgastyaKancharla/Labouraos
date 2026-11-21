@@ -18,6 +18,7 @@ import { RetentionCleanupJob } from './retention-cleanup.job';
 import { FollowUpJob } from './follow-up.job';
 import { ShortageTasksJob } from './shortage-tasks.job';
 import { WinBackJob } from './win-back.job';
+import { WhatsAppInboxJob } from './whatsapp-inbox.job';
 import { WeeklyReportJob } from './weekly-report.job';
 import { InterviewReplyJob } from './interview-reply.job';
 import { NotificationSweepJob } from './notification-sweep.job';
@@ -115,6 +116,7 @@ export class JobScheduleKeeper implements OnApplicationBootstrap, OnModuleDestro
     notificationSweep: NotificationSweepJob,
     customerPush: CustomerPushJob,
     signupTracker: SignupTrackerJob,
+    whatsappInbox: WhatsAppInboxJob,
     @Optional() private readonly prisma?: PrismaService,
     @Optional() private readonly alerts?: AlertService,
   ) {
@@ -135,6 +137,7 @@ export class JobScheduleKeeper implements OnApplicationBootstrap, OnModuleDestro
       // Run now queues a round for the worker (never sends from the web process); the round records its own JobRun.
       customerPush: { schedule: () => customerPush.schedule(), run: () => customerPush.queueRunNow(), recordsItself: true },
       signupTracker: { schedule: () => signupTracker.schedule(), run: () => signupTracker.process() },
+      whatsappInbox: { schedule: () => whatsappInbox.schedule(), run: () => whatsappInbox.process() },
     };
   }
 

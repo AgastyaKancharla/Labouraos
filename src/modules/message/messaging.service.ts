@@ -25,7 +25,26 @@ export interface SendMessageInput {
   relatedId?: string | null;
   variables?: Record<string, string>;
   recipientPhone?: string;
+  /**
+   * A sent SMS or WhatsApp to a job seeker counts as the message leg of a
+   * no-pickup day (the hit rule) unless this is false. Informational messages
+   * (registration done, nudges, links, conversation replies) pass false: they
+   * are not the "we tried to call you" notice.
+   */
+  contactAttempt?: boolean;
 }
+
+/** WhatsApp first, SMS when WhatsApp is not available or fails (21 Nov, rev 202). */
+export interface PreferWhatsAppResult {
+  /** The channel that carried it, or null when nothing went out. */
+  channel: 'whatsapp' | 'sms' | null;
+  status: 'sent' | 'failed' | 'blocked';
+  whatsappMessageId: string | null;
+  smsMessageId: string | null;
+}
+
+/** Call outcomes after which no message goes to that person (Builder B adds them, 21 Nov). */
+export const MESSAGE_BLOCKING_OUTCOMES = ['do_not_call', 'wrong_number'] as const;
 
 export interface MessageActor {
   id: string;
@@ -39,6 +58,48 @@ export class MessagingService {
     @Inject(WHATSAPP_PROVIDER) private readonly whatsapp: WhatsAppProvider,
     @Inject(SMS_PROVIDER) private readonly sms: SmsProvider,
   ) {}
+
+  /**
+   * Sends on WhatsApp and, when WhatsApp is not available or the send fails,
+   * the same template by SMS (21 Nov, rev 202). Nothing goes to a person whose
+   * calls ended in "do not call", or whose latest call ended in "wrong number".
+   */
+  async sendPreferWhatsApp(input: Omit<SendMessageInput, 'channel'>): Promise<PreferWhatsAppResult> {
+    if (await this.messagingBlocked(input.subjectType, input.subjectId)) {
+      return { channel: null, status: 'blocked', whatsappMessageId: null, smsMessageId: null };
+    }
+    const wa = await this.send({ ...input, channel: 'whatsapp' });
+    if (wa.status === 'sent') {
+      return { channel: 'whatsapp', status: 'sent', whatsappMessageId: wa.id, smsMessageId: null };
+    }
+    const sms = await this.send({ ...input, channel: 'sms' });
+    return {
+      channel: sms.status === 'sent' ? 'sms' : null,
+      status: sms.status === 'sent' ? 'sent' : 'failed',
+      whatsappMessageId: wa.id,
+      smsMessageId: sms.id,
+    };
+  }
+
+  /**
+   * True when no message may go to this person: any call ended in "do not call",
+   * or the latest call with an outcome ended in "wrong number" (a later answered
+   * call with another outcome clears it).
+   */
+  async messagingBlocked(subjectType: string | null | undefined, subjectId: string | null | undefined): Promise<boolean> {
+    if (!subjectType || !subjectId) return false;
+    const dnc = await this.prisma.callRecord.findFirst({
+      where: { subjectType, subjectId, agentOutcome: 'do_not_call' },
+      select: { id: true },
+    });
+    if (dnc) return true;
+    const latest = await this.prisma.callRecord.findFirst({
+      where: { subjectType, subjectId, agentOutcome: { not: null } },
+      orderBy: [{ agentOutcomeAt: 'desc' }, { createdAt: 'desc' }],
+      select: { agentOutcome: true },
+    });
+    return latest?.agentOutcome === 'wrong_number';
+  }
 
   async send(input: SendMessageInput) {
     // Test site only (pretend SMS): the request that sent a link answers with it (DEPLOY.md F12).
@@ -57,8 +118,9 @@ export class MessagingService {
 
     // Sent to the one stored format (+91 and 10 digits); a WhatsApp send then carries the country code.
     const phone = normaliseIndianMobile(input.recipientPhone ?? await this.phoneFor(input.subjectType, input.subjectId));
+    const attempt = input.contactAttempt !== false;
     if (!phone) {
-      return this.mark(row.id, 'failed', null);
+      return this.mark(row.id, 'failed', null, attempt);
     }
 
     const variables = input.variables ?? {};
@@ -66,9 +128,9 @@ export class MessagingService {
       if (input.channel === 'whatsapp') {
         const result = await this.whatsapp.sendTemplateMessage(phone, input.template, variables);
         if (result.status === 'failed') {
-          return this.mark(row.id, 'failed', result.messageId || null);
+          return this.mark(row.id, 'failed', result.messageId || null, attempt);
         }
-        return this.mark(row.id, 'sent', result.messageId || null);
+        return this.mark(row.id, 'sent', result.messageId || null, attempt);
       }
       const result = await this.sms.sendTemplate(
         phone,
@@ -77,11 +139,11 @@ export class MessagingService {
         variables,
       );
       if (result.status === 'failed') {
-        return this.mark(row.id, 'failed', result.messageId || null);
+        return this.mark(row.id, 'failed', result.messageId || null, attempt);
       }
-      return this.mark(row.id, 'sent', result.messageId || null);
+      return this.mark(row.id, 'sent', result.messageId || null, attempt);
     } catch {
-      return this.mark(row.id, 'failed', null);
+      return this.mark(row.id, 'failed', null, attempt);
     }
   }
 
@@ -101,9 +163,24 @@ export class MessagingService {
     if (!providerMessageId || !['delivered', 'read', 'failed'].includes(status)) {
       throw new UnauthorizedException('Invalid message status signature');
     }
+    const result = await this.applyProviderStatus(providerMessageId, status);
+    if (!result) {
+      throw new NotFoundException('Message not found');
+    }
+    return result;
+  }
+
+  /**
+   * Moves a sent message forward (delivered, read) or fails it, by the
+   * provider's message id. Null when no message has that id. The caller has
+   * already checked who sent it (signature). Used by the generic status webhook
+   * and by the WhatsApp Cloud API webhook (statuses).
+   */
+  async applyProviderStatus(providerMessageId: string, status: string): Promise<{ id: string; unchanged: boolean } | null> {
+    if (!['delivered', 'read', 'failed'].includes(status)) return null;
     const existing = await this.prisma.messageLog.findUnique({ where: { providerMessageId } });
     if (!existing) {
-      throw new NotFoundException('Message not found');
+      return null;
     }
     if (!canAdvanceMessageStatus(existing.status, status)) {
       return { id: existing.id, unchanged: true };
@@ -131,7 +208,7 @@ export class MessagingService {
     return rows.map((row) => this.toPublic(row));
   }
 
-  private async mark(id: string, status: 'sent' | 'failed', providerMessageId: string | null) {
+  private async mark(id: string, status: 'sent' | 'failed', providerMessageId: string | null, recordAttempt = true) {
     const now = new Date();
     const row = await this.prisma.messageLog.update({
       where: { id },
@@ -142,7 +219,7 @@ export class MessagingService {
         failedAt: status === 'failed' ? now : null,
       },
     });
-    if (status === 'sent' && row.subjectType === 'job_seeker' && row.subjectId) {
+    if (recordAttempt && status === 'sent' && row.subjectType === 'job_seeker' && row.subjectId) {
       await this.recordContactAttempt(row);
     }
     return this.toPublic(row);
