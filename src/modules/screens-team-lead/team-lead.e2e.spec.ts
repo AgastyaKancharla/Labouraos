@@ -200,6 +200,19 @@ describe('Team Lead portal endpoints', () => {
     expect((await prisma.business.findUniqueOrThrow({ where: { id: business.id } })).accountAgentId).toBe(fielder2.id);
   });
 
+  it('22 Nov: the Work list names the agent a stuck registration is assigned to (as every other list), not the registering one', async () => {
+    const seeker = await prisma.jobSeeker.create({
+      data: {
+        code: `JS-TLW-${stamp}`, name: 'Moved Seeker', phone: `+9195${stamp.slice(-8)}`, minSalary: 1500000, maxSalary: 2000000, preferredCallWindowStart: '09:00', preferredCallWindowEnd: '21:00',
+        status: 'lead', registeredByStaffId: caller.id, assignedStaffId: fielder2.id, createdAt: new Date(shared.at.getTime() - 2 * 24 * 3600 * 1000),
+      },
+    });
+    cleanup.seekers.push(seeker.id);
+    const work = await get(lead, '/team-lead/work').expect(200);
+    const row = (work.body.stuck as Array<{ jobSeeker: { id: string }; agent: { id: string } | null }>).find((r) => r.jobSeeker.id === seeker.id);
+    expect(row?.agent?.id).toBe(fielder2.id);
+  });
+
   it("marks a team registration fake: a flag the Manager owns; another team's is not found", async () => {
     const seeker = await prisma.jobSeeker.create({
       data: { code: `JS-TL-${stamp}`, name: 'Venkatesh', phone: `+9196${stamp.slice(-8)}`, minSalary: 1500000, maxSalary: 2000000, preferredCallWindowStart: '09:00', preferredCallWindowEnd: '21:00', status: 'active', registeredByStaffId: caller.id, paymentReceivedAt: shared.at, createdAt: shared.at },

@@ -152,4 +152,41 @@ describe("GET /profile-stuck — where they're stuck", () => {
     // Another team's Team Lead is refused by the route's own scope (unchanged).
     expect((await post('tlB', '/consent/links', { jobSeekerId: rec.sNew })).status).toBe(403);
   });
+
+  it('22 Nov: GET /profile-stuck/list holds every stuck person of the agent (or the team): job seekers, businesses and partners', async () => {
+    // A job seeker registered on the call (consent by the read-aloud code, no link) and stuck at payment.
+    const sPay = await seeker('pay', 7, people.caA.id, { status: 'consented', photoStoragePath: `selfies/${tail}/p.jpg`, photoTakenAt: new Date(), dateOfBirth: new Date('1995-01-01') });
+    for (const purpose of ['job_matching', 'profile_sharing', 'call_recording', 'aadhaar_verification', 'job_updates']) {
+      await prisma.consent.create({ data: { subjectType: 'job_seeker', subjectId: sPay, purpose, granted: true, grantedAt: new Date(), noticeVersion: '1.2', language: 'en', method: 'staff_otp' } });
+    }
+    await prisma.identityVerification.create({ data: { jobSeekerId: sPay, method: 'aadhaar_qr', vendor: 'uidai_secure_qr', status: 'verified', isAdult: true, nameMatches: true, verifiedAt: new Date() } });
+    // Registered by caA but assigned to caB: caB's (assigned wins), not caA's.
+    const sMoved = await seeker('moved', 8, people.caA.id, { assignedStaffId: people.caB.id });
+    const sMovedLink = await prisma.publicLink.create({ data: { purpose: 'registration', subjectType: 'job_seeker', subjectId: sMoved, tokenHash: `ps-${tail}-moved`, phone: phone(8), language: 'en', expiresAt: new Date(Date.now() + 3600_000) } }).catch(() => null);
+    // A business caA created as a lead, agreement not signed.
+    const bCa = (await prisma.business.create({ data: { code: `BZ-PS-${tail}-C`, name: 'Stuck Shop C', phone: phone(9), ownerName: 'Owner', leadCreatedByStaffId: people.caA.id, verificationStatus: 'lead' } })).id;
+    businesses.push(bCa);
+
+    const list = async (who: string) => (await request(app.getHttpServer()).get('/profile-stuck/list').set('Authorization', `Bearer ${people[who].token}`).expect(200)).body.rows as Array<{ kind: string; id: string; step: string; waitingForTeamLead: boolean; actions: string[]; owner: { code: string } | null; ownerId: string | null }>;
+    const mine = await list('caA');
+    const find = (rows: typeof mine, id: string) => rows.find((r) => r.id === id);
+    expect(find(mine, sPay)).toMatchObject({ kind: 'job_seeker', step: 'payment', actions: ['payment_link', 'someone_else_pays'] });
+    expect(find(mine, rec.sIdWait)).toMatchObject({ step: 'id_check', waitingForTeamLead: true, actions: [] });
+    expect(find(mine, bCa)).toMatchObject({ kind: 'business', step: 'agreement', actions: ['agreement_link'], ownerId: people.caA.id });
+    expect(find(mine, rec.rNew)).toMatchObject({ kind: 'referral', step: 'terms', actions: ['partner_terms_link'] });
+    // A lead with no link and no progress is not "stuck" (sNew got its link in the test above: listed).
+    const sBare = await seeker('bare', 10, people.caA.id);
+    expect(find(await list('caA'), sBare)).toBeUndefined();
+    expect(find(mine, rec.sNew)).toMatchObject({ step: 'consent', actions: ['registration_link'] });
+    // Someone assigned away is not his.
+    expect(find(mine, sMoved)).toBeUndefined();
+    if (sMovedLink) expect(find(await list('caB'), sMoved)).toMatchObject({ owner: { code: people.caB.code }, ownerId: people.caB.id });
+
+    // The Team Lead sees his team's (caA's and faA's), never another team's.
+    const team = await list('tlA');
+    for (const id of [sPay, rec.sIdWait, bCa, rec.rNew, rec.bLead]) expect(find(team, id)).toBeDefined();
+    expect(find(team, rec.sB)).toBeUndefined();
+    // Finance and the CEO have no such list.
+    await request(app.getHttpServer()).get('/profile-stuck/list').set('Authorization', `Bearer ${people.fin.token}`).expect(403);
+  });
 });
