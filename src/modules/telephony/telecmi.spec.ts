@@ -1,4 +1,4 @@
-import { TeleCmiTelephonyProvider, TELECMI_CLICK_TO_CALL_URL, mapTeleCmiReport, teleCmiAgentMap, teleCmiKeyMatches } from './telecmi';
+import { TeleCmiTelephonyProvider, TELECMI_CLICK_TO_CALL_URL, mapTeleCmiReport, plausiblePhone, teleCmiAgentMap, teleCmiKeyMatches } from './telecmi';
 
 /**
  * TeleCMI (21 Nov fixes), from TeleCMI's public docs: click to call
@@ -22,6 +22,7 @@ describe('TeleCMI calling company', () => {
       const report = mapTeleCmiReport(
         { appid: 1111113, type: 'cdr', direction: 'inbound', cmiuuid: '5f0f', status: 'missed', from: 9110000000, time: 1570114018000, waitedsec: 119 },
         '1111113',
+        new Date(1570114018000),
       );
       expect(report).toEqual({ kind: 'missed_inbound', callId: 'telecmi:5f0f', callerPhone: '9110000000', at: new Date(1570114018000) });
     });
@@ -30,6 +31,7 @@ describe('TeleCMI calling company', () => {
       const report = mapTeleCmiReport(
         { type: 'cdr', appid: 1111113, to: 9100000000, cmiuuid: '760d', status: 'answered', user: '103_1111113', time: 1570184401056, direction: 'outbound', answeredsec: 13, click_to_call: 'true', record: 'true', filename: 'x.mp3', custom: 'call-record-1' },
         '1111113',
+        new Date(1570184401056),
       );
       expect(report).toMatchObject({
         kind: 'status',
@@ -40,8 +42,20 @@ describe('TeleCMI calling company', () => {
     });
 
     it('an outgoing missed call is no answer (the retry rules follow)', () => {
-      const report = mapTeleCmiReport({ type: 'cdr', appid: 7, to: 9100000000, cmiuuid: 'deb1', status: 'missed', user: '103_7', time: 1570184113597, direction: 'outbound' }, '7');
+      const report = mapTeleCmiReport({ type: 'cdr', appid: 7, to: 9100000000, cmiuuid: 'deb1', status: 'missed', user: '103_7', time: 1570184113597, direction: 'outbound' }, '7', new Date(1570184113597));
       expect(report).toMatchObject({ kind: 'status', event: { status: 'no_answer', answered: false, durationSec: 0, providerCallId: 'deb1' } });
+    });
+
+    it('refuses everything without our app id, old or future reports (more than 24 h away) and junk numbers', () => {
+      const missed = { appid: 7, type: 'cdr', direction: 'inbound', cmiuuid: 'x1', status: 'missed', from: 9110000000, time: 1570114018000 };
+      expect(mapTeleCmiReport(missed, undefined, new Date(1570114018000))).toEqual({ kind: 'ignored', reason: 'app id not set' });
+      expect(mapTeleCmiReport(missed, '7', new Date(1570114018000 + 25 * 3600_000))).toEqual({ kind: 'ignored', reason: 'report time out of range' });
+      expect(mapTeleCmiReport({ ...missed, time: undefined }, '7', new Date(1570114018000))).toEqual({ kind: 'ignored', reason: 'no report time' });
+      for (const from of ['12345', 'abc9110000000', '9110000000999999', '<script>']) {
+        expect(mapTeleCmiReport({ ...missed, from }, '7', new Date(1570114018000))).toEqual({ kind: 'ignored', reason: 'missed call with no valid number' });
+      }
+      expect(plausiblePhone('+91 98123 00001')).toBe(true);
+      expect(plausiblePhone('09812300001')).toBe(true);
     });
 
     it('ignores live events, another app and reports without a call id', () => {

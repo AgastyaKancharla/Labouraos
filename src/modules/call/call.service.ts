@@ -28,7 +28,7 @@ import { CallClock } from './call-clock';
 import { isAgentOutcome, isCallPurpose, NO_ANSWER_OUTCOMES, STOP_OUTCOMES } from './call-outcomes';
 import { ContactBlockKind, callsBlocked, liveKeyOf, phoneHash } from './contact-block';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
-import { mapTeleCmiReport, teleCmiKeyMatches } from '../telephony/telecmi';
+import { mapTeleCmiReport, teleCmiKeyMatches, TELECMI_VENDOR } from '../telephony/telecmi';
 import { isWithinClockWindow } from './call-window';
 import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
@@ -165,21 +165,26 @@ export class CallService {
    */
   async applyTeleCmiReport(key: string | undefined, payload: Record<string, unknown>) {
     if (!teleCmiKeyMatches(key)) throw new UnauthorizedException('Invalid TeleCMI webhook key');
-    const report = mapTeleCmiReport(payload ?? {});
-    if (report.kind === 'ignored') return { ignored: report.reason };
+    if (!process.env.TELECMI_APP_ID) throw new UnauthorizedException('TeleCMI is not set up here (TELECMI_APP_ID)');
+    const report = mapTeleCmiReport(payload ?? {}, process.env.TELECMI_APP_ID, this.clock.now());
+    if (report.kind === 'ignored') {
+      if (report.reason === 'another app') throw new UnauthorizedException('Report for another TeleCMI app');
+      return { ignored: report.reason };
+    }
     if (report.kind === 'missed_inbound') {
       const result = await this.telephony.handleInboundCall({ callId: report.callId, callerPhone: report.callerPhone, timestamp: report.at });
       return { callbackTaskId: result.callbackTaskId, duplicate: result.isDuplicate };
     }
-    const event = { ...report.event };
-    if (report.callRecordId) {
-      const ours = await this.prisma.callRecord.findUnique({ where: { id: report.callRecordId }, select: { provider: true, providerCallId: true } });
-      if (ours) {
-        event.provider = ours.provider;
-        event.providerCallId = ours.providerCallId;
-      }
-    }
-    return this.applyStatus(event);
+    // Only one of our own TeleCMI calls is ever changed (never another vendor's, never a new record),
+    // and only forward (applyStatus refuses a step back).
+    const ours = report.callRecordId
+      ? await this.prisma.callRecord.findUnique({ where: { id: report.callRecordId }, select: { provider: true, providerCallId: true } })
+      : await this.prisma.callRecord.findUnique({
+          where: { provider_providerCallId: { provider: report.event.provider, providerCallId: report.event.providerCallId } },
+          select: { provider: true, providerCallId: true },
+        });
+    if (!ours || ours.provider !== TELECMI_VENDOR) return { ignored: 'no matching TeleCMI call' };
+    return this.applyStatus({ ...report.event, provider: ours.provider, providerCallId: ours.providerCallId });
   }
 
   /** The only writer of providerStatus, answered, times and duration. */

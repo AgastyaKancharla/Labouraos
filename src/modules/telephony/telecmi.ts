@@ -153,22 +153,39 @@ function str(v: unknown): string | null {
  * One TeleCMI call report → what Laboura does with it. Live events are not
  * used yet (the CDR at the end of each call is enough for the lists).
  */
-export function mapTeleCmiReport(payload: Record<string, unknown>, appId: string | undefined = process.env.TELECMI_APP_ID): TeleCmiReport {
+/** A report more than this far from now (either way) is refused: no replayed or forged old reports. */
+export const TELECMI_REPORT_MAX_SKEW_MS = 24 * 60 * 60 * 1000;
+
+/** 10 to 13 digits (a national number with or without 0 / 91): anything else is junk. */
+export function plausiblePhone(value: string): boolean {
+  const digits = value.replace(/\D/g, '');
+  return /^[+\d\s()-]+$/.test(value) && digits.length >= 10 && digits.length <= 13;
+}
+
+export function mapTeleCmiReport(
+  payload: Record<string, unknown>,
+  appId: string | undefined = process.env.TELECMI_APP_ID,
+  now: Date = new Date(),
+): TeleCmiReport {
   if (str(payload.type) !== 'cdr') return { kind: 'ignored', reason: 'not a call report' };
   const app = str(payload.appid) ?? str(payload.app_id);
-  if (appId && app !== appId) return { kind: 'ignored', reason: 'another app' };
+  // Our app id is required: without it set, or for another app, nothing is accepted.
+  if (!appId) return { kind: 'ignored', reason: 'app id not set' };
+  if (app !== appId) return { kind: 'ignored', reason: 'another app' };
   const callId = str(payload.cmiuuid);
   if (!callId) return { kind: 'ignored', reason: 'no call id' };
   const direction = str(payload.direction);
   const status = str(payload.status);
   const timeMs = Number(payload.time);
-  const at = Number.isFinite(timeMs) && timeMs > 0 ? new Date(timeMs) : new Date();
+  if (!Number.isFinite(timeMs) || timeMs <= 0) return { kind: 'ignored', reason: 'no report time' };
+  const at = new Date(timeMs);
+  if (Math.abs(at.getTime() - now.getTime()) > TELECMI_REPORT_MAX_SKEW_MS) return { kind: 'ignored', reason: 'report time out of range' };
   const answered = status === 'answered';
   const seconds = Number(payload.answeredsec);
   const duration = Number.isFinite(seconds) && seconds >= 0 ? Math.trunc(seconds) : answered ? null : 0;
   if (direction === 'inbound' && status === 'missed') {
     const from = str(payload.from);
-    if (!from) return { kind: 'ignored', reason: 'missed call with no number' };
+    if (!from || !plausiblePhone(from)) return { kind: 'ignored', reason: 'missed call with no valid number' };
     return { kind: 'missed_inbound', callId: `telecmi:${callId}`, callerPhone: from, at };
   }
   if (direction !== 'inbound' && direction !== 'outbound') return { kind: 'ignored', reason: 'unknown direction' };

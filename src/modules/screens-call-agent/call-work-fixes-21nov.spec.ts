@@ -509,11 +509,23 @@ describe('21 Nov fixes: call work and leads', () => {
 
       const person = await makeSeeker({ name: 'Telecmi Outgoing' });
       const ours = await callRecord({ staffId: agentA.id, subjectId: person.id, answered: false, status: 'initiated' });
+      await prisma.callRecord.update({ where: { id: ours.id }, data: { provider: 'telecmi' } });
       const report = { type: 'cdr', appid: 1111113, to: Number(person.phone.slice(-10)), cmiuuid: `tco-${stamp}`, status: 'answered', user: '103_1111113', time: NOW.getTime(), direction: 'outbound', answeredsec: 75, custom: ours.id };
       await request(app.getHttpServer()).post(url).send(report).expect(201);
       expect(await prisma.callRecord.findUniqueOrThrow({ where: { id: ours.id } })).toMatchObject({ providerStatus: 'completed', answered: true, durationSec: 75 });
-      const other = await request(app.getHttpServer()).post(url).send({ ...report, appid: 999 }).expect(201);
-      expect(other.body).toEqual({ ignored: 'another app' });
+      // Another app: refused. A call of another vendor, or one we never placed: left alone, no new record.
+      await request(app.getHttpServer()).post(url).send({ ...report, appid: 999 }).expect(401);
+      const mockCall = await callRecord({ staffId: agentA.id, subjectId: person.id, answered: false, status: 'initiated' });
+      expect((await request(app.getHttpServer()).post(url).send({ ...report, custom: mockCall.id }).expect(201)).body).toEqual({ ignored: 'no matching TeleCMI call' });
+      expect(await prisma.callRecord.findUniqueOrThrow({ where: { id: mockCall.id } })).toMatchObject({ providerStatus: 'initiated' });
+      const before = await prisma.callRecord.count();
+      expect((await request(app.getHttpServer()).post(url).send({ ...report, custom: undefined, cmiuuid: `tc-none-${stamp}` }).expect(201)).body).toEqual({ ignored: 'no matching TeleCMI call' });
+      expect(await prisma.callRecord.count()).toBe(before);
+      // A day-old report is refused.
+      expect((await request(app.getHttpServer()).post(url).send({ ...missed, cmiuuid: `tc-old-${stamp}`, time: NOW.getTime() - 25 * 3600_000 }).expect(201)).body).toEqual({ ignored: 'report time out of range' });
+      // Without TELECMI_APP_ID nothing is accepted.
+      delete process.env.TELECMI_APP_ID;
+      await request(app.getHttpServer()).post(url).send(missed).expect(401);
     } finally {
       delete process.env.TELECMI_WEBHOOK_KEY;
       delete process.env.TELECMI_APP_ID;
