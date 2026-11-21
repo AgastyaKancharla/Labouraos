@@ -19,6 +19,7 @@ import { firstName, useTeam, waitedFor } from '../_kit/api';
 import '../../ceo/_kit/ceo.css';
 import { NewTempPasswordButton, PendingResetCards, ResetSignInButton, usePendingResets } from '../../shared/staffAccess';
 import { useT } from '../../../i18n/I18nProvider';
+import { NoCodeSignIns } from '../../../auth/NoCodeSignIns';
 
 /** Login codes — design T-LoginCodes.dc.html: codes for the team's sign-ins, new devices, passwords and locks. */
 interface Pending {
@@ -157,6 +158,7 @@ export default function TeamLeadLoginCodes() {
         </Card>
       </div>
       <div className="tl-note">You sign in with your own authenticator app · nobody can see their own code</div>
+      <NoCodeSignIns />
     </div>
   );
 }

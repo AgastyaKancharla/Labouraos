@@ -42,10 +42,10 @@ describe('session keep-alive', () => {
     expect(screen.getByText('in:CEO-0001')).toBeInTheDocument();
   });
 
-  it('an open console is not signed out by the tab\'s own idle clock: it renews with the refresh token and the server decides (21 Nov)', async () => {
-    let n = 0;
+  it('an open console is not signed out by the tab\'s own idle clock; while the token works it renews with the bearer refresh, not the single-use token (21 Nov)', async () => {
     const api = mockApi({
-      'POST /auth/session/refresh': () => ({ accessToken: fakeJwt({ role: 'ceo' }, 15 * 60), refreshToken: `r${++n}`, sessionId: 's1' }),
+      'POST /auth/refresh': () => ({ accessToken: fakeJwt({ role: 'ceo' }, 15 * 60), sessionId: 's1' }),
+      'POST /auth/session/refresh': () => ({ accessToken: fakeJwt({ role: 'ceo' }, 15 * 60), refreshToken: 'rX', sessionId: 's1' }),
     });
     const token = fakeJwt({ role: 'ceo' }, 15 * 60);
     sessionStore.set({ token, staff: TEST_STAFF.ceo, expiresAt: Date.now() + 15 * 60 * 1000, totpSetupOnly: false, refreshToken: 'r0', sessionId: 's1' });
@@ -61,8 +61,24 @@ describe('session keep-alive', () => {
       });
     }
     expect(screen.getByText('in:CEO-0001')).toBeInTheDocument();
-    const sent = api.calls('POST /auth/session/refresh').map((c) => (c.body as { refreshToken: string }).refreshToken);
-    expect(sent.slice(0, 3)).toEqual(['r0', 'r1', 'r2']);
+    expect(api.calls('POST /auth/refresh').length).toBeGreaterThanOrEqual(3);
+    expect(api.calls('POST /auth/session/refresh')).toHaveLength(0);
+    expect(sessionStore.get()?.refreshToken).toBe('r0');
+  });
+
+  it('a kept session whose token ran out (laptop asleep) renews with the refresh token', async () => {
+    const api = mockApi({ 'POST /auth/session/refresh': () => ({ accessToken: fakeJwt({ role: 'ceo' }, 15 * 60), refreshToken: 'r1', sessionId: 's1' }) });
+    sessionStore.set({ token: fakeJwt({ role: 'ceo' }, -60), staff: TEST_STAFF.ceo, expiresAt: Date.now() - 60_000, totpSetupOnly: false, refreshToken: 'r0', sessionId: 's1' });
+    render(
+      <AppProviders>
+        <Probe />
+      </AppProviders>,
+    );
+    await act(async () => {
+      vi.advanceTimersByTime(1500);
+    });
+    expect(api.calls('POST /auth/session/refresh')).toHaveLength(1);
+    expect(sessionStore.get()?.refreshToken).toBe('r1');
   });
 
   it('a 401 is renewed and the request repeated once before signing out; a refused renewal signs out with the server\'s reason', async () => {

@@ -694,3 +694,14 @@ After the lunch or short-break allowance both apps ask "Back from lunch?" / "Bac
 ### Calls during a visit; On call never sticks
 
 When a call ends for someone who was On visit or Travelling when it started (a field agent at a shop or on the road), the status goes straight back to On visit / Travelling, not After-call notes and Available, so the shop time keeps counting. Everyone else gets the 2 minutes of After-call notes, then Available. On call with no answered, unended call record behind it (the end event was lost, or the mock telephony never sends one) ends by itself after 2 minutes, at the call's own end time when there is one; and On call never lasts longer than 2 hours.
+
+### Hardening after the independent check (21 Nov)
+
+- A wrong-password lock (5 tries) asks for a login code again at the next sign-in, like every other lock (`Staff.sessionsRevokedAt`).
+- The "code accepted earlier today" shortcut also needs the same browser or app family and platform (`userAgentFamily`, versions ignored) as the sign-in that had the code; otherwise a code is asked for.
+- A sign-in without a code that ends a session still in use, or comes from a network not seen today, rings the Team Lead and the Manager above (`signed_in_without_code`, informational; audit `auth.login.without_code_alert`). Their Login codes screen lists today's alerts: `GET /login-codes/without-code` (Team Lead, Manager, CEO; only bells addressed to the caller).
+- `POST /attendance/resume` answers `400 DAY_CHANGED_BY_SENIOR` "Ask your Team Lead to reopen your day" once a senior changed how the day counts; `canResume` is then false. A Reopen (or Resume) clears `dayTypeChangedById/At/Reason`; the old values are kept in the audit row's `before`.
+- Each Resume is counted (`AttendanceDay.resumeCount`, on today's view and the day rows of `GET /attendance/month` and the attendance report); the second one on a day rings the Team Lead (`day_resumed_again`).
+- Background polls do not keep the idle clock alive: the office web app sends `X-Laboura-Background: 1` on GET requests made while nobody used the page for a minute (and on the live stream), and those never move `StaffSession.lastActivityAt`. Outside an open attendance day the 1-hour idle sign-out works again. (CEO and Finance unchanged for now.)
+- Two tabs of one session: while the access token works, the web app renews with the bearer `POST /auth/refresh` (the single-use refresh token is used only after it ran out), and a tab that renews shares the new tokens with the other tabs (BroadcastChannel `laboura-session`).
+- Refresh-token reuse: the token renewed less than a minute ago, presented again, is refused without ending the session (a second tab); presented later, it ends the session (`auth.refresh_token_reused`) and the next sign-in needs a login code.
