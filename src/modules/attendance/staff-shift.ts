@@ -88,3 +88,16 @@ export function onShiftAt(at: Date, shift: StaffShift): boolean {
   const t = at.getTime();
   return t >= shiftStartOn(at, shift).getTime() && t < shiftEndOn(at, shift).getTime();
 }
+
+/**
+ * The same as shiftFor, with the policy first — for other modules (Builder B's
+ * `shiftOf(policy, staff)` in screens-call-agent/call-agent-load.ts: the
+ * no-show sweep and calling-hours checks). `staff` needs only shiftStart /
+ * shiftEnd (select them from Staff).
+ */
+export function staffShift(
+  policy: ShiftPolicy,
+  staff: { shiftStart?: string | null; shiftEnd?: string | null } | null | undefined,
+): StaffShift {
+  return shiftFor(staff, policy);
+}

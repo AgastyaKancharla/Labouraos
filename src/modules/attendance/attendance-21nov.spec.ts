@@ -8,7 +8,7 @@ import { AttendanceClock } from './attendance-clock';
 import { AttendanceService, idleDeadline } from './attendance.service';
 import { shouldNote } from './attendance-activity.interceptor';
 import { lateMinutesFor } from './day-rules';
-import { onShiftAt, shiftEndOn, shiftFor, shiftProblem, withShift } from './staff-shift';
+import { onShiftAt, shiftEndOn, shiftFor, shiftProblem, staffShift, withShift } from './staff-shift';
 
 jest.setTimeout(120000);
 
@@ -101,6 +101,9 @@ describe('Attendance fixes (21 Nov): own shifts, idle, closing and reopening day
       expect(shiftFor({ shiftStart: '13:00', shiftEnd: null }, policy)).toEqual({ start: '09:30', end: '18:30', own: false });
       const own = shiftFor({ shiftStart: '12:00', shiftEnd: '21:00' }, policy);
       expect(own).toEqual({ start: '12:00', end: '21:00', own: true });
+      // The helper other modules call (policy first).
+      expect(staffShift(policy, { shiftStart: '12:00', shiftEnd: '21:00' })).toEqual(own);
+      expect(staffShift(policy, null)).toEqual({ start: '09:30', end: '18:30', own: false });
       expect(shiftProblem('12:00', '21:00')).toBeNull();
       expect(shiftProblem('21:00', '12:00')).toMatch(/end after/);
       expect(shiftProblem('9:30', '18:30')).toMatch(/HH:MM/);
