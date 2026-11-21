@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Modal, Platform, StyleSheet, View } from 'react-native';
-import MapView, { PROVIDER_GOOGLE, type Region } from 'react-native-maps';
+import type { Region } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { mapAvailable } from '@/api/config';
 import type { Pin } from '@/api/types';
@@ -9,6 +9,25 @@ import { useI18n } from '@/i18n';
 import { Button } from '../Button';
 import { Text } from '../Text';
 import { colors, fonts } from '@/theme';
+
+/**
+ * The map library is loaded only when a map is about to show, never when the
+ * app starts: react-native-maps looks up its native part as soon as it is
+ * imported, and a build where that fails must still open (the 22 Nov test APK
+ * closed itself on start). If it cannot load, "Locate me" keeps the GPS pin.
+ */
+type Maps = typeof import('react-native-maps');
+let maps: Maps | null | undefined;
+function loadMaps(): Maps | null {
+  if (maps !== undefined) return maps;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    maps = require('react-native-maps') as Maps;
+  } catch {
+    maps = null;
+  }
+  return maps;
+}
 
 /** Bengaluru, where the map opens when neither GPS nor an area is known. */
 const CITY_CENTRE = { latitude: 12.9716, longitude: 77.5946 };
@@ -39,7 +58,7 @@ export function PinField({
   testID?: string;
 }) {
   const { t } = useI18n();
-  const withMap = mapAvailable(Platform.OS);
+  const withMap = mapAvailable(Platform.OS) && loadMaps() !== null;
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<'denied' | 'error' | null>(null);
   const [mapAt, setMapAt] = useState<Region | null>(null);
@@ -97,6 +116,7 @@ export function PinField({
 /** The map with a pin fixed in the middle: the person moves the map under the pin. */
 function MapPicker({ start, onCancel, onSave, testID }: { start: Region; onCancel: () => void; onSave: (pin: Pin) => void; testID: string }) {
   const { t } = useI18n();
+  const { default: MapView, PROVIDER_GOOGLE } = loadMaps()!;
   const insets = useSafeAreaInsets();
   const [region, setRegion] = useState<Region>(start);
   return (

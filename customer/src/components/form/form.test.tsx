@@ -109,3 +109,14 @@ describe('Locate me', () => {
     expect(screen.queryByTestId('pin-map')).toBeNull();
   });
 });
+
+describe('app start', () => {
+  it('loading the form pieces never loads the map library (a map that fails to load must not stop the app opening)', () => {
+    jest.isolateModules(() => {
+      jest.doMock('react-native-maps', () => {
+        throw new Error("TurboModuleRegistry.getEnforcing(...): 'RNMapsAirModule' could not be found");
+      });
+      expect(() => require('./index')).not.toThrow();
+    });
+  });
+});
