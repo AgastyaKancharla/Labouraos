@@ -129,7 +129,7 @@ Response:
 {
   "googleClientIds": { "android": "…apps.googleusercontent.com", "ios": "…", "web": "…" },
   "googleSignIn": true,
-  "appleClientIds": { "ios": "in.laboura.app", "web": null },
+  "appleClientIds": { "ios": "com.laboura.app", "web": null },
   "appleSignIn": false,
   "humanCheckProvider": "mock",
   "otpTestMode": false,
@@ -585,11 +585,18 @@ Then the partner link (§6) for terms and recording consent, selfie, ID check an
 
 ---
 
-## 6. Link pages inside the app (secure browser sheet)
+## 6. The person's own link (verification steps in the app)
 
-For the first version the verification steps open the **existing** link pages
-in a secure browser sheet (decided: proposal 10, question 4). The server issues
-a fresh link for the signed-in person; no SMS is sent.
+The server issues a fresh link for the signed-in person; no SMS is sent. Since
+21 Nov the app shows the verification steps in its **own screens**: it keeps
+only the link's token (the last part of the URL) and calls the link page's own
+public endpoints with it (`/registration/:token/...`,
+`/referral-registration/:token/...`, `/consent/send-otp`, `/consent/submit`,
+`/consent/:token`, `/payments/request/:payPageToken/...`, `/legal/documents/:key`),
+exactly as the `/p/...` page does — so every check is the link page's (the
+code bound to that link, live camera, the Aadhaar QR, the terms hash, the bank
+confirming the payment). Documents and the e-Aadhaar PDF still open the page
+itself in a secure browser sheet (proposal 10, question 4).
 
 | Method and path | Auth | Status |
 | --- | --- | --- |
@@ -608,8 +615,8 @@ a fresh link for the signed-in person; no SMS is sent.
 → `201 { "url": "https://app.laboura.com/p/register/…", "purpose": "registration", "expiresAt": "…" }`.
 No SMS is sent for a link issued to the app (the existing link services are
 called with SMS off); the link records `issuedTo: customer:<accountId>`.
-The page still asks for the OTP to the person's own number, as today. When the
-sheet closes, the app reloads Home.
+The steps (in the app or on the page) still ask for the OTP to the person's own
+number, as today. When the person leaves the steps, the app reloads Home.
 
 ---
 
@@ -716,9 +723,10 @@ when it is above 0 (§8.2).
   invoice. Business referrals are listed without an amount (not decided).
 - `paused`: true when the CEO has paused the partner: new referrals are refused;
   earned money is still paid.
-- `share.link` (`PUBLIC_APP_URL` + `/r/<RF- code>`) is where a partner's QR
-  points. **No page answers `/r/...` yet**: a landing page (store links, the code
-  pre-filled) is still to be built in `web/`. `qrText` is what the app turns into a QR code.
+- `share.link` is the partner's personal share link page, `PUBLIC_APP_URL` + `/p/ref/<slug>`
+  (21 Nov, rev 202: a random 10-character slug made on first use, never the RF code; the
+  page is built in `web/`, see §15). `qrText` is what the app turns into a QR code;
+  `whatsappText` still carries the RF code for people who use the app.
 
 ### 7.3b Referral partner: send a lead (21 Nov)
 
@@ -760,6 +768,14 @@ leads on the call team's lists (like missed calls, oldest first); when the
 person registers, fill "referred by" from `referralCode` and set
 `status = 'registered'`, `subjectType`, `subjectId`; otherwise `contacted`,
 `not_interested` or `closed`. Then switch `CUSTOMER_REFERRAL_LEADS` on.
+
+**Done (21 Nov, Builder D, §15):** the WhatsApp sweep (every 2 minutes) picks every
+`new` lead up into the office's partner lead list (`ReferralLead`, `customerLeadId`),
+assigns it like a missed call (the partner's own agent if on shift, else the
+on-shift agent with the fewest open items), sets `contacted` when an agent has it,
+and on closing sets `registered` (+ `subjectType` / `subjectId`), `not_interested`
+or `closed`. The agent's Register button fills "referred by" with the partner.
+`CUSTOMER_REFERRAL_LEADS` can be switched on once this is deployed.
 
 ### 7.4 Terms, re-consent and suspension (legal documents, Master Guide rev 176)
 
@@ -1307,3 +1323,41 @@ Settings: the timing numbers are read from `PricingPolicy` fields named
 `signupReengageDays`, `signupAreaClusterMin`, `signupStuckHours` when those columns
 exist, else the confirmed defaults (`signup-settings.ts`). The columns are not in the
 schema yet (prisma/ belongs to Agent A).
+
+---
+
+## 15. Referral partner: personal share link (21 Nov, Master Guide rev 202) — for the customer-app session
+
+> **For the customer-app session (Builder D, 21 Nov):** nothing here changes the
+> partner's reward (₹200 when the referred person joins) or any other rule.
+> "Send a lead" stays your route (§7.3b); the office now picks those leads up.
+
+Every partner has a **personal share link and QR**: `https://app.laboura.com/p/ref/<slug>`
+(the slug is random, 10 characters, made on first use; never the RF code, so nobody can
+walk through partners by counting). It is what Home's `share.link` / `share.qrText` now
+return (§7.3), so the app needs no change. A person who opens it on the web leaves their
+name and their own mobile (checked by a code sent from that page), says whether they want
+a job or staff, and the lead goes to the same office list as the app's leads (assigned
+like a missed call); registering them fills "referred by" with the partner. The partner
+gets a WhatsApp (SMS as fallback) "We received the lead you sent (<first name>)".
+
+### 15.1 `GET /customer-api/v1/me/profiles/:profileId/referral/share-link`
+
+Optional (Home already carries the link): the partner's own referral profile only
+(another person's profile is `404 PROFILE_NOT_FOUND`, a job seeker or business profile
+`400 PROFILE_KIND_MISMATCH`).
+
+```json
+{ "code": "RF-00007", "url": "https://app.laboura.com/p/ref/k7m4q2pxab", "qrSvg": "<svg …>", "paused": false }
+```
+
+Render `qrSvg` as an image (e.g. a `data:image/svg+xml` URI), never as markup. While
+`paused` is true the link page answers "This link is not active".
+
+### 15.2 Web link page (built)
+
+`/p/ref/<slug>` is a public page in the office web app (`web/src/screens/public/P-ReferralLink`);
+its API is `GET /referral-links/:slug`, `POST /referral-links/:slug/send-code { phone }`,
+`POST /referral-links/:slug/leads { name, phone, lookingFor: job|staff, area?, consent: true, requestId, code }`
+(always `{ received: true }`, no oracle; at most 30 leads and 60 codes a day per link,
+the usual public-page code limits per number). The app does not need these.

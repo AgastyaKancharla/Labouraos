@@ -32,7 +32,7 @@ function allText(): string {
 }
 
 describe('Job seeker Home', () => {
-  it('registration not finished: shows each step and Continue opens the secure sheet', async () => {
+  it('registration not finished: shows each step and Continue opens the steps in the app', async () => {
     const { api } = await renderHome(jsHome({ stuckReason: 'UPI failed twice' }));
     const steps = await screen.findByTestId('js-home-steps');
     expect(within(steps).getByTestId('js-step-profile-done')).toBeTruthy();
@@ -40,9 +40,9 @@ describe('Job seeker Home', () => {
     expect(within(steps).getByText('Terms and ₹499 payment')).toBeTruthy();
     expect(screen.getByTestId('js-home-stuck')).toHaveTextContent('UPI failed twice');
     await fireEvent.press(screen.getByTestId('js-home-continue'));
-    await waitFor(() => expect(api.sheetLink).toHaveBeenCalledWith('p-js', 'registration', undefined));
-    expect(openSecureSheet).toHaveBeenCalledWith('https://app.test/p/x');
-    await waitFor(() => expect(api.home).toHaveBeenCalledTimes(2)); // refreshed after the sheet
+    expect(router.push).toHaveBeenCalledWith('/verify/registration?profileId=p-js');
+    expect(api.sheetLink).not.toHaveBeenCalled();
+    expect(openSecureSheet).not.toHaveBeenCalled();
   });
 
   it('colourful Home: blue hero card with name and next step; each step its own colour, done ticks, next step highlighted', async () => {
@@ -115,15 +115,15 @@ describe('Job seeker Home', () => {
   });
 
   it('after 3 hits: paused, with "Pay ₹499 to start again"', async () => {
-    const { api } = await renderHome(runningJsHome({ guarantee: { status: 'deactivated', day: null, totalDays: 30, endsOn: null, hits: 3, maxHits: 3 } }));
+    await renderHome(runningJsHome({ guarantee: { status: 'deactivated', day: null, totalDays: 30, endsOn: null, hits: 3, maxHits: 3 } }));
     await fireEvent.press(await screen.findByTestId('js-home-pay-again'));
-    await waitFor(() => expect(api.sheetLink).toHaveBeenCalledWith('p-js', 'registration', undefined));
+    expect(router.push).toHaveBeenCalledWith('/verify/registration?profileId=p-js');
   });
 });
 
 describe('Business Home', () => {
   it('tracker, agreement button, "candidates after the visit", vacancies with states', async () => {
-    const { api } = await renderHome(bizHome(), [bizProfile]);
+    await renderHome(bizHome(), [bizProfile]);
     expect(await screen.findByTestId('biz-step-phone-done')).toBeTruthy();
     expect(screen.getByTestId('biz-step-agreement-not_started')).toBeTruthy();
     expect(screen.getByTestId('biz-step-visit-in_progress')).toBeTruthy();
@@ -136,7 +136,7 @@ describe('Business Home', () => {
     expect(router.push).toHaveBeenCalledWith('/vacancy/new?vacancyId=v-1');
     expect(screen.queryByTestId('biz-home-confirm-v-2')).toBeNull();
     await fireEvent.press(screen.getByTestId('biz-home-sign'));
-    await waitFor(() => expect(api.sheetLink).toHaveBeenCalledWith('p-biz', 'business_agreement', undefined));
+    expect(router.push).toHaveBeenCalledWith('/verify/business_agreement?profileId=p-biz');
   });
 
   it('visit booked with the agent first name; verified hides the waiting banner; never a phone number', async () => {

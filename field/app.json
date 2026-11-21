@@ -10,7 +10,7 @@
     "backgroundColor": "#EEF3FC",
     "primaryColor": "#0055C0",
     "ios": {
-      "bundleIdentifier": "in.laboura.field",
+      "bundleIdentifier": "com.laboura.field",
       "supportsTablet": false,
       "infoPlist": {
         "NSCameraUsageDescription": "Laboura Field takes live photos of shops and visit selfies as proof of the visit.",
@@ -18,7 +18,7 @@
       }
     },
     "android": {
-      "package": "in.laboura.field",
+      "package": "com.laboura.field",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0055C0"

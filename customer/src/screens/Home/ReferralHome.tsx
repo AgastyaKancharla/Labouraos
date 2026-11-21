@@ -75,7 +75,7 @@ export function ReferralHomeView({ profileId, home, hero }: { profileId: string;
           <View style={styles.gap}>
             <StepList testID="ref-step" steps={steps} />
             {home.stuckReason ? <Banner tone="warn" message={home.stuckReason} /> : null}
-            <Button label={t('jsHome.continue')} loading={sheet.busy} onPress={() => void sheet.open(profileId, 'referral_registration')} testID="ref-home-continue" />
+            <Button label={t('jsHome.continue')} onPress={() => router.push(routes.verify('referral_registration', profileId))} testID="ref-home-continue" />
           </View>
         </Card>
       ) : null}

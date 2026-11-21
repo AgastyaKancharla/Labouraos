@@ -89,11 +89,11 @@ describe('GoogleIdTokenVerifier', () => {
   it('Sign in with Apple: off until configured, then checks Apple\'s issuer and the bundle id', async () => {
     process.env.APPLE_CLIENT_ID_IOS = '';
     process.env.APPLE_CLIENT_ID_WEB = '';
-    expect(await failure(new TestApple(), sign({ sub: 'a' }, { issuer: 'https://appleid.apple.com', audience: 'in.laboura.app' }))).toBe('APPLE_NOT_CONFIGURED');
-    process.env.APPLE_CLIENT_ID_IOS = 'in.laboura.app';
+    expect(await failure(new TestApple(), sign({ sub: 'a' }, { issuer: 'https://appleid.apple.com', audience: 'com.laboura.app' }))).toBe('APPLE_NOT_CONFIGURED');
+    process.env.APPLE_CLIENT_ID_IOS = 'com.laboura.app';
     const apple = new TestApple();
-    await expect(apple.verify(sign({ sub: 'a' }, { issuer: 'https://appleid.apple.com', audience: 'in.laboura.app' }))).resolves.toEqual(expect.objectContaining({ sub: 'a' }));
-    expect(await failure(apple, sign({ sub: 'a' }, { issuer: 'https://accounts.google.com', audience: 'in.laboura.app' }))).toBe('APPLE_TOKEN_INVALID');
+    await expect(apple.verify(sign({ sub: 'a' }, { issuer: 'https://appleid.apple.com', audience: 'com.laboura.app' }))).resolves.toEqual(expect.objectContaining({ sub: 'a' }));
+    expect(await failure(apple, sign({ sub: 'a' }, { issuer: 'https://accounts.google.com', audience: 'com.laboura.app' }))).toBe('APPLE_TOKEN_INVALID');
   });
 
   it('caches Google\'s keys', async () => {

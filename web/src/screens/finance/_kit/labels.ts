@@ -21,6 +21,7 @@ export const CHANNEL: Record<string, string> = {
   field_visit: 'Field visits',
   social_media: 'Social media',
   walk_in: 'Walk-in',
+  whatsapp: 'WhatsApp',
   other: 'Other',
 };
 

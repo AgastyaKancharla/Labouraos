@@ -129,7 +129,7 @@ describe('routes and guards', () => {
     renderAt('/call-agent/follow-ups');
     const nav = await screen.findByRole('navigation', { name: 'Main' });
     expect(within(nav).getByRole('link', { name: 'My follow-ups' })).toHaveClass('on');
-    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Home', 'My follow-ups', 'My targets', 'Attendance']);
+    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Home', 'My follow-ups', 'WhatsApp', 'My targets', 'Attendance']);
     await userEvent.click(screen.getByRole('button', { name: 'Log out' }));
     expect(await screen.findByText('You have signed out.')).toBeInTheDocument();
   });

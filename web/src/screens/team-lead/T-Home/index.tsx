@@ -16,6 +16,7 @@ import { firstName, liveText, statusTone, useLive, useTargets, useTeam, useToday
 import { RequestActions, RequestWants, RequestWho } from '../_kit/requests';
 import { heroLine, monthName, TeamTargetsTable } from '../_kit/targets';
 import { BusinessNumbers, CloseToRefund } from '../_kit/business';
+import { WhatsAppOverview } from '../_kit/WhatsAppOverview';
 
 /** Team Lead home — design T-Home.dc.html: my team today. */
 interface N2 {
@@ -170,6 +171,8 @@ export default function TeamLeadHome() {
           </div>
         )}
       </Card>
+
+      <WhatsAppOverview />
 
       <StatGrid>
         <StatTile label="Calls today" value={today.data?.totals.calls ?? '—'} tone="royal" loading={today.isPending} />

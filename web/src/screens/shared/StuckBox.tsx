@@ -9,12 +9,15 @@ import type { MessageKey } from '../../i18n/en';
 import { api } from '../../lib/api/client';
 import { isApiError } from '../../lib/api/errors';
 import { PAYER_RELATIONS } from '../call-agent/_registration/options';
+import { SendOnWhatsAppButton } from '../call-agent/CA18-WhatsApp/SendOnWhatsApp';
+import type { LinkKind } from '../call-agent/CA18-WhatsApp/api';
 
 /**
  * "Where they're stuck" (Master Guide rev 204, 21 Nov) on every job seeker,
  * business and referral partner profile in the call agent, Team Lead, Manager
  * and CEO views: the account owner, the step the person is on and the button
- * that matches it. Every button calls the existing route with its own
+ * that matches it (with "Send on WhatsApp" beside the link buttons that have
+ * one). Every button calls the existing route with its own
  * permissions; a refusal (for example a do-not-call or wrong-number block)
  * shows the server's message. Waiting for the Team Lead's ID check shows that,
  * with no resend.
@@ -62,6 +65,13 @@ const ACTION: Record<Exclude<StuckAction, 'someone_else_pays'>, { label: Message
   payment_link: { label: 'stuck.action.payment_link', run: (id) => api.post(`/job-seekers/${encodeURIComponent(id)}/resend-payment`, {}) },
   agreement_link: { label: 'stuck.action.agreement_link', run: (id) => api.post(`/businesses/${encodeURIComponent(id)}/agreement-links`, {}) },
   partner_terms_link: { label: 'stuck.action.partner_terms_link', run: (id) => api.post(`/referrals/${encodeURIComponent(id)}/terms-links`, {}) },
+};
+
+/** "Send on WhatsApp" next to the link buttons that have one (rev 202; same rights as Resend). */
+const WHATSAPP: Partial<Record<StuckAction, LinkKind>> = {
+  registration_link: 'registration',
+  agreement_link: 'agreement',
+  partner_terms_link: 'referral_terms',
 };
 
 export function stuckQueryKey(kind: StuckKind, id: string) {
@@ -127,9 +137,14 @@ export function StuckBox({ kind, id }: { kind: StuckKind; id: string }) {
                 {t('stuck.action.someone_else_pays')}
               </Button>
             ) : (
-              <Button key={action} variant="primary" loading={send.isPending} onClick={() => send.mutate(() => ACTION[action].run(s.id))}>
-                {t(ACTION[action].label)}
-              </Button>
+              <span key={action} className="lb-stuck__pair">
+                <Button variant="primary" loading={send.isPending} onClick={() => send.mutate(() => ACTION[action].run(s.id))}>
+                  {t(ACTION[action].label)}
+                </Button>
+                {WHATSAPP[action] && (
+                  <SendOnWhatsAppButton kind={WHATSAPP[action]!} id={s.id} onSent={() => void queryClient.invalidateQueries({ queryKey: stuckQueryKey(kind, id) })} />
+                )}
+              </span>
             ),
           )}
         </div>

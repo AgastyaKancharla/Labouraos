@@ -1826,3 +1826,8 @@ img.lb-staffphoto {
   gap: 8px;
   max-width: 420px;
 }
+.lb-stuck__pair {
+  display: inline-flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}

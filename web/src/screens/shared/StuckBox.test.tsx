@@ -13,7 +13,7 @@ const view = (over: Record<string, unknown> = {}) => ({
 describe('Where they’re stuck', () => {
   it('shows the account owner, the step and the matching button, which calls the existing route', async () => {
     const user = userEvent.setup();
-    const api = mockApi({ 'GET /profile-stuck': view(), 'POST /consent/links': { expiresAt: '2026-11-22T10:00:00Z' } });
+    const api = mockApi({ 'GET /profile-stuck': view(), 'POST /consent/links': { expiresAt: '2026-11-22T10:00:00Z' }, 'POST /whatsapp/send-link/registration/js-1': { sentBy: 'whatsapp' } });
     signInAs('team_lead');
     renderScreen(<StuckBox kind="job_seeker" id="js-1" />, { portal: 'team-lead', path: '/team-lead/job-seekers/js-1' });
     expect(await screen.findByTestId('stuck-owner')).toHaveTextContent('Kiran Kumar · CA-00007');
@@ -22,6 +22,9 @@ describe('Where they’re stuck', () => {
     await user.click(screen.getByRole('button', { name: 'Resend registration link' }));
     await waitFor(() => expect(api.calls('POST /consent/links')).toHaveLength(1));
     expect(api.calls('POST /consent/links')[0]!.body).toEqual({ jobSeekerId: 'js-1' });
+    // "Send on WhatsApp" sits beside it (the existing route, same rights as Resend).
+    await user.click(screen.getByRole('button', { name: 'Send on WhatsApp' }));
+    await waitFor(() => expect(api.calls('POST /whatsapp/send-link/registration/js-1')).toHaveLength(1));
   });
 
   it('waiting for the Team Lead’s ID check shows that, with no resend button', async () => {

@@ -9,6 +9,12 @@
         "EXPO_NO_TELEMETRY": "1",
         "EXPO_PUBLIC_API_URL": "https://app.laboura.com",
         "EXPO_PUBLIC_API_MODE": "live"
+      },
+      "android": {
+        "image": "latest"
+      },
+      "ios": {
+        "image": "latest"
       }
     },
     "development": {

@@ -413,6 +413,8 @@ model Referral {
   assignedStaffId String?
   assignedStaff Staff?      @relation("ReferralAssignedTo", fields: [assignedStaffId], references: [id], onDelete: SetNull)
   assignedAt    DateTime?
+  /// 21 Nov: the partner's personal share link and QR (/p/ref/<shareSlug>). Random, made on first use.
+  shareSlug     String?     @unique
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
@@ -3605,6 +3607,110 @@ model BusinessShift {
 
   @@unique([businessId, name])
   @@index([businessId])
+}
+
+/// Inbound WhatsApp (Master Guide rev 202, 21 Nov): one conversation per phone
+/// number. It is a tracked lead: the software assigns it like a missed call, the
+/// agent answers in the console's WhatsApp tab and closes it with an outcome; a
+/// new message after closing opens it again.
+model WhatsAppConversation {
+  id                 String    @id @default(uuid())
+  /// +91 and 10 digits (the one stored format).
+  phone              String    @unique
+  /// The name the person set in WhatsApp (shown until the lead is matched).
+  profileName        String?
+  /// Matched record: job_seeker, business or referral; null = a new lead.
+  subjectType        String?
+  subjectId          String?
+  status             String    @default("open") // open, closed
+  assignedStaffId    String?
+  assignedAt         DateTime?
+  assignmentReason   String? // own_agent, fair_share, taken, manual
+  lastInboundAt      DateTime?
+  lastOutboundAt     DateTime?
+  /// The first message not yet answered by a person; null once an agent replied.
+  waitingSince       DateTime?
+  /// Working seconds the oldest unanswered message has waited (counted only while a call agent is on shift).
+  waitingWorkSeconds Int       @default(0)
+  waitCountedAt      DateTime?
+  teamLeadAlertedAt  DateTime?
+  managerAlertedAt   DateTime?
+  /// The "we will call you by 10 AM" reply sent while nobody was on shift.
+  autoReplyAt        DateTime?
+  outcome            String?
+  outcomeNote        String?
+  closedAt           DateTime?
+  closedByStaffId    String?
+  /// Start of the current lead (first message, or the message that reopened it).
+  openedAt           DateTime  @default(now())
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  messages           WhatsAppMessage[]
+
+  @@index([status, assignedStaffId])
+  @@index([subjectType, subjectId])
+}
+
+/// One WhatsApp message in a conversation, in or out. The provider's message id
+/// is unique, so a webhook delivered twice adds nothing.
+model WhatsAppMessage {
+  id                String               @id @default(uuid())
+  conversationId    String
+  conversation      WhatsAppConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  direction         String // in, out
+  /// text, template, auto (the off-shift reply), other (media and anything not text)
+  kind              String
+  body              String?
+  templateName      String?
+  providerMessageId String?              @unique
+  status            String // received, queued, sent, delivered, read, failed
+  sentByStaffId     String?
+  createdAt         DateTime             @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+/// A lead a referral partner sent (21 Nov): from their share link page or the
+/// Laboura app's "Submit a lead". Assigned to a call agent like a missed call;
+/// registering the person fills "referred by" with the partner.
+model ReferralLead {
+  id               String    @id @default(uuid())
+  referralId       String
+  name             String
+  phone            String
+  /// job (a job seeker) or staff (a business that needs staff)
+  lookingFor       String
+  area             String?
+  note             String?
+  source           String // link, app
+  /// The app's own row (CustomerReferralLead) this was picked up from; its status follows this lead.
+  customerLeadId   String?   @unique
+  /// Link page: when the person ticked "Laboura may call me" and the wording version they saw.
+  consentAt        DateTime?
+  consentVersion   String?
+  /// First call placed to the lead (from the partner lead list); until then it waits.
+  firstCalledAt    DateTime?
+  /// Working seconds it has waited for a first call (counted only while a call agent is on shift).
+  waitingWorkSeconds Int     @default(0)
+  waitCountedAt    DateTime?
+  teamLeadAlertedAt DateTime?
+  managerAlertedAt DateTime?
+  status           String    @default("open") // open, closed
+  assignedStaffId  String?
+  assignedAt       DateTime?
+  outcome          String?
+  outcomeNote      String?
+  closedAt         DateTime?
+  closedByStaffId  String?
+  /// The record made for this person, when registered.
+  subjectType      String?
+  subjectId        String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([referralId])
+  @@index([status, assignedStaffId])
+  @@index([phone])
 }
 
 /// 21 Nov (leave handover, Laboura Field): one piece of a field agent's open work moved to a
