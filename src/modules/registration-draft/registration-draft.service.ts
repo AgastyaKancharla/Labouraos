@@ -147,7 +147,12 @@ export async function consumeDraftPhoneCheck(
 /** After a registration is saved, the agent's draft of that kind goes (best effort). */
 export async function clearDraftAfterSubmit(prisma: Pick<PrismaService, 'registrationDraft'>, actorId: string | null | undefined, kind: DraftKind): Promise<void> {
   if (!actorId) return;
-  await prisma.registrationDraft.deleteMany({ where: { staffId: actorId, kind } }).catch(() => undefined);
+  // Best effort: the registration is already saved; a failed clean-up never fails it (the nightly job catches it).
+  try {
+    await prisma.registrationDraft.deleteMany({ where: { staffId: actorId, kind } });
+  } catch {
+    /* the 7-day cleanup removes it */
+  }
 }
 
 export { sameMobile };
