@@ -585,11 +585,18 @@ Then the partner link (§6) for terms and recording consent, selfie, ID check an
 
 ---
 
-## 6. Link pages inside the app (secure browser sheet)
+## 6. The person's own link (verification steps in the app)
 
-For the first version the verification steps open the **existing** link pages
-in a secure browser sheet (decided: proposal 10, question 4). The server issues
-a fresh link for the signed-in person; no SMS is sent.
+The server issues a fresh link for the signed-in person; no SMS is sent. Since
+21 Nov the app shows the verification steps in its **own screens**: it keeps
+only the link's token (the last part of the URL) and calls the link page's own
+public endpoints with it (`/registration/:token/...`,
+`/referral-registration/:token/...`, `/consent/send-otp`, `/consent/submit`,
+`/consent/:token`, `/payments/request/:payPageToken/...`, `/legal/documents/:key`),
+exactly as the `/p/...` page does — so every check is the link page's (the
+code bound to that link, live camera, the Aadhaar QR, the terms hash, the bank
+confirming the payment). Documents and the e-Aadhaar PDF still open the page
+itself in a secure browser sheet (proposal 10, question 4).
 
 | Method and path | Auth | Status |
 | --- | --- | --- |
@@ -608,8 +615,8 @@ a fresh link for the signed-in person; no SMS is sent.
 → `201 { "url": "https://app.laboura.com/p/register/…", "purpose": "registration", "expiresAt": "…" }`.
 No SMS is sent for a link issued to the app (the existing link services are
 called with SMS off); the link records `issuedTo: customer:<accountId>`.
-The page still asks for the OTP to the person's own number, as today. When the
-sheet closes, the app reloads Home.
+The steps (in the app or on the page) still ask for the OTP to the person's own
+number, as today. When the person leaves the steps, the app reloads Home.
 
 ---
 

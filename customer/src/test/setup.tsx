@@ -92,3 +92,29 @@ jest.mock('expo-constants', () => {
   const constants = { expoConfig: { version: '0.1.0', extra: { eas: { projectId: 'test-project-id' } } }, easConfig: { projectId: 'test-project-id' } };
   return { __esModule: true, default: constants, ...constants };
 });
+
+// The native verification steps (src/verify/): a fake camera that is always
+// allowed and "takes" a 1600×1200 picture; tests drive the QR scan through
+// `global.__scanQr(text)`.
+jest.mock('expo-camera', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  const permission = { granted: true, status: 'granted', canAskAgain: true, expires: 'never' };
+  const CameraView = React.forwardRef(function CameraView(props: { onCameraReady?: () => void; onBarcodeScanned?: (r: { data: string; type: string }) => void; testID?: string }, ref: unknown) {
+    React.useImperativeHandle(ref, () => ({ takePictureAsync: jest.fn(async () => ({ uri: 'file:///camera/shot.jpg', width: 1600, height: 1200 })) }));
+    React.useEffect(() => {
+      props.onCameraReady?.();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+    (globalThis as { __scanQr?: (text: string) => void }).__scanQr = (text: string) => props.onBarcodeScanned?.({ data: text, type: 'qr' });
+    return <View testID={props.testID ?? 'camera-view'} />;
+  });
+  return { CameraView, useCameraPermissions: () => [permission, jest.fn(async () => permission)] };
+});
+
+jest.mock('expo-image-manipulator', () => {
+  const render = { saveAsync: jest.fn(async () => ({ uri: 'file:///cache/prepared.jpg', width: 1280, height: 960 })) };
+  const context: { resize: jest.Mock; renderAsync: jest.Mock } = { resize: jest.fn(), renderAsync: jest.fn(async () => render) };
+  context.resize.mockImplementation(() => context);
+  return { ImageManipulator: { manipulate: jest.fn(() => context) }, SaveFormat: { JPEG: 'jpeg', PNG: 'png' } };
+});

@@ -15,7 +15,9 @@ customer/
                            mock.ts (pretend data), client.ts (HTTP, refresh, installation header),
                            errorText.ts (contract error codes → the app's own words)
     auth/                  session (tokens only, 90 days), Google, Apple, installation id
-    sheet/openSheet.ts     the secure browser sheet (see below)
+    verify/                the verification steps' building blocks: link-endpoint client (stepsApi.ts),
+                           pretend steps (mockSteps.ts), live camera, Aadhaar QR scanner, ID panel, photo prep
+    sheet/openSheet.ts     the secure browser sheet (documents and the e-Aadhaar PDF only; see below)
     screens/<Name>/        one folder per screen, with its tests
     components/            copied from Laboura Field (Button, Card, TextField, CodeInput, form pickers…)
     theme/                 copied from Laboura Field (one text size larger)
@@ -36,9 +38,9 @@ Building blocks, API client pattern and theme are **copies** of Laboura Field's,
 | `/verify-phone` | VerifyPhone | After Google/Apple: the mobile + OTP **before any profile**; says "We found your registration JS-…" when an agent already registered that number |
 | `/role` | RolePicker | "I want a job" / "I need staff" / "I refer people and earn"; starts the sign-up on the server (tracker stage A) |
 | `/profiles` | MyProfiles | Every profile of this account, switch, "+ Add another" |
-| `/register/job-seeker` | RegisterJobSeeker | Date of birth first (under 18 stops, nothing kept), then the agent form's fields, saved on the phone as typed; a fresh OTP confirms; then consent → selfie → ID → ₹499 in the secure sheet |
-| `/register/business` | RegisterBusiness | Contact person, business, address and pin, optional documents, staff rows (become draft vacancies), billing email, preferred visit time; fresh OTP; then the agreement in the sheet. Households hidden (C24) |
-| `/register/referral` | RegisterReferral | Individual or business, area, language, WhatsApp; fresh OTP; then terms, selfie, ID, UPI in the sheet |
+| `/register/job-seeker` | RegisterJobSeeker | Date of birth first (under 18 stops, nothing kept), then the agent form's fields, saved on the phone as typed; a fresh OTP confirms; then consent → selfie → ID → ₹499 in the app's own screens (`/verify/registration`) |
+| `/register/business` | RegisterBusiness | Contact person, business, address and pin, optional documents, staff rows (become draft vacancies), billing email, preferred visit time; fresh OTP; then the agreement in the app (`/verify/business_agreement`). Households hidden (C24) |
+| `/register/referral` | RegisterReferral | Individual or business, area, language, WhatsApp; fresh OTP; then terms, selfie, ID, UPI in the app (`/verify/referral_registration`) |
 | `/vacancy/new` | AddVacancy | Vacancy draft with the market range and the **legal minimum wage warning + tick**; confirmed by a fresh OTP; `?vacancyId=` confirms a draft from registration |
 | `/home` | Home | By profile kind — job seeker: steps, "Paid — confirming", day X of 30, hits, interview (business name **only once booked**), refund status · business: tracker, visit, approval, vacancies, counts (no candidate data, never a phone number) · partner: link + QR + WhatsApp text, people referred (first name + stage only), money due/approved/paid statement |
 | `/workers` | WorkerLeft | A business tells us a worker left: picks the worker (first name, paid placements only), the day and why from the claim reasons. The call team calls and files the claim; a Team Lead decides. Shown only when the server switches it on (`CUSTOMER_WORKER_LEFT_REPORTS=on`, contract 8.2) |
@@ -52,23 +54,36 @@ Building blocks, API client pattern and theme are **copies** of Laboura Field's,
 
 Large-text friendly: one step larger than Field, 52 px touch targets, everything grows with the phone's font setting. Low data: no maps or images downloaded (the pin is one GPS reading), fonts bundled, answers cached 60 s, no refetch on every focus.
 
-## The secure browser sheet (consent, selfie, ID, payment, agreement)
+## The verification steps (native screens, 21 Nov)
 
-For this first version the verification steps are the **existing link pages** (`/p/register/…`, `/p/partner/…`, `/p/agreement/…`), opened inside the app. The server issues a fresh link for the signed-in person (`POST /me/profiles/:id/links`).
+Consent, the live selfie, the ID check, the terms and ₹499, the referral partner's terms / selfie / ID / UPI, and the business agreement are **the app's own screens** (`/verify/<purpose>?profileId=…`, `src/screens/Verify/`). Nothing new on the server:
+
+- The screen asks the server for this person's own link (`POST /me/profiles/:id/links`, the same link an agent sends by SMS, no SMS sent) and keeps only its token (the last part of the URL).
+- Every step calls **the link page's own endpoints** with that token (`src/verify/stepsApi.ts`; the same calls as `web/src/screens/public/shared/api.ts`), at the API root and without the customer token. So every server check is exactly the link page's: the code to the person's own number bound to that link (AC-3; it is kept in memory only and runs out 5 minutes after it was sent — then the code step comes back and finished steps stay finished), the live-camera rules, UIDAI's signature on the Aadhaar QR, the hash of the terms text shown, the bank confirming the ₹499.
+- **Live camera only** (`expo-camera`): the selfie (front camera) and the photo of another ID card (back camera) are taken in the app; there is no gallery or file picker. Each picture is drawn again and saved as a new JPEG (`expo-image-manipulator`) so the camera's EXIF stays behind; an ID card is at most 1280 px on its longest side (the server takes 240–1280 px, ≤ 5 MB), with the one-time capture token (2 minutes). Uploads are sent with `captureSource=live_camera`.
+- **Aadhaar QR:** the camera reads the Secure QR; only its text is sent — never a picture of the card. The **e-Aadhaar PDF** option opens the same step on the link page in the secure sheet (it needs the PDF's password and a PDF reader); the PDF stays on the phone.
+- **₹499:** the UPI QR (`react-native-svg`) and "Pay with a UPI app" (`upi://` intent); "Someone else will pay" sends the payment-only link. Tapping Pay never says "done": the screen shows "Paid — confirming" and asks again every 5 seconds until the bank confirms, with the optional 12-digit UPI reference.
+- **Referral partner:** three ticks (terms, call recording, the separate ID-check consent S2), then UPI or bank account in their own name; only the masked value is shown after saving.
+- **Business agreement:** name (filled from the link), three ticks, then "Send code to sign"; typing the code signs. The signed copy opens from the API (`/consent/<token>/signed/copy`).
+- Wording follows the link pages (`src/i18n/verify.en.ts`).
+
+### The secure browser sheet (documents and the e-Aadhaar PDF)
+
+Documents (a referral partner's papers) and the e-Aadhaar PDF still open the **existing link pages** inside the app.
 
 - **Android: Chrome Custom Tabs** (`expo-web-browser` `openAuthSessionAsync`). **iPhone: SFSafariViewController** (`openBrowserAsync` — the auth session would show a "wants to use … to sign in" prompt).
 - **Why not a WebView: the camera.** Custom Tabs and the Safari sheet run the page in the real browser, which asks for camera permission itself, so the live selfie and the Aadhaar QR scan (`getUserMedia`) work. A WebView needs extra native permission code on both platforms. UPI links (`upi://…`) also open the UPI app from the browser, and the app cannot read the payment, Aadhaar or agreement pages.
 - **Coming back:** every link gets `?app=1&returnTo=laboura://sheet-done`. When the page goes there, the sheet closes and Home shows. When the person just closes the sheet, Home reloads too. Home also reloads whenever the app comes back to the front.
 - **Fallback:** a phone with no in-app browser opens the page in its normal browser; Home says "come back when done" and refreshes on return. *A "Back to the Laboura app" button on the link pages needs `web/` to honour `returnTo`. Checked 21 Nov: not done yet; asked of the office session (it is outside this folder).*
 - Only `https` links on the link-pages address (`EXPO_PUBLIC_LINK_PAGES_URL`, default the API address) are opened.
-- To be proven on real phones (day 3 of the plan): camera in the sheet on a cheap Android and on iPhone.
+- To be proven on real phones: the native camera, the QR scan and the UPI intent on a cheap Android and on iPhone.
 
 ## Data: live API or pretend data
 
 | Variable | Meaning |
 | --- | --- |
 | `EXPO_PUBLIC_API_URL` | Server address. Test setup: `https://app.laboura.com`. The app calls `<this>/customer-api/v1` |
-| `EXPO_PUBLIC_API_MODE` | `live` (default) or `mock` — pretend data, no server: every OTP is `123456`; a number ending `0000` "already has" JS-1234; opening the sheet pretends the steps were done |
+| `EXPO_PUBLIC_API_MODE` | `live` (default) or `mock` — pretend data, no server: every OTP is `123456`; a number ending `0000` "already has" JS-1234; the verification steps run on pretend link endpoints (`src/verify/mockSteps.ts`: any 6-digit code, the QR is always verified, the ₹499 confirms about 8 seconds after agreeing to the terms) |
 | `EXPO_PUBLIC_LINK_PAGES_URL` | Where `/p/...` pages live (defaults to the API address) |
 | `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`, `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` | Optional: otherwise taken from the server's `GET /config` |
 | `GOOGLE_IOS_URL_SCHEME` | iPhone only, at build time: the iOS client id reversed |

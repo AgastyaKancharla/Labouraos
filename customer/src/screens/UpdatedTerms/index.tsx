@@ -1,4 +1,6 @@
+import { htmlToText } from '@/lib/html';
 import { useState } from 'react';
+import { router } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCustomerApi } from '@/api/ApiProvider';
@@ -9,25 +11,11 @@ import { useAuth } from '@/auth/AuthProvider';
 import { Banner, Button, Card, HeroCard, LoadingState, Text } from '@/components';
 import { Checkbox } from '@/components/form';
 import { useI18n } from '@/i18n';
+import { routes } from '@/navigation/routes';
 import { colors } from '@/theme';
 import { OtpCodeCard } from '../shared/OtpCodeCard';
-import { useSecureSheet } from '../shared/useSecureSheet';
 
-/** Server text is inline HTML (<strong>, lists, tables): shown as plain words here. */
-export function htmlToText(html: string): string {
-  return html
-    .replace(/<\/(p|li|h[1-6]|tr|section|ul|ol|table)>/g, '\n')
-    .replace(/<br\s*\/?>/g, '\n')
-    .replace(/<\/t[dh]>/g, ' · ')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
+export { htmlToText };
 
 /**
  * "We've updated our terms" (legal documents v1.1, rev 176) — blocking: the
@@ -41,7 +29,6 @@ export function UpdatedTerms({ profileId, legal }: { profileId: string; legal: L
   const api = useCustomerApi();
   const { account } = useAuth();
   const queryClient = useQueryClient();
-  const sheet = useSecureSheet();
   const doc = useQuery({ queryKey: ['legal-document', profileId, language], queryFn: () => api.legalDocument(profileId, language) });
   const [showFull, setShowFull] = useState(false);
   const [ticked, setTicked] = useState<Record<string, boolean>>({});
@@ -86,7 +73,7 @@ export function UpdatedTerms({ profileId, legal }: { profileId: string; legal: L
           ) : null}
           <Text variant="muted">{t('terms.version', { version: d.version })}</Text>
           {isBusiness ? (
-            <Button label={t('terms.signAgreement')} loading={sheet.busy} onPress={() => void sheet.open(profileId, 'business_agreement')} testID="terms-sign-agreement" />
+            <Button label={t('terms.signAgreement')} onPress={() => router.push(routes.verify('business_agreement', profileId))} testID="terms-sign-agreement" />
           ) : (
             <>
               {d.consents.map((c) => (
