@@ -218,11 +218,11 @@ describe('Phase 13 gate — complete verification and consent journeys', () => {
     const vacancyId = vacancyResponse.body.id as string;
     await confirmVacancyForTest(app, vacancyResponse.body);
     vacancyIds.push(vacancyId);
-    // 21 Nov (Master Guide rev 202): verified at the shop by a field agent, it shows candidates
-    // straight away while it waits for the Team Lead, the same as in-person onboarding.
+    // 21 Nov review: verified by the old visits route (no live photo), it is not proven at the
+    // shop, so candidates stay hidden until the Team Lead's check.
     await request(server).get(`/vacancies/${vacancyId}/shortlist`)
       .set('Authorization', `Bearer ${visitingAgent.token}`)
-      .expect(200);
+      .expect(403);
 
     const policy = await prisma.pricingPolicy.findFirstOrThrow({ orderBy: { effectiveFrom: 'desc' } });
     const walkInSlot = await prisma.vacancyInterviewSlot.findFirstOrThrow({ where: { vacancyId } });
