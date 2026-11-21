@@ -14,8 +14,12 @@ import { testModeFields } from '../../common/otp/otp-test-mode';
 import { codedError } from '../../common/http/coded-error';
 import { mobileLookupValues, parseIndianMobile, sameIndianMobile } from '../../common/phone/indian-mobile';
 import { MessagingService } from '../message/messaging.service';
+import { inQuietHours } from '../message/quiet-hours';
 import { ReportingScopeService } from '../staff/reporting-scope.service';
 import { SHARE_SLUG_PATTERN, ensureShareSlug, shareLinkUrl, shareQrSvg } from './referral-share-link';
+import { WhatsAppInboxClock } from '../whatsapp-inbox/whatsapp-inbox.clock';
+import { WhatsAppInboxService } from '../whatsapp-inbox/whatsapp-inbox.service';
+import { createHash } from 'crypto';
 import { closeAppLead, markAppLeadContacted } from './referral-lead-sync';
 
 /** What the person who sent the lead is after. */
@@ -25,7 +29,15 @@ export type LeadLookingFor = (typeof LEAD_LOOKING_FOR)[number];
 export const REFERRAL_LEAD_OUTCOMES = ['registered', 'already_registered', 'not_interested', 'no_answer_3_tries', 'wrong_number'] as const;
 /** Spam guards for one share link: leads and codes a day. */
 export const LINK_LEADS_PER_DAY = 30;
-export const LINK_CODES_PER_DAY = 60;
+/** Codes one share link sends in 24 hours (all visitors). */
+export const LINK_CODES_PER_DAY = 20;
+/** Codes one visitor address asks for in 24 hours, across every share link (checked first). */
+export const IP_CODES_PER_DAY = 10;
+/** Codes one number gets in 24 hours, across every share link. */
+export const NUMBER_CODES_PER_DAY = 3;
+/** The words of the link page's consent tick; a new wording means a new version. */
+export const LINK_CONSENT_VERSION = 'ref-link-consent-1.0';
+export const LINK_CONSENT_TEXT = 'Laboura may call me and send me WhatsApp messages about this.';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface LeadActor {
@@ -46,6 +58,11 @@ function firstName(name: string | null | undefined): string {
 }
 
 /** The page's OTP is bound to the share link (AC-3 style), never to a staff send. */
+/** A visitor address, kept only as a keyed hash (never the address itself). */
+function ipHash(ip: string | null | undefined): string {
+  return createHash('sha256').update(`laboura:ref-link-ip:${process.env.JWT_SECRET ?? ''}:${ip ?? 'unknown'}`).digest('hex').slice(0, 32);
+}
+
 function linkToken(slug: string): string {
   return `ref-link:${slug}`;
 }
@@ -67,10 +84,12 @@ export class ReferralLeadService {
     private readonly limiter: PublicOtpLimiter,
     private readonly messaging: MessagingService,
     private readonly scope: ReportingScopeService,
+    private readonly clock: WhatsAppInboxClock,
+    private readonly inbox: WhatsAppInboxService,
   ) {}
 
   now(): Date {
-    return new Date();
+    return this.clock.now();
   }
 
   // ------------------------------------------------------------------ share link
@@ -98,22 +117,40 @@ export class ReferralLeadService {
   async publicPage(slug: string) {
     const partner = await this.partnerForSlug(slug);
     if (!partner) throw codedError(HttpStatus.NOT_FOUND, 'LINK_NOT_ACTIVE', 'This link is not active. You can still call Laboura or register in the Laboura app.');
-    return { valid: true, partnerFirstName: firstName(partner.name), partnerCode: partner.code };
+    // The partner's first name only (never the RF code: the page is shared widely).
+    return { valid: true, partnerFirstName: firstName(partner.name) };
   }
 
-  /** "Send code" on the share link page: to the number the person typed (their own). */
-  async sendCode(slug: string, rawPhone: unknown) {
+  /**
+   * "Send code" on the share link page: to the number the person typed (their own).
+   * Limits, in this order so one abuser cannot use up a partner's link: per visitor
+   * address (all links), per number (all links), then per link; then the usual
+   * public-page limits per number (one code every 30 seconds).
+   */
+  async sendCode(slug: string, rawPhone: unknown, ip?: string | null) {
     const partner = await this.partnerForSlug(slug);
     if (!partner) throw codedError(HttpStatus.NOT_FOUND, 'LINK_NOT_ACTIVE', 'This link is not active.');
     const phone = parseIndianMobile(rawPhone);
     if (!phone) throw new BadRequestException('Enter a 10-digit mobile number');
     const now = this.now();
-    const codesToday = await this.prisma.publicOtpSend.count({ where: { linkKey: { startsWith: `${linkToken(slug)}:` }, sentAt: { gt: new Date(now.getTime() - DAY_MS) } } });
-    if (codesToday >= LINK_CODES_PER_DAY) {
-      throw codedError(HttpStatus.TOO_MANY_REQUESTS, 'LIMIT_REACHED', 'This link has been used a lot today. Try again tomorrow, or call Laboura.');
+    const since = new Date(now.getTime() - DAY_MS);
+    const ipKey = `ref-ip:${ipHash(ip)}`;
+    const fromAddress = await this.prisma.publicOtpSend.count({ where: { linkKey: ipKey, sentAt: { gt: since } } });
+    if (fromAddress >= IP_CODES_PER_DAY) {
+      throw codedError(HttpStatus.TOO_MANY_REQUESTS, 'LIMIT_REACHED', 'Too many codes from this connection today. Try again later, or call Laboura.');
     }
-    // Per person: the usual public-page limits (one code every 30 seconds, 4 a day).
+    const toNumber = await this.prisma.publicOtpSend.count({ where: { phoneHash: publicOtpPhoneHash(phone), linkKey: { startsWith: 'ref-link:' }, sentAt: { gt: since } } });
+    if (toNumber >= NUMBER_CODES_PER_DAY) {
+      throw codedError(HttpStatus.TOO_MANY_REQUESTS, 'LIMIT_REACHED', 'Too many codes to this number today. Try again later, or call Laboura.');
+    }
+    const codesToday = await this.prisma.publicOtpSend.count({ where: { linkKey: { startsWith: `${linkToken(slug)}:` }, sentAt: { gt: since } } });
+    if (codesToday >= LINK_CODES_PER_DAY) {
+      throw codedError(HttpStatus.TOO_MANY_REQUESTS, 'LIMIT_REACHED', 'This link has been used a lot today. Try again later, or call Laboura.');
+    }
     await this.limiter.claimSend(`${linkToken(slug)}:${publicOtpPhoneHash(phone).slice(0, 16)}`, phone, now);
+    // Counted for the address only (no number on this row, so it never touches the per-number wait).
+    await this.prisma.publicOtpSend.create({ data: { linkKey: ipKey, phoneHash: 'address', sentAt: now } });
+    await this.prisma.publicOtpSend.deleteMany({ where: { linkKey: ipKey, sentAt: { lt: since } } });
     const sent = await this.otp.sendPublicPageOtp(phone, linkToken(slug));
     return { success: true, requestId: sent.requestId, ...testModeFields(sent) };
   }
@@ -133,7 +170,7 @@ export class ReferralLeadService {
     if (today >= LINK_LEADS_PER_DAY) {
       throw codedError(HttpStatus.TOO_MANY_REQUESTS, 'LIMIT_REACHED', 'This link has been used a lot today. Try again tomorrow, or call Laboura.');
     }
-    await this.createLead(partner, input, 'link', now);
+    await this.createLead(partner, input, 'link', now, { consentAt: now, consentVersion: LINK_CONSENT_VERSION });
     // Never says whether the number is already registered (no oracle).
     return { received: true };
   }
@@ -158,6 +195,7 @@ export class ReferralLeadService {
     input: { name: string; phone: string; lookingFor: LeadLookingFor; area: string | null; note: string | null },
     source: 'link' | 'app',
     now: Date,
+    consent: { consentAt: Date | null; consentVersion: string | null } = { consentAt: null, consentVersion: null },
   ) {
     if (sameIndianMobile(partner.phone, input.phone)) return null;
     const open = await this.prisma.referralLead.findFirst({
@@ -175,11 +213,14 @@ export class ReferralLeadService {
         note: input.note,
         source,
         status: 'open',
+        consentAt: consent.consentAt,
+        consentVersion: consent.consentVersion,
         createdAt: now,
       },
     });
     // The partner is told the lead arrived (WhatsApp, SMS as fallback). Not a contact attempt.
-    await this.messaging.sendPreferWhatsApp({
+    // In quiet hours (9 PM–9 AM) the WhatsApp sweep sends it in the morning instead.
+    if (!inQuietHours(now)) await this.messaging.sendPreferWhatsApp({
       template: 'referral_lead_received',
       subjectType: 'referral',
       subjectId: partner.id,
@@ -199,7 +240,8 @@ export class ReferralLeadService {
   }
 
   private async visibleWhere(actor: LeadActor): Promise<Prisma.ReferralLeadWhereInput> {
-    if (actor.role === 'call_agent') return { assignedStaffId: actor.id };
+    // A call agent sees his own and the unassigned ones (to take one); never another agent's.
+    if (actor.role === 'call_agent') return { OR: [{ assignedStaffId: actor.id }, { assignedStaffId: null }] };
     if (!['team_lead', 'manager', 'ceo'].includes(actor.role)) throw new ForbiddenException('Not allowed');
     const team = await this.teamIds(actor);
     return team ? { OR: [{ assignedStaffId: null }, { assignedStaffId: { in: team } }] } : {};
@@ -333,6 +375,7 @@ export class ReferralLeadService {
       },
     });
     await closeAppLead(this.prisma, lead.customerLeadId, outcome, subject);
+    await this.inbox.leadHandled(lead.id, actor.id, 'closed', now);
     await this.audit.log({
       actorId: actor.id,
       action: 'referral_lead.closed',

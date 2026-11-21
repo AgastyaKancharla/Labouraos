@@ -27,7 +27,8 @@ export const WHATSAPP_TEMPLATES = {
   registration_done: {
     name: 'registration_done',
     label: 'Registration done',
-    text: 'Hi {{firstName}}, welcome to Laboura! Your registration {{code}} is complete. Our team will call you about suitable jobs. Save this number to reach us on WhatsApp.',
+    // Sent when the ₹499 arrives; the Team Lead's ID check may still be open, so it claims nothing more.
+    text: 'Hi {{firstName}}, thank you! Your payment for Laboura registration {{code}} has arrived. Our team will call you about suitable jobs. Save this number to reach us on WhatsApp.',
     variables: ['firstName', 'code'],
   },
   partner_registration_done: {
@@ -77,7 +78,7 @@ export const WHATSAPP_TEMPLATES = {
   whatsapp_off_shift_reply: {
     name: 'whatsapp_off_shift_reply',
     label: 'Automatic reply when nobody is on shift',
-    text: 'Thanks! An agent will call you by 10 AM.',
+    text: 'Thanks for your message! Our team is away right now. An agent will call you when our next shift starts.',
     variables: [],
   },
   whatsapp_follow_up: {

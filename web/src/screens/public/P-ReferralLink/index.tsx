@@ -13,7 +13,6 @@ const PUBLIC = { auth: false } as const;
 interface LinkPage {
   valid: boolean;
   partnerFirstName: string;
-  partnerCode: string;
 }
 
 /**
@@ -79,7 +78,7 @@ export default function ReferralLinkPage() {
   return (
     <>
       <PageTitle emoji="🤝">{t('ref.page.title')}</PageTitle>
-      <Ok>{t('ref.page.invited', { name: p.partnerFirstName, code: p.partnerCode })}</Ok>
+      <Ok>{t('ref.page.invited', { name: p.partnerFirstName })}</Ok>
       <Muted>{t('ref.page.lead')}</Muted>
       <TextField label={t('ref.page.name')} value={name} onChange={setName} required maxLength={80} autoComplete="name" disabled={Boolean(requestId)} />
       <MobileField label={t('ref.page.phone')} value={mobile} onChange={setMobile} required disabled={Boolean(requestId)} />
@@ -104,7 +103,7 @@ export default function ReferralLinkPage() {
         submittingLabel={t('ref.page.submit')}
       />
       <ActionError error={error} />
-      <Muted>{t('ref.page.app', { code: p.partnerCode })}</Muted>
+      <Muted>{t('ref.page.app')}</Muted>
     </>
   );
 }

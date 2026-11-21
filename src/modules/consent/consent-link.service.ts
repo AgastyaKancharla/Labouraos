@@ -199,6 +199,20 @@ export type ConsentLinkDetails =
 /** How a link goes out: SMS (default) or WhatsApp with SMS as fallback (21 Nov, rev 202). */
 export type LinkSendChannel = 'sms' | 'whatsapp';
 
+/**
+ * Extra options for a link sent on WhatsApp (21 Nov review): the number the
+ * person wrote from (a WhatsApp conversation) and the agent who pressed the
+ * button, kept on the message (relatedType 'sent_by_staff') so a later delivery
+ * failure can tell them and send the link by SMS instead.
+ */
+export interface LinkSendExtras {
+  recipientPhone?: string;
+  sentByStaffId?: string;
+}
+
+/** MessageLog.relatedType of a link an agent sent on WhatsApp: relatedId is the agent. */
+export const LINK_SENT_BY_STAFF = 'sent_by_staff';
+
 @Injectable()
 export class ConsentLinkService {
   private readonly processingTokens = new Set<string>();
@@ -278,7 +292,7 @@ export class ConsentLinkService {
    * `options.sms: false` (customer app): the link is opened by the signed-in
    * person inside the app, so no SMS is sent; everything else is the same.
    */
-  async createLink(jobSeekerId: string, options: { sms?: boolean; issuedTo?: string; revokeOthers?: boolean; channel?: LinkSendChannel } = {}) {
+  async createLink(jobSeekerId: string, options: { sms?: boolean; issuedTo?: string; revokeOthers?: boolean; channel?: LinkSendChannel } & LinkSendExtras = {}) {
     const seeker = await this.prisma.jobSeeker.findUnique({
       where: { id: jobSeekerId },
     });
@@ -289,7 +303,8 @@ export class ConsentLinkService {
     const now = this.clock.now();
     const expiresAt = new Date(now.getTime() + (await this.registrationTtl()));
     // A link opened inside the app (revokeOthers: false) leaves the agent's SMS link working.
-    if (options.revokeOthers !== false) await this.publicLinks.revokeActive('registration', 'job_seeker', seeker.id, now);
+    // A link sent on WhatsApp leaves the earlier one working too (WhatsApp may fail it later).
+    if (options.revokeOthers !== false && options.channel !== 'whatsapp') await this.publicLinks.revokeActive('registration', 'job_seeker', seeker.id, now);
     const { token, id } = await this.publicLinks.create({
       purpose: 'registration', subjectType: 'job_seeker', subjectId: seeker.id,
       phone: seeker.phone, expiresAt, metadata: { resumable: true, ...(options.issuedTo ? { issuedTo: options.issuedTo } : {}) },
@@ -304,7 +319,7 @@ export class ConsentLinkService {
         token,
         link: publicPageLink('registration', token),
       },
-    });
+    }, options);
 
     // NOTE: Job seeker's phone number must NEVER appear in this response. The token
     // is for the customer app (opened in-app); staff routes strip it (AC-3).
@@ -325,9 +340,15 @@ export class ConsentLinkService {
   private async sendLinkMessage(
     channel: LinkSendChannel | undefined,
     message: { template: string; subjectType: string; subjectId: string; variables: Record<string, string> },
+    extras: LinkSendExtras = {},
   ): Promise<'sms' | 'whatsapp' | null> {
     if (channel === 'whatsapp') {
-      const result = await this.messagingService.sendPreferWhatsApp({ ...message, contactAttempt: false });
+      const result = await this.messagingService.sendPreferWhatsApp({
+        ...message,
+        contactAttempt: false,
+        ...(extras.recipientPhone ? { recipientPhone: extras.recipientPhone } : {}),
+        ...(extras.sentByStaffId ? { relatedType: LINK_SENT_BY_STAFF, relatedId: extras.sentByStaffId } : {}),
+      });
       return result.channel;
     }
     const row = await this.messagingService.send({ channel: 'sms', ...message });
@@ -337,7 +358,7 @@ export class ConsentLinkService {
   }
 
   /** The agreement link, in English (rev 193; a language an older client sends is ignored). */
-  async createAgreementLink(businessId: string, staffId: string | null, _requestedLanguage?: string, options: { sms?: boolean; issuedTo?: string; channel?: LinkSendChannel } = {}) {
+  async createAgreementLink(businessId: string, staffId: string | null, _requestedLanguage?: string, options: { sms?: boolean; issuedTo?: string; channel?: LinkSendChannel } & LinkSendExtras = {}) {
     const language = productLanguage(_requestedLanguage);
     const business = await this.prisma.business.findUnique({ where: { id: businessId } });
     if (!business) throw new NotFoundException(`Business '${businessId}' not found`);
@@ -383,7 +404,7 @@ export class ConsentLinkService {
       subjectType: 'business',
       subjectId: business.id,
       variables: { token, link: publicPageLink('businessAgreement', token) },
-    });
+    }, options);
     // smsSent keeps its name for the screens: "the link reached the owner" (by SMS or WhatsApp).
     const smsSent = sendsSms ? sentBy !== null : null;
     if (smsSent === false) {
@@ -425,7 +446,7 @@ export class ConsentLinkService {
   }
 
   /** The referral partner terms link, in English (rev 193; a language an older client sends is ignored). */
-  async createReferralTermsLink(referralId: string, staffId: string | null, _requestedLanguage?: string, options: { sms?: boolean; issuedTo?: string; revokeOthers?: boolean; channel?: LinkSendChannel } = {}) {
+  async createReferralTermsLink(referralId: string, staffId: string | null, _requestedLanguage?: string, options: { sms?: boolean; issuedTo?: string; revokeOthers?: boolean; channel?: LinkSendChannel } & LinkSendExtras = {}) {
     const language = productLanguage(_requestedLanguage);
     const referral = await this.prisma.referral.findUnique({ where: { id: referralId } });
     if (!referral) throw new NotFoundException(`Referral '${referralId}' not found`);
@@ -438,7 +459,7 @@ export class ConsentLinkService {
     const termsHtml = rendered.html;
     const termsHash = rendered.hash;
     const now = this.clock.now();
-    if (options.revokeOthers !== false) await this.publicLinks.revokeActive('referral_registration', 'referral', referral.id, now);
+    if (options.revokeOthers !== false && options.channel !== 'whatsapp') await this.publicLinks.revokeActive('referral_registration', 'referral', referral.id, now);
     const expiresAt = new Date(now.getTime() + (await this.registrationTtl(false)));
     const { token } = await this.publicLinks.create({
       purpose: 'referral_registration', subjectType: 'referral', subjectId: referral.id,
@@ -460,7 +481,7 @@ export class ConsentLinkService {
       subjectId: referral.id,
       // The one link that resumes (P-Partner…): terms and call-recording consent → selfie → ID check → UPI.
       variables: { token, link: publicPageLink('referralRegistration', token), referralCode: referral.code },
-    });
+    }, options);
 
     return { success: true, token, expiresAt, sentBy };
   }

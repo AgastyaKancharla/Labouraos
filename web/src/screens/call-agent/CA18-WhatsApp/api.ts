@@ -75,6 +75,29 @@ export interface ReferralLeadRow {
 
 export type LinkKind = 'registration' | 'agreement' | 'referral_terms';
 
+/** What the registration form can be started with; the number stays on the server (prefillRef). */
+export interface RegistrationPrefill {
+  name: string;
+  heardFrom: string;
+  maskedPhone: string;
+  prefillRef: string;
+  referredBy?: { id: string; code: string; name: string } | null;
+  lookingFor?: string;
+}
+
+/** Calls a number the agent does not see (a new WhatsApp contact or a partner's lead): the calling system rings the agent first. */
+export function useCallById(path: (id: string) => string) {
+  return useMutation({
+    mutationFn: (id: string) => api.post<{ callRecordId: string; callCode: string }>(path(id), {}),
+  });
+}
+
+export function useRegistrationPrefill(path: (id: string) => string) {
+  return useMutation({
+    mutationFn: (id: string) => api.post<RegistrationPrefill>(path(id), {}),
+  });
+}
+
 export const waKeys = {
   list: (status: string) => ['whatsapp', 'conversations', status] as const,
   thread: (id: string) => ['whatsapp', 'thread', id] as const,

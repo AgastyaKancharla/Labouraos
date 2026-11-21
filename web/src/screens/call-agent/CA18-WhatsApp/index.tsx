@@ -20,6 +20,8 @@ import {
   useLeadAction,
   useReferralLeads,
   useThread,
+  useCallById,
+  useRegistrationPrefill,
   type ConversationRow,
   type LinkKind,
   type ReferralLeadRow,
@@ -141,13 +143,22 @@ function ThreadView({ thread: c, onBack, backLabel }: { thread: Thread; onBack: 
   const close = useConversationAction<{ outcome: string; note: string }>(c.id, 'outcome');
   const link = useConversationAction<{ code: string }>(c.id, 'link');
   const take = useConversationAction<Record<string, never>>(c.id, 'take');
+  const callNew = useCallById((id) => `/whatsapp/conversations/${encodeURIComponent(id)}/call`);
+  const prefill = useRegistrationPrefill((id) => `/whatsapp/conversations/${encodeURIComponent(id)}/registration-prefill`);
   const fail = (e: unknown) => toast.error(isApiError(e) ? e.message : t('error.server'));
   const name = c.person?.name ?? c.profileName ?? t('wa.newContact', { last4: last4(c.phone) });
 
   const register = (screen: 'CA08-Register' | 'CA13-BusinessLead' | 'CA15-RegisterReferral') => {
     const form = screen === 'CA08-Register' ? 'job-seeker' : screen === 'CA13-BusinessLead' ? 'business' : 'referral';
-    seedRegistrationDraft(form, session?.staff.id, { name: c.profileName ?? '', heardFrom: 'whatsapp' });
-    navigate(to(screen));
+    prefill.mutate(c.id, {
+      onSuccess: (p) => {
+        // The number stays on the server: the form gets the name, "heard from" and a prefill reference only.
+        seedRegistrationDraft(form, session?.staff.id, { name: p.name, heardFrom: p.heardFrom, prefillRef: p.prefillRef });
+        toast.success(t('wa.registerNote', { phone: p.maskedPhone }));
+        navigate(to(screen));
+      },
+      onError: fail,
+    });
   };
 
   return (
@@ -220,7 +231,9 @@ function ThreadView({ thread: c, onBack, backLabel }: { thread: Thread; onBack: 
                   📞 {t('wa.callNow')}
                 </Button>
               ) : (
-                <span className="sub">{t('wa.callNeedsRecord')}</span>
+                <Button className="lb-ca-small" loading={callNew.isPending} onClick={() => callNew.mutate(c.id, { onSuccess: () => toast.success(t('wa.calling')), onError: fail })}>
+                  📞 {t('wa.callNow')}
+                </Button>
               )}
               {(['registration', 'agreement', 'referral_terms'] as const).filter((k) => c.links[k]).map((k) => (
                 <Button
@@ -297,17 +310,24 @@ function LeadRow({ lead }: { lead: ReferralLeadRow }) {
   const navigate = useNavigate();
   const { session } = useAuth();
   const close = useLeadAction<{ outcome: string; code?: string }>('outcome');
+  const callLead = useCallById((id) => `/referral-leads/${encodeURIComponent(id)}/call`);
+  const prefill = useRegistrationPrefill((id) => `/referral-leads/${encodeURIComponent(id)}/registration-prefill`);
   const take = useLeadAction<never>('take');
   const [outcome, setOutcome] = useState('');
   const mine = lead.assignedTo?.id === session?.staff.id;
   const fail = (e: unknown) => toast.error(isApiError(e) ? e.message : t('error.server'));
   const register = (asJob: boolean) => {
-    const isJob = asJob;
-    const values: Record<string, unknown> = { name: lead.name, heardFrom: 'referral_partner' };
-    if (isJob && lead.partner) values.referredBy = { id: lead.partner.id, code: lead.partner.code, name: lead.partner.name };
-    const seeded = seedRegistrationDraft(isJob ? 'job-seeker' : 'business', session?.staff.id, values);
-    if (!seeded && lead.partner) toast.success(t('wa.leads.draftNote', { code: lead.partner.code }));
-    navigate(to(isJob ? 'CA08-Register' : 'CA13-BusinessLead'));
+    prefill.mutate(lead.id, {
+      onSuccess: (p) => {
+        const values: Record<string, unknown> = { name: p.name, heardFrom: 'referral_partner', prefillRef: p.prefillRef };
+        if (asJob && p.referredBy) values.referredBy = p.referredBy;
+        const seeded = seedRegistrationDraft(asJob ? 'job-seeker' : 'business', session?.staff.id, values);
+        if (!seeded && lead.partner) toast.success(t('wa.leads.draftNote', { code: lead.partner.code }));
+        else toast.success(t('wa.registerNote', { phone: p.maskedPhone }));
+        navigate(to(asJob ? 'CA08-Register' : 'CA13-BusinessLead'));
+      },
+      onError: fail,
+    });
   };
   return (
     <li className="wa-lead">
@@ -331,6 +351,9 @@ function LeadRow({ lead }: { lead: ReferralLeadRow }) {
       <div className="lb-ca-actions" style={{ marginTop: 6 }}>
         {!lead.assignedTo && (
           <Button className="lb-ca-small" variant="primary" loading={take.isPending} onClick={() => take.mutate({ id: lead.id }, { onError: fail })}>{t('wa.take')}</Button>
+        )}
+        {mine && (
+          <Button className="lb-ca-small" loading={callLead.isPending} onClick={() => callLead.mutate(lead.id, { onSuccess: () => toast.success(t('wa.calling')), onError: fail })}>📞 {t('wa.leads.call')}</Button>
         )}
         {mine && !lead.alreadyRegistered && lead.lookingFor !== 'staff' && (
           <Button className="lb-ca-small" variant="primary" onClick={() => register(true)}>{t('wa.leads.registerSeeker')}</Button>

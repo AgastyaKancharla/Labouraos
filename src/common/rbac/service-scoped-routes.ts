@@ -55,6 +55,26 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
     test: 'modules/whatsapp-inbox/whatsapp-inbox.e2e.spec.ts',
     proof: "// WhatsApp assign: another team's Team Lead cannot see it (404)",
   },
+  'WhatsAppInboxController.call': {
+    reason: 'Only the agent the conversation is assigned to calls it (WhatsAppInboxService.load + assertCanAct); others get 404.',
+    test: 'modules/whatsapp-inbox/whatsapp-review-fixes.e2e.spec.ts',
+    proof: '// Another agent cannot call it (he cannot even see it).',
+  },
+  'WhatsAppInboxController.registrationPrefill': {
+    reason: 'Same visibility and write rule as the reply: the prefill reference is issued for that agent only.',
+    test: 'modules/whatsapp-inbox/whatsapp-review-fixes.e2e.spec.ts',
+    proof: "// WhatsApp registration prefill: another agent's conversation is 404",
+  },
+  'ReferralLeadStaffController.call': {
+    reason: 'Only the agent the partner lead is assigned to calls it (WhatsAppInboxService.callLead); others get 404.',
+    test: 'modules/whatsapp-inbox/whatsapp-review-fixes.e2e.spec.ts',
+    proof: '// Partner lead call: only the agent who has the lead (404 for another)',
+  },
+  'ReferralLeadStaffController.registrationPrefill': {
+    reason: 'Only the agent the partner lead is assigned to (WhatsAppInboxService.leadRegistrationPrefill); others get 404.',
+    test: 'modules/whatsapp-inbox/whatsapp-review-fixes.e2e.spec.ts',
+    proof: '// Partner lead registration prefill: only the agent who has the lead (404 for another)',
+  },
   'ReferralLeadStaffController.take': {
     reason: 'A call agent takes only an unassigned partner lead, for himself; one with another agent is 404.',
     test: 'modules/referral/referral-lead.e2e.spec.ts',

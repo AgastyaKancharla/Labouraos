@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { publicPageLink } from '../../common/public-pages';
-import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
-import { MessagingService } from '../message/messaging.service';
+import { inQuietHours } from '../message/quiet-hours';
+import { MessagingService, PreferWhatsAppResult } from '../message/messaging.service';
 import { STEP_WORDS } from '../message/whatsapp-templates';
 import { ConsentLinkService } from '../consent/consent-link.service';
 import { SignupFactsService } from '../signup-tracker/signup-facts.service';
@@ -34,14 +34,30 @@ const NUDGE_GAP_MS = 20 * 60 * 60 * 1000;
 /** Only events this recent get a "done" message (so a first deploy never messages old registrations). */
 export const DONE_LOOKBACK_MS = 48 * 60 * 60 * 1000;
 const STUCK_STATUSES = ['lead', 'consented', 'pending_activation'];
-const QUIET_START_HOUR = 21;
-const QUIET_END_HOUR = 9;
 const NUDGE_TEMPLATES = ['registration_stopped', 'payment_stuck'];
 
-export function inQuietHours(now: Date): boolean {
-  const hour = getCalendarPartsInTimezone(now, 'Asia/Kolkata').hour;
-  return hour >= QUIET_START_HOUR || hour < QUIET_END_HOUR;
+/** Automatic messages: at most this many tries (WhatsApp, then SMS) per person and template (and step). */
+export const MAX_SEND_TRIES = 3;
+/** Wait after the 1st and the 2nd failed try. */
+export const RETRY_GAPS_MS = [10 * 60 * 1000, 60 * 60 * 1000] as const;
+
+export type SendPlan = 'sent' | 'wait' | 'try' | 'gave_up';
+
+/**
+ * One try is one WhatsApp attempt (with its SMS fallback). Anything that went
+ * out (or is still queued) means done; failed tries wait 10 minutes, then an
+ * hour; after MAX_SEND_TRIES nothing more is tried.
+ */
+export function planSend(rows: Array<{ channel: string; status: string; createdAt: Date }>, now: Date): SendPlan {
+  if (rows.some((r) => r.status !== 'failed' && r.status !== 'blocked')) return 'sent';
+  const failed = rows.filter((r) => r.channel === 'whatsapp' && r.status === 'failed').sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  if (failed.length >= MAX_SEND_TRIES) return 'gave_up';
+  if (failed.length === 0) return 'try';
+  const last = failed[failed.length - 1].createdAt.getTime();
+  return now.getTime() - last >= RETRY_GAPS_MS[failed.length - 1] ? 'try' : 'wait';
 }
+
+export { inQuietHours };
 
 function firstName(name: string | null | undefined): string {
   return (name ?? '').trim().split(/\s+/)[0] || 'there';
@@ -62,18 +78,40 @@ export class WhatsAppEventsService {
   }
 
   async sweep(now: Date = this.clock.now()) {
-    if (inQuietHours(now)) return { quietHours: true, done: 0, stopped: 0, payment: 0 };
+    if (inQuietHours(now)) return { quietHours: true, done: 0, stopped: 0, payment: 0, leadNotices: 0 };
     const done = (await this.seekersDone(now)) + (await this.partnersDone(now)) + (await this.businessesDone(now));
     const nudges = await this.nudges(now);
-    return { quietHours: false, done, ...nudges };
+    const leadNotices = await this.leadNotices(now);
+    return { quietHours: false, done, ...nudges, leadNotices };
   }
 
   private async alreadySent(subjectType: string, subjectId: string, templates: string[]) {
     return this.prisma.messageLog.findMany({
-      where: { subjectType, subjectId, template: { in: templates }, status: { not: 'failed' } },
+      where: { subjectType, subjectId, template: { in: templates }, status: { notIn: ['failed', 'blocked'] } },
       select: { template: true, relatedId: true, createdAt: true },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  /** Where one automatic message stands for one person (and step): every try is counted, failed ones too. */
+  private async plan(subjectType: string, subjectId: string, template: string, now: Date, relatedId?: string): Promise<SendPlan> {
+    const rows = await this.prisma.messageLog.findMany({
+      where: { subjectType, subjectId, template, ...(relatedId ? { relatedId } : {}) },
+      select: { channel: true, status: true, createdAt: true },
+    });
+    return planSend(rows, now);
+  }
+
+  /** Sends once the plan says so; after the last failed try it stops and says so in the log (no phone, no text). */
+  private async attempt(subjectType: string, subjectId: string, template: string, now: Date, relatedId: string | undefined, send: () => Promise<PreferWhatsAppResult>): Promise<boolean> {
+    const before = await this.plan(subjectType, subjectId, template, now, relatedId);
+    if (before !== 'try') return false;
+    const result = await send();
+    if (result.status === 'sent') return true;
+    if ((await this.plan(subjectType, subjectId, template, now, relatedId)) === 'gave_up') {
+      this.logger.warn(`Automatic ${template} to ${subjectType} ${subjectId} failed ${MAX_SEND_TRIES} times on WhatsApp and SMS; no more tries.`);
+    }
+    return false;
   }
 
   private async seekersDone(now: Date): Promise<number> {
@@ -84,15 +122,14 @@ export class WhatsAppEventsService {
     });
     let sent = 0;
     for (const s of rows) {
-      if ((await this.alreadySent('job_seeker', s.id, ['registration_done'])).length) continue;
-      const result = await this.messaging.sendPreferWhatsApp({
+      const ok = await this.attempt('job_seeker', s.id, 'registration_done', now, undefined, () => this.messaging.sendPreferWhatsApp({
         template: 'registration_done',
         subjectType: 'job_seeker',
         subjectId: s.id,
         variables: { firstName: firstName(s.name), code: s.code },
         contactAttempt: false,
-      });
-      if (result.status === 'sent') sent += 1;
+      }));
+      if (ok) sent += 1;
     }
     return sent;
   }
@@ -107,18 +144,18 @@ export class WhatsAppEventsService {
     for (const id of [...new Set(accounts.map((a) => a.ownerId))]) {
       const partner = await this.prisma.referral.findUnique({ where: { id }, select: { id: true, code: true, name: true, anonymisedAt: true } });
       if (!partner || partner.anonymisedAt) continue;
-      if ((await this.alreadySent('referral', id, ['partner_registration_done'])).length) continue;
+      if ((await this.plan('referral', id, 'partner_registration_done', now)) !== 'try') continue;
       const stage = await this.facts.stageOf('referral', { subjectType: 'referral', subjectId: id });
       if (stage.stage !== 'done') continue;
       const slug = await ensureShareSlug(this.prisma, id);
-      const result = await this.messaging.sendPreferWhatsApp({
+      const ok = await this.attempt('referral', id, 'partner_registration_done', now, undefined, () => this.messaging.sendPreferWhatsApp({
         template: 'partner_registration_done',
         subjectType: 'referral',
         subjectId: id,
         variables: { firstName: firstName(partner.name), code: partner.code, link: shareLinkUrl(slug) },
         contactAttempt: false,
-      });
-      if (result.status === 'sent') sent += 1;
+      }));
+      if (ok) sent += 1;
     }
     return sent;
   }
@@ -131,15 +168,39 @@ export class WhatsAppEventsService {
     });
     let sent = 0;
     for (const b of rows) {
-      if ((await this.alreadySent('business', b.id, ['business_registration_done'])).length) continue;
-      const result = await this.messaging.sendPreferWhatsApp({
+      const ok = await this.attempt('business', b.id, 'business_registration_done', now, undefined, () => this.messaging.sendPreferWhatsApp({
         template: 'business_registration_done',
         subjectType: 'business',
         subjectId: b.id,
         variables: { firstName: firstName(b.ownerName), businessName: b.name, code: b.code },
         contactAttempt: false,
-      });
-      if (result.status === 'sent') sent += 1;
+      }));
+      if (ok) sent += 1;
+    }
+    return sent;
+  }
+
+  /** "We received your lead": the ones held back by quiet hours (or a failed try) go now. */
+  private async leadNotices(now: Date): Promise<number> {
+    const leads = await this.prisma.referralLead.findMany({
+      where: { source: 'link', createdAt: { gte: new Date(now.getTime() - 24 * 60 * 60 * 1000) } },
+      select: { id: true, referralId: true, name: true },
+      take: 200,
+    });
+    let sent = 0;
+    for (const lead of leads) {
+      const partner = await this.prisma.referral.findUnique({ where: { id: lead.referralId }, select: { name: true, anonymisedAt: true } });
+      if (!partner || partner.anonymisedAt) continue;
+      const ok = await this.attempt('referral', lead.referralId, 'referral_lead_received', now, lead.id, () => this.messaging.sendPreferWhatsApp({
+        template: 'referral_lead_received',
+        subjectType: 'referral',
+        subjectId: lead.referralId,
+        relatedType: 'referral_lead',
+        relatedId: lead.id,
+        variables: { firstName: firstName(partner.name), leadFirstName: firstName(lead.name) },
+        contactAttempt: false,
+      }));
+      if (ok) sent += 1;
     }
     return sent;
   }
@@ -185,21 +246,26 @@ export class WhatsAppEventsService {
       if (earlier.some((m) => m.relatedId === step)) continue;
       if (earlier[0] && now.getTime() - earlier[0].createdAt.getTime() < NUDGE_GAP_MS) continue;
       if (await this.messaging.messagingBlocked('job_seeker', seekerId)) continue;
-      // A fresh link that resumes at the same step; the one sent before keeps working.
-      const issued = await this.consentLinks.createLink(seekerId, { sms: false, revokeOthers: false, issuedTo: 'whatsapp_nudge' });
       const template = atPayment ? 'payment_stuck' : 'registration_stopped';
-      const result = await this.messaging.sendPreferWhatsApp({
-        template,
-        subjectType: 'job_seeker',
-        subjectId: seekerId,
-        relatedType: 'registration_step',
-        relatedId: step,
-        variables: atPayment
-          ? { firstName: firstName(seeker.name), link: publicPageLink('registration', issued.token) }
-          : { firstName: firstName(seeker.name), step: STEP_WORDS[step] ?? step.replace(/_/g, ' '), link: publicPageLink('registration', issued.token) },
-        contactAttempt: false,
+      // Failed tries count too (at most MAX_SEND_TRIES, a growing gap); decided before any link is made.
+      if ((await this.plan('job_seeker', seekerId, template, now, step)) !== 'try') continue;
+      const ok = await this.attempt('job_seeker', seekerId, template, now, step, async () => {
+        // A fresh link that resumes at the same step; the one sent before keeps working.
+        const issued = await this.consentLinks.createLink(seekerId, { sms: false, revokeOthers: false, issuedTo: 'whatsapp_nudge' });
+        const link = publicPageLink('registration', issued.token);
+        return this.messaging.sendPreferWhatsApp({
+          template,
+          subjectType: 'job_seeker',
+          subjectId: seekerId,
+          relatedType: 'registration_step',
+          relatedId: step,
+          variables: atPayment
+            ? { firstName: firstName(seeker.name), link }
+            : { firstName: firstName(seeker.name), step: STEP_WORDS[step] ?? step.replace(/_/g, ' '), link },
+          contactAttempt: false,
+        });
       });
-      if (result.status === 'sent') {
+      if (ok) {
         if (atPayment) payment += 1;
         else stopped += 1;
       }

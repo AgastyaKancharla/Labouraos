@@ -1,4 +1,4 @@
-import { Controller, ForbiddenException, Get, Headers, HttpCode, Post, Query, Req, UnauthorizedException } from '@nestjs/common';
+import { Controller, ForbiddenException, Get, Header, Headers, HttpCode, Post, Query, Req, UnauthorizedException } from '@nestjs/common';
 import { Request } from 'express';
 import { Public } from '../../common/rbac/public.decorator';
 import { parseWhatsAppWebhook, verifyChallenge, whatsappSignatureMatches } from './meta-webhook';
@@ -16,6 +16,7 @@ export class WhatsAppWebhookController {
   constructor(private readonly inbox: WhatsAppInboxService) {}
 
   @Get()
+  @Header('Content-Type', 'text/plain; charset=utf-8')
   @Public('webhook: Meta checks the endpoint with the verify token, not a staff login')
   verify(@Query() query: Record<string, unknown>) {
     const challenge = verifyChallenge(query);

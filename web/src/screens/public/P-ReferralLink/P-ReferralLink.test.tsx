@@ -10,12 +10,13 @@ const render = () => renderScreen(<ReferralLinkPage />, { portal: 'public', path
 describe('P-ReferralLink (a referral partner\'s share link, rev 202)', () => {
   it('shows who invited them, checks their own number by a code and sends the lead', async () => {
     const api = mockApi({
-      [`GET /referral-links/${SLUG}`]: { valid: true, partnerFirstName: 'Suresh', partnerCode: 'RF-00007' },
+      [`GET /referral-links/${SLUG}`]: { valid: true, partnerFirstName: 'Suresh' },
       [`POST /referral-links/${SLUG}/send-code`]: { requestId: 'req-9', success: true },
       [`POST /referral-links/${SLUG}/leads`]: { received: true },
     });
     render();
-    expect(await screen.findByText('Suresh (RF-00007) invited you to Laboura.')).toBeInTheDocument();
+    expect(await screen.findByText('Suresh invited you to Laboura.')).toBeInTheDocument();
+    expect(screen.queryByText(/RF-/)).not.toBeInTheDocument();
     const send = screen.getByRole('button', { name: 'Send code' });
     expect(send).toBeDisabled();
     await userEvent.type(screen.getByLabelText(/Your name/), 'Manju Nath');

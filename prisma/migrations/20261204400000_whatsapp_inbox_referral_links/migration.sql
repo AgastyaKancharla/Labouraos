@@ -66,6 +66,13 @@ CREATE TABLE "ReferralLead" (
     "note" TEXT,
     "source" TEXT NOT NULL,
     "customerLeadId" TEXT,
+    "consentAt" TIMESTAMP(3),
+    "consentVersion" TEXT,
+    "firstCalledAt" TIMESTAMP(3),
+    "waitingWorkSeconds" INTEGER NOT NULL DEFAULT 0,
+    "waitCountedAt" TIMESTAMP(3),
+    "teamLeadAlertedAt" TIMESTAMP(3),
+    "managerAlertedAt" TIMESTAMP(3),
     "status" TEXT NOT NULL DEFAULT 'open',
     "assignedStaffId" TEXT,
     "assignedAt" TIMESTAMP(3),
@@ -85,3 +92,10 @@ CREATE INDEX "ReferralLead_referralId_idx" ON "ReferralLead"("referralId");
 CREATE INDEX "ReferralLead_status_assignedStaffId_idx" ON "ReferralLead"("status", "assignedStaffId");
 CREATE INDEX "ReferralLead_phone_idx" ON "ReferralLead"("phone");
 ALTER TABLE "ReferralLead" ENABLE ROW LEVEL SECURITY;
+
+-- "How they heard about Laboura" gains "whatsapp" (rev 202). Only JobSeeker has a
+-- database check (Business and Referral are checked in the services against
+-- HEARD_FROM_VALUES). Same pattern as 20261128000200_heard_from_laboura_app.
+ALTER TABLE "JobSeeker" DROP CONSTRAINT "JobSeeker_heardFrom_check";
+ALTER TABLE "JobSeeker" ADD CONSTRAINT "JobSeeker_heardFrom_check"
+  CHECK ("heardFrom" IS NULL OR "heardFrom" IN ('toll_free_missed_call', 'ad', 'referral_partner', 'field_visit', 'social_media', 'walk_in', 'other', 'laboura_app', 'whatsapp'));

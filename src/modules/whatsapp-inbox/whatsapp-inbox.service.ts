@@ -12,15 +12,17 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { codedError } from '../../common/http/coded-error';
 import { FREE_TEXT_TEMPLATE, WHATSAPP_PROVIDER, WhatsAppProvider } from '../../common/whatsapp/whatsapp.interface';
-import { mobileLookupValues, phoneLast4 } from '../../common/phone/indian-mobile';
+import { mobileLookupValues, normaliseIndianMobile, phoneLast4 } from '../../common/phone/indian-mobile';
 import { MessagingService } from '../message/messaging.service';
 import { agentTemplates, renderTemplate, whatsappTemplate } from '../message/whatsapp-templates';
 import { NotificationService } from '../notification/notification.service';
 import { notificationLink } from '../notification/notification.constants';
 import { ReportingScopeService } from '../staff/reporting-scope.service';
-import { ConsentLinkService } from '../consent/consent-link.service';
+import { ConsentLinkService, LINK_SENT_BY_STAFF } from '../consent/consent-link.service';
 import { canAdvanceMessageStatus } from '../message/message-status';
 import { WhatsAppInboxClock } from './whatsapp-inbox.clock';
+import { LeadCallService, issueRegistrationPrefill } from './lead-call.service';
+import { OwnTeam } from '../../common/rbac/own-team';
 import { LeadAgent, loadLeadAgents, ownAgentsOf, pickLeadAgent } from './lead-assignment';
 import { InboundWhatsAppMessage, ParsedWhatsAppWebhook } from './meta-webhook';
 import { markAppLeadContacted, pickUpAppLeads } from '../referral/referral-lead-sync';
@@ -37,6 +39,16 @@ const MAX_WAIT_STEP_SECONDS = 10 * 60;
 
 export const CONVERSATION_SUBJECT = 'whatsapp_conversation';
 export const WAITING_NOTIFICATION_KIND = 'whatsapp_waiting' as const;
+export const LINK_FAILED_NOTIFICATION_KIND = 'whatsapp_link_failed' as const;
+export const LEAD_WAITING_NOTIFICATION_KIND = 'referral_lead_waiting' as const;
+export const REFERRAL_LEAD_SUBJECT = 'referral_lead';
+
+/** Link templates "Send on WhatsApp" uses, and which link each is. */
+const LINK_TEMPLATE_KIND: Record<string, LinkKind> = {
+  consent_link: 'registration',
+  agreement_link: 'agreement',
+  referral_terms_link: 'referral_terms',
+};
 
 /** How an agent closes a WhatsApp lead. */
 export const CONVERSATION_OUTCOMES = [
@@ -77,6 +89,7 @@ export class WhatsAppInboxService {
     private readonly consentLinks: ConsentLinkService,
     private readonly clock: WhatsAppInboxClock,
     @Inject(WHATSAPP_PROVIDER) private readonly provider: WhatsAppProvider,
+    private readonly leadCalls: LeadCallService,
   ) {}
 
   // ------------------------------------------------------------------ inbound
@@ -91,7 +104,10 @@ export class WhatsAppInboxService {
     }
     let statuses = 0;
     for (const s of parsed.statuses) {
-      if (s.status !== 'sent') await this.messaging.applyProviderStatus(s.providerMessageId, s.status);
+      if (s.status !== 'sent') {
+        const applied = await this.messaging.applyProviderStatus(s.providerMessageId, s.status);
+        if (applied && !applied.unchanged && s.status === 'failed') await this.onLinkMessageFailed(applied.id);
+      }
       const row = await this.prisma.whatsAppMessage.findUnique({ where: { providerMessageId: s.providerMessageId }, select: { id: true, status: true } });
       if (row && canAdvanceMessageStatus(row.status, s.status)) {
         await this.prisma.whatsAppMessage.update({ where: { id: row.id }, data: { status: s.status } });
@@ -103,9 +119,16 @@ export class WhatsAppInboxService {
 
   private async receiveOne(message: InboundWhatsAppMessage): Promise<boolean> {
     const now = this.clock.now();
-    const conversation = await this.conversationFor(message.phone, message.profileName);
-    try {
-      await this.prisma.whatsAppMessage.create({
+    const first = await this.conversationFor(message.phone, message.profileName);
+    const subject = first.subjectId ? null : await this.matchByPhone(message.phone);
+    // The message row and the conversation change in one transaction, under a row lock
+    // (two deliveries for one number never interleave); a repeat delivery changes nothing.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "WhatsAppConversation" WHERE "id" = ${first.id} FOR UPDATE`;
+      const conversation = await tx.whatsAppConversation.findUniqueOrThrow({ where: { id: first.id } });
+      const seen = await tx.whatsAppMessage.findUnique({ where: { providerMessageId: message.providerMessageId }, select: { id: true } });
+      if (seen) return null;
+      await tx.whatsAppMessage.create({
         data: {
           conversationId: conversation.id,
           direction: 'in',
@@ -116,33 +139,33 @@ export class WhatsAppInboxService {
           createdAt: message.receivedAt,
         },
       });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') return false;
-      throw error;
-    }
-    const reopening = conversation.status === 'closed';
-    const subject = conversation.subjectId ? null : await this.matchByPhone(message.phone);
-    const updated = await this.prisma.whatsAppConversation.update({
-      where: { id: conversation.id },
-      data: {
-        profileName: message.profileName ?? conversation.profileName,
-        lastInboundAt: message.receivedAt,
-        waitingSince: conversation.waitingSince && !reopening ? conversation.waitingSince : message.receivedAt,
-        waitCountedAt: conversation.waitingSince && !reopening ? conversation.waitCountedAt : now,
-        waitingWorkSeconds: conversation.waitingSince && !reopening ? conversation.waitingWorkSeconds : 0,
-        teamLeadAlertedAt: conversation.waitingSince && !reopening ? conversation.teamLeadAlertedAt : null,
-        managerAlertedAt: conversation.waitingSince && !reopening ? conversation.managerAlertedAt : null,
-        subjectType: subject ? subject.type : conversation.subjectType,
-        subjectId: subject ? subject.id : conversation.subjectId,
-        // A new message after closing opens the lead again.
-        status: 'open',
-        openedAt: reopening ? message.receivedAt : conversation.openedAt,
-        outcome: reopening ? null : conversation.outcome,
-        outcomeNote: reopening ? null : conversation.outcomeNote,
-        closedAt: reopening ? null : conversation.closedAt,
-        closedByStaffId: reopening ? null : conversation.closedByStaffId,
-      },
+      const reopening = conversation.status === 'closed';
+      const keepsWaiting = Boolean(conversation.waitingSince) && !reopening;
+      // Deliveries can arrive out of order: the last inbound time never moves backwards.
+      const lastInboundAt = conversation.lastInboundAt && conversation.lastInboundAt > message.receivedAt ? conversation.lastInboundAt : message.receivedAt;
+      return tx.whatsAppConversation.update({
+        where: { id: conversation.id },
+        data: {
+          profileName: message.profileName ?? conversation.profileName,
+          lastInboundAt,
+          waitingSince: keepsWaiting ? conversation.waitingSince : message.receivedAt,
+          waitCountedAt: keepsWaiting ? conversation.waitCountedAt : now,
+          waitingWorkSeconds: keepsWaiting ? conversation.waitingWorkSeconds : 0,
+          teamLeadAlertedAt: keepsWaiting ? conversation.teamLeadAlertedAt : null,
+          managerAlertedAt: keepsWaiting ? conversation.managerAlertedAt : null,
+          subjectType: !conversation.subjectId && subject ? subject.type : conversation.subjectType,
+          subjectId: !conversation.subjectId && subject ? subject.id : conversation.subjectId,
+          // A new message after closing opens the lead again.
+          status: 'open',
+          openedAt: reopening ? message.receivedAt : conversation.openedAt,
+          outcome: reopening ? null : conversation.outcome,
+          outcomeNote: reopening ? null : conversation.outcomeNote,
+          closedAt: reopening ? null : conversation.closedAt,
+          closedByStaffId: reopening ? null : conversation.closedByStaffId,
+        },
+      });
     });
+    if (!updated) return false;
     if (updated.subjectType && updated.subjectId) {
       await this.logHistory(updated, 'whatsapp_inbound', 'received');
     }
@@ -195,7 +218,7 @@ export class WhatsAppInboxService {
    * person's own agent if on shift, else the on-shift agent with the fewest
    * open items. A conversation already with an agent who is on shift stays.
    * With nobody on shift it waits for the next shift and, on an inbound
-   * message, the person gets the "we will call you by 10 AM" reply.
+   * message, the person gets the "an agent will call you when our next shift starts" reply.
    */
   private async assign(conversation: WhatsAppConversation, now: Date, options: { allowAutoReply: boolean; agents?: LeadAgent[] }) {
     const agents = options.agents ?? (await loadLeadAgents(this.prisma, now));
@@ -221,10 +244,11 @@ export class WhatsAppInboxService {
     return conversation;
   }
 
-  /** "Thanks! An agent will call you by 10 AM." Free text inside the window (they just wrote), the template otherwise. */
+  /** The off-shift reply ("…an agent will call you when our next shift starts"). Free text inside the window (they just wrote), the template otherwise. */
   private async sendAutoReply(conversation: WhatsAppConversation, now: Date) {
     // An automatic message: never to a person with a wrong number / do not call block.
     if (await this.messaging.messagingBlocked(conversation.subjectType, conversation.subjectId)) return;
+    if (await this.leadCalls.messagesBlockedOnNumber(conversation.phone)) return;
     const text = renderTemplate('whatsapp_off_shift_reply');
     const result = this.provider.sendTextMessage
       ? await this.provider.sendTextMessage(conversation.phone, text)
@@ -308,13 +332,12 @@ export class WhatsAppInboxService {
     // (the partner's assigned or registering agent if on shift).
     const appLeadsPicked = await pickUpAppLeads(this.prisma, now);
     const leads = await this.prisma.referralLead.findMany({
-      where: { status: 'open' },
+      where: { status: 'open', assignedStaffId: null },
       orderBy: { createdAt: 'asc' },
       take: 500,
       select: { id: true, assignedStaffId: true, referralId: true, customerLeadId: true },
     });
     for (const lead of leads) {
-      if (lead.assignedStaffId) continue;
       const own = await ownAgentsOf(this.prisma, 'referral', lead.referralId);
       const pick = pickLeadAgent(agents, own);
       if (!pick) continue;
@@ -332,56 +355,140 @@ export class WhatsAppInboxService {
         }
       }
     }
-    return { open: open.length, matched, assigned, leadsAssigned, appLeadsPicked, teamLeadBells, managerBells, anyOnShift };
+    const leadFollowUp = await this.followUpLeads(agents, anyOnShift, now);
+    return { open: open.length, matched, assigned, leadsAssigned, appLeadsPicked, leadsMoved: leadFollowUp.moved, leadBells: leadFollowUp.bells, teamLeadBells, managerBells, anyOnShift };
   }
 
   /** Team Lead bell after 15 working minutes unanswered, the Manager after 2 hours. */
   private async escalate(conversation: WhatsAppConversation, waitedSeconds: number, now: Date) {
+    return this.escalateItem(conversation, waitedSeconds, now, {
+      kind: WAITING_NOTIFICATION_KIND,
+      subjectType: CONVERSATION_SUBJECT,
+      who: await this.displayName(conversation),
+      what: 'WhatsApp unanswered',
+    });
+  }
+
+  /** The same bells for anything that waits (a conversation, a partner's lead). */
+  private async escalateItem(
+    item: { id: string; assignedStaffId: string | null; teamLeadAlertedAt: Date | null; managerAlertedAt: Date | null },
+    waitedSeconds: number,
+    now: Date,
+    opts: { kind: typeof WAITING_NOTIFICATION_KIND | typeof LEAD_WAITING_NOTIFICATION_KIND; subjectType: string; who: string; what: string },
+  ) {
     const result = { teamLead: false, manager: false };
-    const wantTeamLead = waitedSeconds >= TEAM_LEAD_ALERT_SECONDS && !conversation.teamLeadAlertedAt;
-    const wantManager = waitedSeconds >= MANAGER_ALERT_SECONDS && !conversation.managerAlertedAt;
+    const wantTeamLead = waitedSeconds >= TEAM_LEAD_ALERT_SECONDS && !item.teamLeadAlertedAt;
+    const wantManager = waitedSeconds >= MANAGER_ALERT_SECONDS && !item.managerAlertedAt;
     if (!wantTeamLead && !wantManager) return result;
-    const chain = conversation.assignedStaffId ? await this.scope.chainOf(conversation.assignedStaffId) : null;
-    const who = await this.displayName(conversation);
-    const holder = conversation.assignedStaffId
-      ? await this.prisma.staff.findUnique({ where: { id: conversation.assignedStaffId }, select: { code: true, name: true } })
+    const chain = item.assignedStaffId ? await this.scope.chainOf(item.assignedStaffId) : null;
+    const holder = item.assignedStaffId
+      ? await this.prisma.staff.findUnique({ where: { id: item.assignedStaffId }, select: { code: true, name: true } })
       : null;
     const body = holder ? `With ${holder.code} ${holder.name}` : 'Not assigned: nobody on shift took it yet';
-    if (wantTeamLead) {
-      const recipients = chain?.teamLead
-        ? [chain.teamLead.id]
-        : (await this.prisma.staff.findMany({ where: { role: 'team_lead', status: 'active' }, select: { id: true } })).map((s) => s.id);
+    const ring = async (role: 'team_lead' | 'manager', boss: { id: string } | null | undefined, title: string) => {
+      const recipients = boss
+        ? [boss.id]
+        : (await this.prisma.staff.findMany({ where: { role, status: 'active' }, select: { id: true } })).map((r) => r.id);
       for (const recipientStaffId of recipients) {
         await this.notifications.open({
           recipientStaffId,
-          kind: WAITING_NOTIFICATION_KIND,
-          title: `WhatsApp unanswered 15 min · ${who}`,
+          kind: opts.kind,
+          title,
           body,
-          link: notificationLink('team_lead', WAITING_NOTIFICATION_KIND),
-          subjectType: CONVERSATION_SUBJECT,
-          subjectId: conversation.id,
+          link: notificationLink(role, opts.kind),
+          subjectType: opts.subjectType,
+          subjectId: item.id,
         }, now);
       }
-      result.teamLead = recipients.length > 0;
-    }
-    if (wantManager) {
-      const recipients = chain?.manager
-        ? [chain.manager.id]
-        : (await this.prisma.staff.findMany({ where: { role: 'manager', status: 'active' }, select: { id: true } })).map((s) => s.id);
-      for (const recipientStaffId of recipients) {
-        await this.notifications.open({
-          recipientStaffId,
-          kind: WAITING_NOTIFICATION_KIND,
-          title: `WhatsApp unanswered 2 hours · ${who}`,
-          body,
-          link: notificationLink('manager', WAITING_NOTIFICATION_KIND),
-          subjectType: CONVERSATION_SUBJECT,
-          subjectId: conversation.id,
-        }, now);
-      }
-      result.manager = recipients.length > 0;
-    }
+      return recipients.length > 0;
+    };
+    if (wantTeamLead) result.teamLead = await ring('team_lead', chain?.teamLead, `${opts.what} 15 min · ${opts.who}`);
+    if (wantManager) result.manager = await ring('manager', chain?.manager, `${opts.what} 2 hours · ${opts.who}`);
     return result;
+  }
+
+  /**
+   * Partner leads (21 Nov review S8): one whose agent went off shift (or on
+   * leave) moves to an agent on shift, like a waiting conversation; until the
+   * first call it counts working waiting time and rings the Team Lead after 15
+   * minutes, the Manager after 2 hours.
+   */
+  private async followUpLeads(agents: LeadAgent[], anyOnShift: boolean, now: Date) {
+    let moved = 0;
+    let bells = 0;
+    const leads = await this.prisma.referralLead.findMany({
+      where: { status: 'open' },
+      orderBy: { createdAt: 'asc' },
+      take: 500,
+    });
+    for (let lead of leads) {
+      const holder = lead.assignedStaffId ? agents.find((a) => a.id === lead.assignedStaffId) : undefined;
+      if (lead.assignedStaffId && !holder?.onShift && !lead.firstCalledAt) {
+        const own = await ownAgentsOf(this.prisma, 'referral', lead.referralId);
+        const pick = pickLeadAgent(agents, own.filter((id) => id !== lead.assignedStaffId));
+        if (pick) {
+          lead = await this.prisma.referralLead.update({ where: { id: lead.id }, data: { assignedStaffId: pick.staffId, assignedAt: now } });
+          moved += 1;
+          const agent = agents.find((a) => a.id === pick.staffId);
+          if (agent) {
+            agent.openItems += 1;
+            agent.lastAssignedAt = now;
+          }
+        }
+      }
+      if (lead.firstCalledAt) continue;
+      const from = (lead.waitCountedAt ?? lead.createdAt).getTime();
+      const step = anyOnShift ? Math.min(MAX_WAIT_STEP_SECONDS, Math.max(0, Math.floor((now.getTime() - from) / 1000))) : 0;
+      const waited = lead.waitingWorkSeconds + step;
+      const rang = await this.escalateItem(lead, waited, now, {
+        kind: LEAD_WAITING_NOTIFICATION_KIND,
+        subjectType: REFERRAL_LEAD_SUBJECT,
+        who: lead.name,
+        what: 'Partner lead not called',
+      });
+      bells += (rang.teamLead ? 1 : 0) + (rang.manager ? 1 : 0);
+      await this.prisma.referralLead.update({
+        where: { id: lead.id },
+        data: {
+          waitingWorkSeconds: waited,
+          waitCountedAt: now,
+          teamLeadAlertedAt: rang.teamLead ? now : lead.teamLeadAlertedAt,
+          managerAlertedAt: rang.manager ? now : lead.managerAlertedAt,
+        },
+      });
+    }
+    return { moved, bells };
+  }
+
+  /** A lead was called or closed: its wait stops and its bells clear. */
+  async leadHandled(leadId: string, byStaffId: string, reason: string, now: Date = this.clock.now()) {
+    await this.notifications.clear({ kind: LEAD_WAITING_NOTIFICATION_KIND, subjectType: REFERRAL_LEAD_SUBJECT, subjectId: leadId }, { byStaffId, reason }, now);
+  }
+
+  /** Call a partner's lead (the number never reaches the screen); the first call stops its wait. */
+  async callLead(actor: InboxActor, leadId: string) {
+    const lead = typeof leadId === 'string' && leadId.length <= 64 ? await this.prisma.referralLead.findUnique({ where: { id: leadId } }) : null;
+    if (!lead || lead.status !== 'open' || lead.assignedStaffId !== actor.id) throw new NotFoundException('Lead not found');
+    const placed = await this.leadCalls.call(actor, lead.phone, { type: REFERRAL_LEAD_SUBJECT, id: lead.id });
+    const now = this.clock.now();
+    await this.prisma.referralLead.updateMany({ where: { id: lead.id, firstCalledAt: null }, data: { firstCalledAt: now } });
+    await this.leadHandled(lead.id, actor.id, 'called', now);
+    return placed;
+  }
+
+  /** Register a partner's lead: name, "referred by" and a prefill reference for the number (never the number). */
+  async leadRegistrationPrefill(actor: InboxActor, leadId: string) {
+    const lead = typeof leadId === 'string' && leadId.length <= 64 ? await this.prisma.referralLead.findUnique({ where: { id: leadId } }) : null;
+    if (!lead || lead.status !== 'open' || lead.assignedStaffId !== actor.id) throw new NotFoundException('Lead not found');
+    const partner = await this.prisma.referral.findUnique({ where: { id: lead.referralId }, select: { id: true, code: true, name: true } });
+    return {
+      name: lead.name,
+      heardFrom: 'referral_partner',
+      referredBy: partner,
+      lookingFor: lead.lookingFor,
+      maskedPhone: `******${phoneLast4(lead.phone)}`,
+      prefillRef: issueRegistrationPrefill(lead.phone, actor.id, this.clock.now()),
+    };
   }
 
   // ------------------------------------------------------------------ staff screens
@@ -393,7 +500,8 @@ export class WhatsAppInboxService {
   }
 
   private async visibleWhere(actor: InboxActor): Promise<Prisma.WhatsAppConversationWhereInput> {
-    if (actor.role === 'call_agent') return { assignedStaffId: actor.id };
+    // A call agent sees his own and the unassigned ones (to take one); never another agent's.
+    if (actor.role === 'call_agent') return { OR: [{ assignedStaffId: actor.id }, { assignedStaffId: null }] };
     if (!OFFICE_ROLES.has(actor.role)) throw new ForbiddenException('Not allowed');
     const team = await this.teamIds(actor);
     if (!team) return {};
@@ -591,7 +699,7 @@ export class WhatsAppInboxService {
     await this.assertCanAct(actor, conversation);
     const def = typeof name === 'string' ? whatsappTemplate(name) : null;
     if (!def || !def.agentPickable) throw new BadRequestException('Pick one of the templates');
-    if (await this.messaging.messagingBlocked(conversation.subjectType, conversation.subjectId)) {
+    if (await this.blockedConversation(conversation)) {
       throw codedError(HttpStatus.CONFLICT, 'DO_NOT_CONTACT', 'This person asked not to be contacted (or the number is wrong).');
     }
     const subject = await this.subjectOf(conversation);
@@ -613,7 +721,7 @@ export class WhatsAppInboxService {
         kind: 'template',
         body: renderTemplate(def.name, variables),
         templateName: def.name,
-        providerMessageId: null,
+        providerMessageId: row.status === 'sent' ? row.providerMessageId : null,
         status: row.status === 'sent' ? 'sent' : 'failed',
         sentByStaffId: actor.id,
         createdAt: now,
@@ -636,10 +744,11 @@ export class WhatsAppInboxService {
     if (!subject || subject.type !== need[kind as LinkKind]) {
       throw codedError(HttpStatus.CONFLICT, 'REGISTER_FIRST', 'Register them first: this link needs their record.');
     }
-    if (await this.messaging.messagingBlocked(subject.type, subject.id)) {
+    if ((await this.messaging.messagingBlocked(subject.type, subject.id)) || (await this.leadCalls.messagesBlockedOnNumber(conversation.phone))) {
       throw codedError(HttpStatus.CONFLICT, 'DO_NOT_CONTACT', 'This person asked not to be contacted (or the number is wrong).');
     }
-    const sentBy = await this.sendLinkFor(kind as LinkKind, subject.id, actor.id);
+    // To the number the person wrote from (the record is theirs: matched or linked by that number).
+    const sentBy = await this.sendLinkFor(kind as LinkKind, subject.id, actor.id, conversation.phone);
     const now = this.clock.now();
     const label = kind === 'registration' ? 'Registration link' : kind === 'agreement' ? 'Agreement link' : 'Partner terms link';
     // The link itself is never stored here (it opens the person's page).
@@ -661,10 +770,67 @@ export class WhatsAppInboxService {
   }
 
   /** "Send on WhatsApp" for a record (next to Resend): WhatsApp first, SMS as fallback. */
-  async sendLinkFor(kind: LinkKind, subjectId: string, staffId: string): Promise<'whatsapp' | 'sms' | null> {
-    if (kind === 'registration') return (await this.consentLinks.createLink(subjectId, { channel: 'whatsapp' })).sentBy;
-    if (kind === 'agreement') return (await this.consentLinks.createAgreementLink(subjectId, staffId, undefined, { channel: 'whatsapp' })).sentBy;
-    return (await this.consentLinks.createReferralTermsLink(subjectId, staffId, undefined, { channel: 'whatsapp' })).sentBy;
+  async sendLinkFor(kind: LinkKind, subjectId: string, staffId: string, recipientPhone?: string): Promise<'whatsapp' | 'sms' | null> {
+    const extras = { channel: 'whatsapp' as const, sentByStaffId: staffId, ...(recipientPhone ? { recipientPhone } : {}) };
+    if (kind === 'registration') return (await this.consentLinks.createLink(subjectId, extras)).sentBy;
+    if (kind === 'agreement') return (await this.consentLinks.createAgreementLink(subjectId, staffId, undefined, extras)).sentBy;
+    return (await this.consentLinks.createReferralTermsLink(subjectId, staffId, undefined, extras)).sentBy;
+  }
+
+  /**
+   * WhatsApp took a link and failed it later (no WhatsApp on that number, 21 Nov
+   * review S4): a fresh link goes by SMS at once (the earlier link keeps working)
+   * and the agent who sent it gets a bell. Runs once per message (a repeated
+   * "failed" status changes nothing).
+   */
+  private async onLinkMessageFailed(messageLogId: string) {
+    const row = await this.prisma.messageLog.findUnique({ where: { id: messageLogId } });
+    if (!row || row.channel !== 'whatsapp') return;
+    const kind = LINK_TEMPLATE_KIND[row.template];
+    if (!kind || !row.subjectId) return;
+    const staffId = row.relatedType === LINK_SENT_BY_STAFF ? row.relatedId : null;
+    let sms: 'sms' | 'whatsapp' | null = null;
+    if (kind === 'registration') sms = (await this.consentLinks.createLink(row.subjectId, { revokeOthers: false })).sentBy;
+    else if (kind === 'agreement') sms = (await this.consentLinks.createAgreementLink(row.subjectId, staffId, undefined, {}).catch(() => ({ sentBy: null }))).sentBy;
+    else sms = (await this.consentLinks.createReferralTermsLink(row.subjectId, staffId, undefined, { revokeOthers: false })).sentBy;
+    if (!staffId) return;
+    const subject = await this.subjectOf({ subjectType: row.subjectType, subjectId: row.subjectId });
+    const staff = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { role: true } });
+    await this.notifications.open({
+      recipientStaffId: staffId,
+      kind: LINK_FAILED_NOTIFICATION_KIND,
+      title: sms ? `WhatsApp did not reach ${subject?.code ?? 'them'}: the link went by SMS` : `WhatsApp did not reach ${subject?.code ?? 'them'}, and SMS failed too`,
+      body: sms ? 'A fresh link was sent by SMS; the earlier one still works.' : 'Call them and resend the link.',
+      link: staff ? notificationLink(staff.role, LINK_FAILED_NOTIFICATION_KIND) : null,
+      subjectType: 'message_log',
+      subjectId: row.id,
+      once: true,
+    });
+  }
+
+  /** A live wrong number / do not call on the linked record, or on any record with this number. */
+  private async blockedConversation(conversation: WhatsAppConversation): Promise<boolean> {
+    if (await this.messaging.messagingBlocked(conversation.subjectType, conversation.subjectId)) return true;
+    return this.leadCalls.messagesBlockedOnNumber(conversation.phone);
+  }
+
+  /** Call a new person (no record yet) from the conversation: the number never reaches the screen. */
+  async callConversation(actor: InboxActor, id: string) {
+    const conversation = await this.load(actor, id);
+    await this.assertCanAct(actor, conversation);
+    return this.leadCalls.call(actor, conversation.phone, { type: CONVERSATION_SUBJECT, id: conversation.id });
+  }
+
+  /** Register a new person from the conversation: name, heard from WhatsApp and a prefill reference for the number. */
+  async registrationPrefill(actor: InboxActor, id: string) {
+    const conversation = await this.load(actor, id);
+    await this.assertCanAct(actor, conversation);
+    return {
+      name: conversation.profileName ?? '',
+      heardFrom: 'whatsapp',
+      maskedPhone: `******${phoneLast4(conversation.phone)}`,
+      prefillRef: issueRegistrationPrefill(conversation.phone, actor.id, this.clock.now()),
+    };
   }
 
   /** A person answered: the wait stops, the bells clear. */
@@ -740,22 +906,33 @@ export class WhatsAppInboxService {
   }
 
   /** Link a new lead to the record made for them (by its ID, e.g. JS-00012). */
-  async link(actor: InboxActor, id: string, code: unknown) {
+  async link(actor: InboxActor, id: string, code: unknown, reason?: unknown) {
     const conversation = await this.load(actor, id);
     await this.assertCanAct(actor, conversation);
     const value = typeof code === 'string' ? code.trim().toUpperCase() : '';
-    let subject: Subject | null = null;
+    type Found = Subject & { phones: Array<string | null> };
+    let subject: Found | null = null;
     if (value.startsWith('JS-')) {
-      const row = await this.prisma.jobSeeker.findUnique({ where: { code: value }, select: { id: true, code: true, name: true, anonymisedAt: true } });
-      if (row && !row.anonymisedAt) subject = { type: 'job_seeker', id: row.id, code: row.code, name: row.name };
+      const row = await this.prisma.jobSeeker.findUnique({ where: { code: value }, select: { id: true, code: true, name: true, anonymisedAt: true, phone: true, whatsappPhone: true } });
+      if (row && !row.anonymisedAt) subject = { type: 'job_seeker', id: row.id, code: row.code, name: row.name, phones: [row.phone, row.whatsappPhone] };
     } else if (value.startsWith('BZ-')) {
-      const row = await this.prisma.business.findUnique({ where: { code: value }, select: { id: true, code: true, name: true, anonymisedAt: true } });
-      if (row && !row.anonymisedAt) subject = { type: 'business', id: row.id, code: row.code, name: row.name };
+      const row = await this.prisma.business.findUnique({ where: { code: value }, select: { id: true, code: true, name: true, anonymisedAt: true, phone: true, contactWhatsAppPhone: true } });
+      if (row && !row.anonymisedAt) subject = { type: 'business', id: row.id, code: row.code, name: row.name, phones: [row.phone, row.contactWhatsAppPhone] };
     } else if (value.startsWith('RF-')) {
-      const row = await this.prisma.referral.findUnique({ where: { code: value }, select: { id: true, code: true, name: true, anonymisedAt: true } });
-      if (row && !row.anonymisedAt) subject = { type: 'referral', id: row.id, code: row.code, name: row.name };
+      const row = await this.prisma.referral.findUnique({ where: { code: value }, select: { id: true, code: true, name: true, anonymisedAt: true, phone: true, whatsappPhone: true } });
+      if (row && !row.anonymisedAt) subject = { type: 'referral', id: row.id, code: row.code, name: row.name, phones: [row.phone, row.whatsappPhone] };
     }
     if (!subject) throw new NotFoundException('No record with that ID');
+    // Only a record with this WhatsApp number links by itself; anything else is a Team Lead's decision.
+    const sameNumber = subject.phones.some((p) => p && mobileLookupValues(conversation.phone).includes(normaliseIndianMobile(p)!));
+    const why = typeof reason === 'string' ? reason.trim().slice(0, 300) : '';
+    if (!sameNumber) {
+      if (!OFFICE_ROLES.has(actor.role)) {
+        throw codedError(HttpStatus.CONFLICT, 'NUMBER_DOES_NOT_MATCH', "That record has another number. Ask your Team Lead to link it.");
+      }
+      if (!why) throw new BadRequestException('Linking a record with another number needs a reason');
+      if (!(await this.recordInScope(actor, subject.type, subject.id))) throw new NotFoundException('No record with that ID');
+    }
     const updated = await this.prisma.whatsAppConversation.update({
       where: { id: conversation.id },
       data: { subjectType: subject.type, subjectId: subject.id },
@@ -766,10 +943,22 @@ export class WhatsAppInboxService {
       entityType: 'whatsapp_conversation',
       entityCode: conversation.id,
       before: { subjectType: conversation.subjectType, subjectId: conversation.subjectId },
-      after: { subjectType: subject.type, subjectId: subject.id },
+      after: { subjectType: subject.type, subjectId: subject.id, sameNumber },
+      reason: why || null,
     });
+    // History rows already written stay with whoever they were written for; from now on this record's.
     await this.logHistory(updated, 'whatsapp_conversation', 'received');
-    return { linked: true, person: subject };
+    return { linked: true, person: { type: subject.type, id: subject.id, code: subject.code, name: subject.name } };
+  }
+
+  /** A Team Lead links only records of their team (or with no owner); a Manager those under them; the CEO any. */
+  private async recordInScope(actor: InboxActor, subjectType: string, subjectId: string): Promise<boolean> {
+    if (actor.role === 'ceo') return true;
+    const owners = await ownAgentsOf(this.prisma, subjectType, subjectId);
+    if (owners.length === 0) return true;
+    if (actor.role === 'team_lead') return new OwnTeam(this.prisma).includesAny(actor.id, owners);
+    const under = await this.scope.peopleUnder(actor.id);
+    return owners.some((o) => o === actor.id || under.includes(o));
   }
 
   /** A call agent takes an unassigned conversation, for himself only. */

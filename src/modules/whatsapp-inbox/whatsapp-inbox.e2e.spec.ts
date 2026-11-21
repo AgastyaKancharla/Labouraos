@@ -192,7 +192,7 @@ describe('WhatsApp (rev 202): inbound conversations as tracked leads, the WhatsA
     expect(await prisma.whatsAppConversation.findUnique({ where: { phone: unknownPhone } })).toBeNull();
   });
 
-  it('nobody on shift: the new lead waits unassigned and gets "an agent will call you by 10 AM" once; a repeat delivery adds nothing', async () => {
+  it('nobody on shift: the new lead waits unassigned and gets "an agent will call you when our next shift starts" once; a repeat delivery adds nothing', async () => {
     const before = provider.sentMessages.length;
     const first = webhookBody(unknownPhone, 'Hi, I need a cook job');
     const res = await deliver(first.raw).expect(200);
@@ -203,7 +203,7 @@ describe('WhatsApp (rev 202): inbound conversations as tracked leads, the WhatsA
     const replies = provider.sentMessages.slice(before).filter((m) => m.phone === unknownPhone);
     expect(replies).toHaveLength(1);
     const auto = await prisma.whatsAppMessage.findFirst({ where: { conversationId: conv.id, kind: 'auto' } });
-    expect(auto?.body).toBe('Thanks! An agent will call you by 10 AM.');
+    expect(auto?.body).toBe('Thanks for your message! Our team is away right now. An agent will call you when our next shift starts.');
 
     // The same delivery again (Meta retries): no second message row, no second reply.
     const again = await deliver(first.raw).expect(200);
@@ -487,7 +487,7 @@ describe('WhatsApp (rev 202): inbound conversations as tracked leads, the WhatsA
       expect(await prisma.contactAttempt.count({ where: { jobSeekerId: paid.id } })).toBe(0);
 
       clock.at = at('2027-03-10T16:30:00.000Z'); // 22:00 IST
-      expect(await events.sweep(clock.now())).toEqual({ quietHours: true, done: 0, stopped: 0, payment: 0 });
+      expect(await events.sweep(clock.now())).toEqual({ quietHours: true, done: 0, stopped: 0, payment: 0, leadNotices: 0 });
     });
 
     it('stopped part-way: one nudge with a fresh link after 2 hours without progress; not before; not twice; not to "do not call"', async () => {

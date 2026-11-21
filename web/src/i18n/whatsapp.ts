@@ -35,6 +35,10 @@ export const whatsappEn = {
   'wa.quick': 'Quick actions',
   'wa.callNow': 'Call now',
   'wa.callNeedsRecord': 'Register them first to call from here (ask for their details in the chat).',
+  'wa.calling': 'Calling: your phone rings first',
+  'wa.registerNote': 'The form opens with what we know. Ask them to read out their number on the call (it is {phone} here).',
+  'wa.linkNeedsTl': 'That record has another number: ask your Team Lead to link it.',
+  'wa.leads.call': 'Call',
   'wa.sendLink.registration': 'Send registration link',
   'wa.sendLink.agreement': 'Send agreement link',
   'wa.sendLink.referral_terms': 'Send partner terms link',
@@ -87,7 +91,7 @@ export const whatsappEn = {
   'wa.copyLink': 'Copy link',
   'wa.copied': 'Copied',
   'ref.page.title': 'Find work or staff with Laboura',
-  'ref.page.invited': '{name} ({code}) invited you to Laboura.',
+  'ref.page.invited': '{name} invited you to Laboura.',
   'ref.page.lead': 'Leave your name and number. A Laboura agent will call you.',
   'ref.page.name': 'Your name',
   'ref.page.phone': 'Your mobile number',
@@ -100,7 +104,7 @@ export const whatsappEn = {
   'ref.page.consent': 'Laboura may call me and send me WhatsApp messages about this.',
   'ref.page.submit': 'Send',
   'ref.page.done': 'Thank you! A Laboura agent will call you soon.',
-  'ref.page.app': 'Have the Laboura app? Sign up there and enter referral code {code}.',
+  'ref.page.app': 'Have the Laboura app? You can also sign up there and say who invited you.',
   'ref.page.inactive': 'This link is not active. You can still register in the Laboura app.',
 } as const;
 

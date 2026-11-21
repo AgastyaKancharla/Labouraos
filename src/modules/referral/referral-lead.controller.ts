@@ -12,6 +12,7 @@ import { CurrentCustomer, CustomerRoute } from '../../common/customer-auth/custo
 import { CustomerPrincipal } from '../../common/customer-auth/customer-auth.guard';
 import { CustomerScopeService } from '../../common/customer-auth/customer-scope.service';
 import { ReferralLeadService } from './referral-lead.service';
+import { WhatsAppInboxService } from '../whatsapp-inbox/whatsapp-inbox.service';
 
 type AuthRequest = Request & { user: JwtPayload };
 const actorOf = (req: AuthRequest) => ({ id: req.user.sub, role: req.user.role });
@@ -19,7 +20,28 @@ const actorOf = (req: AuthRequest) => ({ id: req.user.sub, role: req.user.role }
 /** Staff: a partner's share link and QR, and the agents' list of partners' leads (rev 202). */
 @Controller()
 export class ReferralLeadStaffController {
-  constructor(private readonly leads: ReferralLeadService) {}
+  constructor(
+    private readonly leads: ReferralLeadService,
+    private readonly inbox: WhatsAppInboxService,
+  ) {}
+
+  /** Call the lead (the number never reaches the screen); only the agent who has it. */
+  @Post('referral-leads/:id/call')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequireRoles('call_agent')
+  call(@Req() req: AuthRequest, @Param('id') id: string) {
+    return this.inbox.callLead(actorOf(req), id);
+  }
+
+  /** Register the lead: name, "referred by" and a prefill reference for the number. */
+  @Post('referral-leads/:id/registration-prefill')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequireRoles('call_agent')
+  registrationPrefill(@Req() req: AuthRequest, @Param('id') id: string) {
+    return this.inbox.leadRegistrationPrefill(actorOf(req), id);
+  }
 
   @Get('referrals/:id/share-link')
   @UseGuards(JwtAuthGuard, RbacGuard)
@@ -76,8 +98,8 @@ export class ReferralLinkPublicController {
   @Post(':slug/send-code')
   @HttpCode(200)
   @Public('share link page: the code goes to the number the person typed, limited per link and per number')
-  sendCode(@Param('slug') slug: string, @Body('phone') phone: unknown) {
-    return this.leads.sendCode(slug, phone);
+  sendCode(@Param('slug') slug: string, @Body('phone') phone: unknown, @Req() req: Request) {
+    return this.leads.sendCode(slug, phone, req.ip ?? req.socket?.remoteAddress ?? null);
   }
 
   @Post(':slug/leads')

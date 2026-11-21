@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from 'crypto';
 import { validateWebhookHmac } from '../../common/webhook/webhook-signature';
 import { parseIndianMobile } from '../../common/phone/indian-mobile';
 
@@ -111,6 +112,10 @@ export function verifyChallenge(query: Record<string, unknown>, token = process.
   const mode = str(query['hub.mode']);
   const given = str(query['hub.verify_token']);
   const challenge = str(query['hub.challenge']);
-  if (mode !== 'subscribe' || !token || token.length < 16 || given !== token || !challenge) return null;
+  if (mode !== 'subscribe' || !token || token.length < 16 || !challenge) return null;
+  // Compared in constant time (the token is a secret shared with Meta).
+  const a = createHash('sha256').update(given).digest();
+  const b = createHash('sha256').update(token).digest();
+  if (!timingSafeEqual(a, b)) return null;
   return challenge;
 }

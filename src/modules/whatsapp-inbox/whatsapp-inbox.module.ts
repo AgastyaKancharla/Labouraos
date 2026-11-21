@@ -6,6 +6,10 @@ import { MessageModule } from '../message/message.module';
 import { NotificationModule } from '../notification/notification.module';
 import { ReportingScopeModule } from '../staff/reporting-scope.module';
 import { ConsentModule } from '../consent/consent.module';
+import { TelephonyModule } from '../telephony/telephony.module';
+import { PricingModule } from '../pricing/pricing.module';
+import { AttendanceModule } from '../attendance/attendance.module';
+import { LeadCallService } from './lead-call.service';
 import { WhatsAppInboxClock } from './whatsapp-inbox.clock';
 import { WhatsAppInboxService } from './whatsapp-inbox.service';
 import { WhatsAppEventsService } from './whatsapp-events.service';
@@ -19,9 +23,9 @@ import { WhatsAppWebhookController } from './whatsapp-webhook.controller';
  * "Send on WhatsApp" for links.
  */
 @Module({
-  imports: [PrismaModule, AuditModule, WhatsAppModule, MessageModule, NotificationModule, ReportingScopeModule, ConsentModule],
+  imports: [PrismaModule, AuditModule, WhatsAppModule, MessageModule, NotificationModule, ReportingScopeModule, ConsentModule, TelephonyModule, PricingModule, AttendanceModule],
   controllers: [WhatsAppWebhookController, WhatsAppInboxController],
-  providers: [WhatsAppInboxClock, WhatsAppInboxService, WhatsAppEventsService],
-  exports: [WhatsAppInboxClock, WhatsAppInboxService, WhatsAppEventsService],
+  providers: [WhatsAppInboxClock, WhatsAppInboxService, WhatsAppEventsService, LeadCallService],
+  exports: [WhatsAppInboxClock, WhatsAppInboxService, WhatsAppEventsService, LeadCallService],
 })
 export class WhatsAppInboxModule {}

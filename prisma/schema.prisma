@@ -3575,6 +3575,16 @@ model ReferralLead {
   source           String // link, app
   /// The app's own row (CustomerReferralLead) this was picked up from; its status follows this lead.
   customerLeadId   String?   @unique
+  /// Link page: when the person ticked "Laboura may call me" and the wording version they saw.
+  consentAt        DateTime?
+  consentVersion   String?
+  /// First call placed to the lead (from the partner lead list); until then it waits.
+  firstCalledAt    DateTime?
+  /// Working seconds it has waited for a first call (counted only while a call agent is on shift).
+  waitingWorkSeconds Int     @default(0)
+  waitCountedAt    DateTime?
+  teamLeadAlertedAt DateTime?
+  managerAlertedAt DateTime?
   status           String    @default("open") // open, closed
   assignedStaffId  String?
   assignedAt       DateTime?

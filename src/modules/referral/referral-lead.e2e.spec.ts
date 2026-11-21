@@ -10,6 +10,9 @@ import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { CustomerTokenService } from '../../common/customer-auth/customer-token.service';
 import { WhatsAppInboxService } from '../whatsapp-inbox/whatsapp-inbox.service';
 import { SHARE_SLUG_PATTERN } from './referral-share-link';
+import { WhatsAppInboxClock } from '../whatsapp-inbox/whatsapp-inbox.clock';
+import { IP_CODES_PER_DAY, LINK_CONSENT_VERSION, NUMBER_CODES_PER_DAY } from './referral-lead.service';
+import { publicOtpPhoneHash } from '../../common/public-otp-limiter.service';
 
 /** Wednesday 17 March 2027, 11:00 IST (a date no other suite opens attendance days on). */
 const SWEEP_AT = new Date('2027-03-17T05:30:00.000Z');
@@ -90,7 +93,10 @@ describe('Referral partners (rev 202): personal share link and QR, the lead page
   }
 
   beforeAll(async () => {
-    const moduleRef: TestingModule = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    // Daytime (not quiet hours): the partner is told at once.
+    const moduleRef: TestingModule = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(WhatsAppInboxClock).useValue({ now: () => SWEEP_AT })
+      .compile();
     app = moduleRef.createNestApplication({ rawBody: true });
     await app.init();
     prisma = app.get(PrismaService);
@@ -113,6 +119,7 @@ describe('Referral partners (rev 202): personal share link and QR, the lead page
   }, 120000);
 
   afterAll(async () => {
+    await prisma.publicOtpSend.deleteMany({ where: { OR: [{ linkKey: { startsWith: 'ref-ip:' } }, { linkKey: { startsWith: 'ref-link:' } }] } });
     await prisma.referralLead.deleteMany({ where: { referralId: { in: referralIds } } });
     await prisma.customerReferralLead.deleteMany({ where: { referralId: { in: referralIds } } });
     await prisma.messageLog.deleteMany({ where: { subjectId: { in: [...referralIds, ...seekerIds] } } });
@@ -139,9 +146,10 @@ describe('Referral partners (rev 202): personal share link and QR, the lead page
     await api().get(`/referrals/${partner.id}/share-link`).set('Authorization', bearer(finance)).expect(403);
   });
 
-  it('the link page shows only the partner\'s first name and code; unknown or paused partners look the same', async () => {
+  it('the link page shows only the partner\'s first name; unknown or paused partners look the same', async () => {
     const page = await api().get(`/referral-links/${slug}`).expect(200);
-    expect(page.body).toEqual({ valid: true, partnerFirstName: 'Suresh', partnerCode: partner.code });
+    // First name only: never the RF code on a page that is shared widely.
+    expect(page.body).toEqual({ valid: true, partnerFirstName: 'Suresh' });
     const unknown = await api().get('/referral-links/zzzzzzzzzz').expect(404);
     expect(unknown.body.code).toBe('LINK_NOT_ACTIVE');
     await api().get('/referral-links/NOT-A-SLUG').expect(404);
@@ -160,7 +168,8 @@ describe('Referral partners (rev 202): personal share link and QR, the lead page
     const ok = await api().post(`/referral-links/${slug}/leads`).send({ name: 'Manju Nath', phone, lookingFor: 'job', area: 'JP Nagar', consent: true, requestId, code }).expect(200);
     expect(ok.body).toEqual({ received: true });
     const lead = await prisma.referralLead.findFirstOrThrow({ where: { referralId: partner.id, phone } });
-    expect(lead).toMatchObject({ name: 'Manju Nath', lookingFor: 'job', area: 'JP Nagar', source: 'link', status: 'open', assignedStaffId: null });
+    expect(lead).toMatchObject({ name: 'Manju Nath', lookingFor: 'job', area: 'JP Nagar', source: 'link', status: 'open', assignedStaffId: null, consentVersion: LINK_CONSENT_VERSION });
+    expect(lead.consentAt).toEqual(SWEEP_AT);
     const told = await prisma.messageLog.findFirst({ where: { subjectType: 'referral', subjectId: partner.id, template: 'referral_lead_received' } });
     expect(told).toMatchObject({ channel: 'whatsapp', status: 'sent', relatedId: lead.id });
 
@@ -270,5 +279,25 @@ describe('Referral partners (rev 202): personal share link and QR, the lead page
     expect((await prisma.referralLead.findUniqueOrThrow({ where: { id: lead.id } })).assignedStaffId).toBe(agentB.id);
     await api().post(`/referral-leads/${lead.id}/assign`).set('Authorization', bearer(agentA)).send({ staffId: agentA.id }).expect(403);
     expect(await prisma.auditLog.count({ where: { actorId: tl.id, action: 'referral_lead.assigned' } })).toBe(1);
+  });
+
+  it('send-code limits: per number across links, then per visitor address before the link\'s own cap', async () => {
+    await prisma.publicOtpSend.deleteMany({ where: { OR: [{ linkKey: { startsWith: 'ref-ip:' } }, { linkKey: { startsWith: 'ref-link:' } }] } });
+    // A number that already got its codes today (on any share link).
+    const busy = newPhone();
+    for (let i = 0; i < NUMBER_CODES_PER_DAY; i += 1) {
+      await prisma.publicOtpSend.create({ data: { linkKey: `ref-link:otherslug${i}:x`, phoneHash: publicOtpPhoneHash(busy), sentAt: new Date(SWEEP_AT.getTime() - (i + 1) * 60_000) } });
+    }
+    const perNumber = await api().post(`/referral-links/${slug}/send-code`).send({ phone: busy });
+    expect(perNumber.status).toBe(429);
+    expect(perNumber.body.message).toMatch(/this number/);
+    // One visitor address: at most IP_CODES_PER_DAY codes, refused before the link's own cap is used up.
+    for (let i = 0; i < IP_CODES_PER_DAY; i += 1) {
+      await api().post(`/referral-links/${slug}/send-code`).send({ phone: newPhone() }).expect(200);
+    }
+    const perAddress = await api().post(`/referral-links/${slug}/send-code`).send({ phone: newPhone() });
+    expect(perAddress.status).toBe(429);
+    expect(perAddress.body.message).toMatch(/connection/);
+    expect(await prisma.publicOtpSend.count({ where: { linkKey: { startsWith: `ref-link:${slug}:` } } })).toBe(IP_CODES_PER_DAY);
   });
 });

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { FREE_TEXT_TEMPLATE, WhatsAppMessageResult, WhatsAppProvider } from './whatsapp.interface';
 import { parseIndianMobile } from '../phone/indian-mobile';
-import { NEW_WHATSAPP_TEMPLATE_NAMES } from '../../modules/message/whatsapp-templates';
+import { NEW_WHATSAPP_TEMPLATE_NAMES, whatsappTemplate } from '../../modules/message/whatsapp-templates';
 
 export const APPROVED_TEMPLATES = [
   'call_attempt_notice',
@@ -75,6 +75,13 @@ export class RealWhatsAppProvider implements WhatsAppProvider {
     const indian = parseIndianMobile(phone);
     const cleanPhone = indian ? indian.slice(1) : phone.replace(/\D/g, '');
 
+    // Only the variables the approved template declares, in its order (21 Nov): Meta refuses a
+    // wrong parameter count, and nothing else (a raw link token, for one) ever leaves for Meta.
+    const declared = whatsappTemplate(templateName)?.variables;
+    const sent: Array<[string, string]> = declared
+      ? declared.map((key) => [key, String(params?.[key] ?? '')])
+      : Object.entries(params ?? {});
+
     const bodyPayload = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
@@ -86,10 +93,10 @@ export class RealWhatsAppProvider implements WhatsAppProvider {
           code: 'en',
         },
         // A template without variables sends no body component (Meta refuses an empty parameter list).
-        components: Object.keys(params ?? {}).length === 0 ? [] : [
+        components: sent.length === 0 ? [] : [
           {
             type: 'body',
-            parameters: Object.entries(params).map(([key, value]) => ({
+            parameters: sent.map(([key, value]) => ({
               type: 'text',
               text: value,
               parameter_name: key,

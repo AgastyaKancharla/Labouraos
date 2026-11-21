@@ -106,7 +106,7 @@ describe('WhatsApp templates as config (English, Meta-approved names)', () => {
     }
     expect(renderTemplate('registration_stopped', { firstName: 'Ravi', step: 'selfie', link: 'https://x/p/register/t' }))
       .toBe('Hi Ravi, your Laboura registration is waiting at the selfie step. Continue where you stopped: https://x/p/register/t Reply here if you need help.');
-    expect(renderTemplate('whatsapp_off_shift_reply')).toBe('Thanks! An agent will call you by 10 AM.');
+    expect(renderTemplate('whatsapp_off_shift_reply')).toBe('Thanks for your message! Our team is away right now. An agent will call you when our next shift starts.');
     expect(renderTemplate('no_such_template')).toBe('');
     expect(whatsappTemplate('nope')).toBeNull();
   });

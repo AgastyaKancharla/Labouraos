@@ -73,8 +73,24 @@ export class WhatsAppInboxController {
   @Post('conversations/:id/link')
   @HttpCode(200)
   @RequireRoles('call_agent', 'team_lead', 'manager', 'ceo')
-  link(@Req() req: AuthRequest, @Param('id') id: string, @Body('code') code: unknown) {
-    return this.inbox.link(actorOf(req), id, code);
+  link(@Req() req: AuthRequest, @Param('id') id: string, @Body() body: { code?: unknown; reason?: unknown }) {
+    return this.inbox.link(actorOf(req), id, body?.code, body?.reason);
+  }
+
+  /** Call a new person from the conversation (the number never reaches the screen). */
+  @Post('conversations/:id/call')
+  @HttpCode(200)
+  @RequireRoles('call_agent')
+  call(@Req() req: AuthRequest, @Param('id') id: string) {
+    return this.inbox.callConversation(actorOf(req), id);
+  }
+
+  /** Register a new person: name, heard from WhatsApp and a prefill reference for the number. */
+  @Post('conversations/:id/registration-prefill')
+  @HttpCode(200)
+  @RequireRoles('call_agent', 'team_lead', 'manager', 'ceo')
+  registrationPrefill(@Req() req: AuthRequest, @Param('id') id: string) {
+    return this.inbox.registrationPrefill(actorOf(req), id);
   }
 
   @Post('conversations/:id/take')

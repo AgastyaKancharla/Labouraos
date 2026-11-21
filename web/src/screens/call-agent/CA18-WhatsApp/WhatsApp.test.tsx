@@ -105,20 +105,23 @@ describe('WhatsApp tab (CA18, rev 202)', () => {
     await waitFor(() => expect(api.calls('POST /whatsapp/conversations/w1/outcome')[0]!.body).toEqual({ outcome: 'call_booked', note: 'Call at 4 PM' }));
   });
 
-  it('a new lead: no call from here yet; "Register as… Job seeker" opens the form with WhatsApp as how they heard', async () => {
-    mockApi({
+  it('a new person: Call now by conversation id; "Register as… Job seeker" starts the form from the server prefill (never the number)', async () => {
+    const api = mockApi({
       'GET /whatsapp/conversations': { rows: [row({ id: 'w2', name: 'Sender', subjectCode: null, isNew: true })] },
       'GET /whatsapp/conversations/w2': thread({ id: 'w2', person: null, name: 'Sender', profileName: 'Sender Name', links: { registration: false, agreement: false, referral_terms: false } }),
+      'POST /whatsapp/conversations/w2/call': { callRecordId: 'c1', callCode: 'CL-00001' },
+      'POST /whatsapp/conversations/w2/registration-prefill': { name: 'Sender Name', heardFrom: 'whatsapp', maskedPhone: '******9911', prefillRef: 'ref-abc' },
       'POST /whatsapp/conversations/w2/send-link': apiError(409, 'Register them first: this link needs their record.'),
     });
     const staff = signInAs('call_agent');
     localStorage.removeItem(draftKey('job-seeker', staff.id));
     render('/call-agent/whatsapp?c=w2');
-    expect(await screen.findByText('Register them first to call from here (ask for their details in the chat).')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Call now/ })).not.toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: /Call now/ }));
+    await waitFor(() => expect(api.calls('POST /whatsapp/conversations/w2/call')).toHaveLength(1));
+    expect(await screen.findByText('Calling: your phone rings first')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Job seeker' }));
     expect(await screen.findByTestId('navigated-away')).toBeInTheDocument();
-    expect(readDraft<Record<string, unknown>>(draftKey('job-seeker', staff.id))).toMatchObject({ name: 'Sender Name', heardFrom: 'whatsapp' });
+    expect(readDraft<Record<string, unknown>>(draftKey('job-seeker', staff.id))).toEqual({ name: 'Sender Name', heardFrom: 'whatsapp', prefillRef: 'ref-abc' });
   });
 
   it('partner leads: register fills "referred by" with the partner, then close with an outcome', async () => {
@@ -130,6 +133,8 @@ describe('WhatsApp tab (CA18, rev 202)', () => {
         }],
       },
       'POST /referral-leads/l1/outcome': { closed: true },
+      'POST /referral-leads/l1/call': { callRecordId: 'c2', callCode: 'CL-00002' },
+      'POST /referral-leads/l1/registration-prefill': { name: 'Manju Nath', heardFrom: 'referral_partner', maskedPhone: '******4455', prefillRef: 'ref-lead', referredBy: { id: 'rf1', code: 'RF-00007', name: 'Suresh Babu' }, lookingFor: 'job' },
     });
     const staff = signInAs('call_agent');
     localStorage.removeItem(draftKey('job-seeker', staff.id));
@@ -139,10 +144,12 @@ describe('WhatsApp tab (CA18, rev 202)', () => {
     await userEvent.selectOptions(screen.getByLabelText('Close lead'), 'not_interested');
     await userEvent.click(screen.getByRole('button', { name: 'Save and close' }));
     await waitFor(() => expect(api.calls('POST /referral-leads/l1/outcome')[0]!.body).toEqual({ outcome: 'not_interested' }));
+    await userEvent.click(screen.getByRole('button', { name: /Call/ }));
+    await waitFor(() => expect(api.calls('POST /referral-leads/l1/call')).toHaveLength(1));
     await userEvent.click(screen.getByRole('button', { name: 'Register job seeker' }));
     expect(await screen.findByTestId('navigated-away')).toBeInTheDocument();
-    expect(readDraft<Record<string, unknown>>(draftKey('job-seeker', staff.id))).toMatchObject({
-      name: 'Manju Nath', heardFrom: 'referral_partner', referredBy: { id: 'rf1', code: 'RF-00007', name: 'Suresh Babu' },
+    expect(readDraft<Record<string, unknown>>(draftKey('job-seeker', staff.id))).toEqual({
+      name: 'Manju Nath', heardFrom: 'referral_partner', prefillRef: 'ref-lead', referredBy: { id: 'rf1', code: 'RF-00007', name: 'Suresh Babu' },
     });
   });
 });
