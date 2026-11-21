@@ -598,6 +598,41 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
       expect((await rows(cityManager)).some((r) => r.person.id === s.id)).toBe(false);
     });
 
+    it("22 Nov: the Team Lead of the agent's team decides from the job seeker's page (Looks right and Fake); others are refused", async () => {
+      // The owner's case: a call agent of this Team Lead's team registered him, he sent a PAN card photo.
+      const s = await pending(27, caller.id);
+      // The page's ID check card (GET …/aadhaar-check) offers him the decision.
+      const view = await openPhotos(lead, s.id);
+      expect(view.body.decision).toMatchObject({ canDecide: true, mode: 'own_team' });
+      // Another Team Lead of the city is not the one while the team has its own Team Lead; agents never.
+      expect((await get(otherLead, `/identity/job-seekers/${s.id}/aadhaar-check`)).status).toBe(404);
+      expect((await post(otherLead, `/identity/job-seekers/${s.id}/other-id/decision`, { verdict: 'ok' })).status).toBe(403);
+      const agent = await post(caller, `/identity/job-seekers/${s.id}/other-id/decision`, { verdict: 'ok' });
+      expect(agent.status).toBe(403);
+      expect(await prisma.teamLeadCheck.count({ where: { subjectId: s.id } })).toBe(0);
+      // "Looks right" from the job seeker's page: no role refusal, the ID is verified, the card photo goes.
+      const ok = await post(lead, `/identity/job-seekers/${s.id}/other-id/decision`, { verdict: 'ok' });
+      expect(ok.status).toBe(200);
+      expect(ok.body).toMatchObject({ verdict: 'ok', otherIdDecided: 'verified' });
+      expect((await prisma.identityVerification.findFirstOrThrow({ where: { jobSeekerId: s.id, method: 'pan' } })).status).toBe('verified');
+      expect(await prisma.teamLeadCheck.count({ where: { subjectId: s.id, checkedByStaffId: lead.id, verdict: 'ok' } })).toBe(1);
+      // One decision wins: T-Verify afterwards records nothing more.
+      expect((await post(lead, `/team-lead/registrations/${s.id}/check`, { verdict: 'ok' })).status).toBe(409);
+
+      // "Fake · flag it" from the page: rejected, flagged for the Manager.
+      const f = await pending(28, caller.id);
+      await openPhotos(lead, f.id);
+      expect((await post(lead, `/identity/job-seekers/${f.id}/other-id/decision`, { verdict: 'fake' })).status).toBe(400);
+      const fake = await post(lead, `/identity/job-seekers/${f.id}/other-id/decision`, { verdict: 'fake', note: 'Not the face on the selfie' }).expect(200);
+      expect(fake.body).toMatchObject({ verdict: 'fake', flagId: expect.any(String), otherIdDecided: 'failed' });
+      expect((await prisma.identityVerification.findFirstOrThrow({ where: { jobSeekerId: f.id, method: 'pan' } })).status).toBe('failed');
+
+      // T-Verify (the same Team Lead, the same rule) still works for a third one.
+      const t = await pending(29, caller.id);
+      await openPhotos(lead, t.id);
+      expect((await post(lead, `/team-lead/registrations/${t.id}/check`, { verdict: 'ok' })).status).toBe(200);
+    });
+
     it('Laboura Field: the camera token belongs to the field agent who registered the person, and works once', async () => {
       const s = await seeker(24, 'Ravi Shankar');
       expect((await post(otherFielder, `/field-work/job-seekers/${s.id}/other-id/capture-nonce`)).status).toBe(404);
