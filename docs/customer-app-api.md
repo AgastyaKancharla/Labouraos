@@ -1174,3 +1174,78 @@ Settings: the timing numbers are read from `PricingPolicy` fields named
 `signupReengageDays`, `signupAreaClusterMin`, `signupStuckHours` when those columns
 exist, else the confirmed defaults (`signup-settings.ts`). The columns are not in the
 schema yet (prisma/ belongs to Agent A).
+
+---
+
+## 15. Referral partner: share link and leads (21 Nov, Master Guide rev 202) — for the customer-app session
+
+> **For the customer-app session (Builder D, 21 Nov):** the server side is built
+> (`src/modules/referral/referral-lead.*`); the app screens are yours. Nothing
+> here changes the partner's reward (₹200 when the referred person joins) or any
+> other rule; partners still see only first names and stages (C-rule for partners).
+
+Every partner has a **personal share link and QR**: `https://app.laboura.com/p/ref/<slug>`
+(the slug is random, 10 characters, made on first use; never the RF code). A person
+who opens it on the web leaves their name and their own mobile (checked by a code
+sent from that page), says whether they want a job or staff, and the lead goes to a
+call agent (assigned like a missed call: the partner's own agent if on shift, else
+the on-shift agent with the fewest open items). Registering the person fills
+"referred by" with the partner. The partner gets a WhatsApp (SMS as fallback)
+"We received the lead you sent (<first name>)".
+
+All three routes need the partner's customer token; `profileId` must be one of the
+caller's own **referral** profiles (another person's profile is `404
+PROFILE_NOT_FOUND`, a job seeker or business profile is `400 PROFILE_KIND_MISMATCH`).
+
+### 15.1 `GET /customer-api/v1/me/profiles/:profileId/referral/share-link`
+
+```json
+{ "code": "RF-00007", "url": "https://app.laboura.com/p/ref/k7m4q2pxab", "qrSvg": "<svg …>", "paused": false }
+```
+
+Show the QR (render `qrSvg` as an image, e.g. a `data:image/svg+xml` URI — never as
+markup), a **Copy link** and a **Share** button (system share sheet, WhatsApp first).
+While `paused` is true (the CEO paused the partner) the link page answers "This link
+is not active" and **Submit a lead** is refused: show a short note instead of the buttons.
+
+### 15.2 `POST /customer-api/v1/me/profiles/:profileId/referral/leads` — Submit a lead
+
+Body:
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `name` | yes | 2–80 characters |
+| `phone` | yes | Indian mobile, any spelling (`9876543210`, `+91 98765 43210`) |
+| `lookingFor` | yes | `job` (a job seeker) or `staff` (a business that needs staff) |
+| `area` | no | up to 80 characters |
+| `note` | no | up to 300 characters |
+
+Answer `201 { "received": true, "leadId": "…" | null }`. The answer is the same
+whether the number is already registered or not (no oracle); sending the same
+person twice adds no second open lead; the partner's own number adds nothing.
+
+| Error | When |
+| --- | --- |
+| `400` | missing or invalid field (message says which) |
+| `409 PARTNER_PAUSED` | the CEO paused this partner |
+| `429 LIMIT_REACHED` | more than 30 leads in 24 hours from the app |
+
+Before sending, tell the partner to ask the person first ("They agree that Laboura
+may call them"); the person's own consent is taken on the call.
+
+### 15.3 `GET /customer-api/v1/me/profiles/:profileId/referral/leads`
+
+```json
+{ "leads": [ { "id": "…", "firstName": "Manju", "lookingFor": "job", "stage": "with_our_team", "sentAt": "2026-11-21T06:30:00.000Z" } ] }
+```
+
+`stage`: `with_our_team` (open), `registered` (the agent registered them, or they
+were already registered), `closed` (not interested, no answer, wrong number). First
+name only, never the phone or the full name. Newest first, at most 100.
+
+### 15.4 Web link page (already built)
+
+`/p/ref/<slug>` is a public page in the office web app (`web/src/screens/public/P-ReferralLink`);
+its API is `GET /referral-links/:slug`, `POST /referral-links/:slug/send-code { phone }`,
+`POST /referral-links/:slug/leads { name, phone, lookingFor, area?, consent: true, requestId, code }`.
+The app does not need these.

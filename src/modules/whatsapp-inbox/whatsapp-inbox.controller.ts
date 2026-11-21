@@ -104,7 +104,7 @@ export class WhatsAppInboxController {
   @Post('send-link/agreement/:businessId')
   @HttpCode(200)
   @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
-  @RequirePermission('business', 'write')
+  @RequirePermission('business', 'write', { kind: 'business', from: 'param:businessId' })
   async agreementLink(@Req() req: AuthRequest, @Param('businessId') businessId: string) {
     return { sentBy: await this.inbox.sendLinkFor('agreement', businessId, req.user.sub) };
   }
@@ -112,7 +112,7 @@ export class WhatsAppInboxController {
   @Post('send-link/referral-terms/:referralId')
   @HttpCode(200)
   @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
-  @RequirePermission('referral', 'write')
+  @RequirePermission('referral', 'write', { kind: 'referral', from: 'param:referralId' })
   async referralTermsLink(@Req() req: AuthRequest, @Param('referralId') referralId: string) {
     return { sentBy: await this.inbox.sendLinkFor('referral_terms', referralId, req.user.sub) };
   }

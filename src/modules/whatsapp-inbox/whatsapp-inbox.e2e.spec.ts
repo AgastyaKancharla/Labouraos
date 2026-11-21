@@ -397,6 +397,31 @@ describe('WhatsApp (rev 202): inbound conversations as tracked leads, the WhatsA
     expect((await prisma.whatsAppMessage.findUniqueOrThrow({ where: { id: out.id } })).status).toBe('delivered');
   });
 
+  it('every conversation route refuses another agent and another team\'s Team Lead (404), and a Team Lead hands over only inside the team', async () => {
+    const conv = await conversation(seeker.phone);
+    expect(conv.assignedStaffId).toBe(agentA.id);
+    const asB = (path: string, body: object = {}) => api().post(`/whatsapp/conversations/${conv.id}/${path}`).set('Authorization', bearer(agentB)).send(body);
+    // WhatsApp thread: another agent's conversation is 404
+    await api().get(`/whatsapp/conversations/${conv.id}`).set('Authorization', bearer(agentB)).expect(404);
+    // WhatsApp reply: another agent's conversation is 404
+    await asB('reply', { text: 'hello' }).expect(404);
+    // WhatsApp template: another agent's conversation is 404
+    await asB('template', { template: 'whatsapp_follow_up' }).expect(404);
+    // WhatsApp send-link: another agent's conversation is 404
+    await asB('send-link', { kind: 'registration' }).expect(404);
+    // WhatsApp outcome: another agent's conversation is 404
+    await asB('outcome', { outcome: 'spam' }).expect(404);
+    // WhatsApp link to a record: another agent's conversation is 404
+    await asB('link', { code: seeker.code }).expect(404);
+    // WhatsApp take: a conversation already with another agent is 404
+    await asB('take').expect(404);
+    // WhatsApp assign: another team's Team Lead cannot see it (404)
+    await api().post(`/whatsapp/conversations/${conv.id}/assign`).set('Authorization', bearer(tl2)).send({ staffId: agentC.id }).expect(404);
+    // WhatsApp assign body:staffId: a Team Lead cannot hand it to another team's agent (403)
+    await api().post(`/whatsapp/conversations/${conv.id}/assign`).set('Authorization', bearer(tl)).send({ staffId: agentC.id }).expect(403);
+    expect((await conversation(seeker.phone)).assignedStaffId).toBe(agentA.id);
+  });
+
   describe('automatic event messages (WhatsApp, SMS as fallback)', () => {
     const at = (iso: string) => new Date(iso);
     async function makeSeeker(extra: { status?: string; paymentReceivedAt?: Date | null } = {}) {

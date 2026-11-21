@@ -34,6 +34,8 @@ describe('Referral partners (rev 202): personal share link and QR, the lead page
   let agentA: S;
   let agentB: S;
   let finance: S;
+  let tl2: S;
+  let agentC: S;
   let partner: { id: string; code: string; phone: string };
   let pausedPartner: { id: string };
   let slug: string;
@@ -98,6 +100,8 @@ describe('Referral partners (rev 202): personal share link and QR, the lead page
     agentA = await makeStaff('call_agent', tl);
     agentB = await makeStaff('call_agent', tl);
     finance = await makeStaff('finance', ceo);
+    tl2 = await makeStaff('team_lead', ceo);
+    agentC = await makeStaff('call_agent', tl2);
     const p = await makePartner('Suresh Babu', { registeredByStaffId: agentA.id });
     partner = { id: p.id, code: p.code, phone: p.phone };
     pausedPartner = await makePartner('Paused Partner', { pausedAt: new Date() });
@@ -231,6 +235,20 @@ describe('Referral partners (rev 202): personal share link and QR, the lead page
     await api().post(`/referral-leads/${lead.id}/outcome`).set('Authorization', bearer(agentA)).send({ outcome: 'registered' }).expect(409);
     const mine = await api().get(`/customer-api/v1/me/profiles/${customer.profileId}/referral/leads`).set('Authorization', customerBearer(customer)).expect(200);
     expect(mine.body.leads.find((l: { id: string }) => l.id === lead.id).stage).toBe('registered');
+  });
+
+  it('lead routes refuse another agent and another team\'s Team Lead (404); a Team Lead hands over only inside the team', async () => {
+    const lead = await prisma.referralLead.findFirstOrThrow({ where: { referralId: partner.id, status: 'open', assignedStaffId: agentA.id } });
+    // Partner lead take: a lead already with another agent is 404
+    await api().post(`/referral-leads/${lead.id}/take`).set('Authorization', bearer(agentB)).expect(404);
+    // Partner lead outcome: another agent's lead is 404
+    await api().post(`/referral-leads/${lead.id}/outcome`).set('Authorization', bearer(agentB)).send({ outcome: 'wrong_number' }).expect(404);
+    // Partner lead assign: another team's Team Lead cannot see it (404)
+    await api().post(`/referral-leads/${lead.id}/assign`).set('Authorization', bearer(tl2)).send({ staffId: agentC.id }).expect(404);
+    // Partner lead assign body:staffId: a Team Lead cannot hand it to another team's agent (403)
+    await api().post(`/referral-leads/${lead.id}/assign`).set('Authorization', bearer(tl)).send({ staffId: agentC.id }).expect(403);
+    const list = await api().get('/referral-leads').set('Authorization', bearer(tl2)).expect(200);
+    expect(list.body.rows.map((r: { id: string }) => r.id)).not.toContain(lead.id);
   });
 
   it('a Team Lead hands a lead to a teammate (audited); a paused partner cannot submit from the app', async () => {

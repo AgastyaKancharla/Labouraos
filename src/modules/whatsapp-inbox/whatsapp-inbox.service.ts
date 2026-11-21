@@ -766,7 +766,8 @@ export class WhatsAppInboxService {
   async take(actor: InboxActor, id: string) {
     if (actor.role !== 'call_agent') throw new ForbiddenException('Only a call agent takes a conversation');
     const row = typeof id === 'string' && id.length <= 64 ? await this.prisma.whatsAppConversation.findUnique({ where: { id } }) : null;
-    if (!row || row.status !== 'open') throw new NotFoundException('Conversation not found');
+    // Another agent's conversation is not his to see (404, like the thread).
+    if (!row || row.status !== 'open' || (row.assignedStaffId && row.assignedStaffId !== actor.id)) throw new NotFoundException('Conversation not found');
     const now = this.clock.now();
     const done = await this.prisma.whatsAppConversation.updateMany({
       where: { id, assignedStaffId: null, status: 'open' },

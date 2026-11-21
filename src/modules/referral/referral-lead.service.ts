@@ -297,6 +297,9 @@ export class ReferralLeadService {
 
   async take(actor: LeadActor, id: string) {
     if (actor.role !== 'call_agent') throw new ForbiddenException('Only a call agent takes a lead');
+    const row = typeof id === 'string' && id.length <= 64 ? await this.prisma.referralLead.findUnique({ where: { id }, select: { assignedStaffId: true, status: true } }) : null;
+    // Another agent's lead is not his to see (404, like the list).
+    if (!row || row.status !== 'open' || (row.assignedStaffId && row.assignedStaffId !== actor.id)) throw new NotFoundException('Lead not found');
     const done = await this.prisma.referralLead.updateMany({
       where: { id, assignedStaffId: null, status: 'open' },
       data: { assignedStaffId: actor.id, assignedAt: this.now() },

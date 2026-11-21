@@ -14,6 +14,63 @@ export interface ServiceScopedRoute {
 }
 
 export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
+  // ---------------------------------------------------------------- WhatsApp conversations and partner leads (rev 202, 21 Nov)
+  'WhatsAppInboxController.thread': {
+    reason: "A call agent reads only conversations assigned to him; a Team Lead or Manager their team's and the unassigned ones (WhatsAppInboxService.visibleWhere); anything else is 404.",
+    test: 'modules/whatsapp-inbox/whatsapp-inbox.e2e.spec.ts',
+    proof: "// WhatsApp thread: another agent's conversation is 404",
+  },
+  'WhatsAppInboxController.reply': {
+    reason: 'Same visibility as the thread, and only the agent it is assigned to (or a Team Lead / Manager over him) writes in it.',
+    test: 'modules/whatsapp-inbox/whatsapp-inbox.e2e.spec.ts',
+    proof: "// WhatsApp reply: another agent's conversation is 404",
+  },
+  'WhatsAppInboxController.template': {
+    reason: 'Same visibility and write rule as the reply (WhatsAppInboxService.load + assertCanAct).',
+    test: 'modules/whatsapp-inbox/whatsapp-inbox.e2e.spec.ts',
+    proof: "// WhatsApp template: another agent's conversation is 404",
+  },
+  'WhatsAppInboxController.sendLink': {
+    reason: 'Same visibility and write rule as the reply; the link needs the matched record.',
+    test: 'modules/whatsapp-inbox/whatsapp-inbox.e2e.spec.ts',
+    proof: "// WhatsApp send-link: another agent's conversation is 404",
+  },
+  'WhatsAppInboxController.close': {
+    reason: 'Same visibility and write rule as the reply (closing with an outcome).',
+    test: 'modules/whatsapp-inbox/whatsapp-inbox.e2e.spec.ts',
+    proof: "// WhatsApp outcome: another agent's conversation is 404",
+  },
+  'WhatsAppInboxController.link': {
+    reason: 'Same visibility and write rule as the reply (linking the lead to a record).',
+    test: 'modules/whatsapp-inbox/whatsapp-inbox.e2e.spec.ts',
+    proof: "// WhatsApp link to a record: another agent's conversation is 404",
+  },
+  'WhatsAppInboxController.take': {
+    reason: 'A call agent takes only an unassigned conversation, for himself; one with another agent is 404.',
+    test: 'modules/whatsapp-inbox/whatsapp-inbox.e2e.spec.ts',
+    proof: "// WhatsApp take: a conversation already with another agent is 404",
+  },
+  'WhatsAppInboxController.assign': {
+    reason: "A Team Lead or Manager reassigns only conversations they can see (their team's or unassigned).",
+    test: 'modules/whatsapp-inbox/whatsapp-inbox.e2e.spec.ts',
+    proof: "// WhatsApp assign: another team's Team Lead cannot see it (404)",
+  },
+  'ReferralLeadStaffController.take': {
+    reason: 'A call agent takes only an unassigned partner lead, for himself; one with another agent is 404.',
+    test: 'modules/referral/referral-lead.e2e.spec.ts',
+    proof: "// Partner lead take: a lead already with another agent is 404",
+  },
+  'ReferralLeadStaffController.close': {
+    reason: 'Only the agent the partner lead is assigned to (or a Team Lead / Manager over him) closes it; others get 404.',
+    test: 'modules/referral/referral-lead.e2e.spec.ts',
+    proof: "// Partner lead outcome: another agent's lead is 404",
+  },
+  'ReferralLeadStaffController.assign': {
+    reason: "A Team Lead or Manager reassigns only partner leads they can see (their team's or unassigned).",
+    test: 'modules/referral/referral-lead.e2e.spec.ts',
+    proof: "// Partner lead assign: another team's Team Lead cannot see it (404)",
+  },
+
   // ---------------------------------------------------------------- audit, notifications
   'AuditController.getAuditLogById': {
     reason: 'A Team Lead reads only rows about their own team (OwnTeam); anything else is 404.',
@@ -482,6 +539,17 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
  * Keyed 'Controller.handler query:name' (or 'body:name'); same fields as above.
  */
 export const SERVICE_SCOPED_INPUTS: Record<string, ServiceScopedRoute> = {
+  // WhatsApp conversations and partner leads (rev 202): a Team Lead hands over only to their own team's call agents.
+  'WhatsAppInboxController.assign body:staffId': {
+    reason: "A Team Lead or Manager gives a conversation only to an active call agent under them (WhatsAppInboxService.reassign).",
+    test: 'modules/whatsapp-inbox/whatsapp-inbox.e2e.spec.ts',
+    proof: "// WhatsApp assign body:staffId: a Team Lead cannot hand it to another team's agent (403)",
+  },
+  'ReferralLeadStaffController.assign body:staffId': {
+    reason: "A Team Lead or Manager gives a partner lead only to an active call agent under them (ReferralLeadService.assign).",
+    test: 'modules/referral/referral-lead.e2e.spec.ts',
+    proof: "// Partner lead assign body:staffId: a Team Lead cannot hand it to another team's agent (403)",
+  },
   'TradeController.listActive query:businessId': {
     reason: "Only picks which zone's legal minimum wage the trade list shows (rev 193); it reads the business's zone and nothing else, and any staff member may add a vacancy to any business by phone.",
     test: 'modules/trade/minimum-wage-zones.e2e.spec.ts',
