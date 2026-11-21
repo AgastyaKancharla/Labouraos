@@ -129,7 +129,7 @@ Response:
 {
   "googleClientIds": { "android": "…apps.googleusercontent.com", "ios": "…", "web": "…" },
   "googleSignIn": true,
-  "appleClientIds": { "ios": "in.laboura.app", "web": null },
+  "appleClientIds": { "ios": "com.laboura.app", "web": null },
   "appleSignIn": false,
   "humanCheckProvider": "mock",
   "otpTestMode": false,
