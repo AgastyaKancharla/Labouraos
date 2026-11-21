@@ -19,6 +19,8 @@ export const routes = {
   confirmVacancy: (vacancyId: string) => `/vacancy/new?vacancyId=${encodeURIComponent(vacancyId)}`,
   /** "A worker left" (contract 8.2). */
   workers: '/workers',
+  /** Referral partner: send a lead (contract 7.3b). */
+  referralLead: '/referral-lead',
   help: '/help',
   privacy: '/privacy',
   deleteAccount: '/delete-account',

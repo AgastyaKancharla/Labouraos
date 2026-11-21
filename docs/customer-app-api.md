@@ -133,10 +133,11 @@ Response:
   "appleSignIn": false,
   "humanCheckProvider": "mock",
   "otpTestMode": false,
-  "languages": ["kn", "hi", "en"],
+  "languages": ["en"],
   "otpResendSeconds": 30,
   "otpMaxResends": 3,
-  "sessionDays": 90
+  "sessionDays": 90,
+  "referralLeads": false
 }
 ```
 
@@ -145,7 +146,8 @@ the server: the app hides "Continue with Google"; `appleSignIn` likewise for
 "Sign in with Apple". `otpTestMode` true means the server returns the OTP in
 `testModeCode`: only when `CUSTOMER_OTP_TEST_MODE=on` on a server marked
 `LABOURA_SETUP=test` with pretend SMS (the server refuses to start with it on
-anywhere else). The staff OTP test mode never turns it on.
+anywhere else). The staff OTP test mode never turns it on. `referralLeads`:
+the partners' "Send a lead" form (§7.3b) is switched on (`CUSTOMER_REFERRAL_LEADS=on`).
 
 ---
 
@@ -716,6 +718,42 @@ when it is above 0 (§8.2).
   points. **No page answers `/r/...` yet**: a landing page (store links, the code
   pre-filled) is still to be built in `web/`. `qrText` is what the app turns into a QR code.
 
+### 7.3b Referral partner: send a lead (21 Nov)
+
+| Method and path | Auth | Status |
+| --- | --- | --- |
+| `GET /me/profiles/:profileId/referral-leads` | 🔒 | A |
+| `POST /me/profiles/:profileId/referral-leads` | 🔒 | A |
+
+Master Guide, 21 Nov: referral partners get a submit-a-lead form in the app.
+A lead is someone who wants a job, or a business that needs staff, who agreed
+to be called by Laboura. **It is not a registration:** the call team calls, and
+if the person registers, "referred by" is this partner (`referralCode`). The
+reward does not change: ₹200 only when a referred candidate joins a job.
+
+**Switched off until the office software picks leads up** (a call list):
+`CUSTOMER_REFERRAL_LEADS=on` on the server turns it on; `GET /config` says
+`referralLeads`; while off, `POST` answers `501 NOT_IMPLEMENTED`.
+
+`POST` body `{ "kind": "job_seeker" | "business", "name": "Manju Nath", "phone": "9876543210", "area": "BTM Layout", "personAgreed": true }`
+→ `201 { "leadId": "uuid", "stage": "with_team" }`. The same number from the same
+partner again → `200` with that lead. The answer never says whether Laboura
+already knew the number (no oracle, AC-6). `area` must be one of the managed
+areas (`GET /me/form-options`); `personAgreed` must be `true`; not the partner's
+own number. `400 VALIDATION_FAILED` with `field`; `403 REFERRAL_PAUSED`;
+`429 LIMIT_REACHED` above 20 leads a day (from 00:00 IST).
+
+`GET` → `{ "open": true, "perDay": 20, "leads": [ { "id": "uuid", "firstName": "Manju", "kind": "job_seeker", "stage": "with_team", "sentAt": "…" } ] }`.
+`stage`: `with_team` (new or being called), `registered`, `closed` (not
+interested, already with Laboura, or closed for any other reason — the
+partner is not told which). Never the phone.
+
+**For the office session (not in the customer folders):** put `status = 'new'`
+leads on the call team's lists (like missed calls, oldest first); when the
+person registers, fill "referred by" from `referralCode` and set
+`status = 'registered'`, `subjectType`, `subjectId`; otherwise `contacted`,
+`not_interested` or `closed`. Then switch `CUSTOMER_REFERRAL_LEADS` on.
+
 ### 7.4 Terms, re-consent and suspension (legal documents, Master Guide rev 176)
 
 | Method and path | Auth | Status |
@@ -1102,6 +1140,7 @@ every one with row level security on.
 | `CustomerCallbackRequest` | Call me back | A creates; D turns into call tasks |
 | `CustomerVacancyDraft` | Vacancies a business writes before confirming by OTP | A |
 | `CustomerWorkerLeftReport` | "A worker left" reports from businesses (§8.2), migration `20261204100000_customer_worker_left_reports` | A creates; the office session links the claim (`status`, `claimId`) |
+| `CustomerReferralLead` | Leads sent by referral partners (§7.3b), migration `20261204200000_customer_referral_leads` | A creates; the office session calls them and sets `status`, `subjectType`, `subjectId` |
 
 Changes to existing tables and values:
 
@@ -1149,6 +1188,7 @@ tracker assignee and their team) for app sign-ups.
 | `CUSTOMER_ACCESS_TOKEN_MINUTES` | optional | Access token life, 1 to 60, default 15 |
 | `CUSTOMER_PUSH_PROVIDER_MODE` | render.yaml (web and worker), render.free.yaml | `mock` (default: logs instead of sending) or `real` (Expo's push service) |
 | `EXPO_ACCESS_TOKEN` | render.yaml, `sync: false` (worker copies it) | Optional: only if "enhanced push security" is on in the Expo account |
+| `CUSTOMER_REFERRAL_LEADS` | optional (Render → Environment) | `on` switches on the partners' "Send a lead" form (§7.3b). Off by default until the office software picks leads up |
 
 ---
 

@@ -211,6 +211,19 @@ describe('Referral partner Home', () => {
     await waitFor(() => expect(api.sheetLink).toHaveBeenCalledWith('p-ref', 'document', 'doc-consent'));
   });
 
+  it('"Send a lead" shows only when the server switched it on (contract 7.3b)', async () => {
+    await renderHome(refHome(), [refProfile]);
+    expect(await screen.findByTestId('ref-home-link')).toBeTruthy();
+    expect(screen.queryByTestId('ref-home-lead')).toBeNull();
+    const api = fakeApi({
+      home: async () => refHome(),
+      config: async () => ({ googleSignIn: true, googleWebClientId: null, googleIosClientId: null, appleSignIn: false, otpTestMode: false, referralLeads: true }),
+    });
+    screen.unmount();
+    await renderWithApp(<Home />, { api, account: account({ profiles: [refProfile] }), activeProfileId: 'p-ref' });
+    expect(await screen.findByTestId('ref-home-lead')).toHaveTextContent(/Know someone\?/);
+  });
+
   it('paused: says so, and hides the share link', async () => {
     await renderHome(refHome({ paused: true, pausedReason: null }), [refProfile]);
     expect(await screen.findByTestId('ref-home-paused')).toHaveTextContent(/Money you already earned is still paid/);

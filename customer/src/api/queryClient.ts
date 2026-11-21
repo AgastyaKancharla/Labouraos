@@ -30,4 +30,7 @@ export const queryKeys = {
   homes: ['home'] as const,
   /** "A worker left": the business's workers and reports (contract 8.2). */
   workers: (profileId: string) => ['workers', profileId] as const,
+  config: ['config'] as const,
+  /** A partner's leads (contract 7.3b). */
+  referralLeads: (profileId: string) => ['referral-leads', profileId] as const,
 };

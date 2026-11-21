@@ -64,3 +64,12 @@ export const CUSTOMER_STEP_UP_PURPOSES = [
   'register',
 ] as const;
 export type CustomerStepUpPurpose = (typeof CUSTOMER_STEP_UP_PURPOSES)[number];
+
+/**
+ * The form is switched on only when the office session can pick the leads up
+ * (a call list): CUSTOMER_REFERRAL_LEADS=on on the server. Until then the app
+ * hides it and the server refuses it.
+ */
+export function referralLeadsOpen(): boolean {
+  return process.env.CUSTOMER_REFERRAL_LEADS?.trim().toLowerCase() === 'on';
+}

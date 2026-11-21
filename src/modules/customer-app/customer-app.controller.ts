@@ -9,6 +9,7 @@ import { CustomerRegistrationService } from './customer-registration.service';
 import { CustomerRequestsService } from './customer-requests.service';
 import { CustomerOptionsService } from './customer-options.service';
 import { CustomerWorkersService } from './customer-workers.service';
+import { CustomerReferralLeadsService } from './customer-referral-leads.service';
 
 type Body_ = Record<string, unknown>;
 
@@ -25,6 +26,7 @@ export class CustomerAppController {
     private readonly requests: CustomerRequestsService,
     private readonly options: CustomerOptionsService,
     private readonly workerReports: CustomerWorkersService,
+    private readonly leads: CustomerReferralLeadsService,
   ) {}
 
   @Get('me/form-options')
@@ -190,6 +192,27 @@ export class CustomerAppController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const result = await this.workerReports.reportLeft(me.accountId, profileId, placementId, body ?? {});
+    res.status(result.created ? 201 : 200);
+    return result.body;
+  }
+
+  /** A referral partner's leads: first name, kind and stage only. */
+  @Get('me/profiles/:profileId/referral-leads')
+  @CustomerRoute()
+  referralLeads(@CurrentCustomer() me: CustomerPrincipal, @Param('profileId') profileId: string) {
+    return this.leads.list(me.accountId, profileId);
+  }
+
+  /** "Send a lead": someone who wants a job, or a business that needs staff (switched on by CUSTOMER_REFERRAL_LEADS=on). */
+  @Post('me/profiles/:profileId/referral-leads')
+  @CustomerRoute()
+  async sendReferralLead(
+    @CurrentCustomer() me: CustomerPrincipal,
+    @Param('profileId') profileId: string,
+    @Body() body: Body_,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.leads.send(me.accountId, profileId, body ?? {});
     res.status(result.created ? 201 : 200);
     return result.body;
   }
