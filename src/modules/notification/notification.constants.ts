@@ -64,6 +64,10 @@ export const NOTIFICATION_KINDS = [
   'job_seeker_assigned',
   'referral_assigned',
   'business_assigned',
+  // 21 Nov fixes: a missed call waiting for its first call back — Team Lead after 15 minutes, Manager after an hour.
+  'missed_call_waiting',
+  // 21 Nov fixes: a business asked in the app for its verification visit — the Team Lead sends a field agent.
+  'signup_visit_request',
   // Laboura Field's bell (owner approved 17 Nov; 21 Nov fixes): a visit assigned or moved to the field agent,
   // an agreement signed on his business, open work handed over to him on a teammate's leave.
   'field_visit_assigned',
@@ -186,6 +190,8 @@ const LINKS: Record<NotificationKind, LinkTable> = {
   job_seeker_assigned: { call_agent: 'people/:id', team_lead: 'job-seekers/:id', manager: 'job-seekers/:id', field_agent: '' },
   referral_assigned: { call_agent: 'people/:id', team_lead: 'referrals/:id', manager: 'referrals/:id', field_agent: '' },
   business_assigned: { team_lead: 'businesses/:id', manager: 'businesses/:id', field_agent: '' },
+  missed_call_waiting: { team_lead: 'missed-calls', manager: 'call-center', ceo: 'call-center' },
+  signup_visit_request: { team_lead: 'app-signups', manager: 'app-signups', ceo: 'app-signups' },
   field_visit_assigned: { field_agent: '' },
   field_agreement_signed: { field_agent: '' },
   field_work_handed_over: { field_agent: '' },
@@ -268,6 +274,9 @@ const FLAG_TITLES: Record<string, string> = {
   other_id_needs_manager: 'An ID card photo waits for a Manager or the CEO: no other Team Lead in the city',
   aadhaar_duplicate_person: 'The same Aadhaar is already verified for another person',
   possible_banned_person: 'Possibly the same person as a banned person',
+  calls_unanswered: 'Three calls unanswered: retries stopped',
+  wrong_number_paid: 'Wrong number on a paid job seeker',
+  signup_call_not_attempted: 'App sign-up call not made',
 };
 
 export function flagTitle(kind: string): string {

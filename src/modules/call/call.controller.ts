@@ -37,6 +37,13 @@ export class CallController {
     return this.calls.applyWebhook(req.rawBody, signature);
   }
 
+  /** TeleCMI call reports (no signature from TeleCMI: the URL carries our key, TELECMI_WEBHOOK_KEY). */
+  @Post('telephony/webhook/telecmi')
+  @Public('webhook: TeleCMI signs nothing, so the sender is checked by the secret key in the URL and the app id')
+  applyTeleCmi(@Query('key') key: string | undefined, @Body() body: Record<string, unknown>) {
+    return this.calls.applyTeleCmiReport(key, body);
+  }
+
   @Get('calls/:id/recording')
   @UseGuards(JwtAuthGuard, RbacGuard, CallAccessGuard)
   @RequireRoles('team_lead', 'manager', 'ceo')
@@ -91,6 +98,20 @@ export class CallController {
     @Req() req: AuthenticatedRequest,
   ) {
     return this.calls.recordOutcome({ id: req.user.sub, role: req.user.role }, id, body);
+  }
+
+  /** 21 Nov fixes: a Team Lead (own team's), Manager or the CEO lifts a wrong number / do not call, with a reason. */
+  @Post('contact-blocks/lift')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequireRoles('team_lead', 'manager', 'ceo')
+  liftBlock(
+    @Body() body: { subjectType?: string; subjectId?: string; kind?: string; reason?: string },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    if (typeof body?.subjectType !== 'string' || typeof body?.subjectId !== 'string' || typeof body?.kind !== 'string') {
+      throw new BadRequestException('subjectType, subjectId and kind are required');
+    }
+    return this.calls.liftContactBlock({ id: req.user.sub, role: req.user.role }, body.subjectType, body.subjectId, body.kind, body.reason);
   }
 
   @Patch('calls/:id')

@@ -211,7 +211,7 @@ describe('One request (T-Req-Sneha) and Decided this week (T-Decided)', () => {
     renderScreen(<RequestDetailScreen />, { portal: 'team-lead', path: '/team-lead/requests/leave.l1', route: '/team-lead/requests/:id', now: NOW });
     expect(await screen.findByText('38 follow-ups')).toBeInTheDocument();
     expect(screen.getByText('Calls planned for Sneha that day')).toBeInTheDocument();
-    const select = screen.getByRole('combobox', { name: /Her follow-ups that day go to/ });
+    const select = screen.getByRole('combobox', { name: /Her work on those days goes to/ });
     expect(within(select).getByRole('option', { name: 'Share between Deepa and Rahul' })).toBeInTheDocument();
     expect(within(select).getByRole('option', { name: 'Keep for her return' })).toBeInTheDocument();
     await userEvent.selectOptions(select, 'ca-4');

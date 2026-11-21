@@ -132,6 +132,8 @@ export const teamLeadScreens: readonly ScreenDef[] = [
   { id: 'T-Work', path: 'work', title: 'screen.T-Work' },
   // Customer app (proposal 4.4): the team's app sign-ups, move one to another agent.
   { id: 'T-AppSignups', path: 'app-signups', title: 'screen.T-AppSignups' },
+  // 21 Nov fixes: the team's missed calls (and nobody's), with how long each has waited, give to an agent.
+  { id: 'T-MissedCalls', path: 'missed-calls', title: 'screen.T-MissedCalls' },
   // The CEO's pipeline lists and profiles, reused (src/screens/ceo, useRecordsPortal; rev 194): the API keeps
   // them to "My team" or "Not assigned" (unowned in his city), masks phone numbers and leaves out every rupee.
   { id: 'JobSeekers', path: 'job-seekers', title: 'screen.JobSeekers' },

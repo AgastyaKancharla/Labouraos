@@ -10,19 +10,17 @@
  *   EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID      Google OAuth "Web application" client id (the server checks the id token against it)
  *   EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID      Google OAuth "iOS" client id
  *   GOOGLE_IOS_URL_SCHEME                 the iOS client id reversed (com.googleusercontent.apps.…), used at build time
- *   LABOURA_ANDROID_PACKAGE / LABOURA_IOS_BUNDLE_ID   override the placeholder identifiers below
  *   GOOGLE_SERVICES_JSON            path to Firebase's google-services.json (Android push). On EAS: a
  *                                   "file" environment variable. Locally: ./google-services.json if present.
  *                                   Never committed; when missing, the app still builds (no Android push).
  *   EAS_PROJECT_ID                  the Expo project id from `eas init` (push tokens need it)
  *
- * The Android package and iOS bundle identifier are PLACEHOLDERS
- * (com.laboura.app) until the owner confirms them. They cannot be changed
- * after the first Play Store / App Store upload, so confirm before that.
- * See customer/README.md, "What the owner sets up".
+ * The Android package and iOS bundle identifier are FINAL: com.laboura.app
+ * (confirmed by Agastya, 21 Nov). They can never change after the first Play
+ * Store / App Store upload, so there is no setting to override them.
  */
-const ANDROID_PACKAGE = process.env.LABOURA_ANDROID_PACKAGE || 'com.laboura.app';
-const IOS_BUNDLE_ID = process.env.LABOURA_IOS_BUNDLE_ID || 'com.laboura.app';
+const ANDROID_PACKAGE = 'com.laboura.app';
+const IOS_BUNDLE_ID = 'com.laboura.app';
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://app.laboura.com';
 // Placeholder scheme so `expo prebuild` works before the real iOS client exists.
 const GOOGLE_IOS_URL_SCHEME = process.env.GOOGLE_IOS_URL_SCHEME || 'com.googleusercontent.apps.replace-with-ios-client-id';

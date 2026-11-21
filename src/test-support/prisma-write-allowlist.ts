@@ -212,8 +212,6 @@ export const PRISMA_WRITE_ALLOWLIST: Record<string, string> = {
     "anonymisation wipe values and the kept fields the retention job chose",
   "modules/signup-tracker/signup-tracker.service.ts :: applyStage :: signupTracker.update :: data-not-literal":
     "stage, assignment and event fields chosen by the tracker service",
-  "modules/signup-tracker/signup-tracker.service.ts :: createCallTask :: signupTracker.updateMany :: data-spread":
-    "stage, assignment and event fields chosen by the tracker service",
   "modules/signup-tracker/signup-tracker.service.ts :: event :: signupTrackerEvent.create :: data-spread":
     "stage, assignment and event fields chosen by the tracker service",
   "modules/staff/staff-setup.service.ts :: complete :: staff.updateMany :: data-spread":

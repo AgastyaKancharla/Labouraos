@@ -1,4 +1,8 @@
 import { Link, useParams } from 'react-router-dom';
+import { useMutation } from '@tanstack/react-query';
+import { api } from '../../../lib/api/client';
+import { useToast } from '../../../components/Toast';
+import { ApiError } from '../../../lib/api/errors';
 import { ToneTile } from '../../../components/ToneTile';
 import { ErrorState } from '../../../components/ErrorState';
 import { SkeletonCard } from '../../../components/Skeleton';
@@ -26,6 +30,13 @@ export default function NoAnswer() {
   const c = call.data;
   const profile = useProfile(c?.subjectId ?? '');
   const na = c?.noAnswer;
+  const toast = useToast();
+  // "Busy" / "Switched off" (21 Nov fixes): a label only — it counts as no answer, the retry already follows.
+  const label = useMutation({
+    mutationFn: (agentOutcome: 'busy' | 'switched_off') => api.post(`/calls/${encodeURIComponent(id)}/outcome`, { agentOutcome }),
+    onSuccess: () => toast.success(t('ca.na.labelSaved')),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : String(err)),
+  });
   const rangSeconds = c?.startedAt && c.endedAt ? Math.round((new Date(c.endedAt).getTime() - new Date(c.startedAt).getTime()) / 1000) : null;
 
   return (
@@ -63,6 +74,13 @@ export default function NoAnswer() {
               </div>
             )}
           </div>
+          {c.final && !c.answered && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }} role="group" aria-label={t('ca.na.labelIt')}>
+              <span className="sub">{t('ca.na.labelIt')}</span>
+              <button type="button" className={`tag ${c.agentOutcome === 'busy' ? 'tb' : 'tn'} lb-ca-chip`} disabled={label.isPending} onClick={() => label.mutate('busy')}>{t('ca.na.busy')}</button>
+              <button type="button" className={`tag ${c.agentOutcome === 'switched_off' ? 'tb' : 'tn'} lb-ca-chip`} disabled={label.isPending} onClick={() => label.mutate('switched_off')}>{t('ca.na.switchedOff')}</button>
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <CallNextButton name={c.next?.name} compact={false} />
             <Link className="btn bs lb-btn" to={to('CA03-Home')}>{t('ca.na.back')}</Link>

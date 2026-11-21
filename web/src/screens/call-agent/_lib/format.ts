@@ -24,13 +24,19 @@ export function clock12(hhmm: string): string {
   return m === 0 ? `${h12} ${suffix}` : `${h12}:${String(m).padStart(2, '0')} ${suffix}`;
 }
 
-/** "Today 6:15 PM", "Tomorrow 10 AM", "12 Nov 10 AM". */
+/** "Today 6:15 PM", "Tomorrow 10 AM", "Yesterday 10 AM", "12 Nov 10 AM". */
 export function whenLabel(iso: string, now: Date, t: Translate): string {
   const key = istDateKey(iso);
   const today = istDateKey(now);
   const tomorrow = istDateKey(new Date(now.getTime() + 24 * 60 * 60 * 1000));
-  const day = key === today ? t('ca.today') : key === tomorrow ? t('ca.tomorrow') : formatDayMonthIST(iso);
+  const yesterday = istDateKey(new Date(now.getTime() - 24 * 60 * 60 * 1000));
+  const day = key === today ? t('ca.today') : key === tomorrow ? t('ca.tomorrow') : key === yesterday ? t('ca.yesterday') : formatDayMonthIST(iso);
   return `${day} ${time12(iso)}`;
+}
+
+/** Today's time alone ("10 AM"); any other day with its date ("Yesterday 10 AM", "12 Nov 10 AM"). */
+export function whenShort(iso: string, now: Date, t: Translate): string {
+  return istDateKey(iso) === istDateKey(now) ? time12(iso) : whenLabel(iso, now, t);
 }
 
 /** "1h 48m", "12m". */
@@ -78,9 +84,14 @@ export function reasonTag(item: WorkItem, t: Translate, now: Date): { text: stri
     case 'close_to_refund':
       return { text: t('ca.reason.day', { day: item.guaranteeDay ?? 0, days: item.guaranteeDays ?? 30 }), tone: 'tr' };
     case 'callback':
-      return { text: t('ca.reason.callback', { time: time12(item.dueAt) }), tone: 'tc' };
-    case 'missed_call':
-      return { text: t('ca.reason.missedCall', { time: time12(item.dueAt) }), tone: 'tc' };
+      return { text: t('ca.reason.callback', { time: whenShort(item.dueAt, now, t) }), tone: 'tc' };
+    case 'missed_call': {
+      const count = Number(d.count ?? 1);
+      const last = String(d.lastCalledAt ?? item.dueAt);
+      return count > 1
+        ? { text: t('ca.reason.missedCallMany', { count, time: whenShort(last, now, t) }), tone: 'tc' }
+        : { text: t('ca.reason.missedCall', { time: whenShort(item.dueAt, now, t) }), tone: 'tc' };
+    }
     case 'retry':
       return { text: t('ca.reason.retry', { time: whenLabel(item.dueAt, now, t) }), tone: 'tn' };
     case 'offer_reply':
@@ -128,6 +139,10 @@ export function lockedLabel(item: WorkItem, t: Translate, now: Date, callingHour
       return t('ca.locked.no_call_consent');
     case 'no_matching_consent':
       return t('ca.locked.no_matching_consent');
+    case 'do_not_call':
+      return t('ca.locked.do_not_call');
+    case 'wrong_number':
+      return t('ca.locked.wrong_number');
     default:
       return item.lockedReason;
   }

@@ -4,10 +4,10 @@ import { findManyOver } from '../../test-support/prisma-where';
 
 /**
  * Missed calls (POST /telephony/callbacks/:id/assign and /complete), owner
- * decision of 14 Nov:
- * - a call agent assigns only an unassigned missed call (take it, or give it
- *   to a colleague) or one he holds (hand it over), never one someone else
- *   holds; he completes only his own or unassigned ones;
+ * decision of 14 Nov as changed by the 21 Nov fixes:
+ * - a call agent takes a missed call only for himself (one that is unassigned),
+ *   never for a colleague and never one someone else holds; it stays with him
+ *   even when he is not Available; he completes only his own or unassigned ones;
  * - a Team Lead works only on their own team's missed calls and gives them
  *   only to their own team;
  * - Managers and the CEO: any.
@@ -72,16 +72,18 @@ describe('TelephonyService: who may assign and complete a missed call', () => {
   });
 
   describe('call agents', () => {
-    it('take an unassigned missed call, or give it to a colleague', async () => {
+    it('take an unassigned missed call for themselves, even when not Available (it waits on their list)', async () => {
       const { service } = build();
-      await expect(service.assignCallback('cb-free', 'agent-a1', as('agent-a1', 'call_agent'))).resolves.toMatchObject({ assignedToStaffId: 'agent-a1' });
-      callbacks['cb-free'] = { id: 'cb-free', assignedToStaffId: null, status: 'pending' };
-      await expect(service.assignCallback('cb-free', 'agent-b1', as('agent-a1', 'call_agent'))).resolves.toMatchObject({ assignedToStaffId: 'agent-b1' });
+      available = new Set();
+      await expect(service.assignCallback('cb-free', 'agent-a1', as('agent-a1', 'call_agent'))).resolves.toMatchObject({ assignedToStaffId: 'agent-a1', assignmentReason: 'taken' });
     });
 
-    it('hand over one they hold', async () => {
+    it('never give one to a colleague: a Team Lead does that (21 Nov fixes)', async () => {
       const { service } = build();
-      await expect(service.assignCallback('cb-a', 'agent-b1', as('agent-a1', 'call_agent'))).resolves.toMatchObject({ assignedToStaffId: 'agent-b1' });
+      await expect(service.assignCallback('cb-free', 'agent-b1', as('agent-a1', 'call_agent'))).rejects.toThrow(/only for themselves/);
+      await expect(service.assignCallback('cb-a', 'agent-b1', as('agent-a1', 'call_agent'))).rejects.toThrow(ForbiddenException);
+      expect(callbacks['cb-free'].assignedToStaffId).toBeNull();
+      expect(callbacks['cb-a'].assignedToStaffId).toBe('agent-a1');
     });
 
     it('cannot move one someone else holds', async () => {
@@ -110,10 +112,10 @@ describe('TelephonyService: who may assign and complete a missed call', () => {
       await expect(service.assignCallback('cb-a', 'agent-a2', as('tl-a', 'team_lead'))).resolves.toMatchObject({ assignedToStaffId: 'agent-a2' });
     });
 
-    it('when their agent is not Available, the call goes to someone else on the team, never outside it', async () => {
+    it('their choice sticks even when the agent is not Available: never silently moved to someone else', async () => {
       const { service, attendance } = build();
       available = new Set(['agent-a2', 'agent-b1']);
-      await expect(service.assignCallback('cb-free', 'agent-a1', as('tl-a', 'team_lead'))).resolves.toMatchObject({ assignedToStaffId: 'agent-a2' });
+      await expect(service.assignCallback('cb-free', 'agent-a1', as('tl-a', 'team_lead'))).resolves.toMatchObject({ assignedToStaffId: 'agent-a1', assignmentReason: 'manual' });
       expect(attendance.nextAvailableAgent).not.toHaveBeenCalled();
     });
 
@@ -138,12 +140,10 @@ describe('TelephonyService: who may assign and complete a missed call', () => {
     }
   });
 
-  it('says so when nobody is Available, and leaves the missed call where it was', async () => {
+  it('refuses a missed call that is already done', async () => {
     const { service } = build();
-    available = new Set();
-    await expect(service.assignCallback('cb-free', 'agent-a1', as('ceo', 'ceo'))).rejects.toThrow(ConflictException);
-    await expect(service.assignCallback('cb-free', 'agent-a1', as('tl-a', 'team_lead'))).rejects.toThrow(/Nobody on your team is Available/);
-    expect(callbacks['cb-free'].assignedToStaffId).toBeNull();
+    callbacks['cb-done'] = { id: 'cb-done', assignedToStaffId: null, status: 'completed' };
+    await expect(service.assignCallback('cb-done', 'agent-a1', as('ceo', 'ceo'))).rejects.toThrow(ConflictException);
   });
 
   it('does not overwrite a change made in between (the update checks who held it)', async () => {

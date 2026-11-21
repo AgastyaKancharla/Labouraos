@@ -60,7 +60,19 @@ export interface StuckRow {
   step: string;
   failures: number;
   linkLive: boolean;
+  /** Waiting for the Team Lead's ID check: nothing for the agent to do (no Resend). Older answers leave it out. */
+  waitingForTeamLead?: boolean;
   since: string;
+}
+
+/** An unknown number that called: on the list until handled ("New caller — register as…"). */
+export interface NewCallerRow {
+  callbackTaskId: string;
+  callbackTaskIds: string[];
+  count: number;
+  maskedPhone: string;
+  firstCalledAt: string;
+  lastCalledAt: string;
 }
 
 export interface MetricView {
@@ -103,6 +115,8 @@ export interface HomeData {
   work: { items: WorkItem[]; counts: Record<'all' | WorkCategory, number> };
   month: MonthTargets;
   stuck: StuckRow[];
+  /** Older answers leave it out. */
+  newCallers?: NewCallerRow[];
   nearRefund: { count: number; windowDays: number };
   doneToday: Array<{ kind: string; at: string; name: string; code: string | null; status: string; extra: string | null }>;
 }
@@ -137,6 +151,8 @@ export interface Introduction {
 interface ProfileBase {
   onList: WorkItem | null;
   history: HistoryRow[];
+  /** Wrong number / do not call recorded on a call (21 Nov fixes). Older answers leave it out. */
+  contactBlocks?: Array<'wrong_number' | 'do_not_call'>;
   canCallNow: boolean;
   attendanceAvailable: boolean;
   inCallingHours: boolean;

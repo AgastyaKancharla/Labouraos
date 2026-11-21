@@ -17,6 +17,7 @@ import { ActionButton } from '../../ceo/_kit/actions';
 import { Kv, Timeline, type TimelineEvent } from '../../ceo/_kit/kit';
 import { teamShort } from '../_kit/kit';
 import { firstName, requestTeam, roleWords, treeIndex, useTree, whyLine, type RequestDetail, type RequestView } from '../_kit/requests';
+import { leaveWorkCount } from '../../team-lead/_kit/api';
 import { useNow } from '../../../lib/useNow';
 
 interface LeaveBoard {
@@ -95,7 +96,7 @@ export default function ManagerRequestDetail() {
   const fu = r?.followUps;
   const mates = fu?.teammates ?? [];
   // A half day keeps its follow-ups (the server says when a handover is not needed).
-  const offerHandover = Boolean(isLeave && fu && fu.planned > 0 && fu.handoverNeeded !== false && r?.status === 'pending');
+  const offerHandover = Boolean(isLeave && fu && leaveWorkCount(fu) > 0 && fu.handoverNeeded !== false && r?.status === 'pending');
   const handoverChoice = handover || (mates.length > 1 ? 'share' : mates.length === 1 ? mates[0].id : 'keep');
   const followUpsBody =
     handoverChoice === 'keep' ? { mode: 'keep' } : handoverChoice === 'share' ? { mode: 'share' } : { mode: 'teammate', staffId: handoverChoice };
