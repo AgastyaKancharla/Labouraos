@@ -18,6 +18,7 @@ import { decisionTime } from '../../common/time/decision-time';
 import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { OtpService } from '../../common/otp/otp.service';
+import { clearDraftAfterSubmit, consumeDraftPhoneCheck, draftPhoneCheckHolds } from '../registration-draft/registration-draft.service';
 import { CreateJobSeekerDto } from './dto/create-job-seeker.dto';
 import {
   assertNoRawAadhaar,
@@ -231,7 +232,10 @@ export class JobSeekerService {
     );
     const phone = form.phone;
 
-    const isVerified = await this.otpService.isVerified(dto.otpRequestId, phone);
+    // 21 Nov (rev 204): a resumed call-agent draft whose mobile was checked by OTP keeps that check
+    // ("draft:job_seeker", the caller's own draft, the same number, used once).
+    const viaDraft = await draftPhoneCheckHolds(this.prisma, actorId, dto.otpRequestId, 'job_seeker', phone);
+    const isVerified = viaDraft || (await this.otpService.isVerified(dto.otpRequestId, phone));
     if (!isVerified) {
       throw new BadRequestException('Mobile number must pass OTP verification before registration');
     }
@@ -311,7 +315,9 @@ export class JobSeekerService {
     // D11 (rev 176): a permanently banned phone cannot register again.
     await assertNotBanned(this.prisma, { phone });
 
-    const otpConsumed = await this.otpService.consumeVerified(dto.otpRequestId, phone);
+    const otpConsumed = viaDraft
+      ? await consumeDraftPhoneCheck(this.prisma, actorId, 'job_seeker', phone)
+      : await this.otpService.consumeVerified(dto.otpRequestId, phone);
     if (!otpConsumed) {
       throw new BadRequestException('This verified OTP request has already been used or expired');
     }
@@ -400,6 +406,8 @@ export class JobSeekerService {
       ],
       city: jobSeeker.city,
     });
+    // 21 Nov (rev 204): the agent's unfinished job seeker form is done.
+    if (!options.selfRegisteredByAccountId) await clearDraftAfterSubmit(this.prisma, actorId, 'job_seeker');
 
     return {
       ...jobSeeker,

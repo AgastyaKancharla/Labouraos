@@ -4,6 +4,7 @@ import {
   Logger,
   Optional,
 } from '@nestjs/common';
+import { draftExpiryCutoff } from '../registration-draft/registration-draft.rules';
 import { BUSINESS_PHOTO_STORAGE, BusinessPhotoStorage } from '../business/storefront-photo.storage';
 import { IdCheckPhotoService } from '../aadhaar-qr/id-check-photo.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -86,6 +87,8 @@ export interface RetentionSummary {
   shopVisitPhotoDeleteFailures: number;
   /** Aadhaar QR photos past their 30 days (the Team Lead never completed the check). */
   aadhaarQrPhotosDeleted: number;
+  /** Unfinished call-agent registrations older than 7 days (21 Nov, rev 204). */
+  registrationDraftsDeleted?: number;
 }
 
 export interface RetentionRunOptions {
@@ -145,6 +148,7 @@ export class RetentionService {
       shopVisitsCleaned: 0,
       shopVisitPhotoDeleteFailures: 0,
       aadhaarQrPhotosDeleted: 0,
+      registrationDraftsDeleted: 0,
     };
 
     try {
@@ -171,6 +175,9 @@ export class RetentionService {
 
       // 8. Aadhaar QR photos the Team Lead never checked (> 30 days; guide, 14 Nov)
       if (this.aadhaarQrPhotos) summary.aadhaarQrPhotosDeleted = await this.aadhaarQrPhotos.deleteExpiredPhotos(now, dryRun);
+
+      // 9. Unfinished registrations in the call agent console (> 7 days; rev 204, 21 Nov)
+      await this.cleanupRegistrationDrafts(now, dryRun, summary);
     } catch (err: unknown) {
       // A run that fails part-way is recorded too (start, finish, error), like every scheduled job.
       try {
@@ -206,7 +213,8 @@ export class RetentionService {
             summary.otpSessionsDeleted +
             summary.jobRunsDeleted +
             summary.shopVisitsCleaned +
-            summary.aadhaarQrPhotosDeleted,
+            summary.aadhaarQrPhotosDeleted +
+            (summary.registrationDraftsDeleted ?? 0),
           hitsRecorded: 0,
           details: {
             executedAt: summary.executedAt.toISOString(),
@@ -222,6 +230,7 @@ export class RetentionService {
             shopVisitsCleaned: summary.shopVisitsCleaned,
             shopVisitPhotoDeleteFailures: summary.shopVisitPhotoDeleteFailures,
             aadhaarQrPhotosDeleted: summary.aadhaarQrPhotosDeleted,
+            registrationDraftsDeleted: summary.registrationDraftsDeleted ?? 0,
           },
         },
       });
@@ -258,7 +267,15 @@ export class RetentionService {
       shopVisitsCleaned: Number(details.shopVisitsCleaned ?? 0),
       shopVisitPhotoDeleteFailures: Number(details.shopVisitPhotoDeleteFailures ?? 0),
       aadhaarQrPhotosDeleted: Number(details.aadhaarQrPhotosDeleted ?? 0),
+      registrationDraftsDeleted: Number(details.registrationDraftsDeleted ?? 0),
     };
+  }
+
+  /** Rev 204 (21 Nov): unfinished registrations are deleted automatically after 7 days. */
+  private async cleanupRegistrationDrafts(now: Date, dryRun: boolean, summary: RetentionSummary): Promise<void> {
+    summary.registrationDraftsDeleted = dryRun
+      ? await this.prisma.registrationDraft.count({ where: { updatedAt: { lt: draftExpiryCutoff(now) } } })
+      : (await this.prisma.registrationDraft.deleteMany({ where: { updatedAt: { lt: draftExpiryCutoff(now) } } })).count;
   }
 
   /**

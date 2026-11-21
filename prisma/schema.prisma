@@ -3633,3 +3633,30 @@ model FieldHandover {
   @@index([kind, recordId])
   @@index([businessId])
 }
+
+/// Unfinished registrations in the call agent console (Master Guide rev 204, 21 Nov): the job seeker,
+/// business or referral partner form a call agent is filling, saved on the server as they type, one per
+/// agent and kind. Only that agent reads it (never other agents, Team Leads, Managers or the CEO); RLS on.
+/// It holds only what the form holds (no ID images, no OTP codes). When the mobile was checked by OTP on
+/// this draft, `verifiedPhone` keeps it checked for this draft (a changed number is checked again).
+/// Deleted when the registration is submitted or discarded, and by the nightly cleanup after 7 days.
+model RegistrationDraft {
+  id            String    @id @default(uuid())
+  staffId       String
+  /// job_seeker, business, referral
+  kind          String
+  /// The name typed so far (the banner shows "no name yet" without one).
+  name          String?
+  /// The mobile typed so far, canonical.
+  phone         String?
+  /// The mobile checked by OTP for this draft (canonical), and when.
+  verifiedPhone String?
+  verifiedAt    DateTime?
+  /// The form's fields, as the console holds them.
+  data          Json
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([staffId, kind])
+  @@index([updatedAt])
+}
