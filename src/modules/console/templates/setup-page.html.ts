@@ -96,7 +96,7 @@ export function renderSetupPageHtml(): string {
         form.style.display = 'none';
         var staff = data.staff || {};
         var until = data.tempPasswordExpiresAt ? new Date(data.tempPasswordExpiresAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST' : '';
-        show('good', 'Done. Write these down now: they are shown only once. Within 24 hours go to /login and sign in with the staff code and the temporary password. You then take a selfie, choose your own password and set up the authenticator app.', staff.code || '', data.tempPassword || '', until);
+        show('good', 'Done. Write these down now: they are shown only once. Within 72 hours go to /login and sign in with the staff code and the temporary password. You then take a selfie, choose your own password and set up the authenticator app.', staff.code || '', data.tempPassword || '', until);
       } else {
         var text = Array.isArray(data.message) ? data.message.join(' ') : (data.message || ('The server answered ' + res.status + '.'));
         show('bad', text);

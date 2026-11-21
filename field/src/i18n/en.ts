@@ -78,8 +78,8 @@ export const en = {
   'status.notLoggedIn': 'Not logged in',
   'status.dayEnded': 'Day ended',
 
-  'session.idle': 'You were logged out after 1 hour without activity. Sign in again.',
-  'session.max_length': 'A login lasts at most 2 hours. Sign in again.',
+  'session.idle': 'You were logged out after 1 hour without activity while your working day was not open. Sign in again.',
+  'session.max_length': 'Your login ended (your working day was not open, or it is past the end of your shift). Sign in again.',
   'session.revoked': 'Your login was ended by your Team Lead or Manager, or you logged in on another phone.',
   'session.expired': 'Your login has expired. Sign in again.',
   'session.unauthorized': 'Please sign in again.',

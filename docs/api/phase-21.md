@@ -79,7 +79,7 @@ Errors add: `400` "A call agent or field agent must report to an active Team Lea
 
 Times come from the server. A time sent in the request is ignored. One day per person: logging in again on a closed day is `400` "This day is already closed". Logging in when the day is already open returns today.
 
-A Manager reading `GET /pricing` no longer receives the attendance settings (`shiftStart`, `shiftEnd`, `productionHoursFullDay`, `halfDayBelowHours`, `dayToleranceMinutes`, `lateGraceMinutes`, `shortBreakMinutes`, `lunchMinutes`, `idleAfterMinutes`, `casualLeavePerMonth`, `emergencyLeavePerMonth`, `refundPriorityWindowDays`). The CEO still reads and writes them. Defaults are 09:30–18:30, 8 production hours, half day under 4.5, 10 minutes tolerance and late grace, 15-minute short break, 30-minute lunch, idle after 10 minutes, 1 casual and 1 emergency leave a month, refund priority 15 days.
+A Manager reading `GET /pricing` no longer receives the attendance settings (`shiftStart`, `shiftEnd`, `productionHoursFullDay`, `halfDayBelowHours`, `dayToleranceMinutes`, `lateGraceMinutes`, `shortBreakMinutes`, `lunchMinutes`, `idleAfterMinutes`, `casualLeavePerMonth`, `emergencyLeavePerMonth`, `refundPriorityWindowDays`). The CEO still reads and writes them. Defaults are 09:30–18:30, 8 production hours, half day under 4.5, 10 minutes tolerance and late grace, 15-minute short break, 30-minute lunch, "Still there?" after 30 minutes (was 10 before 21 Nov; 5–120 allowed), 1 casual and 1 emergency leave a month, refund priority 15 days.
 
 `POST /calls` is `400` "Calls are placed only while you are Available" when the caller is not Available. `POST /telephony/callbacks/:id/assign` does not give the callback to someone who is not Available. It assigns the next Available call or field agent, or leaves the callback pending when nobody is Available.
 
@@ -125,9 +125,9 @@ A short break past 15 minutes, or lunch past 30, raises a `break_overrun` review
 
 Who: any staff member, for themselves. The screen sends one while the person is using it.
 
-Request: none.
+Request: `{ "kind": "presence" | "activity" }` (21 Nov). `presence`: the console or Laboura Field is open and visible (about once a minute, no input needed). `activity` (or no body, as older apps send): a click, key or tap.
 
-Response `201`: today. A heartbeat ends Idle and returns the person to Available.
+Response `201`: today. An activity heartbeat ends Idle and returns the person to Available; a presence heartbeat never ends Idle.
 
 ### GET /attendance/today
 
@@ -135,7 +135,7 @@ Who: any staff member, for themselves.
 
 Request: none.
 
-Response `200`: the same shape as login. Before the first login, `status` and `loginAt` are null and `shortfallSeconds` is a full day. No heartbeat for 11 minutes (10 minutes idle, plus the screen's one minute) while Available marks Idle. After-call notes become Available after 2 minutes. A later look still starts Idle at that 11-minute mark.
+Response `200`: the same shape as login. Before the first login, `status` and `loginAt` are null and `shortfallSeconds` is a full day. While Available, Idle starts at whichever comes first (21 Nov): no heartbeat of any kind for 11 minutes (the console closed or hidden: `policy.presenceMinutes` 10 plus the screen's one minute), or no click, key, call or saved work for the "Still there?" setting plus one minute (`policy.idleAfterMinutes`, 30 by default, a CEO setting). Both count from the start of the current Available period at the earliest, so a call starts them again. After-call notes become Available after 2 minutes. `clocks.shiftStart` / `shiftEnd` are the person's own shift when one is set (`ownShift` true). `canResume` is true after a Log out today.
 
 ### POST /attendance/system-problem/:segmentId/approve
 
@@ -165,7 +165,7 @@ Response `201`: today, `status` `travelling`.
 
 The call-status webhook sets On call when `answeredAt` is first stored, and After-call notes when an answered call receives `endedAt`. A call that was never answered does not change the status.
 
-A nightly job closes any day still open, at the last segment or heartbeat, with `closedReason` `auto_closed_no_logout` and `flagged` true.
+A nightly job closes any day still open from an earlier date (never today's, 21 Nov), at the last segment or heartbeat, with `closedReason` `auto_closed_no_logout` and `flagged` true.
 
 ## Task 3 — full days, half days, shortfall and the month
 
@@ -659,3 +659,34 @@ Example (Team Lead): `GET /close-to-refund?bucket=0-5` →
   ]
 }
 ```
+
+## Call agent and field agent fixes, decided 21 Nov (Master Guide rev 202)
+
+### Staying signed in
+
+- **A login code once a day.** A call or field agent who had a login code accepted today (IST) on this approved device and app signs in again that day with the password only (`auth.login.succeeded` audit row carries `withoutCode: "code_accepted_earlier_today"`). A new code is needed on another device, the next day, after the device was approved again, and after every session was ended by a password change, reset, lock, deactivation or a senior ending a session (`Staff.sessionsRevokedAt`). Authenticator roles still type their authenticator code.
+- **Day-long sessions** (`SessionDayService`): while the person's attendance day is open (logged in, not logged out or closed) and the session's device is still approved, the 1-hour idle and 2-hour limits do not end the session. The CEO (no attendance) gets the same for the IST day the session began. Safety cap: the end of the person's own shift + 2 hours (never before the old 2 hours from sign-in, never past midnight IST). Outside an open day the old rule applies, so Log out or a closed day ends a session older than 2 hours at the next request; both apps also sign out when the person presses Log out.
+- **Refresh tokens for every session on a device.** Laboura Field keeps `POST /auth/field/refresh`. The office web app renews at `POST /auth/session/refresh` `{ sessionId, refreshToken, deviceId }` → `{ accessToken, refreshToken, sessionId }` (single use, office sessions only, 20 a minute per connection; `401` with `reason` `idle` / `max_length` / `revoked` when the session is over). Both apps renew on a `401` and repeat the request once before signing out.
+- **Temporary passwords last 72 hours** (was 24).
+- **Bells** `login_code_request` and `device_approval_request` for every login-code request and new-device request: an agent's Team Lead and the Manager above (an owner account under a CEO: the CEO); a Team Lead's device: the Manager, else the CEO; a Manager's or Finance's device: the CEO. They open on the Login codes screen and clear when the code is given, used, refused or runs out, or the device is approved or refused (also by the notification sweep). No phone numbers.
+
+### Own shifts
+
+`Staff.shiftStart` / `shiftEnd` ("HH:MM" IST, null = the company shift from Settings). Lateness, the late grace, a half day of leave's working half, the shift shown on CA14 / Laboura Field and the sign-in cap use it.
+
+- `GET /attendance/shifts` (Team Lead: own team; Manager: own tree; CEO: everyone) → `{ companyShift: { start, end }, people: [ { staffId, code, name, role, shiftStart, shiftEnd, own } ] }`.
+- `PUT /attendance/shifts/:staffId` `{ shiftStart, shiftEnd, reason? }` — both "HH:MM", end after start, 1–14 hours; or both `null` to go back to the company shift. Team Lead (own team), Manager (own tree), CEO; never one's own. Audited `staff.shift_changed` with before/after. `403` outside the actor's team, `400` bad times.
+- For other modules: `AttendanceService.shiftOf(staffId)` and the helpers in `src/modules/attendance/staff-shift.ts` (`shiftFor`, `shiftStartOn`, `shiftEndOn`, `onShiftAt`).
+
+### Closing and reopening a day
+
+- `POST /attendance/resume` — "Resume my day": the person ended today with Log out and carries on the same day. The day opens again as Available from now; the time in between is not counted; audited `attendance.day_resumed`. `400 DAY_NOT_RESUMABLE` for a day closed any other way, `400 DAY_NOT_STARTED` before Log in. `POST /attendance/login` after a Log out today answers `400 DAY_ALREADY_ENDED` "… press Resume my day".
+- `POST /attendance/days/:dayId/reopen` `{ reason }` — the person's Team Lead, a Manager over them or the CEO reopens **today's** closed day (an earlier day is put right with a correction). Audited `attendance.day_reopened` with the reason. `400` no reason / not today / still open / no login, `403` outside the team or one's own day.
+
+### Saved work is activity
+
+Any successful write (`POST`/`PUT`/`PATCH`/`DELETE`, not `/attendance/*`, `/auth/*`, `/live/*`) by someone who marks attendance counts as activity (`AttendanceActivityInterceptor`, at most once a minute per person): present, the "Still there?" clock starts again and Idle ends. So in Laboura Field interview attendance, registrations and selections are work, not idle. Laboura Field also sends presence heartbeats while it is open and activity heartbeats on taps.
+
+### Back from lunch?
+
+After the lunch or short-break allowance both apps ask "Back from lunch?" / "Back from your break?"; one tap sets Available. The Team Lead's over-the-break bell is unchanged.
