@@ -13,6 +13,10 @@
  *   GOOGLE_SERVICES_JSON            path to Firebase's google-services.json (Android push). On EAS: a
  *                                   "file" environment variable. Locally: ./google-services.json if present.
  *                                   Never committed; when missing, the app still builds (no Android push).
+ *   GOOGLE_MAPS_ANDROID_API_KEY     Google "Maps SDK for Android" key for the "Locate me" map (Android).
+ *                                   An EAS environment variable, never committed. Without it the app
+ *                                   still builds: "Locate me" reads GPS only, with no map. iPhone uses
+ *                                   Apple Maps, which needs no key.
  *   EAS_PROJECT_ID                  overrides the Expo project id (default: Agastya's project
  *                                   @agastyaks-team/laboura, created 21 Nov; push tokens and EAS builds need it)
  *
@@ -39,8 +43,10 @@ const GOOGLE_SERVICES_FILE = googleServicesFile();
 const EAS_OWNER = 'agastyaks-team';
 const EAS_PROJECT_ID = process.env.EAS_PROJECT_ID || '4bd5337d-e2c5-458a-ab29-928d6c582e35';
 
+const GOOGLE_MAPS_ANDROID_API_KEY = process.env.GOOGLE_MAPS_ANDROID_API_KEY || '';
+
 const CAMERA_REASON = 'Laboura uses the camera for your live selfie and to scan your ID card during registration.';
-const LOCATION_REASON = 'Laboura uses your location only when you tap "Use my location" to place your shop or area on the map.';
+const LOCATION_REASON = 'Laboura uses your location only when you tap "Locate me" to place your shop or home on the map.';
 
 module.exports = () => ({
   name: 'Laboura',
@@ -92,6 +98,8 @@ module.exports = () => ({
     'expo-apple-authentication',
     ['@react-native-google-signin/google-signin', { iosUrlScheme: GOOGLE_IOS_URL_SCHEME }],
     ['expo-location', { locationWhenInUsePermission: LOCATION_REASON }],
+    // "Locate me" map (22 Nov): Google Maps on Android (key from the environment), Apple Maps on iPhone.
+    ['react-native-maps', GOOGLE_MAPS_ANDROID_API_KEY ? { androidGoogleMapsApiKey: GOOGLE_MAPS_ANDROID_API_KEY } : {}],
     // Native verification steps (21 Nov): live camera only, never the gallery or the microphone.
     ['expo-camera', { cameraPermission: CAMERA_REASON, microphonePermission: false, recordAudioAndroid: false }],
     // Push (Agent C, customer/src/push/): small icon tint and the default Android channel.
@@ -103,6 +111,8 @@ module.exports = () => ({
     linkPagesUrl: process.env.EXPO_PUBLIC_LINK_PAGES_URL || API_URL,
     googleWebClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '',
     googleIosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '',
+    // Whether this Android build has a Maps key (the key itself stays in the native manifest only).
+    androidMap: Boolean(GOOGLE_MAPS_ANDROID_API_KEY),
     // EAS builds and getExpoPushTokenAsync need the project id.
     eas: { projectId: EAS_PROJECT_ID },
   },
