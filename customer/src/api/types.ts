@@ -14,7 +14,8 @@
  *   out "me" from the sign-in. Profile ids here are the signed-in person's own.
  */
 
-export type Language = 'kn' | 'hi' | 'en';
+/** English only, everywhere (Master Guide rev 193, 17 Nov). */
+export type Language = 'en';
 export type ProfileKind = 'job_seeker' | 'business' | 'referral_partner';
 export type StepState = 'done' | 'in_progress' | 'not_started';
 export type SalaryPeriod = 'monthly' | 'daily';

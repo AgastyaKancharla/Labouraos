@@ -31,7 +31,7 @@ const wireAccount = {
   phoneVerified: true,
   email: null,
   displayName: 'Ravi Kumar',
-  language: 'kn',
+  language: 'en',
   contactMeConsent: false,
   status: 'active',
   signInMethods: ['phone'],
@@ -47,7 +47,7 @@ function live(table: Parameters<typeof fakeServer>[0], token: string | null = 't
   const server = fakeServer(table);
   const client = createApiClient({ baseUrl: 'https://api.test/customer-api/v1', getToken: () => token, onUnauthorized: jest.fn(), fetchImpl: server.fetchImpl });
   const api = liveCustomerApi(client, {
-    language: async () => 'kn',
+    language: async () => 'en',
     device: async () => ({ installationId: 'install-uuid', platform: 'android', appVersion: '0.1.0' }),
   });
   return { api, ...server };
@@ -110,7 +110,7 @@ describe('the real API calls', () => {
     const sent = await api.sendSignInOtp('9876543210');
     expect(sent.testModeBanner).toBe('Test mode code: 123456');
     const auth = await api.verifySignInOtp({ phone: '9876543210', requestId: 'otp_1', code: '123456', contactConsent: true });
-    expect(calls[1].body).toEqual({ phone: '9876543210', requestId: 'otp_1', code: '123456', device: { installationId: 'install-uuid', platform: 'android', appVersion: '0.1.0' }, language: 'kn' });
+    expect(calls[1].body).toEqual({ phone: '9876543210', requestId: 'otp_1', code: '123456', device: { installationId: 'install-uuid', platform: 'android', appVersion: '0.1.0' }, language: 'en' });
     expect(calls[2]).toMatchObject({ method: 'PATCH', body: { contactMe: true } });
     expect(calls[2].headers.Authorization).toBe('Bearer new');
     expect(auth).toMatchObject({ accessToken: 'new', refreshToken: 'ref', account: { contactMe: true } });
@@ -124,7 +124,7 @@ describe('the real API calls', () => {
     await api.sendStepUp('register');
     expect(calls[0].body).toEqual({ purpose: 'register' });
     const result = await api.registerReferralPartner(
-      { name: 'Manju', partnerType: 'individual', individualKind: 'auto_driver', businessType: null, businessName: null, area: 'JP Nagar', pincode: '560078', pin: { latitude: 12.9, longitude: 77.5 }, messageLanguage: 'kn', whatsappPhone: null },
+      { name: 'Manju', partnerType: 'individual', individualKind: 'auto_driver', businessType: null, businessName: null, area: 'JP Nagar', pincode: '560078', pin: { latitude: 12.9, longitude: 77.5 }, messageLanguage: 'en', whatsappPhone: null },
       { requestId: 'otp_r', code: '123456' },
     );
     expect(calls[1].body).toMatchObject({ name: 'Manju', type: 'individual', individualRole: 'auto_driver', locality: 'JP Nagar', latitude: 12.9, heardFrom: 'laboura_app', otp: { requestId: 'otp_r', code: '123456' } });
