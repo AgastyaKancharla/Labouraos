@@ -135,7 +135,8 @@ export class CustomerRequestsService {
       throw validation('preferredFrom must be before preferredTo', { field: 'preferredFrom' });
     }
     const open = await this.prisma.customerCallbackRequest.findFirst({
-      where: { accountId, status: { in: ['open', 'assigned'] } },
+      // A "worker left" call (contract 8.2) is its own request and does not stand in for this one.
+      where: { accountId, status: { in: ['open', 'assigned'] }, topic: { not: 'worker_left' } },
       select: { id: true, status: true, createdAt: true },
     });
     if (open) return { created: false, body: open };

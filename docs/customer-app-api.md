@@ -133,10 +133,12 @@ Response:
   "appleSignIn": false,
   "humanCheckProvider": "mock",
   "otpTestMode": false,
-  "languages": ["kn", "hi", "en"],
+  "languages": ["en"],
   "otpResendSeconds": 30,
   "otpMaxResends": 3,
-  "sessionDays": 90
+  "sessionDays": 90,
+  "referralLeads": false,
+  "workerLeftReports": false
 }
 ```
 
@@ -145,7 +147,9 @@ the server: the app hides "Continue with Google"; `appleSignIn` likewise for
 "Sign in with Apple". `otpTestMode` true means the server returns the OTP in
 `testModeCode`: only when `CUSTOMER_OTP_TEST_MODE=on` on a server marked
 `LABOURA_SETUP=test` with pretend SMS (the server refuses to start with it on
-anywhere else). The staff OTP test mode never turns it on.
+anywhere else). The staff OTP test mode never turns it on. `referralLeads`:
+the partners' "Send a lead" form (§7.3b) is switched on (`CUSTOMER_REFERRAL_LEADS=on`);
+`workerLeftReports`: the businesses' "a worker left" report (§8.2, `CUSTOMER_WORKER_LEFT_REPORTS=on`).
 
 ---
 
@@ -229,9 +233,14 @@ no verified mobile yet, `next` is `"add_phone"`.
 
 `nonce` (both Google and Apple): when the app passes a nonce to the sign-in SDK,
 send the same raw nonce here; the token's `nonce` must equal it or its SHA-256
-(hex). Optional today; with `GOOGLE_NONCE_REQUIRED=on` a Google sign-in without
-one is refused. **The app should start sending one** (it does not yet), then the
-setting is turned on.
+(hex). **Apple:** the app sends one on every sign-in (21 Nov): it gives Apple the
+SHA-256 of a fresh random value and sends the raw value here. **Google:** the app
+cannot send one: the free Google sign-in library it uses
+(`@react-native-google-signin/google-signin` 17, "Original" sign-in) has no
+nonce option; only the paid "Universal" module does. So `GOOGLE_NONCE_REQUIRED`
+must stay **off** (with it on, every Google sign-in from the app is refused).
+The session is still tied to one installation (§1.3) and the token's audience,
+issuer and expiry are checked.
 
 ### 3.2b Sign in with Apple (iPhone)
 
@@ -666,7 +675,7 @@ The answer depends on the profile kind (`kind`).
     { "code": "VC-00078", "trade": "Baker", "headcount": 1, "status": "open", "belowLegalMinimum": false, "interviewsUpcoming": 0, "placements": 0 }
   ],
   "drafts": [ { "id": "uuid", "trade": "Helper", "updatedAt": "…" } ],
-  "counts": { "interviewsUpcoming": 0, "placements": 0 },
+  "counts": { "interviewsUpcoming": 0, "placements": 0, "workersPlaced": 0 },
   "nextAction": "sign_agreement"
 }
 ```
@@ -674,7 +683,9 @@ The answer depends on the profile kind (`kind`).
 A branch manager sees only that branch's vacancies, drafts and counts, and
 `tracker.agreement` only as true/false. **No candidate is listed here in v1**, and
 never a phone number. `nextAction`: `sign_agreement`, `wait_for_visit`,
-`wait_for_approval`, `add_vacancy`, `none`.
+`wait_for_approval`, `add_vacancy`, `none`. `counts.workersPlaced`: workers whose
+fee is paid (working now, or due to join); the app shows "Report a worker left"
+when it is above 0 (§8.2).
 
 ### 7.3 Referral partner
 
@@ -708,6 +719,47 @@ never a phone number. `nextAction`: `sign_agreement`, `wait_for_visit`,
 - `share.link` (`PUBLIC_APP_URL` + `/r/<RF- code>`) is where a partner's QR
   points. **No page answers `/r/...` yet**: a landing page (store links, the code
   pre-filled) is still to be built in `web/`. `qrText` is what the app turns into a QR code.
+
+### 7.3b Referral partner: send a lead (21 Nov)
+
+| Method and path | Auth | Status |
+| --- | --- | --- |
+| `GET /me/profiles/:profileId/referral-leads` | 🔒 | A |
+| `POST /me/profiles/:profileId/referral-leads` | 🔒 | A |
+
+Master Guide, 21 Nov: referral partners get a submit-a-lead form in the app.
+A lead is someone who wants a job, or a business that needs staff, who agreed
+to be called by Laboura. **It is not a registration:** the call team calls, and
+if the person registers, "referred by" is this partner (`referralCode`). The
+reward does not change: ₹200 only when a referred candidate joins a job.
+
+**Switched off until the office software picks leads up** (a call list):
+`CUSTOMER_REFERRAL_LEADS=on` on the server turns it on; `GET /config` says
+`referralLeads`; while off, `POST` answers `501 NOT_IMPLEMENTED`.
+
+`POST` body `{ "name": "Manju Nath", "phone": "9876543210", "personAgreed": true, "kind": "job_seeker" | "business", "area": "BTM Layout" }`.
+**Name and mobile are enough** (Agastya, 21 Nov: our team calls them); `kind` and `area` are optional.
+**No daily limit** (Agastya, 21 Nov).
+→ `201 { "leadId": "uuid", "stage": "with_team" }`. The same number from the same
+partner again → `200` with that lead. The answer never says whether Laboura
+already knew the number (no oracle, AC-6). `area`, when given, must be one of
+the managed areas (`GET /me/form-options`); `personAgreed` must be `true`; not
+the partner's own number; no phone or ID number in the name. A lead stays with
+Laboura when the referral partner deletes their account (`accountId` set to null). `400 VALIDATION_FAILED` with `field`; `403 REFERRAL_PAUSED`;
+`403 NOT_ALLOWED` (`reason: registration_unfinished`) until the partner finished
+registering (terms, selfie, ID check, UPI — the same steps the app shows).
+
+`GET` → `{ "open": true, "leads": [ { "id": "uuid", "firstName": "Manju", "kind": "job_seeker", "stage": "with_team", "sentAt": "…" } ] }`.
+`firstName` is a person's first name, or a business lead's whole name; `kind` is null when not given.
+`stage`: `with_team` (new or being called), `registered`, `closed` (not
+interested, already with Laboura, or closed for any other reason — the
+partner is not told which). Never the phone.
+
+**For the office session (not in the customer folders):** put `status = 'new'`
+leads on the call team's lists (like missed calls, oldest first); when the
+person registers, fill "referred by" from `referralCode` and set
+`status = 'registered'`, `subjectType`, `subjectId`; otherwise `contacted`,
+`not_interested` or `closed`. Then switch `CUSTOMER_REFERRAL_LEADS` on.
 
 ### 7.4 Terms, re-consent and suspension (legal documents, Master Guide rev 176)
 
@@ -787,6 +839,81 @@ with that name exists), `409 LIMIT_REACHED` (12 shifts), `404 VALIDATION_FAILED`
 `businessShiftId` (one of these shifts); the posted vacancy keeps the shift's label and times even if the shift is later changed or removed.
 
 ---
+
+### 8.2 A worker left (21 Nov)
+
+| Method and path | Auth | Status |
+| --- | --- | --- |
+| `GET /me/profiles/:profileId/workers` | 🔒 | A |
+| `POST /me/profiles/:profileId/workers/:placementId/left` | 🔒 | A |
+
+Master Guide, customer app (14 Nov): a business may report a worker leaving in
+the app; claims still go to the Team Lead. **This is a report, not the
+replacement claim.** The claim needs an answered, recorded call with the owner,
+so staff still file it (`POST /placements/:id/claims`, unchanged). The report
+saves when the business told Laboura and makes its own "Call me back" request
+(topic `worker_left`, note `PL-…: worker left on <day>`, for this business
+profile) so the call team gets a call task at once (§10). Only an *open*
+`worker_left` request of the same profile is reused; never an older request of
+the account (an `assigned` one is never closed again, and it may be about
+another profile).
+
+**Switched off until the office software uses the reports:**
+`CUSTOMER_WORKER_LEFT_REPORTS=on` turns it on; `GET /config` says
+`workerLeftReports`; `GET` answers `open`; while off, `POST` answers
+`501 NOT_IMPLEMENTED` and the app hides "Report a worker left". Reason: until the
+office counts the report's time, a claim filed later by staff would be counted
+from the filing, and a report made on day 6 and filed on day 8 would be turned
+down as late for good.
+
+`GET` → the business's paid workers (placement `active`, or `confirmed` = paid but
+not joined yet), a branch profile only its branch's:
+
+```json
+{
+  "open": true,
+  "reasons": { "covered": ["resigned", "absconded_3_days", "…"], "notCovered": ["business_closed", "…"], "neverJoined": ["never_joined"] },
+  "reportWithinDays": 7,
+  "windowDays": 60,
+  "workers": [
+    { "placementId": "uuid", "placementCode": "PL-00012", "workerFirstName": "Ravi", "trade": "Cook",
+      "joinedOn": "2026-11-01", "joiningOn": "2026-11-01", "neverJoined": false,
+      "guaranteeLastDay": "2026-12-31", "leftOnEarliest": "2026-11-01", "leftOnLatest": "2026-11-21",
+      "state": "can_report" }
+  ],
+  "reports": [
+    { "id": "uuid", "placementCode": "PL-00012", "workerFirstName": "Ravi", "workerLeftOn": "2026-11-19",
+      "reason": "resigned", "status": "open", "claimDecision": null, "reportedAt": "…" }
+  ]
+}
+```
+
+`state`: `can_report`, `reported` (an open report waits for the call team),
+`claim_open` (a claim waits for the Team Lead), `not_again` (an earlier claim
+was turned down and the staff refile rule, `claim-refile.ts`, does not let a
+call agent file it again), `guarantee_over` (more than 7 days after the
+guarantee's last day — staff check the leaving day against the window, then the
+7-day rule), `not_started` (due to join later). The reasons are the staff form's
+closed list (`placement/claim-reasons.ts`): covered and not covered, or only
+`never_joined` for a paid worker who never came (D2). First name only, never a
+phone number or money.
+
+`POST` body `{ "workerLeftOn": "2026-11-19", "reason": "resigned", "note": "optional, 200 characters, no ID or phone numbers" }`
+→ `201 { "reportId": "uuid", "status": "open", "reportedAt": "…" }`, or `200` with the open
+report when one is already waiting (one open report per worker, also a partial
+unique index). The day must be from the worker's own joining day to today and not
+after the guarantee's last day, as the staff claim checks it. `404 PROFILE_NOT_FOUND`
+for a worker that is not this business's (or this branch's), not paid for, or not
+found; `409 NOT_ALLOWED` with `reason` `claim_open`, `not_again`, `not_started` or `guarantee_over`;
+`400 VALIDATION_FAILED` with `field`. No fresh OTP: it only asks for a call.
+
+Deleting the account keeps the report (`accountId` set to null): it is the record of when the business told Laboura.
+
+**For the office session (not in the customer folders):** show open reports and
+the topic and note of a `worker_left` callback on the call task; when the claim
+is filed from a report, set `CustomerWorkerLeftReport.status = 'claim_filed'`
+and `claimId` (or `closed` + `closedAt`); count the report's `createdAt` as the day the
+business told Laboura (7-day rule). Then switch `CUSTOMER_WORKER_LEFT_REPORTS` on.
 
 ## 9. Inbox, push token and settings (Agent C)
 
@@ -956,9 +1083,11 @@ Events (`kind`, placeholders, category; all `service` unless said):
 { "profileId": "uuid", "topic": "signup", "note": "UPI failed", "preferredFrom": "18:00", "preferredTo": "21:00" }
 ```
 
-`topic`: `signup`, `payment`, `interview`, `refund`, `payout`, `vacancy`, `other`.
+`topic`: `signup`, `payment`, `interview`, `refund`, `payout`, `vacancy`, `other`
+(and `worker_left`, made only by "a worker left", §8.2 — not sent by the app here).
 Times are IST inside 09:00 to 21:00. → `201 { "id": "uuid", "status": "open", "createdAt": "…" }`.
-One open request per account: a second answers `200` with the open one. `note`
+One open request per account (a `worker_left` one does not count): a second answers `200` with the open one.
+*Known gap (21 Nov, office side):* nothing moves a request from `assigned` to `done` when its call task is done, so after one "Call me back" a person can never ask again; asked of the office session. `note`
 is short (200 characters) and must not carry ID numbers. The back office (D)
 turns it into a call task (CallTask kind `callback`, or `signup_help` during a sign-up).
 `GET` lists my last 10 with `status` (`open`, `assigned`, `done`, `cancelled`).
@@ -1036,6 +1165,8 @@ every one with row level security on.
 | `CustomerDeletionRequest` | Delete-my-account requests | A creates; D handles |
 | `CustomerCallbackRequest` | Call me back | A creates; D turns into call tasks |
 | `CustomerVacancyDraft` | Vacancies a business writes before confirming by OTP | A |
+| `CustomerWorkerLeftReport` | "A worker left" reports from businesses (§8.2), migration `20261204100000_customer_worker_left_reports` | A creates; the office session links the claim (`status`, `claimId`) |
+| `CustomerReferralLead` | Leads sent by referral partners (§7.3b), migration `20261204200000_customer_referral_leads` | A creates; the office session calls them and sets `status`, `subjectType`, `subjectId` |
 
 Changes to existing tables and values:
 
@@ -1083,6 +1214,8 @@ tracker assignee and their team) for app sign-ups.
 | `CUSTOMER_ACCESS_TOKEN_MINUTES` | optional | Access token life, 1 to 60, default 15 |
 | `CUSTOMER_PUSH_PROVIDER_MODE` | render.yaml (web and worker), render.free.yaml | `mock` (default: logs instead of sending) or `real` (Expo's push service) |
 | `EXPO_ACCESS_TOKEN` | render.yaml, `sync: false` (worker copies it) | Optional: only if "enhanced push security" is on in the Expo account |
+| `CUSTOMER_WORKER_LEFT_REPORTS` | optional (Render → Environment) | `on` switches on the businesses' "a worker left" report (§8.2). Off by default until the office software uses the reports |
+| `CUSTOMER_REFERRAL_LEADS` | optional (Render → Environment) | `on` switches on the partners' "Send a lead" form (§7.3b). Off by default until the office software picks leads up |
 
 ---
 

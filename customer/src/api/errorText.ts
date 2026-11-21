@@ -23,6 +23,7 @@ const CODE_KEYS: Record<string, MessageKey> = {
   CUSTOMER_ACCOUNT_BLOCKED: 'error.blocked',
   NOT_IMPLEMENTED: 'error.notYet',
   STEP_UP_REQUIRED: 'error.stepUp',
+  LIMIT_REACHED: 'error.limitReached',
 };
 
 /**

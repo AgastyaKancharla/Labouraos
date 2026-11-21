@@ -19,11 +19,12 @@ customer/
     screens/<Name>/        one folder per screen, with its tests
     components/            copied from Laboura Field (Button, Card, TextField, CodeInput, form pickers…)
     theme/                 copied from Laboura Field (one text size larger)
-    i18n/                  en.ts (reference), kn.ts, hi.ts — copied set-up from Laboura Field
-    push/                  OWNED BY AGENT C (notifications) — placeholder here
+    i18n/                  en.ts — every word the app shows. English only (Master Guide rev 193, 17 Nov):
+                           no other languages, no language setting
+    push/                  notifications: inbox, the three notification switches, push token, deep links
 ```
 
-Building blocks, API client pattern, theme and language set-up are **copies** of Laboura Field's, not imports, so the two apps stay independent (proposal 8.2). Nothing in `field/` is used at run time.
+Building blocks, API client pattern and theme are **copies** of Laboura Field's, not imports, so the two apps stay independent (proposal 8.2). Nothing in `field/` is used at run time.
 
 ## Screens
 
@@ -40,11 +41,14 @@ Building blocks, API client pattern, theme and language set-up are **copies** of
 | `/register/referral` | RegisterReferral | Individual or business, area, language, WhatsApp; fresh OTP; then terms, selfie, ID, UPI in the sheet |
 | `/vacancy/new` | AddVacancy | Vacancy draft with the market range and the **legal minimum wage warning + tick**; confirmed by a fresh OTP; `?vacancyId=` confirms a draft from registration |
 | `/home` | Home | By profile kind — job seeker: steps, "Paid — confirming", day X of 30, hits, interview (business name **only once booked**), refund status · business: tracker, visit, approval, vacancies, counts (no candidate data, never a phone number) · partner: link + QR + WhatsApp text, people referred (first name + stage only), money due/approved/paid statement |
+| `/workers` | WorkerLeft | A business tells us a worker left: picks the worker (first name, paid placements only), the day and why from the claim reasons. The call team calls and files the claim; a Team Lead decides. Shown only when the server switches it on (`CUSTOMER_WORKER_LEFT_REPORTS=on`, contract 8.2) |
+| `/referral-lead` | ReferralLead | Referral partner sends a lead: name and mobile (needs a job / needs staff and area optional), and a tick that the person agreed to be called. No daily limit. Our call team calls; the partner sees first name and stage only. Shown only when the server switches it on (`CUSTOMER_REFERRAL_LEADS=on`, contract 7.3b) |
 | `/help` | Help | "Call me back" (topic; now or a time window 9 AM–9 PM) and short answers |
 | `/privacy` | Privacy | What is kept and never kept, grievance contact, policy link, "Delete my account" |
 | `/delete-account` | DeleteAccount | Big warning + tick while the ₹499 guarantee runs (ends the refund), fresh OTP, what the law keeps |
-| `/settings` | Settings | Language (also saved on the account), version, sign out |
-| `/inbox` | Agent C's InboxScreen | Messages (placeholder until Agent C's PR) |
+| `/settings` | Settings | App version, sign out. No language choice (English only) |
+| `/inbox` | InboxScreen (`src/push/`) | Every notification, newest first, mark read, and the three switches (Service, Job updates, Promotions) |
+| — | UpdatedTerms | Shown on top of Home when the terms changed: read "In short", accept with a fresh OTP |
 
 Large-text friendly: one step larger than Field, 52 px touch targets, everything grows with the phone's font setting. Low data: no maps or images downloaded (the pin is one GPS reading), fonts bundled, answers cached 60 s, no refetch on every focus.
 
@@ -55,7 +59,7 @@ For this first version the verification steps are the **existing link pages** (`
 - **Android: Chrome Custom Tabs** (`expo-web-browser` `openAuthSessionAsync`). **iPhone: SFSafariViewController** (`openBrowserAsync` — the auth session would show a "wants to use … to sign in" prompt).
 - **Why not a WebView: the camera.** Custom Tabs and the Safari sheet run the page in the real browser, which asks for camera permission itself, so the live selfie and the Aadhaar QR scan (`getUserMedia`) work. A WebView needs extra native permission code on both platforms. UPI links (`upi://…`) also open the UPI app from the browser, and the app cannot read the payment, Aadhaar or agreement pages.
 - **Coming back:** every link gets `?app=1&returnTo=laboura://sheet-done`. When the page goes there, the sheet closes and Home shows. When the person just closes the sheet, Home reloads too. Home also reloads whenever the app comes back to the front.
-- **Fallback:** a phone with no in-app browser opens the page in its normal browser; Home says "come back when done" and refreshes on return. *For a "Back to the Laboura app" button on the link pages, `web/` must honour `returnTo` — not done here (outside this folder).*
+- **Fallback:** a phone with no in-app browser opens the page in its normal browser; Home says "come back when done" and refreshes on return. *A "Back to the Laboura app" button on the link pages needs `web/` to honour `returnTo`. Checked 21 Nov: not done yet; asked of the office session (it is outside this folder).*
 - Only `https` links on the link-pages address (`EXPO_PUBLIC_LINK_PAGES_URL`, default the API address) are opened.
 - To be proven on real phones (day 3 of the plan): camera in the sheet on a cheap Android and on iPhone.
 
@@ -75,12 +79,12 @@ For this first version the verification steps are the **existing link pages** (`
 
 The HTTP client sends `X-Laboura-Installation` (a random id per install) on every request, renews the 15-minute access token with the refresh token on `401 CUSTOMER_TOKEN_EXPIRED` (once, then retries), and signs out on any other 401. Screens never show the server's English `message`: they choose their own words from the error `code` (`src/api/errorText.ts`).
 
-### Asked of Agent A (not in the v1 contract yet)
+### Server items the app relies on (checked 21 Nov)
 
-1. **`GET /me/form-options` → `{ areas: [{name, pincode, latitude, longitude}], trades: [{id, name, salaryMinPaise, salaryMaxPaise, legalMinimumPaise}] }`** — the forms need the managed area and trade lists and the salary hints; today those endpoints are staff-only. Until it exists, the live forms show "not ready yet".
-2. **`POST /auth/apple`** (`{ identityToken, fullName, device, language }` → session answer) and **`appleSignIn: true`** in `GET /config`. The Apple button stays hidden until then.
-3. Referral home: signed terms and consent copies (`documents: [{id, kind, signedAt}]` and a link purpose `document`). The app shows them when present.
-4. A landing page for the partner link `/r/<RF- code>` (in `web/`, per the contract note) — the QR points there.
+1. `GET /me/form-options` — done: areas, trades, market salary ranges and the legal minimum by zone and skill level (all 12 figures).
+2. `POST /auth/apple` and `appleSignIn` in `GET /config` — done on the server; off until an Apple client id is set. The Apple button stays hidden until then.
+3. Referral partner documents (`GET /me/profiles/:id/documents`) — done; Home shows them.
+4. The landing page for the partner link `/r/<RF- code>` (the QR points there) — **not built yet**; asked of the office session (it lives in `web/`).
 
 ## Commands (inside `customer/`)
 
@@ -113,17 +117,14 @@ EAS builds in the cloud (free plan: 15 Android builds a month) and gives a downl
    - **Android** — package `com.laboura.app` plus the **SHA-1 fingerprint**: after the first `eas build`, run `eas credentials -p android` → the build profile → copy "SHA1 Fingerprint", paste it into the Android client. Put this id on the server as `GOOGLE_CLIENT_ID_ANDROID`. (Later, the Play Store's own "App signing" SHA-1 must be added too.)
    - **iOS** (later, with the Apple account) — bundle id `com.laboura.app`; id → `GOOGLE_CLIENT_ID_IOS`, and its reversed form → `GOOGLE_IOS_URL_SCHEME` for iPhone builds.
    - The OAuth consent screen needs the app name, a support email and the privacy policy link.
-4. **Firebase for notifications** (Agent C): in the same Firebase project add an Android app with package `com.laboura.app`, download `google-services.json`, and upload it to the Expo project as a **file** environment variable named `GOOGLE_SERVICES_JSON` (expo.dev → project → Environment variables). Never commit it (it is in `.gitignore`). Then give Expo the FCM key: `eas credentials -p android` → Push Notifications → upload the Firebase service-account key.
+4. **Firebase for notifications**: in the same Firebase project add an Android app with package `com.laboura.app`, download `google-services.json`, and upload it to the Expo project as a **file** environment variable named `GOOGLE_SERVICES_JSON` (expo.dev → project → Environment variables). Never commit it (it is in `.gitignore`). Then give Expo the FCM key: `eas credentials -p android` → Push Notifications → upload the Firebase service-account key.
 5. **EAS project id**: after `eas init`, set `EAS_PROJECT_ID` to the id it prints (Expo environment variables, or `env` in `eas.json`). Without it the app runs but cannot get a push token.
 6. **Apple** (after testing, in the company's name): developer account → Sign in with Apple, iPhone push, TestFlight.
 
-## Hand-off to Agent C (notifications)
+## Notifications (`src/push/`)
 
-- `customer/src/push/` is **Agent C's**. This branch only has a placeholder `src/push/index.tsx`; on a merge conflict there, take Agent C's version.
-- The rest of the app relies on exactly two exports from `@/push`:
-  - `InboxScreen` — default export of `app/(app)/inbox.tsx` (the bell in the header opens it, route `routes.inbox`).
-  - `PushBridge` — rendered once inside the signed-in layout (`app/(app)/_layout.tsx`); asks for permission, registers the token (`PUT /me/device`), routes taps (`deepLink`) with `router.push`. Renders nothing visible.
-- They may use `useCustomerApi()` / `httpClient` from `@/api`, `useAuth()` from `@/auth/AuthProvider` (account, active profile, `sessionStore` token), `useI18n()` and `routes`. Notification wording lives in Agent C's files; screen wording here.
-- Sign-out already calls `POST /auth/sign-out`, which removes this phone's push token on the server.
-- Notification settings switches belong on Settings: Agent C may add a section there or a route.
-- Done on this branch for Agent C: `expo-notifications` 58.1.7 (the SDK 58 version) in `package.json`; the `expo-notifications` plugin (`color #0055C0`, `defaultChannel: service`) and `android.googleServicesFile` (only when the file exists) in `app.config.js`; `extra.eas.projectId` from `EAS_PROJECT_ID`; Jest mocks for `expo-notifications` and `expo-constants` in `src/test/setup.tsx`.
+- `InboxScreen` is the default export of `app/(app)/inbox.tsx` (the bell in the header opens it). It also shows the three switches (`NotificationSettingsCard`).
+- `PushBridge` is rendered once inside the signed-in layout (`app/(app)/_layout.tsx`): asks for permission, registers the token (`PUT /me/device`), opens the right screen when a notification is tapped.
+- Sign-out calls `POST /auth/sign-out`, which removes this phone's push token on the server.
+- Quiet hours (9 PM–9 AM, except sign-in codes and receipts) and the limit of 3 non-urgent a day are kept by the server. A push is never counted as a contact attempt.
+- Android push needs Firebase's `google-services.json` and the EAS project id (see "What the owner sets up"). Without them the app still builds, just without Android push.
