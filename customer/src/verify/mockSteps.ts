@@ -1,4 +1,5 @@
 import { ApiError } from '@/api/errors';
+import type { MockPersist } from '@/api/mockPersist';
 import type { StepsApi } from './stepsApi';
 import type { LegalDocument, PartnerOpen, RegistrationOpen } from './types';
 
@@ -7,14 +8,33 @@ import type { LegalDocument, PartnerOpen, RegistrationOpen } from './types';
  * clicked through with no server. Any 6-digit code works; the Aadhaar QR is
  * always "verified"; payment confirms a few seconds after "Pay".
  */
-export function mockStepsApi(delayMs = 300): StepsApi {
-  const wait = <T>(make: () => T): Promise<T> => new Promise((resolve, reject) => setTimeout(() => {
+/** A finished step, reported to the pretend customer API so Home shows it (src/api/mock.ts). */
+export type MockProgress = 'consent' | 'selfie' | 'id_check' | 'terms_accepted' | 'paid' | 'terms' | 'payout' | 'agreement_signed';
+type ProgressListener = (profileId: string, event: MockProgress) => void;
+let progressListener: ProgressListener | null = null;
+export function onMockProgress(listener: ProgressListener): void {
+  progressListener = listener;
+}
+
+/** The pretend link token names the profile it is for (src/screens/Verify: `mock-link-<profileId>`). */
+export const mockLinkToken = (profileId: string) => `mock-link-${profileId}`;
+const profileOf = (token: string) => (token.startsWith('mock-link-') ? token.slice('mock-link-'.length) : null);
+
+export function mockStepsApi(delayMs = 300, persist?: MockPersist): StepsApi {
+  const report = (token: string, event: MockProgress) => {
+    const profileId = profileOf(token);
+    if (profileId) progressListener?.(profileId, event);
+  };
+  let ready: Promise<void> = Promise.resolve();
+  const save = () => persist?.save(JSON.stringify({ reg, partner, paidAt, signed, reported }));
+  const wait = <T>(make: () => T): Promise<T> => new Promise((resolve, reject) => void ready.then(() => setTimeout(() => {
     try {
       resolve(make());
+      save();
     } catch (e) {
       reject(e);
     }
-  }, delayMs));
+  }, delayMs)));
   const verified = new Set<string>();
   const reg: RegistrationOpen = {
     otpRequired: false,
@@ -45,6 +65,23 @@ export function mockStepsApi(delayMs = 300): StepsApi {
   };
   let paidAt: number | null = null;
   let signed: { signedAt: string; signedName: string } | null = null;
+  /** The job seeker's link token, so the bank's pretend confirmation can be reported too. */
+  let regToken: string | null = null;
+  let reported = false;
+  if (persist) {
+    ready = persist
+      .load()
+      .then((json) => {
+        if (!json) return;
+        const saved = JSON.parse(json) as { reg: RegistrationOpen; partner: PartnerOpen; paidAt: number | null; signed: typeof signed; reported: boolean };
+        Object.assign(reg, saved.reg);
+        Object.assign(partner, saved.partner);
+        paidAt = saved.paidAt;
+        signed = saved.signed;
+        reported = saved.reported;
+      })
+      .catch(() => undefined);
+  }
   const locked = (token: string) => ({ otpRequired: true as const, maskedPhone: '+91 ••••• •4321', registrationComplete: false, token });
   const needCode = (requestId: string) => {
     if (!verified.has(requestId)) throw new ApiError({ status: 400, messages: ['OTP to the registered mobile is required'] });
@@ -75,10 +112,15 @@ export function mockStepsApi(delayMs = 300): StepsApi {
       reg.steps.payment = true;
       reg.currentStep = 'complete';
     }
+    if (reg.payment.state === 'confirmed' && !reported && regToken) {
+      reported = true;
+      report(regToken, 'paid');
+    }
   };
   return {
     registrationStatus: (token, requestId) =>
       wait(() => {
+        regToken ??= token;
         refreshPayment();
         return requestId && verified.has(requestId) ? { ...reg } : locked(token);
       }),
@@ -90,23 +132,26 @@ export function mockStepsApi(delayMs = 300): StepsApi {
         return { ...reg };
       }),
     legalDocument: (key) => wait(() => doc(key)),
-    submitConsent: (_t, requestId) =>
+    submitConsent: (token, requestId) =>
       wait(() => {
         needCode(requestId);
+        report(token, 'consent');
         reg.steps.consent = true;
         reg.currentStep = 'selfie';
         return { success: true };
       }),
-    registrationSelfie: (_t, requestId) =>
+    registrationSelfie: (token, requestId) =>
       wait(() => {
         needCode(requestId);
+        report(token, 'selfie');
         reg.steps.selfie = true;
         reg.currentStep = 'id_check';
         return {};
       }),
-    registrationAadhaarQr: (_t, requestId) =>
+    registrationAadhaarQr: (token, requestId) =>
       wait(() => {
         needCode(requestId);
+        report(token, 'id_check');
         reg.steps.idCheck = true;
         reg.idCheck = { waitingForTeamLead: false, lastResult: 'verified' };
         reg.currentStep = 'payment';
@@ -127,9 +172,11 @@ export function mockStepsApi(delayMs = 300): StepsApi {
         needCode(requestId);
         return { jobSeekerCode: reg.jobSeekerCode, trade: 'Cook', travelDistanceKm: 5, locality: 'BTM Layout', shiftPreference: 'day', jobType: 'full_time', guaranteeFloorPaise: 1_500_000, guaranteeDays: 30, amountPaise: 49900, termsAcceptedAt: reg.termsAcceptedAt };
       }),
-    acceptRegistrationTerms: (_t, requestId) =>
+    acceptRegistrationTerms: (token, requestId) =>
       wait(() => {
         needCode(requestId);
+        regToken = token;
+        report(token, 'terms_accepted');
         reg.termsAcceptedAt = new Date().toISOString();
         reg.payPageToken = 'mock-pay';
         reg.payment = { ...reg.payment, state: 'pending', upiReference: 'LB49900' };
@@ -169,23 +216,26 @@ export function mockStepsApi(delayMs = 300): StepsApi {
       }),
     partnerTerms: () =>
       wait(() => ({ referralPayoutPaise: 20000, version: '1.0', termsHtml: '', summaryHtml: '<p>You earn <strong>₹200</strong> when someone you refer joins a job.</p>', bodyHtml: '<p>Full terms (pretend data).</p>', payoutDetailsCoolingHours: 48, activationFeePaise: 49900 })),
-    acceptPartnerTerms: (_t, requestId) =>
+    acceptPartnerTerms: (token, requestId) =>
       wait(() => {
         needCode(requestId);
+        report(token, 'terms');
         partner.steps.terms = { state: 'done' };
         partner.currentStep = 'selfie';
         return { success: true };
       }),
-    partnerSelfie: (_t, requestId) =>
+    partnerSelfie: (token, requestId) =>
       wait(() => {
         needCode(requestId);
+        report(token, 'selfie');
         partner.steps.selfie = { state: 'done' };
         partner.currentStep = 'id_check';
         return {};
       }),
-    partnerAadhaarQr: (_t, requestId) =>
+    partnerAadhaarQr: (token, requestId) =>
       wait(() => {
         needCode(requestId);
+        report(token, 'id_check');
         partner.steps.id = { state: 'done' };
         partner.currentStep = 'upi';
         return {
@@ -200,9 +250,10 @@ export function mockStepsApi(delayMs = 300): StepsApi {
         partner.idCheck = { waitingForTeamLead: true, lastResult: 'pending' };
         return { verificationId: 'v-4', method: idType, status: 'pending' as const, idNumberLast4: idNumber.slice(-4), nextStep: 'id_check' };
       }),
-    partnerPayout: (_t, requestId, details) =>
+    partnerPayout: (token, requestId, details) =>
       wait(() => {
         needCode(requestId);
+        report(token, 'payout');
         const masked = details.method === 'upi' ? `${details.upiId.slice(0, 2)}•••@${details.upiId.split('@')[1] ?? ''}` : `•••• ${details.accountNumber.slice(-4)}`;
         partner.steps.upi = { state: 'done' };
         partner.currentStep = 'complete';
@@ -226,9 +277,10 @@ export function mockStepsApi(delayMs = 300): StepsApi {
         };
       }),
     agreementSigned: () => wait(() => ({ signedAt: signed?.signedAt ?? new Date().toISOString(), signedName: signed?.signedName ?? '', businessName: 'Sri Sai Bakery' })),
-    signAgreement: (_t, _r, code, signedName) =>
+    signAgreement: (token, _r, code, signedName) =>
       wait(() => {
         if (!/^\d{6}$/.test(code)) throw new ApiError({ status: 400, messages: ['The code is not right'] });
+        report(token, 'agreement_signed');
         signed = { signedAt: new Date().toISOString(), signedName };
         return { signedAt: signed.signedAt };
       }),
