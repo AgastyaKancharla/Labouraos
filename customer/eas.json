@@ -23,7 +23,8 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
-      }
+      },
+      "environment": "development"
     },
     "preview": {
       "extends": "base",
@@ -33,7 +34,8 @@
       },
       "ios": {
         "simulator": false
-      }
+      },
+      "environment": "preview"
     },
     "preview-mock": {
       "extends": "preview",
@@ -45,7 +47,8 @@
       "extends": "base",
       "android": {
         "buildType": "app-bundle"
-      }
+      },
+      "environment": "production"
     }
   },
   "submit": {
