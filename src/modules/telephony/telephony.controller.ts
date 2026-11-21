@@ -54,6 +54,14 @@ export class TelephonyController {
     return this.telephonyService.getCallbackQueue({ status }, req.user);
   }
 
+  /** 21 Nov fixes: the Team Lead's missed-call list (team + unassigned), grouped by number, with assign. */
+  @Get('missed-calls')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequireRoles('team_lead', 'manager', 'ceo')
+  async missedCalls(@Req() req: Request & { user: JwtPayload }) {
+    return this.telephonyService.missedCallList(req.user);
+  }
+
   @Post('callbacks/:id/assign')
   @UseGuards(JwtAuthGuard, RbacGuard)
   // The id is a missed call, not a job seeker: TelephonyService applies the

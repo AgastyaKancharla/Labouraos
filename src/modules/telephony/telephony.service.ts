@@ -23,7 +23,10 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { validateWebhookHmac } from '../../common/webhook/webhook-signature';
 import { AttendanceService } from '../attendance/attendance.service';
-import { InboundCallRouter } from './inbound-call-router.service';
+import { InboundCallRouter, tenDigits } from './inbound-call-router.service';
+import { AuditService } from '../../common/audit/audit.service';
+import { maskPhoneLast4 } from '../../common/rbac/pii-masking.interceptor';
+import { onShiftCallAgents, openItemCounts } from './call-agent-load';
 import { ReportingScopeService } from '../staff/reporting-scope.service';
 
 /** Only who a callback is with: never the whole staff row (password hash, TOTP secret, invite token hash). */
@@ -43,6 +46,7 @@ export class TelephonyService {
     // Always provided by TelephonyModule; optional only for specs that build the service by hand.
     @Optional() private readonly router?: InboundCallRouter,
     @Optional() private readonly scope?: ReportingScopeService,
+    @Optional() private readonly audit?: AuditService,
   ) {}
 
   async handleInboundWebhook(
@@ -148,6 +152,67 @@ export class TelephonyService {
     });
   }
 
+  /**
+   * The missed-call list for a Team Lead (their team + nobody's), a Manager
+   * (their tree + nobody's) or the CEO (all), 21 Nov fixes: open missed calls
+   * grouped by number (repeat calls are one row), oldest first, with who holds
+   * each, how long it has waited for its first call back and the agents the
+   * caller may give it to (with their open items and whether they are on shift).
+   */
+  async missedCallList(actor: JwtPayload) {
+    const now = new Date();
+    let people: string[] | null = null;
+    if (actor.role === 'team_lead') people = [actor.sub, ...(await this.teamOf(actor.sub))];
+    else if (actor.role === 'manager') people = [actor.sub, ...(this.scope ? await this.scope.peopleUnder(actor.sub) : [])];
+    const where: Prisma.CallbackTaskWhereInput = {
+      status: { in: ['pending', 'assigned'] },
+      ...(people ? { OR: [{ assignedToStaffId: null }, { assignedToStaffId: { in: people } }] } : {}),
+    };
+    const open = await this.prisma.callbackTask.findMany({
+      where,
+      orderBy: { createdAt: 'asc' },
+      take: 500,
+      include: { assignedToStaff: { select: CALLBACK_STAFF_SELECT } },
+    });
+    const groups = new Map<string, typeof open>();
+    for (const task of open) {
+      const key = `${tenDigits(task.phone)}|${task.assignedToStaffId ?? ''}`;
+      const list = groups.get(key) ?? [];
+      list.push(task);
+      groups.set(key, list);
+    }
+    const rows = [];
+    for (const tasks of groups.values()) {
+      const first = tasks[0];
+      const last = tasks[tasks.length - 1];
+      const caller = this.router ? await this.router.identify(first.phone) : null;
+      rows.push({
+        id: first.id,
+        ids: tasks.map((t) => t.id),
+        count: tasks.length,
+        firstCalledAt: first.createdAt.toISOString(),
+        lastCalledAt: last.createdAt.toISOString(),
+        maskedPhone: maskPhoneLast4(first.phone),
+        caller: caller ? { type: caller.type, id: caller.id, code: caller.code, name: caller.name } : null,
+        holder: first.assignedToStaff,
+        assignedAt: first.assignedAt?.toISOString() ?? null,
+        assignmentReason: first.assignmentReason,
+        waitingMinutes: Math.max(0, Math.floor((now.getTime() - first.createdAt.getTime()) / 60_000)),
+      });
+    }
+    const agentWhere: Prisma.StaffWhereInput = { status: 'active', role: { in: CALLBACK_AGENT_ROLES } };
+    if (people) agentWhere.id = { in: people };
+    const agents = await this.prisma.staff.findMany({ where: agentWhere, select: { id: true, code: true, name: true, role: true }, orderBy: { name: 'asc' } });
+    const ids = agents.map((a) => a.id);
+    const [counts, onShift] = await Promise.all([openItemCounts(this.prisma, ids, now), onShiftCallAgents(this.prisma, now, ids)]);
+    return {
+      now: now.toISOString(),
+      targetMinutes: 30,
+      rows,
+      agents: agents.map((a) => ({ ...a, openItems: counts.get(a.id) ?? 0, onShift: onShift.includes(a.id) })),
+    };
+  }
+
   /** A Team Lead's own team (the one shared definition, OwnTeam). */
   private teamOf(teamLeadId: string): Promise<string[]> {
     return new OwnTeam(this.prisma).memberIds(teamLeadId);
@@ -165,18 +230,17 @@ export class TelephonyService {
   }
 
   /**
-   * Give a missed call to someone (owner decision, 14 Nov):
-   * - a call agent: only one that is unassigned (take it, or give it to a
-   *   colleague) or assigned to himself (hand it over); never one someone
-   *   else holds;
+   * Give a missed call to someone (owner decision 14 Nov, changed by the 21 Nov fixes):
+   * - a call or field agent takes a missed call only for himself: one that is
+   *   unassigned or already his; never for a colleague, never one someone else holds;
    * - a Team Lead: one that is unassigned or held by their team, to someone
    *   on their team;
    * - Managers and the CEO: any.
-   * The person it goes to must be an active call or field agent. When they
-   * are not Available it goes to the next Available agent (a Team Lead's:
-   * on the same team); when nobody is, the answer says so (409) and the
-   * missed call stays where it was. The change only applies if nobody moved
-   * the missed call in between (checked in the update itself).
+   * The person it goes to must be an active call or field agent. It stays with
+   * the person chosen even when they are not Available right now (it waits on
+   * their list); it never silently goes to someone else. The change only
+   * applies if nobody moved the missed call in between (checked in the update
+   * itself), and repeat missed calls from the same number go along with it.
    */
   async assignCallback(id: string, staffId: string, actor?: JwtPayload) {
     const existing = await this.prisma.callbackTask.findUnique({
@@ -185,7 +249,14 @@ export class TelephonyService {
     if (!existing) {
       throw new NotFoundException(`Callback task '${id}' not found`);
     }
+    if (existing.status === 'completed') {
+      throw new ConflictException({ message: 'This missed call is already done.', reason: 'already_done' });
+    }
 
+    const agentActor = actor?.role === 'call_agent' || actor?.role === 'field_agent';
+    if (agentActor && staffId && staffId !== actor.sub) {
+      throw new ForbiddenException('An agent takes a missed call only for themselves; a Team Lead gives it to someone else');
+    }
     const target = staffId
       ? await this.prisma.staff.findUnique({ where: { id: staffId }, select: { role: true, status: true } })
       : null;
@@ -193,48 +264,52 @@ export class TelephonyService {
       throw new BadRequestException('A missed call can only go to an active call or field agent');
     }
 
-    let team: string[] | null = null;
     if (actor?.role === 'team_lead') {
-      team = await this.teamOf(actor.sub);
+      const team = await this.teamOf(actor.sub);
       this.assertCallbackInTeam(existing, team);
       if (!team.includes(staffId)) {
         throw new ForbiddenException(
           `Access denied: staff '${staffId}' is not part of your team`,
         );
       }
-    } else if (
-      (actor?.role === 'call_agent' || actor?.role === 'field_agent') &&
-      existing.assignedToStaffId &&
-      existing.assignedToStaffId !== actor.sub
-    ) {
+    } else if (agentActor && existing.assignedToStaffId && existing.assignedToStaffId !== actor.sub) {
       throw new ForbiddenException('Access denied: this missed call is held by someone else');
     }
 
-    let assignTo = staffId;
-    if (!(await this.attendance.isAvailable(staffId))) {
-      // A Team Lead's missed call goes only to someone on their own team.
-      const next = team
-        ? await this.nextAvailableIn(team.filter((member) => member !== staffId && member !== actor?.sub))
-        : await this.attendance.nextAvailableAgent(staffId);
-      if (!next) {
-        throw new ConflictException({
-          message: team
-            ? 'Nobody on your team is Available right now. The missed call stays in the queue.'
-            : 'No agent is Available right now. The missed call stays in the queue.',
-          reason: 'nobody_available',
-        });
-      }
-      assignTo = next;
-    }
-
+    const now = new Date();
     const moved = await this.prisma.callbackTask.updateMany({
       where: { id, assignedToStaffId: existing.assignedToStaffId, status: existing.status },
-      data: { assignedToStaffId: assignTo, status: 'assigned' },
+      data: { assignedToStaffId: staffId, status: 'assigned', assignedAt: now, assignmentReason: agentActor ? 'taken' : 'manual' },
     });
     if (moved.count !== 1) {
       throw new ConflictException({
         message: 'Someone else changed this missed call just now. Refresh and try again.',
         reason: 'changed_meanwhile',
+      });
+    }
+    // Repeat missed calls from the same number held by the same person (or nobody) go along: one agent per caller.
+    const digits = tenDigits(existing.phone);
+    if (digits.length === 10) {
+      await this.prisma.callbackTask.updateMany({
+        where: {
+          id: { not: id },
+          status: { in: ['pending', 'assigned'] },
+          phone: { endsWith: digits },
+          OR: [{ assignedToStaffId: null }, ...(existing.assignedToStaffId ? [{ assignedToStaffId: existing.assignedToStaffId }] : [])],
+        },
+        data: { assignedToStaffId: staffId, status: 'assigned', assignedAt: now, assignmentReason: 'same_caller' },
+      });
+    }
+    if (actor) {
+      await this.audit?.log({
+        actorId: actor.sub,
+        action: 'missed_call.assigned',
+        entityType: 'callback_task',
+        entityCode: id,
+        before: { assignedToStaffId: existing.assignedToStaffId },
+        after: { assignedToStaffId: staffId },
+        changedFields: ['assignedToStaffId'],
+        reason: agentActor ? 'Taken by the agent' : 'Given out by hand',
       });
     }
     return this.prisma.callbackTask.findUniqueOrThrow({
@@ -243,13 +318,6 @@ export class TelephonyService {
         assignedToStaff: { select: CALLBACK_STAFF_SELECT },
       },
     });
-  }
-
-  private async nextAvailableIn(staffIds: string[]): Promise<string | null> {
-    for (const id of staffIds) {
-      if (await this.attendance.isAvailable(id)) return id;
-    }
-    return null;
   }
 
   /**
@@ -274,12 +342,29 @@ export class TelephonyService {
       throw new ForbiddenException('Access denied: this missed call is assigned to someone else');
     }
 
-    return this.prisma.callbackTask.update({
+    const now = new Date();
+    const done = await this.prisma.callbackTask.update({
       where: { id },
       data: {
         status: 'completed',
+        completedAt: now,
       },
     });
+    // Repeat missed calls from the same number are one item: done together.
+    const digits = tenDigits(existing.phone);
+    if (digits.length === 10) {
+      await this.prisma.callbackTask.updateMany({
+        where: {
+          id: { not: id },
+          status: { in: ['pending', 'assigned'] },
+          phone: { endsWith: digits },
+          createdAt: { lte: now },
+          OR: [{ assignedToStaffId: null }, ...(existing.assignedToStaffId ? [{ assignedToStaffId: existing.assignedToStaffId }] : [])],
+        },
+        data: { status: 'completed', completedAt: now },
+      });
+    }
+    return done;
   }
 
   async initiateOutboundCall(

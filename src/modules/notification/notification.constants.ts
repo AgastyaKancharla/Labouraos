@@ -57,6 +57,8 @@ export const NOTIFICATION_KINDS = [
   'job_seeker_assigned',
   'referral_assigned',
   'business_assigned',
+  // 21 Nov fixes: a missed call waiting for its first call back — Team Lead after 15 minutes, Manager after an hour.
+  'missed_call_waiting',
 ] as const;
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
@@ -170,6 +172,7 @@ const LINKS: Record<NotificationKind, LinkTable> = {
   job_seeker_assigned: { call_agent: 'people/:id', team_lead: 'job-seekers/:id', manager: 'job-seekers/:id', field_agent: '' },
   referral_assigned: { call_agent: 'people/:id', team_lead: 'referrals/:id', manager: 'referrals/:id', field_agent: '' },
   business_assigned: { team_lead: 'businesses/:id', manager: 'businesses/:id', field_agent: '' },
+  missed_call_waiting: { team_lead: 'missed-calls', manager: 'call-center', ceo: 'call-center' },
 };
 
 /**

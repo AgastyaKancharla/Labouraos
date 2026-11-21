@@ -12,9 +12,12 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditModule } from '../../common/audit/audit.module';
 import { AuditService } from '../../common/audit/audit.service';
 import { ReportingScopeModule } from '../staff/reporting-scope.module';
+import { PricingModule } from '../pricing/pricing.module';
+import { NotificationModule } from '../notification/notification.module';
+import { MissedCallAssigner } from './missed-call-assigner.service';
 
 @Module({
-  imports: [PrismaModule, AuditModule, AttendanceModule, LiveModule, ReportingScopeModule],
+  imports: [PrismaModule, AuditModule, AttendanceModule, LiveModule, ReportingScopeModule, PricingModule, NotificationModule],
   controllers: [TelephonyController],
   providers: [
     {
@@ -39,7 +42,8 @@ import { ReportingScopeModule } from '../staff/reporting-scope.module';
     },
     TelephonyService,
     InboundCallRouter,
+    MissedCallAssigner,
   ],
-  exports: [TelephonyService, TELEPHONY_PROVIDER, InboundCallRouter],
+  exports: [TelephonyService, TELEPHONY_PROVIDER, InboundCallRouter, MissedCallAssigner],
 })
 export class TelephonyModule {}

@@ -5,6 +5,8 @@ import { maskPhoneLast4 } from '../../common/rbac/pii-masking.interceptor';
 import { AttendanceService } from '../attendance/attendance.service';
 import { decryptCallRoutingPhone } from '../staff/call-routing-key';
 import { isIndianMobile, nationalMobileDigits } from '../../common/phone/indian-mobile';
+import { FINAL_CALL_STATUSES } from '../call/call-status';
+import { fewestOpen, openItemCounts } from './call-agent-load';
 
 export type CallerType = 'job_seeker' | 'business' | 'referral';
 
@@ -13,7 +15,7 @@ export interface IdentifiedCaller {
   id: string;
   code: string;
   name: string;
-  /** Who looks after this person: the agent who registered him or the business's account agent. */
+  /** Who looks after this person: the agent assigned to him (else who registered him), or the business's account agent. */
   ownerStaffId: string | null;
 }
 
@@ -40,8 +42,9 @@ export function tenDigits(phone: string): string {
  * 1. the agent the calling company says it rang (agent code or the agent's
  *    routing phone in the webhook), when it sends one;
  * 2. the agent who last called this person, if Available;
- * 3. the call agent who registered him, if Available;
- * 4. the first Available call agent.
+ * 3. his own agent (assigned, else the one who registered him), if Available;
+ * 4. the free call agent with the fewest open items (round robin on a tie).
+ * Nobody who is on a call already is rung.
  * Nobody who is not Available gets a call (Attendance, decided 9 Nov).
  *
  * The event carries the caller's name, ID and last 4 digits only.
@@ -61,10 +64,11 @@ export class InboundCallRouter {
     if (digits.length < 10) return null;
     const seeker = await this.prisma.jobSeeker.findFirst({
       where: { phone: { endsWith: digits }, anonymisedAt: null },
-      select: { id: true, code: true, name: true, registeredByStaffId: true },
+      select: { id: true, code: true, name: true, registeredByStaffId: true, assignedStaffId: true },
     });
     if (seeker) {
-      return { type: 'job_seeker', id: seeker.id, code: seeker.code, name: seeker.name, ownerStaffId: seeker.registeredByStaffId };
+      // A Team Lead's Assign wins over who registered him (21 Nov fixes).
+      return { type: 'job_seeker', id: seeker.id, code: seeker.code, name: seeker.name, ownerStaffId: seeker.assignedStaffId ?? seeker.registeredByStaffId };
     }
     const business = await this.prisma.business.findFirst({
       where: { phone: { endsWith: digits }, anonymisedAt: null },
@@ -81,10 +85,10 @@ export class InboundCallRouter {
     }
     const referral = await this.prisma.referral.findFirst({
       where: { phone: { endsWith: digits }, anonymisedAt: null },
-      select: { id: true, code: true, name: true },
+      select: { id: true, code: true, name: true, registeredByStaffId: true, assignedStaffId: true },
     });
     if (referral) {
-      return { type: 'referral', id: referral.id, code: referral.code, name: referral.name, ownerStaffId: null };
+      return { type: 'referral', id: referral.id, code: referral.code, name: referral.name, ownerStaffId: referral.assignedStaffId ?? referral.registeredByStaffId };
     }
     return null;
   }
@@ -118,23 +122,58 @@ export class InboundCallRouter {
     return null;
   }
 
+  /**
+   * Already on a call: a call of theirs the phone system has not finished yet
+   * (started in the last hour), or an inbound call that rang them in the last
+   * minute and has not been picked up or closed. Attendance flips to On call
+   * only when the answer reaches us, so this closes the gap.
+   */
+  private async onACall(staffId: string): Promise<boolean> {
+    const now = Date.now();
+    const [live, ringing] = await Promise.all([
+      this.prisma.callRecord.findFirst({
+        where: { staffId, providerStatus: { notIn: [...FINAL_CALL_STATUSES] }, createdAt: { gte: new Date(now - 60 * 60_000) } },
+        select: { id: true },
+      }),
+      this.prisma.callbackTask.findFirst({
+        where: { assignedToStaffId: staffId, status: 'assigned', assignmentReason: 'inbound_routed', assignedAt: { gte: new Date(now - 60_000) } },
+        select: { id: true },
+      }),
+    ]);
+    return Boolean(live || ringing);
+  }
+
   private async availableCallAgent(staffId: string | null | undefined): Promise<string | null> {
     if (!staffId) return null;
     const staff = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { role: true, status: true } });
     if (!staff || staff.status !== 'active' || staff.role !== 'call_agent') return null;
-    return (await this.attendance.isAvailable(staffId)) ? staffId : null;
+    if (!(await this.attendance.isAvailable(staffId))) return null;
+    return (await this.onACall(staffId)) ? null : staffId;
   }
 
-  private async firstAvailableCallAgent(): Promise<string | null> {
+  /**
+   * 21 Nov fixes: the free call agent with the fewest open items; a tie goes to
+   * whoever was rung longest ago (round robin), not always the first by staff code.
+   */
+  private async freeCallAgentWithFewestItems(): Promise<string | null> {
     const agents = await this.prisma.staff.findMany({
       where: { role: 'call_agent', status: 'active' },
       select: { id: true },
       orderBy: { code: 'asc' },
     });
+    const free: string[] = [];
     for (const agent of agents) {
-      if (await this.attendance.isAvailable(agent.id)) return agent.id;
+      if ((await this.attendance.isAvailable(agent.id)) && !(await this.onACall(agent.id))) free.push(agent.id);
     }
-    return null;
+    if (free.length <= 1) return free[0] ?? null;
+    const counts = await openItemCounts(this.prisma, free, new Date());
+    const rung = await this.prisma.callbackTask.groupBy({
+      by: ['assignedToStaffId'],
+      where: { assignedToStaffId: { in: free } },
+      _max: { createdAt: true },
+    });
+    const lastRung = new Map(rung.map((r) => [r.assignedToStaffId!, r._max.createdAt]));
+    return fewestOpen(free, counts, lastRung);
   }
 
   async pickAgent(payload: Record<string, unknown>, caller: IdentifiedCaller | null): Promise<string | null> {
@@ -151,7 +190,7 @@ export class InboundCallRouter {
       const owner = await this.availableCallAgent(caller.ownerStaffId);
       if (owner) return owner;
     }
-    return this.firstAvailableCallAgent();
+    return this.freeCallAgentWithFewestItems();
   }
 
   /** Routes a new (never a repeated) inbound call and pops it up on the agent's screen. */
@@ -166,7 +205,7 @@ export class InboundCallRouter {
     await this.prisma.callbackTask.updateMany({
       where: { id: callbackTaskId, assignedToStaffId: null },
       data: {
-        ...(staffId ? { assignedToStaffId: staffId, status: 'assigned' } : {}),
+        ...(staffId ? { assignedToStaffId: staffId, status: 'assigned', assignedAt: new Date(), assignmentReason: 'inbound_routed' } : {}),
         ...(caller?.type === 'job_seeker' ? { jobSeekerId: caller.id, callerName: caller.name } : {}),
       },
     });
