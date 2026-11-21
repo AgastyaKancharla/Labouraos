@@ -737,18 +737,20 @@ reward does not change: ₹200 only when a referred candidate joins a job.
 `CUSTOMER_REFERRAL_LEADS=on` on the server turns it on; `GET /config` says
 `referralLeads`; while off, `POST` answers `501 NOT_IMPLEMENTED`.
 
-`POST` body `{ "kind": "job_seeker" | "business", "name": "Manju Nath", "phone": "9876543210", "area": "BTM Layout", "personAgreed": true }`
+`POST` body `{ "name": "Manju Nath", "phone": "9876543210", "personAgreed": true, "kind": "job_seeker" | "business", "area": "BTM Layout" }`.
+**Name and mobile are enough** (Agastya, 21 Nov: our team calls them); `kind` and `area` are optional.
+**No daily limit** (Agastya, 21 Nov).
 → `201 { "leadId": "uuid", "stage": "with_team" }`. The same number from the same
 partner again → `200` with that lead. The answer never says whether Laboura
-already knew the number (no oracle, AC-6). `area` must be one of the managed
-areas (`GET /me/form-options`); `personAgreed` must be `true`; not the partner's
-own number. `400 VALIDATION_FAILED` with `field`; `403 REFERRAL_PAUSED`;
+already knew the number (no oracle, AC-6). `area`, when given, must be one of
+the managed areas (`GET /me/form-options`); `personAgreed` must be `true`; not
+the partner's own number; no phone or ID number in the name. A lead stays with
+Laboura when the referral partner deletes their account (`accountId` set to null). `400 VALIDATION_FAILED` with `field`; `403 REFERRAL_PAUSED`;
 `403 NOT_ALLOWED` (`reason: registration_unfinished`) until the partner finished
-registering (terms, selfie, ID check, UPI — the same steps the app shows);
-`429 LIMIT_REACHED` above 20 leads a day (from 00:00 IST; counted under a lock per partner).
+registering (terms, selfie, ID check, UPI — the same steps the app shows).
 
-`GET` → `{ "open": true, "perDay": 20, "leads": [ { "id": "uuid", "firstName": "Manju", "kind": "job_seeker", "stage": "with_team", "sentAt": "…" } ] }`.
-`firstName` is a person's first name, or a business lead's whole name.
+`GET` → `{ "open": true, "leads": [ { "id": "uuid", "firstName": "Manju", "kind": "job_seeker", "stage": "with_team", "sentAt": "…" } ] }`.
+`firstName` is a person's first name, or a business lead's whole name; `kind` is null when not given.
 `stage`: `with_team` (new or being called), `registered`, `closed` (not
 interested, already with Laboura, or closed for any other reason — the
 partner is not told which). Never the phone.

@@ -348,13 +348,13 @@ export function mockCustomerApi({ latencyMs = 250 }: { latencyMs?: number } = {}
       }),
 
     referralLeads: (profileId) =>
-      wait(() => ({ open: true, perDay: 20, leads: (state.leads[profileId] ?? []).map(({ phone: _phone, ...lead }) => lead) })),
+      wait(() => ({ open: true, leads: (state.leads[profileId] ?? []).map(({ phone: _phone, ...lead }) => lead) })),
     sendReferralLead: (profileId, input) =>
       wait(() => {
         const list = (state.leads[profileId] ??= []);
         const same = list.find((l) => l.phone === input.phone);
         if (same) return { leadId: same.id, stage: same.stage };
-        const lead = { id: `lead-${next()}`, firstName: input.name.trim().split(/\s+/)[0] ?? null, kind: input.kind, stage: 'with_team' as const, sentAt: new Date().toISOString(), phone: input.phone };
+        const lead = { id: `lead-${next()}`, firstName: input.name.trim().split(/\s+/)[0] ?? null, kind: input.kind ?? null, stage: 'with_team' as const, sentAt: new Date().toISOString(), phone: input.phone };
         list.unshift(lead);
         return { leadId: lead.id, stage: lead.stage };
       }),

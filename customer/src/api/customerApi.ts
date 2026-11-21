@@ -89,7 +89,8 @@ export interface CustomerApi {
 
   // Referral partner: send a lead (contract 7.3b) — switched on by the server
   referralLeads(profileId: string): Promise<ReferralLeadsAnswer>;
-  sendReferralLead(profileId: string, input: { kind: LeadKind; name: string; phone: string; area: string; personAgreed: boolean }): Promise<{ leadId: string; stage: string }>;
+  /** Name and mobile are enough; who they are and the area are optional (Agastya, 21 Nov). */
+  sendReferralLead(profileId: string, input: { name: string; phone: string; personAgreed: boolean; kind?: LeadKind; area?: string }): Promise<{ leadId: string; stage: string }>;
 
   // Help and privacy
   requestCallback(request: CallbackRequest): Promise<{ id: string }>;

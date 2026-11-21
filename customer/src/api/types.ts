@@ -380,13 +380,13 @@ export type LeadKind = 'job_seeker' | 'business';
 export interface ReferralLead {
   id: string;
   firstName: string | null;
-  kind: LeadKind;
+  /** Null when the referral partner did not say. */
+  kind: LeadKind | null;
   stage: 'with_team' | 'registered' | 'closed';
   sentAt: string;
 }
 export interface ReferralLeadsAnswer {
   open: boolean;
-  perDay: number;
   leads: ReferralLead[];
 }
 

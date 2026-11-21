@@ -1,7 +1,6 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { CustomerAuthClock } from '../../common/customer-auth/customer-auth.clock';
 import { CustomerScopeService } from '../../common/customer-auth/customer-scope.service';
 import { CUSTOMER_ERROR_CODES, CustomerApiError } from '../../common/customer-auth/customer-auth.errors';
 import { firstName } from '../customer-account/customer-account.service';
@@ -13,10 +12,6 @@ export { referralLeadsOpen };
 type Body = Record<string, unknown>;
 
 export const REFERRAL_LEAD_KINDS = ['job_seeker', 'business'] as const;
-/** At most this many leads a partner may send in one Indian day (to confirm with Agastya). */
-export const REFERRAL_LEADS_PER_DAY = 20;
-const IST_OFFSET_MS = 330 * 60 * 1000;
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** What the partner sees of a lead: never the phone, never whether the number was known to Laboura. */
 export type LeadStage = 'with_team' | 'registered' | 'closed';
@@ -49,7 +44,6 @@ export function indianMobile(value: unknown): string | null {
 export class CustomerReferralLeadsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly clock: CustomerAuthClock,
     private readonly scope: CustomerScopeService,
     private readonly homes: CustomerHomeService,
   ) {}
@@ -74,7 +68,6 @@ export class CustomerReferralLeadsService {
     });
     return {
       open: referralLeadsOpen() && !referral.pausedAt,
-      perDay: REFERRAL_LEADS_PER_DAY,
       // A business lead shows its name (a shop, not a private person); a person's lead only the first name.
       leads: leads.map((l) => ({ id: l.id, firstName: l.kind === 'business' ? l.name : firstName(l.name), kind: l.kind, stage: stageOf(l.status), sentAt: l.createdAt })),
     };
@@ -82,7 +75,8 @@ export class CustomerReferralLeadsService {
 
   /**
    * POST /me/profiles/:profileId/referral-leads
-   * Body: { kind: "job_seeker" | "business", name, phone, area, personAgreed: true }
+   * Body: { name, phone, personAgreed: true, kind?: "job_seeker" | "business", area? }
+   * Name and mobile are enough (Agastya, 21 Nov): our team calls them. No daily limit.
    */
   async send(accountId: string, profileId: string, body: Body) {
     if (!referralLeadsOpen()) {
@@ -96,17 +90,22 @@ export class CustomerReferralLeadsService {
       throw new CustomerApiError(HttpStatus.FORBIDDEN, CUSTOMER_ERROR_CODES.NOT_ALLOWED, 'Finish your partner registration first', { reason: 'registration_unfinished' });
     }
 
-    const kind = body?.kind;
-    if (typeof kind !== 'string' || !(REFERRAL_LEAD_KINDS as readonly string[]).includes(kind)) throw validation('kind must be job_seeker or business', 'kind');
+    const rawKind = body?.kind;
+    const kind = rawKind === undefined || rawKind === null || rawKind === '' ? null : rawKind;
+    if (kind !== null && (typeof kind !== 'string' || !(REFERRAL_LEAD_KINDS as readonly string[]).includes(kind))) throw validation('kind must be job_seeker or business', 'kind');
     const name = typeof body?.name === 'string' ? body.name.trim().replace(/\s+/g, ' ') : '';
-    // A person's name has no digits; a shop's may ("24/7 Mart").
-    if (name.length < 2 || name.length > 80 || (kind === 'job_seeker' && /\d/.test(name))) throw validation('Give the name (2 to 80 letters; a person’s name has no numbers)', 'name');
+    // A person's name has no digits; a shop's may ("24/7 Mart"); never a phone or ID number in it.
+    if (name.length < 2 || name.length > 80 || /\d{5,}/.test(name.replace(/[\s-]/g, '')) || (kind === 'job_seeker' && /\d/.test(name))) {
+      throw validation('Give the name (2 to 80 letters; a person’s name has no numbers)', 'name');
+    }
     const phone = indianMobile(body?.phone);
     if (!phone) throw validation('Give a 10-digit Indian mobile number', 'phone');
     if (indianMobile(referral.phone) === phone) throw validation('This is your own number', 'phone');
+    // Area is optional; when given it must be one of the managed areas.
     const area = typeof body?.area === 'string' ? body.area.trim() : '';
-    const known = area && area.length <= 80 ? await this.prisma.area.findFirst({ where: { name: area, active: true, mergedIntoId: null }, select: { name: true } }) : null;
-    if (!known) throw validation('Pick an area from the list', 'area');
+    if (body?.area !== undefined && body?.area !== null && typeof body.area !== 'string') throw validation('Pick an area from the list', 'area');
+    const known = area ? (area.length <= 80 ? await this.prisma.area.findFirst({ where: { name: area, active: true, mergedIntoId: null }, select: { name: true } }) : null) : null;
+    if (area && !known) throw validation('Pick an area from the list', 'area');
     if (body?.personAgreed !== true) throw validation('Tick that this person agreed Laboura may call them', 'personAgreed');
 
     // The same number from the same partner: the lead already sent (one answer either way).
@@ -116,20 +115,10 @@ export class CustomerReferralLeadsService {
     });
     if (mine) return { created: false, body: { leadId: mine.id, stage: stageOf(mine.status) } };
 
-    const now = this.clock.now();
-    const dayStart = new Date(Math.floor((now.getTime() + IST_OFFSET_MS) / DAY_MS) * DAY_MS - IST_OFFSET_MS);
     try {
-      // Count and save under one lock per partner, so parallel sends cannot pass the daily limit.
-      const lead = await this.prisma.$transaction(async (tx) => {
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`referral-leads:${referral.id}`}))`;
-        const today = await tx.customerReferralLead.count({ where: { referralId: referral.id, createdAt: { gte: dayStart } } });
-        if (today >= REFERRAL_LEADS_PER_DAY) {
-          throw new CustomerApiError(HttpStatus.TOO_MANY_REQUESTS, CUSTOMER_ERROR_CODES.LIMIT_REACHED, `At most ${REFERRAL_LEADS_PER_DAY} leads a day`);
-        }
-        return tx.customerReferralLead.create({
-          data: { accountId, profileId: profile.id, referralId: referral.id, referralCode: referral.code, kind, name, phone, area: known.name, personAgreed: true },
-          select: { id: true, status: true },
-        });
+      const lead = await this.prisma.customerReferralLead.create({
+        data: { accountId, profileId: profile.id, referralId: referral.id, referralCode: referral.code, kind, name, phone, area: known?.name ?? null, personAgreed: true },
+        select: { id: true, status: true },
       });
       return { created: true, body: { leadId: lead.id, stage: stageOf(lead.status) } };
     } catch (error) {

@@ -1,14 +1,14 @@
 import { Prisma } from '@prisma/client';
-import { CustomerReferralLeadsService, indianMobile, REFERRAL_LEADS_PER_DAY } from './customer-referral-leads.service';
+import { CustomerReferralLeadsService, indianMobile } from './customer-referral-leads.service';
 
 /**
  * A referral partner's "Send a lead": switched on by CUSTOMER_REFERRAL_LEADS,
- * only the caller's own partner profile, a real area, the person's agreement,
- * one lead per number per partner, a daily limit, and never the phone or
- * whether Laboura already knew the number in the answer.
+ * only the caller's own partner profile, name and mobile are enough (kind and
+ * area optional), the person's agreement, one lead per number per partner, no
+ * daily limit, and never the phone or whether Laboura already knew the number.
  */
 describe('CustomerReferralLeadsService (send a lead)', () => {
-  const NOW = new Date('2026-11-21T06:00:00.000Z'); // 11:30 IST
+  const NOW = new Date('2026-11-21T06:00:00.000Z');
   const saved = process.env.CUSTOMER_REFERRAL_LEADS;
   const good = { kind: 'job_seeker', name: '  Manju   Nath ', phone: '98765 43210', area: 'BTM Layout', personAgreed: true };
 
@@ -16,8 +16,8 @@ describe('CustomerReferralLeadsService (send a lead)', () => {
     process.env.CUSTOMER_REFERRAL_LEADS = saved;
   });
 
-  function setup(opts: { paused?: boolean; existing?: unknown; today?: number; unfinished?: boolean } = {}) {
-    const prisma: Record<string, unknown> & { customerReferralLead: Record<string, jest.Mock>; $executeRaw: jest.Mock } = {
+  function setup(opts: { paused?: boolean; existing?: unknown; unfinished?: boolean } = {}) {
+    const prisma: Record<string, unknown> & { customerReferralLead: Record<string, jest.Mock>; area: Record<string, jest.Mock>; $executeRaw: jest.Mock } = {
       $executeRaw: jest.fn().mockResolvedValue(1),
       referral: { findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'ref-1', code: 'RF-00042', phone: '+919000000001', pausedAt: opts.paused ? NOW : null }) },
       area: { findFirst: jest.fn(async ({ where }: { where: { name: string } }) => (where.name === 'BTM Layout' ? { name: 'BTM Layout' } : null)) },
@@ -28,14 +28,13 @@ describe('CustomerReferralLeadsService (send a lead)', () => {
           { id: 'l-2', name: 'Sri Sai Bakery', kind: 'business', status: 'registered', createdAt: NOW },
           { id: 'l-3', name: 'Kiran', kind: 'job_seeker', status: 'closed', createdAt: NOW },
         ]),
-        count: jest.fn().mockResolvedValue(opts.today ?? 0),
         create: jest.fn().mockResolvedValue({ id: 'l-new', status: 'new' }),
       },
     };
     prisma.$transaction = jest.fn(async (run: (tx: unknown) => unknown) => run(prisma));
     const homes = { referralHome: jest.fn().mockResolvedValue({ steps: { terms: true, selfie: true, idCheck: true, upi: !opts.unfinished } }) };
     const scope = { profile: jest.fn().mockResolvedValue({ id: 'prof-ref', accountId: 'acc-1', kind: 'referral', role: 'self', jobSeekerId: null, businessId: null, branchId: null, referralId: 'ref-1' }) };
-    const service = new CustomerReferralLeadsService(prisma as never, { now: () => NOW } as never, scope as never, homes as never);
+    const service = new CustomerReferralLeadsService(prisma as never, scope as never, homes as never);
     return { service, prisma, scope };
   }
 
@@ -96,7 +95,8 @@ describe('CustomerReferralLeadsService (send a lead)', () => {
     [{ ...good, name: 'Manju 98765' }, 'name'], // a person's name has no digits
     [{ ...good, phone: '12345' }, 'phone'],
     [{ ...good, phone: '9000000001' }, 'phone'], // the partner's own number
-    [{ ...good, area: 'Mars' }, 'area'],
+    [{ ...good, area: 'Mars' }, 'area'], // given, but not one of the managed areas
+    [{ ...good, kind: 'business', name: 'Shop 9876543210' }, 'name'], // never a phone number in the name
     [{ ...good, personAgreed: false }, 'personAgreed'],
     [{ ...good, personAgreed: 'yes' }, 'personAgreed'],
   ])('refuses %j (%s)', async (body, field) => {
@@ -104,13 +104,6 @@ describe('CustomerReferralLeadsService (send a lead)', () => {
     const { service, prisma } = setup();
     await expect(service.send('acc-1', 'prof-ref', body)).rejects.toMatchObject({ response: expect.objectContaining({ code: 'VALIDATION_FAILED', field }) });
     expect(prisma.customerReferralLead.create).not.toHaveBeenCalled();
-  });
-
-  it(`at most ${REFERRAL_LEADS_PER_DAY} a day, counted from 00:00 IST`, async () => {
-    process.env.CUSTOMER_REFERRAL_LEADS = 'on';
-    const { service, prisma } = setup({ today: REFERRAL_LEADS_PER_DAY });
-    await expect(service.send('acc-1', 'prof-ref', good)).rejects.toMatchObject({ status: 429 });
-    expect(prisma.customerReferralLead.count.mock.calls[0][0].where).toEqual({ referralId: 'ref-1', createdAt: { gte: new Date('2026-11-20T18:30:00.000Z') } });
   });
 
   it('a shop’s name may have digits', async () => {
@@ -127,12 +120,20 @@ describe('CustomerReferralLeadsService (send a lead)', () => {
     expect(prisma.customerReferralLead.create).not.toHaveBeenCalled();
   });
 
-  it('counts the day’s leads under a lock per partner', async () => {
+  it('name and mobile are enough: who they are and the area are optional', async () => {
     process.env.CUSTOMER_REFERRAL_LEADS = 'on';
     const { service, prisma } = setup();
-    await service.send('acc-1', 'prof-ref', good);
-    expect(prisma.$executeRaw).toHaveBeenCalled();
-    expect(prisma.$executeRaw.mock.calls[0].slice(1)).toEqual(['referral-leads:ref-1']);
+    const result = await service.send('acc-1', 'prof-ref', { name: 'Manju', phone: '9876543210', personAgreed: true });
+    expect(result.created).toBe(true);
+    expect(prisma.customerReferralLead.create.mock.calls[0][0].data).toMatchObject({ kind: null, area: null, name: 'Manju', phone: '+919876543210' });
+    expect(prisma.area.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('there is no daily limit', async () => {
+    process.env.CUSTOMER_REFERRAL_LEADS = 'on';
+    const { service, prisma } = setup();
+    for (let i = 0; i < 30; i += 1) await service.send('acc-1', 'prof-ref', { ...good, phone: `98765${String(10000 + i)}` });
+    expect(prisma.customerReferralLead.create).toHaveBeenCalledTimes(30);
   });
 
   it('a paused partner cannot send', async () => {
@@ -148,7 +149,6 @@ describe('CustomerReferralLeadsService (send a lead)', () => {
     expect(prisma.customerReferralLead.findMany.mock.calls[0][0].where).toEqual({ referralId: 'ref-1' });
     expect(answer).toEqual({
       open: true,
-      perDay: REFERRAL_LEADS_PER_DAY,
       leads: [
         { id: 'l-1', firstName: 'Manju', kind: 'job_seeker', stage: 'with_team', sentAt: NOW },
         { id: 'l-2', firstName: 'Sri Sai Bakery', kind: 'business', stage: 'registered', sentAt: NOW },

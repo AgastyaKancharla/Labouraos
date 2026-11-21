@@ -40,14 +40,15 @@ export default function ReferralLeadScreen() {
 
   const submit = async () => {
     if (!profileId) return;
-    if (!kind || name.trim().length < 2 || phone.length !== 10 || !area || !agreed) {
+    // Name and mobile are enough; who they are and the area help if known.
+    if (name.trim().length < 2 || phone.length !== 10 || !agreed) {
       setProblem(t('form.fixMarked'));
       return;
     }
     setBusy(true);
     setProblem(null);
     try {
-      await api.sendReferralLead(profileId, { kind, name: name.trim(), phone, area, personAgreed: true });
+      await api.sendReferralLead(profileId, { name: name.trim(), phone, personAgreed: true, ...(kind ? { kind } : {}), ...(area ? { area } : {}) });
       setSent(true);
       setKind(null);
       setName('');
@@ -100,6 +101,8 @@ export default function ReferralLeadScreen() {
           <Card title={t('leads.formTitle')} accent="gold" emoji="🤝" testID="leads-form">
             <View style={styles.gap}>
               <Text variant="muted">{t('leads.intro')}</Text>
+              <TextField label={kind === 'business' ? t('leads.nameBusiness') : t('leads.name')} value={name} onChangeText={setName} maxLength={80} testID="leads-name" />
+              <MobileField label={t('leads.phone')} value={phone} onChange={setPhone} required testID="leads-phone" />
               <RadioGroup
                 label={t('leads.kind')}
                 value={kind}
@@ -110,9 +113,7 @@ export default function ReferralLeadScreen() {
                 ]}
                 testID="leads-kind"
               />
-              <TextField label={kind === 'business' ? t('leads.nameBusiness') : t('leads.name')} value={name} onChangeText={setName} maxLength={80} testID="leads-name" />
-              <MobileField label={t('leads.phone')} value={phone} onChange={setPhone} required testID="leads-phone" />
-              <SelectField label={t('leads.area')} value={area} choices={options.data.areas.map((a) => ({ value: a.name, label: a.name }))} onChange={setArea} required testID="leads-area" />
+              <SelectField label={t('leads.area')} value={area} choices={options.data.areas.map((a) => ({ value: a.name, label: a.name }))} onChange={setArea} testID="leads-area" />
               <Checkbox label={t('leads.agreed')} checked={agreed} onChange={setAgreed} testID="leads-agreed" />
               <Text variant="muted">{t('leads.reward')}</Text>
               {problem ? <Banner tone="error" message={problem} testID="leads-problem" /> : null}
@@ -129,7 +130,7 @@ export default function ReferralLeadScreen() {
             <ListRow
               key={l.id}
               title={l.firstName ?? '—'}
-              subtitle={`${l.kind === 'business' ? t('leads.kindStaffShort') : t('leads.kindJobShort')} · ${formatDayIst(l.sentAt)}`}
+              subtitle={[l.kind === 'business' ? t('leads.kindStaffShort') : l.kind === 'job_seeker' ? t('leads.kindJobShort') : null, formatDayIst(l.sentAt)].filter(Boolean).join(' · ')}
               trailing={<StatusChip label={t(`leads.stage.${l.stage}`)} tone={STAGE_TONE[l.stage]} />}
               last={i === data.leads.length - 1}
               testID={`leads-row-${l.id}`}
