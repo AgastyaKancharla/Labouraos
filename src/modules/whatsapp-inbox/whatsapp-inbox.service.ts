@@ -133,9 +133,13 @@ export class WhatsAppInboxService {
         managerAlertedAt: conversation.waitingSince && !reopening ? conversation.managerAlertedAt : null,
         subjectType: subject ? subject.type : conversation.subjectType,
         subjectId: subject ? subject.id : conversation.subjectId,
-        ...(reopening
-          ? { status: 'open', openedAt: message.receivedAt, outcome: null, outcomeNote: null, closedAt: null, closedByStaffId: null }
-          : {}),
+        // A new message after closing opens the lead again.
+        status: 'open',
+        openedAt: reopening ? message.receivedAt : conversation.openedAt,
+        outcome: reopening ? null : conversation.outcome,
+        outcomeNote: reopening ? null : conversation.outcomeNote,
+        closedAt: reopening ? null : conversation.closedAt,
+        closedByStaffId: reopening ? null : conversation.closedByStaffId,
       },
     });
     if (updated.subjectType && updated.subjectId) {
@@ -800,6 +804,25 @@ export class WhatsAppInboxService {
       after: { assignedStaffId: target.id },
     });
     return { assigned: true, staffCode: target.code };
+  }
+
+  /**
+   * Leave / no-show handover hook (for the leave approval, Builder B): moves an
+   * agent's open WhatsApp conversations and partner leads to the teammate the
+   * Team Lead picked, or (toStaffId null) leaves them unassigned so the next
+   * sweep spreads them across the agents on shift (fewest open first).
+   * Audited by the caller's approval; returns how many moved.
+   */
+  async handOver(fromStaffId: string, toStaffId: string | null, now: Date = this.clock.now()) {
+    const conversations = await this.prisma.whatsAppConversation.updateMany({
+      where: { assignedStaffId: fromStaffId, status: 'open' },
+      data: { assignedStaffId: toStaffId, assignedAt: toStaffId ? now : null, assignmentReason: toStaffId ? 'manual' : null },
+    });
+    const leads = await this.prisma.referralLead.updateMany({
+      where: { assignedStaffId: fromStaffId, status: 'open' },
+      data: { assignedStaffId: toStaffId, assignedAt: toStaffId ? now : null },
+    });
+    return { conversations: conversations.count, referralLeads: leads.count };
   }
 
   /** The Team Lead's WhatsApp widget: what waits, for how long, with whom. */

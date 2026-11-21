@@ -422,6 +422,17 @@ describe('WhatsApp (rev 202): inbound conversations as tracked leads, the WhatsA
     expect((await conversation(seeker.phone)).assignedStaffId).toBe(agentA.id);
   });
 
+  it('leave handover: an agent\'s open conversations move to the picked teammate, or wait for the sweep to spread them', async () => {
+    const conv = await conversation(seeker.phone);
+    expect(conv.assignedStaffId).toBe(agentA.id);
+    const moved = await inbox.handOver(agentA.id, agentB.id, clock.now());
+    expect(moved.conversations).toBeGreaterThanOrEqual(1);
+    expect((await conversation(seeker.phone)).assignedStaffId).toBe(agentB.id);
+    await inbox.handOver(agentB.id, null, clock.now());
+    expect((await conversation(seeker.phone)).assignedStaffId).toBeNull();
+    await prisma.whatsAppConversation.update({ where: { id: conv.id }, data: { assignedStaffId: agentA.id } });
+  });
+
   describe('automatic event messages (WhatsApp, SMS as fallback)', () => {
     const at = (iso: string) => new Date(iso);
     async function makeSeeker(extra: { status?: string; paymentReceivedAt?: Date | null } = {}) {

@@ -331,7 +331,7 @@ export class ConsentLinkService {
       return result.channel;
     }
     const row = await this.messagingService.send({ channel: 'sms', ...message });
-    return row.status === 'failed' ? null : 'sms';
+    return row?.status === 'failed' ? null : 'sms';
   }
 
   /** The agreement link, in English (rev 193; a language an older client sends is ignored). */
