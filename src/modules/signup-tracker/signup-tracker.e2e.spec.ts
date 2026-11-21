@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import * as request from 'supertest';
 import { AppModule } from '../../app.module';
+import { CustomerTokenService } from '../../common/customer-auth/customer-token.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AttendanceClock } from '../attendance/attendance-clock';
 import { CallWorkClock } from '../screens-call-agent/call-work-clock';
@@ -554,14 +555,32 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
       expect(due).toBe(0);
     });
 
-    it('H3: withdrawing the contact-me tick takes the queued call off the list; the account’s tick wins over the tracker’s copy', async () => {
+    it('H3: withdrawing the contact-me tick in the app (PATCH /me) takes the queued call off the list, drops the "not called" flag and never leaves a help call; a late tick plans it again', async () => {
       const account = await makeAccount();
-      const { t } = await seekerTracker('Consent Appsignup', { accountId: account.id, contactConsent: true });
+      const tokens = app.get(CustomerTokenService);
+      const session = await prisma.customerSession.create({
+        data: { accountId: account.id, refreshTokenHash: tokens.hashRefreshToken(`h3-${stamp}`), signedInWith: 'phone', expiresAt: new Date(Date.now() + 86_400_000) },
+      });
+      const patchMe = (contactMe: boolean) =>
+        request(app.getHttpServer()).patch('/customer-api/v1/me').set('Authorization', `Bearer ${tokens.signAccess(account.id, session.id).accessToken}`).send({ contactMe });
+      await patchMe(true).expect(200);
+      const { seeker, t } = await seekerTracker('Consent Appsignup', { accountId: account.id, contactConsent: true });
       await tracker.process(t.id, await tracker.context(WED_11));
       expect(await prisma.callTask.count({ where: { signupTrackerId: t.id, status: 'open' } })).toBe(1);
-      await prisma.customerAccount.update({ where: { id: account.id }, data: { contactMeConsent: false } });
-      await tracker.onSignupChanged(t.id);
+      const flag = await prisma.reviewFlag.create({ data: { code: `RF-H3-${stamp}`, kind: 'signup_call_not_attempted', subjectType: 'job_seeker', subjectId: seeker.id, status: 'open' } });
+      await patchMe(false).expect(200);
       expect(await prisma.callTask.count({ where: { signupTrackerId: t.id, status: 'open' } })).toBe(0);
+      expect(await prisma.reviewFlag.findUniqueOrThrow({ where: { id: flag.id } })).toMatchObject({ status: 'dismissed' });
+      // Later runs never bring the "one help call" back after a withdrawal.
+      for (const at of [ist('2026-12-03T11:00'), ist('2026-12-04T11:00')]) {
+        clock.at = at;
+        await tracker.process(t.id, await tracker.context(at));
+        expect(await prisma.callTask.count({ where: { signupTrackerId: t.id, status: 'open' } })).toBe(0);
+      }
+      clock.at = WED_11;
+      await patchMe(true).expect(200);
+      expect(await prisma.callTask.count({ where: { signupTrackerId: t.id, status: 'open' } })).toBe(1);
+      await prisma.customerSession.deleteMany({ where: { accountId: account.id } });
     });
 
     it('H3: an account that asked to be deleted stops everything, with no re-engagement', async () => {

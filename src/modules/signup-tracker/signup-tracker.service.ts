@@ -194,7 +194,7 @@ export class SignupTrackerService {
     if (!tracker) return null;
     if (tracker.outcome === 'self' || tracker.outcome === 'assisted') return tracker;
     const account = tracker.accountId
-      ? await this.prisma.customerAccount.findUnique({ where: { id: tracker.accountId }, select: { status: true, contactMeConsent: true, phoneVerifiedAt: true } })
+      ? await this.prisma.customerAccount.findUnique({ where: { id: tracker.accountId }, select: { status: true, contactMeConsent: true, phoneVerifiedAt: true, contactMeNoticeVersion: true } })
       : null;
     // Keep the tracker's copy of the tick, so a change is seen and re-planned (21 Nov fixes).
     if (account && account.contactMeConsent !== tracker.contactConsent) {
@@ -223,7 +223,11 @@ export class SignupTrackerService {
     const consent = account ? account.contactMeConsent : tracker.contactConsent;
     // 21 Nov fixes: an OTP-verified sign-up without the contact-me tick may get exactly one
     // help call (lawyer to confirm); with the tick, the usual tries.
-    const withdrawn = !consent && (await this.prisma.signupTrackerEvent.count({ where: { trackerId: tracker.id, kind: 'contact_withdrawn' } })) > 0;
+    // Withdrawn = no tick now, but it was given at some point: the account keeps the notice
+    // version of a tick ever given (setContactMe), or the tracker saw it go. One help call is only
+    // for someone who never ticked — never after a withdrawal.
+    const withdrawn = !consent && (Boolean(account?.contactMeNoticeVersion) || (await this.prisma.signupTrackerEvent.count({ where: { trackerId: tracker.id, kind: 'contact_withdrawn' } })) > 0);
+    if (withdrawn) await this.dropNotAttemptedFlags(tracker, ctx);
     const oneHelpCall = !consent && !withdrawn && Boolean(account?.phoneVerifiedAt);
     const callable = Boolean(tracker.subjectId) && (consent || oneHelpCall);
     const settings = oneHelpCall ? { ...ctx.settings, maxCallTries: 1 } : ctx.settings;
@@ -587,6 +591,22 @@ export class SignupTrackerService {
     }
   }
 
+  /** He asked not to be called: the Team Lead's "call not made" flags for him close (nothing left to call). */
+  private async dropNotAttemptedFlags(tracker: SignupTracker, ctx: TrackerRunContext) {
+    if (!tracker.subjectType || !tracker.subjectId) return;
+    const open = await this.prisma.reviewFlag.findMany({
+      where: { kind: 'signup_call_not_attempted', subjectType: tracker.subjectType, subjectId: tracker.subjectId, status: 'open' },
+      select: { id: true },
+    });
+    for (const flag of open) {
+      const done = await this.prisma.reviewFlag.updateMany({
+        where: { id: flag.id, status: 'open' },
+        data: { status: 'dismissed', resolvedAt: ctx.now, resolution: 'Contact-me tick withdrawn: no call to make' },
+      });
+      if (done.count) await this.reviewFlags.refreshBell(flag.id).catch(() => undefined);
+    }
+  }
+
   /** The agent of this task placed a call to the person while it was open. */
   private async taskWasCalled(tracker: SignupTracker, task: { id: string; staffId: string; createdAt: Date; dueAt: Date }, now: Date): Promise<boolean> {
     if (!tracker.subjectType || !tracker.subjectId) return false;
@@ -900,7 +920,21 @@ export class SignupTrackerService {
    */
   async onContactConsentChanged(accountId: string): Promise<void> {
     const ctx = await this.context();
-    for (const id of await this.replanForConsent(ctx, accountId)) await this.process(id, ctx);
+    // The app's PATCH /me already copied the tick onto open sign-ups, so differences alone miss it:
+    // every open (and untried closed) sign-up of the account is planned again now.
+    const changed = new Set(await this.replanForConsent(ctx, accountId));
+    const account = await this.prisma.customerAccount.findUnique({ where: { id: accountId }, select: { contactMeConsent: true } });
+    const rows = await this.prisma.signupTracker.findMany({ where: { accountId, outcome: { in: ['open', 'no_response'] } }, select: { id: true, outcome: true, callTries: true } });
+    for (const row of rows) {
+      if (changed.has(row.id)) continue;
+      const reopen = Boolean(account?.contactMeConsent) && row.outcome === 'no_response' && row.callTries === 0;
+      if (row.outcome === 'open' || reopen) {
+        await this.prisma.signupTracker.update({ where: { id: row.id }, data: { nextActionAt: ctx.now, outcome: reopen ? 'open' : undefined } });
+        if (reopen) await this.event(row.id, 'reopened', { note: 'Contact-me tick given', at: ctx.now });
+        changed.add(row.id);
+      }
+    }
+    for (const id of changed) await this.process(id, ctx);
   }
 
   /** Sign-ups whose copy of the tick differs from the account's: reopened if needed and due now. */
