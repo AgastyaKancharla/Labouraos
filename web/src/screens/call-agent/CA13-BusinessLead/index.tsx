@@ -43,6 +43,8 @@ import { isAboveMarket, isBelowLegalMinimum } from '../_registration/salary';
 import { businessScript } from '../_registration/scripts';
 import { DEFAULT_AREA_AUTO_FILL_MAX_METERS, distanceText } from '../_registration/nearestArea';
 import { useDraft } from '../_registration/useDraft';
+import { initialMobileState, useServerDraftSync } from '../_registration/serverDraft';
+import { useAuth } from '../../../auth/AuthProvider';
 import {
   businessBody,
   businessErrors,
@@ -70,7 +72,11 @@ export default function RegisterBusiness() {
   const todayKey = istDateKey(useNow());
   const trades = useTrades();
   const [form, setForm, draft] = useDraft<BusinessForm>('business', EMPTY_BUSINESS);
-  const [mobile, setMobile] = useState<MobileState>({ mobile: form.mobile, requestId: null, verifiedAt: null });
+  // 21 Nov (rev 204): in the call agent console the form is also saved on the server (Resume / Discard
+  // banner); a resumed draft whose number was checked by OTP opens with it still checked.
+  const { session: authSession } = useAuth();
+  const [mobile, setMobile] = useState<MobileState>(() => initialMobileState('business', authSession?.staff.id, form.mobile));
+  const serverDraft = useServerDraftSync('business', form, mobile, form.boardName || form.contactName);
   const [branchMobiles, setBranchMobiles] = useState<MobileState[]>(() => form.branches.map((b) => ({ mobile: b.mobile, requestId: null, verifiedAt: null })));
   const [duplicate, setDuplicate] = useState<{ record: { type?: string; code?: string }; what: 'number' | 'document' } | null>(null);
   const [showErrors, setShowErrors] = useState(false);
@@ -102,6 +108,7 @@ export default function RegisterBusiness() {
     },
     onSuccess: (created) => {
       draft.clear();
+      serverDraft.forget();
       if (!created.agreementSent) toast.error(t('reg.biz.agreementFailed'));
       navigate(`${to('CA13b-BusinessSaved')}?id=${encodeURIComponent(created.id)}${created.agreementSent ? '&sent=1' : ''}`);
     },
@@ -155,6 +162,7 @@ export default function RegisterBusiness() {
       <TopBar icon="businesses" iconTone="royal" title={t('screen.CA13-BusinessLead')} subtitle={t('reg.biz.subtitle')} />
       <DraftNote restored={draft.restored} onDiscard={() => {
         draft.discard();
+        serverDraft.forget();
         setMobile({ mobile: '', requestId: null, verifiedAt: null });
         setBranchMobiles([]);
       }} />

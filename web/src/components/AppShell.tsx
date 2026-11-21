@@ -15,6 +15,7 @@ import { usePhoneLayout } from '../lib/usePhoneLayout';
 import { NavBadge } from './Badge';
 import { FamilyContext } from './family';
 import { NavIcon, UiIcon } from './Icon';
+import { UnfinishedRegistrationBanner } from '../screens/call-agent/_registration/UnfinishedRegistrationBanner';
 import { IncomingCallWatcher } from '../screens/call-agent/_lib/IncomingCallWatcher';
 import { AttendanceProvider } from '../attendance/AttendanceProvider';
 import { StatusBanner } from '../attendance/StatusBanner';
@@ -258,6 +259,7 @@ function ConsoleShell({ portal, children }: { portal: PortalDef; children: React
       <div className="swoosh lb-console__swoosh" />
       <main id="main" className="wrap lb-console__main" tabIndex={-1}>
         <StatusBanner />
+        {portal.key === 'call-agent' && <UnfinishedRegistrationBanner />}
         {children}
       </main>
       {portal.key === 'call-agent' && <IncomingCallWatcher />}

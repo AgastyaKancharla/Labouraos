@@ -1788,3 +1788,22 @@ img.lb-staffphoto {
 .lb-upi-app--other {
   grid-column: 1 / -1;
 }
+
+/* ---------- unfinished registrations banner (21 Nov) ---------- */
+.lb-drafts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.lb-drafts__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.lb-drafts__actions {
+  display: flex;
+  gap: 8px;
+}

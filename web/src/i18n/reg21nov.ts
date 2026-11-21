@@ -37,4 +37,17 @@ export const reg21NovEn = {
   'pub.upiApps.bhim': 'BHIM',
   'pub.upiApps.other': 'Other UPI app',
   'pub.upiApps.desktopNote': 'Scan the QR code with any UPI app on your phone (PhonePe, Google Pay, Paytm, BHIM…). Or open this link on your phone to pay with one tap.',
+
+  // 4. Unfinished registrations (call agent console)
+  'reg.drafts.region': 'Unfinished registrations',
+  'reg.drafts.title': 'Unfinished registration',
+  'reg.drafts.noName': 'no name yet',
+  'reg.drafts.kind.job_seeker': 'Job seeker',
+  'reg.drafts.kind.business': 'Business',
+  'reg.drafts.kind.referral': 'Referral partner',
+  'reg.drafts.resume': 'Resume',
+  'reg.drafts.discard': 'Discard',
+  'reg.drafts.discardTitle': 'Discard this unfinished registration?',
+  'reg.drafts.discardBody': 'Everything typed for {name} will be deleted. This cannot be undone.',
+  'reg.drafts.discardYes': 'Yes, discard',
 } as const;
