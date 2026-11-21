@@ -546,7 +546,7 @@ export const en = {
   'workers.state.not_again': 'Already decided',
   'workers.notOpen': 'Reporting a worker here is not open yet. Please call Laboura or use Help → Call me back.',
   'workers.notFound': 'We could not find this worker. Please pull down to refresh, or call Laboura.',
-  'error.limitReached': 'You have reached the limit for now. Please try again tomorrow.',
+  'error.limitReached': 'You have reached the limit for now. Please try again later.',
   'workers.state.guarantee_over': 'Time over',
   'workers.state.not_started': 'Not started yet',
   'workers.formTitle': '{name} left',
