@@ -10,6 +10,7 @@ import { isApiError } from '@/api/errors';
 import { errorCode, visitPaths } from '@/api/endpoints';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useFormDraft } from '@/lib/formDraft';
+import { TimeField } from '@/components/form';
 import { pageRoutes, routes } from '@/navigation/routes';
 import { finishLater } from '@/navigation/useFlow';
 import { type Accent, colors } from '@/theme';
@@ -86,6 +87,7 @@ function OutcomeForm({ visit, initial }: {
   const [form, setForm, clearForm] = useFormDraft(`fa06c:${visit.id}`, () => ({
     outcome: (PICKED_OUTCOMES as readonly string[]).includes(initial ?? '') ? (initial as PickedOutcome) : (null as PickedOutcome | null),
     revisitOn: null as string | null,
+    revisitTime: '' as string,
     reason: null as string | null,
     note: '',
   }));
@@ -95,6 +97,7 @@ function OutcomeForm({ visit, initial }: {
   const [busy, setBusy] = useState(false);
   const [openedAt] = useState(() => Date.now());
   const { outcome, revisitOn, reason, note } = form;
+  const revisitTime = form.revisitTime ?? '';
   const needsDate = outcome === 'interested_later' || outcome === 'owner_not_there';
 
   async function save() {
@@ -113,6 +116,7 @@ function OutcomeForm({ visit, initial }: {
           ...(visit.spokeTo ? { spokeTo: visit.spokeTo } : {}),
           ...(visit.contactPhone ? { contactPhone: visit.contactPhone } : {}),
           ...(needsDate ? { revisitOn } : {}),
+          ...(needsDate && revisitTime ? { revisitTime } : {}),
           ...(outcome === 'not_interested' ? { reason } : {}),
           ...(note.trim() ? { note: note.trim() } : {}),
           ...(visit.endedAt ? { endedAt: visit.endedAt } : {}),
@@ -158,6 +162,8 @@ function OutcomeForm({ visit, initial }: {
         {needsDate ? (
           <Card stripe accent="cyan">
             <DatePicker label={t('fa06c.comeBackOn')} value={revisitOn} onChange={(d) => set({ revisitOn: d })} now={openedAt} testID="fa06c-date" />
+            {/* 21 Nov: an optional come-back time (the owner said "come at 4"). */}
+            <TimeField label={t('fa06c.revisitTime')} value={revisitTime} onChange={(v) => set({ revisitTime: v })} from="07:00" to="21:00" step={30} testID="fa06c-time" />
           </Card>
         ) : null}
         {outcome === 'not_interested' ? (
