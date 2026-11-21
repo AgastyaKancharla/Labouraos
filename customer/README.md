@@ -89,7 +89,7 @@ Documents (a referral partner's papers) and the e-Aadhaar PDF still open the **e
 | `GOOGLE_IOS_URL_SCHEME` | iPhone only, at build time: the iOS client id reversed |
 | `EXPO_PUBLIC_PRIVACY_URL` | Privacy policy page (default `https://laboura.com/privacy`) |
 | `GOOGLE_SERVICES_JSON` | Path to Firebase's `google-services.json` (Android push). On EAS a "file" environment variable; locally `./google-services.json` if present. Never committed; without it the app still builds, just without Android push |
-| `EAS_PROJECT_ID` | The Expo project id from `eas init`; written to `extra.eas.projectId` (push tokens need it). Set it in the EAS project's environment variables or `eas.json` `env` |
+| `EAS_PROJECT_ID` | Overrides the Expo project id. Default: `4bd5337d-e2c5-458a-ab29-928d6c582e35` = **@agastyaks-team/laboura** (created 21 Nov), written to `extra.eas.projectId` (EAS builds and push tokens need it) |
 
 The HTTP client sends `X-Laboura-Installation` (a random id per install) on every request, renews the 15-minute access token with the refresh token on `401 CUSTOMER_TOKEN_EXPIRED` (once, then retries), and signs out on any other 401. Screens never show the server's English `message`: they choose their own words from the error `code` (`src/api/errorText.ts`).
 
@@ -115,8 +115,7 @@ The HTTP client sends `X-Laboura-Installation` (a random id per install) on ever
 ```
 npm install -g eas-cli      # once
 eas login                   # the Laboura Expo account
-eas init                    # once: creates the Expo project; copy the project id it prints into
-                            # EAS_PROJECT_ID (the config is dynamic, so eas init cannot write it itself)
+                            # the Expo project (@agastyaks-team/laboura) already exists and its id is in app.config.js
 eas build -p android --profile preview
 ```
 
@@ -124,7 +123,7 @@ EAS builds in the cloud (free plan: 15 Android builds a month) and gives a downl
 
 ## What the owner sets up (plain words)
 
-1. **Expo account** (free) at expo.dev with a Laboura email. Then Claude runs `eas init` once.
+1. **Expo account**: done 21 Nov — project **@agastyaks-team/laboura**, GitHub repo linked (base directory `customer`).
 2. **App ids (final, confirmed 21 Nov):** Android package `com.laboura.app`, iPhone bundle id `com.laboura.app`. They can never change after the first store upload.
 3. **Google project** (free) at console.firebase.google.com (or console.cloud.google.com), with a Google account made for Laboura. In "APIs & Services → Credentials" create OAuth client ids:
    - **Web application** — its id goes on the server as `GOOGLE_CLIENT_ID_WEB` (the app reads it from `GET /config`).
@@ -132,7 +131,7 @@ EAS builds in the cloud (free plan: 15 Android builds a month) and gives a downl
    - **iOS** (later, with the Apple account) — bundle id `com.laboura.app`; id → `GOOGLE_CLIENT_ID_IOS`, and its reversed form → `GOOGLE_IOS_URL_SCHEME` for iPhone builds.
    - The OAuth consent screen needs the app name, a support email and the privacy policy link.
 4. **Firebase for notifications**: in the same Firebase project add an Android app with package `com.laboura.app`, download `google-services.json`, and upload it to the Expo project as a **file** environment variable named `GOOGLE_SERVICES_JSON` (expo.dev → project → Environment variables). Never commit it (it is in `.gitignore`). Then give Expo the FCM key: `eas credentials -p android` → Push Notifications → upload the Firebase service-account key.
-5. **EAS project id**: after `eas init`, set `EAS_PROJECT_ID` to the id it prints (Expo environment variables, or `env` in `eas.json`). Without it the app runs but cannot get a push token.
+5. **EAS project id**: done — in `app.config.js` (`4bd5337d-…`).
 6. **Apple** (after testing, in the company's name): developer account → Sign in with Apple, iPhone push, TestFlight.
 
 ## Notifications (`src/push/`)

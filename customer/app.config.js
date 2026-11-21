@@ -13,7 +13,8 @@
  *   GOOGLE_SERVICES_JSON            path to Firebase's google-services.json (Android push). On EAS: a
  *                                   "file" environment variable. Locally: ./google-services.json if present.
  *                                   Never committed; when missing, the app still builds (no Android push).
- *   EAS_PROJECT_ID                  the Expo project id from `eas init` (push tokens need it)
+ *   EAS_PROJECT_ID                  overrides the Expo project id (default: Agastya's project
+ *                                   @agastyaks-team/laboura, created 21 Nov; push tokens and EAS builds need it)
  *
  * The Android package and iOS bundle identifier are FINAL: com.laboura.app
  * (confirmed by Agastya, 21 Nov). They can never change after the first Play
@@ -34,7 +35,9 @@ function googleServicesFile() {
   return fs.existsSync(path.resolve(__dirname, candidate)) ? candidate : undefined;
 }
 const GOOGLE_SERVICES_FILE = googleServicesFile();
-const EAS_PROJECT_ID = process.env.EAS_PROJECT_ID || '';
+/** The Expo project @agastyaks-team/laboura (not a secret: it only names the project). */
+const EAS_OWNER = 'agastyaks-team';
+const EAS_PROJECT_ID = process.env.EAS_PROJECT_ID || '4bd5337d-e2c5-458a-ab29-928d6c582e35';
 
 const CAMERA_REASON = 'Laboura uses the camera for your live selfie and to scan your ID card during registration.';
 const LOCATION_REASON = 'Laboura uses your location only when you tap "Use my location" to place your shop or area on the map.';
@@ -42,6 +45,7 @@ const LOCATION_REASON = 'Laboura uses your location only when you tap "Use my lo
 module.exports = () => ({
   name: 'Laboura',
   slug: 'laboura',
+  owner: EAS_OWNER,
   scheme: 'laboura',
   version: '0.1.0',
   orientation: 'portrait',
@@ -99,7 +103,7 @@ module.exports = () => ({
     linkPagesUrl: process.env.EXPO_PUBLIC_LINK_PAGES_URL || API_URL,
     googleWebClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '',
     googleIosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '',
-    // Set EAS_PROJECT_ID (from `eas init`) — getExpoPushTokenAsync needs it.
-    ...(EAS_PROJECT_ID ? { eas: { projectId: EAS_PROJECT_ID } } : {}),
+    // EAS builds and getExpoPushTokenAsync need the project id.
+    eas: { projectId: EAS_PROJECT_ID },
   },
 });
