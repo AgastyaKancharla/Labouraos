@@ -115,6 +115,12 @@ export async function liveHandovers(
   return live;
 }
 
+/** Closes this agent's covers that are over (both ways) before his lists are read: visits go back at the leave end. */
+export async function sweepHandovers(prisma: Db, staffId: string, now: Date): Promise<void> {
+  await liveHandovers(prisma, { toStaffId: staffId }, now);
+  await liveHandovers(prisma, { fromStaffId: staffId }, now);
+}
+
 /** Live handover rows of one kind that reached this agent. */
 export async function handedTo(prisma: Db, staffId: string, kind: HandoverKind, now: Date): Promise<Array<{ recordId: string; fromStaffId: string; businessId: string | null }>> {
   return liveHandovers(prisma, { toStaffId: staffId, kind }, now);

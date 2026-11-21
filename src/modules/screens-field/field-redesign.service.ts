@@ -24,7 +24,7 @@ import { VacancyConfirmationService } from '../vacancy/vacancy-confirmation.serv
 import { REVISIT_OUTCOMES } from '../field-visit/field-visit.constants';
 import { DAY_MS, FieldVisitClock, istDateKey, istDayStart, keyFromDate } from '../field-visit/field-visit-clock';
 import { visitNextStep } from '../field-visit/field-visit.service';
-import { handedAwayIds, handedTo } from '../field-visit/field-handover.service';
+import { handedAwayIds, handedTo, sweepHandovers } from '../field-visit/field-handover.service';
 import { FIELD_REVISIT_EXCLUDE, FOLLOW_UP_KIND_LABELS, FieldWorkExtrasService } from './field-work-extras.service';
 
 type Actor = { sub: string; role: string };
@@ -289,6 +289,7 @@ export class FieldRedesignService {
   /** "Needs you now": everything waiting on the agent, each opening the exact step. */
   async needsYou(actor: Actor, now: Date = this.clock.now()): Promise<NeedsYouItem[]> {
     const staffId = actor.sub;
+    await sweepHandovers(this.prisma, staffId, now);
     const todayKey = istDateKey(now);
     const tomorrowKey = istDateKey(new Date(now.getTime() + DAY_MS));
     const dayStart = istDayStart(now);

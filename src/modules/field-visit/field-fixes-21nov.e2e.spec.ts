@@ -364,7 +364,7 @@ describe('Laboura Field fixes of 21 Nov (server)', () => {
   it('"someone else pays": a clear message when the job seeker has not opened his payment step yet', async () => {
     const seeker = await prisma.jobSeeker.create({
       data: {
-        code: `JS-F21P${String(stamp).slice(-5)}`, name: 'Manoj K', phone: `+9193${String(stamp).slice(-8)}`, minSalary: 1500000, maxSalary: 2000000,
+        code: `JS-F21P${String(stamp).slice(-5)}`, name: 'Manoj K', phone: `+9188${String(stamp).slice(-8)}`, minSalary: 1500000, maxSalary: 2000000,
         preferredCallWindowStart: '09:00', preferredCallWindowEnd: '21:00', registeredByStaffId: fa1.id,
       },
     });
@@ -657,5 +657,132 @@ describe('Laboura Field fixes of 21 Nov (server)', () => {
     expect((await prisma.visitAssignment.findUniqueOrThrow({ where: { id: assignment.id } })).assignedStaffId).toBe(fa1.id);
     // Only one live handover row per piece: the earlier one ended.
     expect(await prisma.fieldHandover.count({ where: { kind: 'visit_assignment', recordId: assignment.id, endedAt: null } })).toBe(1);
+  });
+
+  // ------------------------------------------------------------- re-check of 21 Nov
+
+  it('a cover finishes a handed-over interview: he marks the arrival, it stays on his Today and he records the owner\'s decision', async () => {
+    clock.at = START;
+    const leadC = await makeStaff('team_lead');
+    const away = await makeStaff('field_agent', leadC.id);
+    const cover = await makeStaff('field_agent', leadC.id);
+    const biz = await makeBusiness({ suffix: '23', accountAgentId: away.id, verificationStatus: 'verified' });
+    const vacancy = await prisma.vacancy.create({ data: { code: `VC-F21C${String(stamp).slice(-5)}`, businessId: biz.id, tradeSkill: 'Cook', status: 'open' } });
+    const slot = await prisma.vacancyInterviewSlot.create({ data: { vacancyId: vacancy.id, startsAt: START, endsAt: new Date(START.getTime() + 30 * MIN) } });
+    const seeker = await prisma.jobSeeker.create({
+      data: { code: `JS-F21C${String(stamp).slice(-5)}`, name: 'Mohan Rao', phone: `+9184${String(stamp).slice(-8)}`, minSalary: 1500000, maxSalary: 2000000, preferredCallWindowStart: '09:00', preferredCallWindowEnd: '21:00' },
+    });
+    seekerIds.push(seeker.id);
+    const interview = await prisma.interview.create({
+      data: {
+        code: `IV-F21C${String(stamp).slice(-5)}`, vacancyId: vacancy.id, businessId: biz.id, jobSeekerId: seeker.id, vacancyInterviewSlotId: slot.id,
+        slotStartsAt: slot.startsAt, slotEndsAt: slot.endsAt, proposedByStaffId: away.id, agentWillAttend: true, suitabilitySnapshot: {}, offerSentAt: new Date(START.getTime() - 120 * MIN),
+        replyDueAt: new Date(START.getTime() - 60 * MIN), resultDueAt: new Date(START.getTime() + 8 * 60 * MIN), status: 'confirmed', interviewType: 'at_shop',
+      },
+    });
+    await http().post('/field-assignments/hand-over').set(authOf(leadC)).send({ fromStaffId: away.id, toStaffId: cover.id, reason: 'Sick leave', until: TODAY }).expect(201);
+
+    await http().post(`/field-selling/interviews/${interview.id}/arrival`).set(authOf(cover)).send({ arrived: true, ...SHOP, accuracyM: 8 }).expect(201);
+    // Arrived but undecided: still the cover's (never ended or cancelled at the arrival).
+    const today = await http().get('/field-work/today').set(authOf(cover)).expect(200);
+    expect(today.body.needsYou.find((n: { id: string }) => n.id === `interview_today:${interview.id}`)?.target).toMatchObject({ step: 'owner_decision' });
+    expect(await prisma.fieldHandover.findFirst({ where: { kind: 'interview', recordId: interview.id, endedAt: null } })).not.toBeNull();
+    await http().get(`/screens/field-selling/interviews/${interview.id}`).set(authOf(cover)).expect(200);
+
+    const sent = await http().post(`/field-selling/interviews/${interview.id}/owner-otp`).set(authOf(cover)).send({ decision: 'not_selected', reason: 'experience' }).expect(201);
+    const code = (app.get(OtpService).getProvider() as MockOtpProvider).getCode(sent.body.otpRequestId)!;
+    await http().post(`/field-selling/interviews/${interview.id}/decision`).set(authOf(cover))
+      .send({ decision: 'not_selected', reason: 'experience', otpRequestId: sent.body.otpRequestId, code }).expect(201);
+    const after = await prisma.interview.findUniqueOrThrow({ where: { id: interview.id } });
+    expect(after.resultRecordedAt).not.toBeNull();
+    expect(after.resultRecordedByStaffId).toBe(cover.id);
+    // The decision is the end of the piece: the cover of it ends now.
+    await http().get('/field-work/today').set(authOf(cover)).expect(200);
+    expect((await prisma.fieldHandover.findFirstOrThrow({ where: { kind: 'interview', recordId: interview.id } })).endedAt).not.toBeNull();
+  });
+
+  it('an arrived interview\'s attendance visit is never cancelled when the leave ends before the decision', async () => {
+    clock.at = START;
+    const leadC = await makeStaff('team_lead');
+    const away = await makeStaff('field_agent', leadC.id);
+    const cover = await makeStaff('field_agent', leadC.id);
+    const biz = await makeBusiness({ suffix: '24', accountAgentId: away.id, verificationStatus: 'verified' });
+    const vacancy = await prisma.vacancy.create({ data: { code: `VC-F21D${String(stamp).slice(-5)}`, businessId: biz.id, tradeSkill: 'Cook', status: 'open' } });
+    const slot = await prisma.vacancyInterviewSlot.create({ data: { vacancyId: vacancy.id, startsAt: START, endsAt: new Date(START.getTime() + 30 * MIN) } });
+    const seeker = await prisma.jobSeeker.create({
+      data: { code: `JS-F21D${String(stamp).slice(-5)}`, name: 'Kiran S', phone: `+9183${String(stamp).slice(-8)}`, minSalary: 1500000, maxSalary: 2000000, preferredCallWindowStart: '09:00', preferredCallWindowEnd: '21:00' },
+    });
+    seekerIds.push(seeker.id);
+    const interview = await prisma.interview.create({
+      data: {
+        code: `IV-F21D${String(stamp).slice(-5)}`, vacancyId: vacancy.id, businessId: biz.id, jobSeekerId: seeker.id, vacancyInterviewSlotId: slot.id,
+        slotStartsAt: slot.startsAt, slotEndsAt: slot.endsAt, proposedByStaffId: away.id, agentWillAttend: true, suitabilitySnapshot: {}, offerSentAt: START,
+        replyDueAt: START, resultDueAt: new Date(START.getTime() + 8 * 60 * MIN), status: 'confirmed', interviewType: 'at_shop',
+      },
+    });
+    await http().post('/field-assignments/hand-over').set(authOf(leadC)).send({ fromStaffId: away.id, toStaffId: cover.id, reason: 'Sick leave', until: TODAY }).expect(201);
+    await http().post(`/field-selling/interviews/${interview.id}/arrival`).set(authOf(cover)).send({ arrived: true, ...SHOP, accuracyM: 8 }).expect(201);
+    clock.at = new Date('2026-11-23T19:00:00.000Z'); // after the leave's last day (IST midnight)
+    await http().get('/field-work/today').set(authOf(cover)).expect(200);
+    expect(await prisma.visitAssignment.findFirst({ where: { relatedType: 'interview', relatedId: interview.id, assignedStaffId: cover.id, status: 'cancelled' } })).toBeNull();
+    clock.at = START;
+  });
+
+  it('a pin the agent moved himself never unlocks candidates until his Team Lead checks it; one agent move per business until then', async () => {
+    clock.at = START;
+    const lead = await makeBusiness({ suffix: '25', latitude: SHOP.latitude + 0.003, longitude: SHOP.longitude, leadCreatedByStaffId: null, verificationStatus: 'pending_visit' });
+    const assignment = await prisma.visitAssignment.create({ data: { businessId: lead.id, purpose: 'verification', assignedStaffId: fa1.id, status: 'assigned' } });
+    await http().post(`/field-work/verification-visits/${assignment.id}/pin`).set(authOf(fa1)).send({ ...SHOP, accuracy: 8, reason: 'Pin is on the next street' }).expect(201);
+    const flag = await prisma.reviewFlag.findFirstOrThrow({ where: { kind: 'gps_mismatch', subjectType: 'business', subjectId: lead.id, status: 'open' } });
+
+    // A second visit to the same business (another agent): no second move while the first waits for the Team Lead.
+    const second = await prisma.visitAssignment.create({ data: { businessId: lead.id, purpose: 'business_signup', assignedStaffId: fa2.id, status: 'assigned' } });
+    const refused = await http().post(`/field-work/verification-visits/${second.id}/pin`).set(authOf(fa2))
+      .send({ latitude: SHOP.latitude + 0.0005, longitude: SHOP.longitude, accuracy: 8, reason: 'Pin is across the road' }).expect(400);
+    expect(refused.body.message).toMatch(/waits for your Team Lead/);
+
+    // Every other proof is perfect, yet the moved pin keeps candidates hidden.
+    const visit = await prisma.businessVisit.create({
+      data: {
+        businessId: lead.id, staffId: fa1.id, latitude: SHOP.latitude, longitude: SHOP.longitude, purpose: 'verification', assignmentId: assignment.id,
+        ownerOtpRequestId: 'otp-25', selfieUrl: 'visits/25/selfie.jpg', geofenceFlag: false, photoLive: true, selfieHash: 'h-25',
+      },
+    });
+    await prisma.visitAssignment.update({ where: { id: assignment.id }, data: { status: 'done', visitId: visit.id } });
+    await signAgreement(lead);
+    await app.get(BusinessVerificationService).advanceToPendingTlCheckIfReady(lead.id, fa1.id);
+    const after = await prisma.business.findUniqueOrThrow({ where: { id: lead.id } });
+    expect(after.verificationStatus).toBe('pending_tl_check');
+    expect(after.fieldVerifiedAt).toBeNull();
+    expect(businessCandidateAccess(after).allowed).toBe(false);
+
+    // Once the Team Lead checked the pin, the next visit may move it again.
+    await prisma.reviewFlag.update({ where: { id: flag.id }, data: { status: 'resolved' } });
+    await http().post(`/field-work/verification-visits/${second.id}/pin`).set(authOf(fa2))
+      .send({ latitude: SHOP.latitude + 0.0005, longitude: SHOP.longitude, accuracy: 8, reason: 'Pin is across the road' }).expect(201);
+  });
+
+  it('hand-over by hand: an impossible last day is a 400, never a 500', async () => {
+    for (const until of ['2026-13-45', '2026-02-30', 'tomorrow']) {
+      await http().post('/field-assignments/hand-over').set(authOf(leadB)).send({ fromStaffId: fb1.id, reason: 'Leave', until }).expect(400);
+    }
+  });
+
+  it('when the leave ends, a verification visit the cover has not started goes back to the agent', async () => {
+    clock.at = START;
+    const leadC = await makeStaff('team_lead');
+    const away = await makeStaff('field_agent', leadC.id);
+    const cover = await makeStaff('field_agent', leadC.id);
+    const lead = await makeBusiness({ suffix: '26', verificationStatus: 'pending_visit' });
+    const assignment = await prisma.visitAssignment.create({ data: { businessId: lead.id, purpose: 'verification', assignedStaffId: away.id, status: 'assigned' } });
+    await http().post('/field-assignments/hand-over').set(authOf(leadC)).send({ fromStaffId: away.id, toStaffId: cover.id, reason: 'Leave', until: TODAY }).expect(201);
+    expect((await prisma.visitAssignment.findUniqueOrThrow({ where: { id: assignment.id } })).assignedStaffId).toBe(cover.id);
+    clock.at = new Date('2026-11-23T19:00:00.000Z');
+    // The agent opens Laboura Field the next morning: the visit is his again.
+    const back = await http().get('/field-work/visits').set(authOf(away)).expect(200);
+    expect(JSON.stringify(back.body)).toContain(assignment.id);
+    expect((await prisma.visitAssignment.findUniqueOrThrow({ where: { id: assignment.id } })).assignedStaffId).toBe(away.id);
+    expect((await prisma.fieldHandover.findFirstOrThrow({ where: { kind: 'visit_assignment', recordId: assignment.id } })).endedAt).not.toBeNull();
+    clock.at = START;
   });
 });

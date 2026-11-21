@@ -11,7 +11,7 @@ import { REVISIT_OUTCOMES } from '../field-visit/field-visit.constants';
 import { visitNextStep } from '../field-visit/field-visit.service';
 import { firstOnboardingsBy } from './field-redesign.service';
 import { DAY_MS, FieldVisitClock, istDateKey, istDayStart, keyFromDate } from '../field-visit/field-visit-clock';
-import { handedAwayIds, handedTo } from '../field-visit/field-handover.service';
+import { handedAwayIds, handedTo, sweepHandovers } from '../field-visit/field-handover.service';
 import { FIELD_REVISIT_EXCLUDE, FieldWorkExtrasService } from './field-work-extras.service';
 
 /** Map statuses (FA13 legend): onboarded, revisit due, interested, not interested; plus lead. */
@@ -220,6 +220,7 @@ export class ScreensFieldService {
   async visits(actor: Actor) {
     const now = this.clock.now();
     const staffId = actor.sub;
+    await sweepHandovers(this.prisma, staffId, now);
     const dayStart = istDayStart(now);
     const todayKey = istDateKey(now);
 
