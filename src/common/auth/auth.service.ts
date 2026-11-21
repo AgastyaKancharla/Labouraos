@@ -328,18 +328,16 @@ export class AuthService {
     app: StaffApp,
   ): Promise<boolean> {
     const now = this.clock.now();
-    const since = Math.max(
-      istClockOn(now, '00:00').getTime(),
-      staff.sessionsRevokedAt?.getTime() ?? 0,
-      device.approvedAt?.getTime() ?? 0,
-    );
+    const since = Math.max(istClockOn(now, '00:00').getTime(), device.approvedAt?.getTime() ?? 0);
+    // Strictly after the sessions were ended (a lock at the same instant as the sign-in still asks again).
+    const revoked = staff.sessionsRevokedAt;
     const earlier = await this.prisma.staffSession.findFirst({
       where: {
         staffId: staff.id,
         deviceId: device.deviceId,
         app,
         loginCodeRequestId: { not: null },
-        createdAt: { gte: new Date(since), lte: now },
+        createdAt: { gte: new Date(since), lte: now, ...(revoked ? { gt: revoked } : {}) },
       },
       select: { id: true },
     });

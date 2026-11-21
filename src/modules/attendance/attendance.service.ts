@@ -358,10 +358,11 @@ export class AttendanceService {
         await this.switchStatus(day.id, staffId, 'available', 'staff', now);
       }
     }
-    await this.prisma.attendanceDay.update({
-      where: { id: day.id },
-      data: kind === 'activity' ? { lastHeartbeatAt: now, lastActiveAt: now } : { lastHeartbeatAt: now },
-    });
+    if (kind === 'activity') {
+      await this.prisma.attendanceDay.update({ where: { id: day.id }, data: { lastHeartbeatAt: now, lastActiveAt: now } });
+    } else {
+      await this.prisma.attendanceDay.update({ where: { id: day.id }, data: { lastHeartbeatAt: now } });
+    }
     return this.today(staffId);
   }
 
