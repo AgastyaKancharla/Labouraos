@@ -29,7 +29,7 @@ import { referralScript } from '../_registration/scripts';
 import { useDraft } from '../_registration/useDraft';
 import { initialMobileState, useServerDraftSync } from '../_registration/serverDraft';
 import { useAuth } from '../../../auth/AuthProvider';
-import { EMPTY_REFERRAL, referralBody, referralErrors, type ReferralForm } from './payload';
+import { EMPTY_REFERRAL, placeFromBusiness, referralBody, referralErrors, type ReferralForm } from './payload';
 
 /**
  * Register a referral partner — design CA15-RegisterReferral. Mobile by OTP,
@@ -58,6 +58,7 @@ export default function RegisterReferral() {
   const set = <K extends keyof ReferralForm>(key: K, value: ReferralForm[K]) => setForm((f) => ({ ...f, [key]: value }));
   const errors = referralErrors(form);
   const err = (k: string) => (showErrors && errors.includes(k) ? t('reg.err.required') : undefined);
+  const fromBusiness = placeFromBusiness(form);
   const businesses = useQuery({
     queryKey: ['businesses', 'search', bizQuery],
     queryFn: () => api.get<BusinessHit[]>('/screens/call-registration/businesses', { query: { q: bizQuery } }),
@@ -181,7 +182,16 @@ export default function RegisterReferral() {
         <fieldset className="sec">
           <SectionHead n={2} title={t('reg.ref.location')} />
           <div className="fg">
-            <PlaceFields value={form.place} onChange={(p) => set('place', p)} pinRequired={false} errors={{ area: err('area'), pincode: err('pincode') }} />
+            {fromBusiness && form.business ? (
+              // 22 Nov: a registered business partner — area, pincode and pin come from the business.
+              <div className="fld" data-testid="place-from-business">
+                <span className="reg-label">{t('reg.ref.location')}</span>
+                <span>{t('reg.ref.placeFromBusiness', { code: form.business.code, area: fromBusiness.area, pincode: fromBusiness.pincode })}</span>
+                {fromBusiness.hasPin ? <span className="sub">{t('reg.ref.pinFromBusiness')}</span> : null}
+              </div>
+            ) : (
+              <PlaceFields value={form.place} onChange={(p) => set('place', p)} pinRequired={false} errors={{ area: err('area'), pincode: err('pincode') }} />
+            )}
             <SelectField label={t('reg.heardFrom')} required value={form.heardFrom} onChange={(v) => set('heardFrom', v)} options={choiceOptions(t, HEARD_FROM)} error={err('heardFrom')} />
           </div>
         </fieldset>

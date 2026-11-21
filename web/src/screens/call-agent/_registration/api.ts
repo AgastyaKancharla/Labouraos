@@ -95,6 +95,9 @@ export interface BusinessHit {
   contactName: string | null;
   contactRole: string | null;
   branches: { id: string; name: string; locality: string | null }[];
+  /** 22 Nov: a business partner's area, pincode and pin come from the business (CA15). */
+  pincode?: string | null;
+  hasPin?: boolean;
 }
 
 export interface BusinessStatus {
