@@ -9,8 +9,9 @@ import { useAttendance } from './AttendanceProvider';
 import { promptClock } from './format';
 
 /**
- * "Still there?" — design CA14i-Idle. After the idle setting (10 minutes)
- * Available with no calls or clicks, the person gets one minute to confirm.
+ * "Still there?" — design CA14i-Idle. After the "Still there?" setting (30
+ * minutes, a CEO setting; decided 21 Nov) Available with no calls or clicks,
+ * the person gets one minute to confirm.
  * No answer means Idle: calls stop and it shows on the Team Lead's live board.
  */
 export function IdlePrompt() {
@@ -29,7 +30,7 @@ export function IdlePrompt() {
   if (!attendance || !open) return null;
   const office = attendance.audience === 'office';
   const firstName = session?.staff.name.split(/\s+/)[0] ?? '';
-  const minutes = attendance.today?.policy.idleAfterMinutes ?? 10;
+  const minutes = attendance.today?.policy.idleAfterMinutes ?? 30;
   return createPortal(
     <div className="lb-att-idle">
       <div className="card lb-att-idle__card" role="alertdialog" aria-modal="true" aria-labelledby="att-idle-title" aria-describedby="att-idle-body">

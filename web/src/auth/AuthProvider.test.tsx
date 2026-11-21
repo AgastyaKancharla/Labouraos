@@ -42,22 +42,53 @@ describe('session keep-alive', () => {
     expect(screen.getByText('in:CEO-0001')).toBeInTheDocument();
   });
 
-  it('signs out after 60 minutes without activity instead of refreshing', async () => {
-    const api = mockApi({ 'POST /auth/refresh': () => ({ accessToken: fakeJwt({ role: 'ceo' }, 15 * 60), sessionId: 's' }) });
-    startSession(15 * 60);
+  it('an open console is not signed out by the tab\'s own idle clock: it renews with the refresh token and the server decides (21 Nov)', async () => {
+    let n = 0;
+    const api = mockApi({
+      'POST /auth/session/refresh': () => ({ accessToken: fakeJwt({ role: 'ceo' }, 15 * 60), refreshToken: `r${++n}`, sessionId: 's1' }),
+    });
+    const token = fakeJwt({ role: 'ceo' }, 15 * 60);
+    sessionStore.set({ token, staff: TEST_STAFF.ceo, expiresAt: Date.now() + 15 * 60 * 1000, totpSetupOnly: false, refreshToken: 'r0', sessionId: 's1' });
     render(
       <AppProviders>
         <Probe />
       </AppProviders>,
     );
-    // Four refreshes happen without any activity inside the first hour…
+    // Five renewals in 70 minutes without any activity: still signed in.
     for (let i = 0; i < 5; i++) {
       await act(async () => {
         vi.advanceTimersByTime(14 * 60 * 1000 + 1000);
       });
     }
-    expect(screen.getByText('out:idle')).toBeInTheDocument();
-    expect(api.calls('POST /auth/refresh').length).toBeLessThan(5);
+    expect(screen.getByText('in:CEO-0001')).toBeInTheDocument();
+    const sent = api.calls('POST /auth/session/refresh').map((c) => (c.body as { refreshToken: string }).refreshToken);
+    expect(sent.slice(0, 3)).toEqual(['r0', 'r1', 'r2']);
+  });
+
+  it('a 401 is renewed and the request repeated once before signing out; a refused renewal signs out with the server\'s reason', async () => {
+    const token = fakeJwt({ role: 'ceo' }, 15 * 60);
+    sessionStore.set({ token, staff: TEST_STAFF.ceo, expiresAt: Date.now() + 15 * 60 * 1000, totpSetupOnly: false, refreshToken: 'r0', sessionId: 's1' });
+    const fresh = fakeJwt({ role: 'ceo', code: 'fresh' }, 15 * 60);
+    const api = mockApi({
+      'GET /attendance/today': ({ init }: { init: RequestInit }) =>
+        (init.headers as Record<string, string>).Authorization === `Bearer ${fresh}` ? { ok: true } : { status: 401, body: { statusCode: 401, message: 'Invalid or expired token' } },
+      'POST /auth/session/refresh': () => ({ accessToken: fresh, refreshToken: 'r1', sessionId: 's1' }),
+    });
+    const { apiRequest } = await import('../lib/api/client');
+    await expect(apiRequest('/attendance/today')).resolves.toEqual({ ok: true });
+    expect(api.calls('POST /auth/session/refresh')).toHaveLength(1);
+    expect(sessionStore.get()?.refreshToken).toBe('r1');
+
+    mockApi({
+      'GET /attendance/today': { status: 401, body: { statusCode: 401, message: 'Invalid or expired token' } },
+      'POST /auth/session/refresh': { status: 401, body: { statusCode: 401, message: 'Session ended after being idle', details: { reason: 'idle' } } },
+    });
+    const reasons: (string | undefined)[] = [];
+    const stop = sessionStore.subscribe((_s, reason) => reasons.push(reason));
+    await expect(apiRequest('/attendance/today')).rejects.toMatchObject({ status: 401 });
+    stop();
+    expect(sessionStore.get()).toBeNull();
+    expect(reasons).toEqual(['idle']);
   });
 
   it('ends the session with the API reason when the refresh is refused (2-hour limit)', async () => {

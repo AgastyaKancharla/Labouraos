@@ -18,6 +18,7 @@ import { FilterPanel, SelectFilter } from '../../ceo/_kit/kit';
 import { firstName, STATUS_LABEL, statusTone, useTeam, type Brief } from '../_kit/api';
 import { AttendanceTabs } from './tabs';
 import { formatLateMinutes } from '../../../lib/format/late';
+import { ReopenDayButton, ShiftsPanel } from '../../../attendance/ShiftsPanel';
 
 /** Attendance · today — design T-Attendance.dc.html. Change day goes through the requests backend (a 3rd change in a month goes to the Manager). */
 interface Row {
@@ -68,7 +69,17 @@ export default function TeamLeadAttendance() {
           DAY_TYPE[r.dayType ?? ''] ?? '—'
         ),
     },
-    { key: 'change', header: 'Change the day (with a reason)', cell: (r) => <ChangeDay row={r} managerName={mgr} /> },
+    {
+      key: 'change',
+      header: 'Change the day (with a reason)',
+      cell: (r) => (
+        <>
+          <ChangeDay row={r} managerName={mgr} />
+          {/* Ended today (Log out by mistake, closed by hand): Reopen today, with a reason (decided 21 Nov). */}
+          {b?.isToday && r.dayId && r.loginAt && (r.dayType === 'full' || r.dayType === 'half') ? <ReopenDayButton dayId={r.dayId} name={r.staff.name} /> : null}
+        </>
+      ),
+    },
   ];
   return (
     <div className="lb-page">
@@ -93,6 +104,7 @@ export default function TeamLeadAttendance() {
           Full day = 8 work hours, half day under 4.5, with the 5–10 minute allowance · a 3rd change for the same person in a month goes to {mgr}
         </div>
       </Card>
+      <ShiftsPanel />
     </div>
   );
 }

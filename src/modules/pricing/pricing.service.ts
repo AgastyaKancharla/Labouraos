@@ -72,6 +72,13 @@ export class PricingService {
     actorId: string,
   ): Promise<PricingPolicy> {
     const before = await this.current();
+    // "Still there?" (decided 21 Nov): 30 minutes by default, a CEO setting (for example 45).
+    if (updates.idleAfterMinutes !== undefined && updates.idleAfterMinutes !== null) {
+      const minutes = updates.idleAfterMinutes;
+      if (!Number.isSafeInteger(minutes) || minutes < 5 || minutes > 120) {
+        throw new BadRequestException('idleAfterMinutes ("Still there?" after) must be a whole number of minutes from 5 to 120');
+      }
+    }
     if (updates.areaAutoFillMaxMeters !== undefined && updates.areaAutoFillMaxMeters !== null) {
       const meters = updates.areaAutoFillMaxMeters;
       if (!Number.isSafeInteger(meters) || meters < 1 || meters > MAX_AREA_AUTO_FILL_METERS) {

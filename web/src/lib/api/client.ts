@@ -1,4 +1,5 @@
 import { reasonFromMessage, sessionStore } from '../../auth/session';
+import { refreshSession } from '../../auth/refresh';
 import { ApiError, apiErrorFromBody } from './errors';
 import { announceTestMode } from './testMode';
 
@@ -7,9 +8,11 @@ import { announceTestMode } from './testMode';
  * by the API at the site root, and Vite proxies in development), JSON in and out,
  * the staff JWT attached, errors thrown as ApiError.
  *
- * A 401 on an authenticated request ends the session: the store is cleared
- * and the app shows the sign-in screen with the reason (idle, 2-hour limit,
- * revoked…). Screens never handle 401 themselves.
+ * A 401 on an authenticated request first tries to renew the session with
+ * its refresh token and repeats the request once (decided 21 Nov); if that is
+ * not possible the session ends: the store is cleared and the app shows the
+ * sign-in screen with the reason (idle, 2-hour limit, revoked…). Screens
+ * never handle 401 themselves.
  */
 export type QueryValue = string | number | boolean | null | undefined;
 
@@ -37,7 +40,7 @@ export function buildUrl(path: string, query?: RequestOptions['query']): string 
   return qs ? `${path}?${qs}` : path;
 }
 
-export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+export async function apiRequest<T>(path: string, options: RequestOptions = {}, retried = false): Promise<T> {
   const { method = 'GET', body, query, signal, auth = true } = options;
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -75,6 +78,12 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   if (!response.ok) {
     const error = apiErrorFromBody(response.status, parsed);
     if (response.status === 401 && token && auth && !options.token) {
+      if (!retried) {
+        const outcome = await refreshSession();
+        const next = sessionStore.token();
+        if (outcome === 'renewed' && next && next !== token) return apiRequest<T>(path, options, true);
+        if (outcome === 'ended') throw error;
+      }
       sessionStore.clear(reasonFromMessage(error.message), error.message);
     }
     throw error;

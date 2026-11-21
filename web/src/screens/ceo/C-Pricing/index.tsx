@@ -86,9 +86,9 @@ export const RULES: Rule[] = [
     fields: [
       { key: 'shortBreakMinutes', label: 'Short break (minutes, ×2)', kind: 'int' },
       { key: 'lunchMinutes', label: 'Lunch (minutes)', kind: 'int' },
-      { key: 'idleAfterMinutes', label: 'Idle after (minutes)', kind: 'int' },
+      { key: 'idleAfterMinutes', label: 'Ask "Still there?" after (minutes with no call and no click)', kind: 'int' },
     ],
-    show: (p) => `2 × ${n(p, 'shortBreakMinutes')} min + ${n(p, 'lunchMinutes')} min lunch · idle after ${n(p, 'idleAfterMinutes')} min`,
+    show: (p) => `2 × ${n(p, 'shortBreakMinutes')} min + ${n(p, 'lunchMinutes')} min lunch · "Still there?" after ${n(p, 'idleAfterMinutes')} min with no call or click`,
   },
   {
     name: "Business area from the shop's GPS",
