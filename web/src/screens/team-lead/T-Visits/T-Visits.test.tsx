@@ -41,7 +41,7 @@ describe('Visit proof (T-Visits): planned visits can be reassigned (21 Nov)', ()
     signInAs('team_lead');
     renderScreen(<TeamLeadVisits />, { portal: 'team-lead', path: '/team-lead/visits', now: NOW });
     expect(await screen.findByText('Sri Sai Tiffins · JP Nagar')).toBeInTheDocument();
-    expect(screen.getByText('On leave today')).toBeInTheDocument();
+    expect(screen.getAllByText('On leave today').length).toBeGreaterThan(0);
     await userEvent.click(screen.getByRole('button', { name: 'Reassign' }));
     const d = await dialog();
     await userEvent.type(within(d).getByLabelText(/Why it moves/), 'Kiran on leave');
@@ -49,5 +49,34 @@ describe('Visit proof (T-Visits): planned visits can be reassigned (21 Nov)', ()
     await waitFor(() =>
       expect(api.calls('POST /field-assignments/va1/reassign')[0].body).toEqual({ assignedStaffId: 'fa-2', reason: 'Kiran on leave', confirmLeave: false }),
     );
+  });
+
+  it("hands a field agent's work over until his last day away, and back", async () => {
+    const api = mockApi({
+      ...common,
+      'GET /field-assignments/open': {
+        assignments: [],
+        agents: [
+          { id: 'fa-1', code: 'FA-00001', name: 'Kiran K', onLeaveToday: true },
+          { id: 'fa-2', code: 'FA-00002', name: 'Ravi M', onLeaveToday: false },
+        ],
+      },
+      'POST /field-assignments/hand-over': { fromStaffId: 'fa-1', moved: [{ kind: 'revisit', recordId: 'v-1', toStaffId: 'fa-2' }], left: [], toOnLeave: [] },
+      'POST /field-assignments/hand-back': { ended: 1 },
+    });
+    signInAs('team_lead');
+    renderScreen(<TeamLeadVisits />, { portal: 'team-lead', path: '/team-lead/visits', now: NOW });
+    await screen.findByText("Hand over a field agent's work");
+    await userEvent.click((await screen.findAllByRole('button', { name: 'Hand over' }))[0]);
+    const d = await dialog();
+    await userEvent.selectOptions(within(d).getByLabelText('Hand over to'), 'fa-2');
+    await userEvent.type(within(d).getByLabelText('Why the work moves'), 'Approved leave');
+    await userEvent.click(within(d).getByRole('button', { name: 'Hand over' }));
+    await waitFor(() => expect(api.calls('POST /field-assignments/hand-over')).toHaveLength(1));
+    expect(api.calls('POST /field-assignments/hand-over')[0].body).toMatchObject({ fromStaffId: 'fa-1', toStaffId: 'fa-2', reason: 'Approved leave', until: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
+    await userEvent.click(screen.getAllByRole('button', { name: 'Hand back' })[0]);
+    const back = await dialog();
+    await userEvent.click(within(back).getByRole('button', { name: /is back/ }));
+    await waitFor(() => expect(api.calls('POST /field-assignments/hand-back')[0].body).toEqual({ fromStaffId: 'fa-1' }));
   });
 });

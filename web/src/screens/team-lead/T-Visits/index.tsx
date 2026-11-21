@@ -102,6 +102,7 @@ export default function TeamLeadVisits() {
         <DataTable columns={assignColumns} rows={assignments.data} rowKey={(a) => a.id} caption="Visit requests to assign" loading={assignments.isPending} error={assignments.error} onRetry={() => void assignments.refetch()} emptyTitle="No visit requests waiting." />
       </Card>
       <PlannedVisits />
+      <AwayAgents />
       <Card title="Today's visits and their proof" flush>
         <DataTable columns={visitColumns} rows={b?.rows} rowKey={(v) => v.id} caption="Today's visits" loading={board.isPending} error={board.error} onRetry={() => void board.refetch()} emptyTitle="No shop visits today yet." />
         <div className="tl-note" style={{ padding: '0 18px 14px' }}>
@@ -244,5 +245,109 @@ function PlannedVisits() {
     <Card title="Planned visits (with a field agent)" flush>
       <DataTable columns={columns} rows={rows} rowKey={(a) => a.id} caption="Planned visits" loading={open.isPending} error={open.error} onRetry={() => void open.refetch()} emptyTitle="No planned visits waiting." />
     </Card>
+  );
+}
+
+/** Today in IST, "YYYY-MM-DD". */
+function todayIst(): string {
+  return new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
+}
+
+/**
+ * Field agents away (21 Nov review): "Hand over" moves an agent's open visits, interviews to
+ * attend, revisits and joinings due by the last day away to a teammate (or spreads them across
+ * the team); "Hand back" ends the cover when he is back. POST /field-assignments/hand-over,
+ * POST /field-assignments/hand-back.
+ */
+function AwayAgents() {
+  const open = useQuery({ queryKey: ['field-assignments', 'open'], queryFn: () => api.get<OpenAssignments>('/field-assignments/open') });
+  const agents = open.data?.agents ?? [];
+  const columns: Column<OpenAssignments['agents'][number]>[] = [
+    { key: 'name', header: 'Field agent', cell: (a) => <span>{a.name} {a.onLeaveToday ? <StatusPill tone="warn">On leave today</StatusPill> : null}</span> },
+    {
+      key: 'act',
+      header: '',
+      cell: (a) => (
+        <div className="tl-actions">
+          <HandOver agent={a} agents={agents} />
+          <ActionButton
+            label="Hand back"
+            title={`${a.name} is back`}
+            description="Every cover of his work ends: open visits go back to him, his revisits and joinings are his again."
+            run={() => api.post('/field-assignments/hand-back', { fromStaffId: a.id })}
+            success={(r) => `Handed back (${(r as { ended?: number } | undefined)?.ended ?? 0})`}
+          />
+        </div>
+      ),
+    },
+  ];
+  return (
+    <Card title="Hand over a field agent's work" flush>
+      <DataTable columns={columns} rows={open.data?.agents} rowKey={(a) => a.id} caption="Field agents" loading={open.isPending} error={open.error} onRetry={() => void open.refetch()} emptyTitle="No field agents." />
+    </Card>
+  );
+}
+
+function HandOver({ agent, agents }: { agent: OpenAssignments['agents'][number]; agents: OpenAssignments['agents'] }) {
+  const [show, setShow] = useState(false);
+  const [to, setTo] = useState('');
+  const [until, setUntil] = useState(todayIst());
+  const [reason, setReason] = useState('');
+  const toast = useToast();
+  const qc = useQueryClient();
+  const send = useMutation<{ moved: unknown[]; left: unknown[] }>({
+    mutationFn: () => api.post('/field-assignments/hand-over', { fromStaffId: agent.id, toStaffId: to || undefined, until, reason: reason.trim() }),
+    onSuccess: (r) => {
+      toast.success(`Handed over: ${r.moved.length} moved${r.left.length ? `, ${r.left.length} left (nobody free)` : ''}`);
+      setShow(false);
+      void qc.invalidateQueries();
+    },
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : 'Could not hand over'),
+  });
+  const others = agents.filter((g) => g.id !== agent.id);
+  return (
+    <>
+      <Button size="compact" onClick={() => setShow(true)}>
+        Hand over
+      </Button>
+      <Modal
+        open={show}
+        onClose={() => setShow(false)}
+        title={`Hand over ${agent.name}'s work`}
+        footer={
+          <>
+            <Button onClick={() => setShow(false)} disabled={send.isPending}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={() => send.mutate()} loading={send.isPending} disabled={!reason.trim() || !until}>
+              Hand over
+            </Button>
+          </>
+        }
+      >
+        <div className="tl-form">
+          <label>
+            To
+            <select aria-label="Hand over to" value={to} onChange={(e) => setTo(e.target.value)}>
+              <option value="">Spread across the team (fewest open items first)</option>
+              {others.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.onLeaveToday ? `${g.name} (on leave today)` : g.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Last day away
+            <input type="date" aria-label="Last day away" value={until} min={todayIst()} onChange={(e) => e.target.value && setUntil(e.target.value)} />
+          </label>
+          <label>
+            Why
+            <textarea aria-label="Why the work moves" value={reason} onChange={(e) => setReason(e.target.value)} />
+          </label>
+          <p className="tl-sub">Visits, interviews to attend, revisits and joinings due by that day move; the cover ends after it.</p>
+        </div>
+      </Modal>
+    </>
   );
 }
