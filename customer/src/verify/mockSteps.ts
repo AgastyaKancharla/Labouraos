@@ -6,7 +6,8 @@ import type { LegalDocument, PartnerOpen, RegistrationOpen } from './types';
 /**
  * Pretend link endpoints for EXPO_PUBLIC_API_MODE=mock: every step can be
  * clicked through with no server. Any 6-digit code works; the Aadhaar QR is
- * always "verified"; payment confirms a few seconds after "Pay".
+ * always "verified" with a pretend name (the QR's text is never read on the
+ * phone; only the real server checks a card); payment confirms a few seconds after "Pay".
  */
 /** A finished step, reported to the pretend customer API so Home shows it (src/api/mock.ts). */
 export type MockProgress = 'consent' | 'selfie' | 'id_check' | 'terms_accepted' | 'paid' | 'terms' | 'payout' | 'agreement_signed';
@@ -157,7 +158,7 @@ export function mockStepsApi(delayMs = 300, persist?: MockPersist): StepsApi {
         reg.currentStep = 'payment';
         return {
           verificationId: 'v-1', method: 'aadhaar_qr' as const, status: 'verified' as const, result: 'verified' as const, verifiedByUidai: true, nameMatches: true, isAdult: true,
-          phoneLinked: 'linked' as const, maskedReference: 'XXXX-XXXX-1234', person: { name: 'Ravi Kumar', dateOfBirth: '1998-08-15', gender: 'M' as const }, failureReason: null, offerOtherId: false,
+          phoneLinked: 'linked' as const, maskedReference: 'XXXX-XXXX-1234', person: { name: 'Pretend name (test app: your card is not read)', dateOfBirth: '1998-08-15', gender: 'M' as const }, failureReason: null, offerOtherId: false,
         };
       }),
     registrationCaptureNonce: () => wait(() => ({ captureNonce: 'nonce', expiresInSeconds: 120 })),
@@ -240,7 +241,7 @@ export function mockStepsApi(delayMs = 300, persist?: MockPersist): StepsApi {
         partner.currentStep = 'upi';
         return {
           verificationId: 'v-3', method: 'aadhaar_qr' as const, status: 'verified' as const, result: 'verified' as const, verifiedByUidai: true, nameMatches: true, isAdult: true,
-          phoneLinked: 'linked' as const, maskedReference: 'XXXX-XXXX-5678', person: { name: 'Suma R', dateOfBirth: '1990-01-01', gender: 'F' as const }, failureReason: null, offerOtherId: false, nextStep: 'upi',
+          phoneLinked: 'linked' as const, maskedReference: 'XXXX-XXXX-5678', person: { name: 'Pretend name (test app: your card is not read)', dateOfBirth: '1990-01-01', gender: 'F' as const }, failureReason: null, offerOtherId: false, nextStep: 'upi',
         };
       }),
     partnerCaptureNonce: () => wait(() => ({ captureNonce: 'nonce', expiresInSeconds: 120 })),

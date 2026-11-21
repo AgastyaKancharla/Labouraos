@@ -235,7 +235,7 @@ export default function RegisterJobSeeker() {
               error={err('pincode')}
               testID="js-pincode"
             />
-            <PinField label={t('jobSeeker.homePin')} value={draft.pin} onChange={(v) => set('pin', v)} center={areas.find((a) => a.name === draft.area) ?? null} testID="js-pin" />
+            <PinField label={t('jobSeeker.homePin')} value={draft.pin} onChange={(v) => set('pin', v)} testID="js-pin" />
             <SelectField
               label={t('jobSeeker.travel')}
               value={draft.travelKm === null ? '' : String(draft.travelKm)}
