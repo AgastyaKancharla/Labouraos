@@ -394,6 +394,6 @@ export function fieldTarget(n: NotificationRow): { type: string; id: string; vac
 }
 
 function normaliseName(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9ऀ-෿]+/g, '');
+  return value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 }
 
