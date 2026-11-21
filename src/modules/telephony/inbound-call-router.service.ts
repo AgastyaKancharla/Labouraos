@@ -1,4 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { AttendanceClock } from '../attendance/attendance-clock';
+import { onShiftAt } from '../attendance/staff-shift';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { LiveEventsService } from '../../common/live/live-events.service';
 import { maskPhoneLast4 } from '../../common/rbac/pii-masking.interceptor';
@@ -56,7 +58,14 @@ export class InboundCallRouter {
     private readonly prisma: PrismaService,
     private readonly attendance: AttendanceService,
     private readonly live: LiveEventsService,
+    @Optional() private readonly clock?: AttendanceClock,
   ) {}
+
+  /** Inside their own shift now (21 Nov: each agent has their own shift); Available alone is not enough after it ends. */
+  private async inOwnShift(staffId: string): Promise<boolean> {
+    if (!this.clock) return true;
+    return onShiftAt(this.clock.now(), await this.attendance.shiftOf(staffId));
+  }
 
   async identify(callerPhone: string): Promise<IdentifiedCaller | null> {
     const digits = tenDigits(callerPhone);
@@ -159,6 +168,7 @@ export class InboundCallRouter {
     const staff = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { role: true, status: true } });
     if (!staff || staff.status !== 'active' || staff.role !== 'call_agent') return null;
     if (!(await this.attendance.isAvailable(staffId))) return null;
+    if (!(await this.inOwnShift(staffId))) return null;
     return (await this.onACall(staffId, callerDigits)) ? null : staffId;
   }
 
@@ -174,7 +184,7 @@ export class InboundCallRouter {
     });
     const free: string[] = [];
     for (const agent of agents) {
-      if ((await this.attendance.isAvailable(agent.id)) && !(await this.onACall(agent.id, callerDigits))) free.push(agent.id);
+      if ((await this.attendance.isAvailable(agent.id)) && (await this.inOwnShift(agent.id)) && !(await this.onACall(agent.id, callerDigits))) free.push(agent.id);
     }
     if (free.length <= 1) return free[0] ?? null;
     const counts = await openItemCounts(this.prisma, free, new Date());

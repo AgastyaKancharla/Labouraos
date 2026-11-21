@@ -168,6 +168,8 @@ export class CallService {
     if (!process.env.TELECMI_APP_ID) throw new UnauthorizedException('TeleCMI is not set up here (TELECMI_APP_ID)');
     const report = mapTeleCmiReport(payload ?? {}, process.env.TELECMI_APP_ID, this.clock.now());
     if (report.kind === 'ignored') {
+      // The reason only: never the number, the call id or the key (first real reports: see what is dropped).
+      this.logger.warn(`TeleCMI report ignored: ${report.reason}`);
       if (report.reason === 'another app') throw new UnauthorizedException('Report for another TeleCMI app');
       return { ignored: report.reason };
     }
@@ -183,7 +185,10 @@ export class CallService {
           where: { provider_providerCallId: { provider: report.event.provider, providerCallId: report.event.providerCallId } },
           select: { provider: true, providerCallId: true },
         });
-    if (!ours || ours.provider !== TELECMI_VENDOR) return { ignored: 'no matching TeleCMI call' };
+    if (!ours || ours.provider !== TELECMI_VENDOR) {
+      this.logger.warn('TeleCMI report ignored: no matching TeleCMI call');
+      return { ignored: 'no matching TeleCMI call' };
+    }
     return this.applyStatus({ ...report.event, provider: ours.provider, providerCallId: ours.providerCallId });
   }
 
@@ -427,6 +432,10 @@ export class CallService {
       metadata: { callRecordId: created.id },
     });
 
+    // A call was really placed: the Team Lead's "app sign-up call not made" flag for him closes,
+    // whatever the call's outcome turns out to be (21 Nov fixes).
+    await this.closeNotAttemptedFlags(subjectType, subject.id, created.code);
+
     if (result.callId && result.callId !== created.providerCallId) {
       await this.prisma.callRecord.update({
         where: { id: created.id },
@@ -642,6 +651,20 @@ export class CallService {
       reason: why,
     });
     return { lifted: true, kind };
+  }
+
+  private async closeNotAttemptedFlags(subjectType: string, subjectId: string, callCode: string): Promise<void> {
+    const open = await this.prisma.reviewFlag.findMany({
+      where: { kind: 'signup_call_not_attempted', subjectType, subjectId, status: 'open' },
+      select: { id: true },
+    });
+    for (const flag of open) {
+      const done = await this.prisma.reviewFlag.updateMany({
+        where: { id: flag.id, status: 'open' },
+        data: { status: 'resolved', resolvedAt: this.clock.now(), resolution: `Call placed (${callCode})` },
+      });
+      if (done.count) await this.reviewFlags.refreshBell(flag.id).catch(() => undefined);
+    }
   }
 
   private async ownersOf(subjectType: string, subjectId: string): Promise<string[]> {

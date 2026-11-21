@@ -54,6 +54,8 @@ describe('TeleCMI calling company', () => {
       for (const from of ['12345', 'abc9110000000', '9110000000999999', '<script>']) {
         expect(mapTeleCmiReport({ ...missed, from }, '7', new Date(1570114018000))).toEqual({ kind: 'ignored', reason: 'missed call with no valid number' });
       }
+      // A time sent in epoch seconds is read as seconds.
+      expect(mapTeleCmiReport({ ...missed, time: 1570114018 }, '7', new Date(1570114018000))).toMatchObject({ kind: 'missed_inbound', at: new Date(1570114018000) });
       expect(plausiblePhone('+91 98123 00001')).toBe(true);
       expect(plausiblePhone('09812300001')).toBe(true);
     });

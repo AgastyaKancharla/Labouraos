@@ -176,7 +176,9 @@ export function mapTeleCmiReport(
   if (!callId) return { kind: 'ignored', reason: 'no call id' };
   const direction = str(payload.direction);
   const status = str(payload.status);
-  const timeMs = Number(payload.time);
+  // Epoch milliseconds in TeleCMI's samples; epoch seconds accepted too (a value below 10^11 is seconds).
+  const rawTime = Number(payload.time);
+  const timeMs = Number.isFinite(rawTime) && rawTime > 0 && rawTime < 1e11 ? rawTime * 1000 : rawTime;
   if (!Number.isFinite(timeMs) || timeMs <= 0) return { kind: 'ignored', reason: 'no report time' };
   const at = new Date(timeMs);
   if (Math.abs(at.getTime() - now.getTime()) > TELECMI_REPORT_MAX_SKEW_MS) return { kind: 'ignored', reason: 'report time out of range' };

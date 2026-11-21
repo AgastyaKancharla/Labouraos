@@ -1,4 +1,5 @@
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { ShiftPolicy, onShiftAt, shiftFor, staffShift } from '../attendance/staff-shift';
 
 const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -28,18 +29,12 @@ export function clockMinutes(hhmm: string | null | undefined): number | null {
 }
 
 /**
- * An agent's shift. TODO(Builder A, per-agent shifts): read the agent's own
- * shift start and end once that is merged; until then the company shift in
- * PricingPolicy (shiftStart / shiftEnd).
+ * An agent's shift: their own shift (Builder A, attendance/staff-shift.ts),
+ * else the company shift in Settings (PricingPolicy shiftStart / shiftEnd).
  */
-export function shiftOf(
-  policy: { shiftStart?: string | null; shiftEnd?: string | null },
-  staff?: { shiftStart?: string | null; shiftEnd?: string | null } | null,
-): { start: string; end: string } {
-  return {
-    start: staff?.shiftStart ?? policy.shiftStart ?? '09:30',
-    end: staff?.shiftEnd ?? policy.shiftEnd ?? '18:30',
-  };
+export function shiftOf(policy: ShiftPolicy, staff?: { shiftStart?: string | null; shiftEnd?: string | null } | null): { start: string; end: string } {
+  const shift = staffShift(policy, staff);
+  return { start: shift.start, end: shift.end };
 }
 
 /**
@@ -64,9 +59,11 @@ export async function openItemCounts(prisma: PrismaService, staffIds: string[], 
 
 /**
  * Call agents on shift now: active, not locked, today's attendance day open
- * (logged in, not logged out, not a leave day). Sorted by staff code.
+ * (logged in, not logged out, not a leave day) and, with the policy given,
+ * inside their own shift (an agent on a later shift gets nothing before it
+ * starts, nor after it ends). Sorted by staff code.
  */
-export async function onShiftCallAgents(prisma: PrismaService, now: Date, among?: string[]): Promise<string[]> {
+export async function onShiftCallAgents(prisma: PrismaService, now: Date, among?: string[], policy?: ShiftPolicy | null): Promise<string[]> {
   const staff = await prisma.staff.findMany({
     where: {
       role: 'call_agent',
@@ -75,7 +72,7 @@ export async function onShiftCallAgents(prisma: PrismaService, now: Date, among?
       OR: [{ lockedUntil: null }, { lockedUntil: { lte: now } }],
       ...(among ? { id: { in: among } } : {}),
     },
-    select: { id: true },
+    select: { id: true, shiftStart: true, shiftEnd: true },
     orderBy: { code: 'asc' },
   });
   if (staff.length === 0) return [];
@@ -84,7 +81,7 @@ export async function onShiftCallAgents(prisma: PrismaService, now: Date, among?
     select: { staffId: true },
   });
   const open = new Set(days.map((d) => d.staffId));
-  return staff.map((s) => s.id).filter((id) => open.has(id));
+  return staff.filter((s) => open.has(s.id) && (!policy || onShiftAt(now, shiftFor(s, policy)))).map((s) => s.id);
 }
 
 /** The one with the fewest open items; ties go to whoever was given work longest ago, then by the list order. */

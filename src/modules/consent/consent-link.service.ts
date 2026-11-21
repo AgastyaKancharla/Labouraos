@@ -277,6 +277,21 @@ export class ConsentLinkService {
    * `options.sms: false` (customer app): the link is opened by the signed-in
    * person inside the app, so no SMS is sent; everything else is the same.
    */
+  /**
+   * 21 Nov fixes (call results): no link goes by SMS to someone marked "do not call" or to a
+   * number marked wrong (src/modules/call/contact-block.ts). A link opened inside the person's
+   * own app is not a send.
+   */
+  private async refuseBlocked(subjectType: 'job_seeker' | 'business' | 'referral', subjectId: string): Promise<void> {
+    const blocks = await blocksFor(this.prisma, { subjectType, subjectId });
+    if (blocks.has('do_not_call')) {
+      throw new ConflictException({ message: 'They asked not to be contacted (do not call): no link is sent. A Team Lead can lift it if they ask again.', reason: 'do_not_call' });
+    }
+    if (blocks.has('wrong_number')) {
+      throw new ConflictException({ message: 'This number was marked as a wrong number: no link is sent until the number is corrected.', reason: 'wrong_number' });
+    }
+  }
+
   async createLink(jobSeekerId: string, options: { sms?: boolean; issuedTo?: string; revokeOthers?: boolean } = {}) {
     const seeker = await this.prisma.jobSeeker.findUnique({
       where: { id: jobSeekerId },
@@ -286,15 +301,7 @@ export class ConsentLinkService {
     }
     // 21 Nov fixes (call results): nothing is sent to someone marked "do not call" or to a number
     // marked wrong (src/modules/call/contact-block.ts). A link opened inside his own app is not a send.
-    if (options.sms !== false) {
-      const blocks = await blocksFor(this.prisma, { subjectType: 'job_seeker', subjectId: seeker.id });
-      if (blocks.has('do_not_call')) {
-        throw new ConflictException({ message: 'He asked not to be contacted (do not call): no link is sent. A Team Lead can lift it if he asks again.', reason: 'do_not_call' });
-      }
-      if (blocks.has('wrong_number')) {
-        throw new ConflictException({ message: 'This number was marked as a wrong number: no link is sent until the number is corrected.', reason: 'wrong_number' });
-      }
-    }
+    if (options.sms !== false) await this.refuseBlocked('job_seeker', seeker.id);
 
     const now = this.clock.now();
     const expiresAt = new Date(now.getTime() + (await this.registrationTtl()));
@@ -332,6 +339,7 @@ export class ConsentLinkService {
     const language = productLanguage(_requestedLanguage);
     const business = await this.prisma.business.findUnique({ where: { id: businessId } });
     if (!business) throw new NotFoundException(`Business '${businessId}' not found`);
+    if (options.sms !== false) await this.refuseBlocked('business', business.id);
 
     const policy = await this.pricingService.current();
     const numbers = {
@@ -420,6 +428,7 @@ export class ConsentLinkService {
     const language = productLanguage(_requestedLanguage);
     const referral = await this.prisma.referral.findUnique({ where: { id: referralId } });
     if (!referral) throw new NotFoundException(`Referral '${referralId}' not found`);
+    if (options.sms !== false) await this.refuseBlocked('referral', referral.id);
 
     const policy = await this.pricingService.current();
     const referralPayoutPaise = policy.referralPayoutPaise;

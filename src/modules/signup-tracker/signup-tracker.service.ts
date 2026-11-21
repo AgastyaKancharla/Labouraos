@@ -22,12 +22,13 @@ import { SignupTrackerClock } from './signup-tracker-clock';
 import { SignupFactsService } from './signup-facts.service';
 import { SignupSettings, signupSettingsFrom } from './signup-settings';
 import { DAY_MS, WorkCalendar, callWindow, callingWindow, isCallableNow, istDateKey, istDayStartMs, nextCallableAt } from './signup-timing';
-import { assistedBy, planNext } from './signup-plan';
+import { assistedBy, planNext, reminderCount } from './signup-plan';
 import { AssignmentCandidate, pickAgent } from './signup-assignment';
 import { StageResult, stageIndex } from './signup-stage';
 import { ownerAccountIds } from './signup-owner-accounts';
 import { SIGNUP_REMINDER_SENDER, SignupReminderSender } from './signup-reminder.port';
 import { blocksFor } from '../call/contact-block';
+import { onShiftAt, shiftFor } from '../attendance/staff-shift';
 
 /** Outcomes that mean "closed without finishing". Only `no_response` is nudged again (gave_up never is). */
 export const REENGAGE_OUTCOMES = ['no_response', 'gave_up'];
@@ -221,8 +222,6 @@ export class SignupTrackerService {
     // 21 Nov fixes: "do not call" stops the sign-up; a wrong number means no call tasks (below).
     const blocks = tracker.subjectType && tracker.subjectId ? await blocksFor(this.prisma, { subjectType: tracker.subjectType, subjectId: tracker.subjectId }) : new Set<string>();
     if (blocks.has('do_not_call')) return this.stop(tracker, ctx, 'Asked not to be called');
-    if (tracker.outcome === 'no_response') return this.reengage(tracker, result, ctx);
-
     // The account's own tick is the truth; the tracker's copy only when there is no account.
     const consent = account ? account.contactMeConsent : tracker.contactConsent;
     // 21 Nov fixes: an OTP-verified sign-up without the contact-me tick may get exactly one
@@ -232,6 +231,12 @@ export class SignupTrackerService {
     // for someone who never ticked — never after a withdrawal.
     const withdrawn = !consent && (Boolean(account?.contactMeNoticeVersion) || (await this.prisma.signupTrackerEvent.count({ where: { trackerId: tracker.id, kind: 'contact_withdrawn' } })) > 0);
     if (withdrawn) await this.dropNotAttemptedFlags(tracker, ctx);
+    if (tracker.outcome === 'no_response') {
+      // Withdrawn: no monthly nudge either (in-app reminders stop with the tick).
+      if (withdrawn) return this.setNext(tracker, null);
+      return this.reengage(tracker, result, ctx);
+    }
+
     const oneHelpCall = !consent && !withdrawn && Boolean(account?.phoneVerifiedAt);
     const callable = Boolean(tracker.subjectId) && (consent || oneHelpCall) && !blocks.has('wrong_number');
     const settings = oneHelpCall ? { ...ctx.settings, maxCallTries: 1 } : ctx.settings;
@@ -251,7 +256,8 @@ export class SignupTrackerService {
           profileKind: tracker.profileKind,
           stage: tracker.stage,
           stoppedAt: tracker.lastActivityAt,
-          remindersDone: await this.reminderSlots(tracker),
+          // Withdrawn: no more in-app reminders (counted as all done), so it closes at the end of the window.
+          remindersDone: withdrawn ? reminderCount(tracker.profileKind) : await this.reminderSlots(tracker),
           callTries: tracker.callTries,
           callable,
           lastCallDueAt: lastTask?.dueAt ?? null,
@@ -660,9 +666,10 @@ export class SignupTrackerService {
         lockedByStaffId: null,
         OR: [{ lockedUntil: null }, { lockedUntil: { lte: now } }],
       },
-      select: { id: true, code: true, spokenLanguages: true },
+      select: { id: true, code: true, spokenLanguages: true, shiftStart: true, shiftEnd: true },
     });
     if (staff.length === 0) return [];
+    const policy = await this.pricing.current();
     const ids = staff.map((s) => s.id);
     const today = new Date(`${istDateKey(now.getTime())}T00:00:00.000Z`);
     const [days, sessions, open, last, owners] = await Promise.all([
@@ -693,7 +700,8 @@ export class SignupTrackerService {
     return staff.map((s) => ({
       id: s.id,
       code: s.code,
-      onShift: onShift.has(s.id),
+      // Day open and inside their own shift (21 Nov: each agent has their own shift).
+      onShift: onShift.has(s.id) && onShiftAt(now, shiftFor(s, policy)),
       isOwnerAccount: owners.has(s.id),
       signedIn: signedIn.has(s.id),
       spokenLanguages: s.spokenLanguages,

@@ -79,7 +79,7 @@ export class MissedCallAssigner {
       take: BATCH,
     });
     if (unassigned.length === 0) return 0;
-    const onShift = await onShiftCallAgents(this.prisma, now);
+    const onShift = await onShiftCallAgents(this.prisma, now, undefined, await this.pricing.current());
     if (onShift.length === 0) return 0;
     const counts = await openItemCounts(this.prisma, onShift, now);
     const last = await this.prisma.callbackTask.groupBy({

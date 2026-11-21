@@ -583,6 +583,21 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
       await prisma.customerSession.deleteMany({ where: { accountId: account.id } });
     });
 
+    it('no in-app reminder (nor a monthly nudge) after the contact-me tick is withdrawn', async () => {
+      const account = await prisma.customerAccount.create({
+        data: { phone: phone(), phoneVerifiedAt: WED_11, createdVia: 'phone', contactMeConsent: false, contactMeNoticeVersion: 'contact-me-2026-11-14' },
+      });
+      accountIds.push(account.id);
+      const t = await makeTracker({ stage: 'A', accountId: account.id, remindersSent: 0, contactConsent: false, stoppedAt: ist('2026-12-02T06:00') });
+      await tracker.process(t.id, await tracker.context(WED_11));
+      expect(await prisma.signupTrackerEvent.count({ where: { trackerId: t.id, kind: { in: ['reminder', 'reminder_due'] } } })).toBe(0);
+      expect(await prisma.customerInboxMessage.count({ where: { accountId: account.id, kind: 'signup_reminder' } })).toBe(0);
+      await prisma.signupTracker.update({ where: { id: t.id }, data: { outcome: 'no_response', nextActionAt: WED_11 } });
+      await tracker.process(t.id, await tracker.context(WED_11));
+      expect(await prisma.signupTracker.findUniqueOrThrow({ where: { id: t.id } })).toMatchObject({ nextActionAt: null });
+      expect(await prisma.signupTrackerEvent.count({ where: { trackerId: t.id, kind: { in: ['reengage', 'reengage_due'] } } })).toBe(0);
+    });
+
     it('H3: an account that asked to be deleted stops everything, with no re-engagement', async () => {
       const account = await makeAccount();
       const { t } = await seekerTracker('Deleted Appsignup', { accountId: account.id });

@@ -68,8 +68,8 @@ export class FollowUpHandoverService {
     const off = await this.prisma.leaveRequest.findMany({
       where: {
         staffId: { in: candidates.map((c) => c.id) },
+        // The final decision: an approval that came from a Manager's overturn counts too.
         status: 'approved',
-        overturnedAt: null,
         // The approved days (a part approval leaves the rest worked).
         OR: [
           { approvedFromDate: null, approvedToDate: null, fromDate: { lte: new Date(`${toDay}T00:00:00.000Z`) }, toDate: { gte: new Date(`${fromDay}T00:00:00.000Z`) } },
@@ -231,7 +231,8 @@ export class FollowUpHandoverService {
     const leaveById = new Map(leaves.map((l) => [l.id, l]));
     const gone = openLeaves.map((l) => l.leaveRequestId).filter((id) => {
       const leave = leaveById.get(id);
-      return !leave || leave.status !== 'approved' || leave.overturnedAt !== null;
+      // The current decision counts: an overturn to "approved" still stands, one to "rejected" does not.
+      return !leave || leave.status !== 'approved';
     });
     const due = await this.prisma.followUpHandover.findMany({
       where: { returnedAt: null, OR: [{ returnAfter: { lte: now } }, ...(gone.length ? [{ leaveRequestId: { in: gone } }] : [])] },
@@ -246,7 +247,7 @@ export class FollowUpHandoverService {
     const [owners, offAgain] = await Promise.all([
       this.prisma.staff.findMany({ where: { id: { in: ownerIds } }, select: { id: true, status: true } }),
       this.prisma.leaveRequest.findMany({
-        where: { staffId: { in: ownerIds }, status: 'approved', overturnedAt: null, fromDate: { lte: new Date(`${today}T00:00:00.000Z`) }, toDate: { gte: new Date(`${today}T00:00:00.000Z`) } },
+        where: { staffId: { in: ownerIds }, status: 'approved', fromDate: { lte: new Date(`${today}T00:00:00.000Z`) }, toDate: { gte: new Date(`${today}T00:00:00.000Z`) } },
         select: { staffId: true },
       }),
     ]);

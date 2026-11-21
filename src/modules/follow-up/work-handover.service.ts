@@ -194,7 +194,7 @@ export class WorkHandoverService {
     const today = istDateValue(now);
     const todayKey = today.toISOString().slice(0, 10);
     const leaves = await this.prisma.leaveRequest.findMany({
-      where: { status: 'approved', overturnedAt: null, ...approvedOn(today) },
+      where: { status: 'approved', ...approvedOn(today) },
       select: { id: true, staffId: true, half: true, fromDate: true, toDate: true, approvedFromDate: true, approvedToDate: true },
     });
     let agents = 0;
@@ -444,14 +444,14 @@ export class WorkHandoverService {
     const minute = istMinute(now);
     const agents = await this.prisma.staff.findMany({
       where: { role: { in: ['call_agent', 'field_agent'] }, status: 'active' },
-      select: { id: true, role: true, teamLeadId: true, reportsToId: true, reportsTo: { select: { role: true } } },
+      select: { id: true, role: true, teamLeadId: true, reportsToId: true, reportsTo: { select: { role: true } }, shiftStart: true, shiftEnd: true },
     });
     if (agents.length === 0) return { agents: 0, moved: 0 };
     const ids = agents.map((a) => a.id);
     const [days, leaves] = await Promise.all([
       this.prisma.attendanceDay.findMany({ where: { staffId: { in: ids }, date }, select: { staffId: true, loginAt: true, logoutAt: true, dayType: true } }),
       this.prisma.leaveRequest.findMany({
-        where: { staffId: { in: ids }, status: 'approved', overturnedAt: null, ...approvedOn(date) },
+        where: { staffId: { in: ids }, status: 'approved', ...approvedOn(date) },
         select: { staffId: true, half: true },
       }),
     ]);
@@ -469,7 +469,8 @@ export class WorkHandoverService {
       if (halfDay.has(agent.id) || away.has(agent.id)) continue;
       const day = dayOf.get(agent.id);
       if (day?.loginAt || day?.dayType === 'leave') continue;
-      const shift = shiftOf(policy);
+      // Their own shift (an agent on a later shift is never a no-show at the company shift's time).
+      const shift = shiftOf(policy, agent);
       const start = clockMinutes(shift.start);
       const end = clockMinutes(shift.end);
       if (start === null || end === null) continue;
@@ -519,8 +520,24 @@ export class WorkHandoverService {
    * go back (the owner still active); anything moved on since stays. Safe to repeat.
    */
   async returnAfterLeave(now: Date): Promise<{ returned: number }> {
+    // A leave no longer approved (a Manager overturned it mid-leave) gives its people back now,
+    // not at the original leave end. The leave's current status is what counts.
+    const pending = await this.prisma.workHandover.findMany({
+      where: { returnedAt: null, leaveRequestId: { not: null }, recordType: { in: ['job_seeker', 'signup_tracker'] } },
+      distinct: ['leaveRequestId'],
+      select: { leaveRequestId: true },
+    });
+    const leaveIds = pending.map((p) => p.leaveRequestId!).filter(Boolean);
+    const stillApproved = leaveIds.length
+      ? new Set((await this.prisma.leaveRequest.findMany({ where: { id: { in: leaveIds }, status: 'approved' }, select: { id: true } })).map((l) => l.id))
+      : new Set<string>();
+    const gone = leaveIds.filter((id) => !stillApproved.has(id));
     const due = await this.prisma.workHandover.findMany({
-      where: { returnedAt: null, returnAfter: { lte: now }, recordType: { in: ['job_seeker', 'signup_tracker'] } },
+      where: {
+        returnedAt: null,
+        recordType: { in: ['job_seeker', 'signup_tracker'] },
+        OR: [{ returnAfter: { lte: now } }, ...(gone.length ? [{ leaveRequestId: { in: gone } }] : [])],
+      },
       orderBy: { movedAt: 'asc' },
       take: 1000,
     });

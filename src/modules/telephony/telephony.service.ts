@@ -25,6 +25,7 @@ import { validateWebhookHmac } from '../../common/webhook/webhook-signature';
 import { AttendanceService } from '../attendance/attendance.service';
 import { InboundCallRouter, tenDigits } from './inbound-call-router.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { PricingService } from '../pricing/pricing.service';
 import { maskPhoneLast4 } from '../../common/rbac/pii-masking.interceptor';
 import { onShiftCallAgents, openItemCounts } from './call-agent-load';
 import { ReportingScopeService } from '../staff/reporting-scope.service';
@@ -47,6 +48,7 @@ export class TelephonyService {
     @Optional() private readonly router?: InboundCallRouter,
     @Optional() private readonly scope?: ReportingScopeService,
     @Optional() private readonly audit?: AuditService,
+    @Optional() private readonly pricing?: PricingService,
   ) {}
 
   async handleInboundWebhook(
@@ -204,7 +206,7 @@ export class TelephonyService {
     if (people) agentWhere.id = { in: people };
     const agents = await this.prisma.staff.findMany({ where: agentWhere, select: { id: true, code: true, name: true, role: true }, orderBy: { name: 'asc' } });
     const ids = agents.map((a) => a.id);
-    const [counts, onShift] = await Promise.all([openItemCounts(this.prisma, ids, now), onShiftCallAgents(this.prisma, now, ids)]);
+    const [counts, onShift] = await Promise.all([openItemCounts(this.prisma, ids, now), onShiftCallAgents(this.prisma, now, ids, this.pricing ? await this.pricing.current() : null)]);
     return {
       now: now.toISOString(),
       targetMinutes: 30,
