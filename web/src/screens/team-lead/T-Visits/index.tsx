@@ -101,6 +101,7 @@ export default function TeamLeadVisits() {
       <Card title="Visit requests to assign" flush>
         <DataTable columns={assignColumns} rows={assignments.data} rowKey={(a) => a.id} caption="Visit requests to assign" loading={assignments.isPending} error={assignments.error} onRetry={() => void assignments.refetch()} emptyTitle="No visit requests waiting." />
       </Card>
+      <PlannedVisits />
       <Card title="Today's visits and their proof" flush>
         <DataTable columns={visitColumns} rows={b?.rows} rowKey={(v) => v.id} caption="Today's visits" loading={board.isPending} error={board.error} onRetry={() => void board.refetch()} emptyTitle="No shop visits today yet." />
         <div className="tl-note" style={{ padding: '0 18px 14px' }}>
@@ -115,15 +116,18 @@ function Assign({ assignment, agents }: { assignment: Assignment; agents: Brief[
   const [agent, setAgent] = useState(assignment.suggestedStaff?.id ?? '');
   const toast = useToast();
   const qc = useQueryClient();
-  const assign = useMutation({
+  const assign = useMutation<unknown>({
     mutationFn: () =>
       // A business that signed up in the Laboura app has no agent yet: its visit is confirmed through the sign-up route.
       assignment.purpose === 'business_signup'
         ? api.post(`/signup-tracker/visit-requests/${assignment.id}/assign`, { assignedStaffId: agent })
         : api.post(`/businesses/${assignment.business.id}/visit-assignments/${assignment.id}/assign`, { assignedStaffId: agent }),
-    onSuccess: () => {
-      toast.success('Visit assigned');
+    onSuccess: (result) => {
+      // 21 Nov: assigning to someone on approved leave goes ahead, with a warning.
+      if ((result as { assignedStaffOnLeave?: boolean } | undefined)?.assignedStaffOnLeave) toast.error('Visit assigned — but this field agent is on approved leave today');
+      else toast.success('Visit assigned');
       void qc.invalidateQueries({ queryKey: ['businesses', 'visit-assignments'] });
+      void qc.invalidateQueries({ queryKey: ['field-assignments', 'open'] });
     },
     onError: (e) => toast.error(e instanceof ApiError ? e.message : 'Could not assign the visit'),
   });
@@ -169,5 +173,76 @@ function VisitActions({ visit, managerName }: { visit: VisitRow; managerName: st
         <p className="tl-sub">Links work for 5 minutes and are never public.</p>
       </Modal>
     </div>
+  );
+}
+
+interface OpenAssignments {
+  assignments: Array<{
+    id: string;
+    purpose: string;
+    createdAt: string;
+    requestedFor: string | null;
+    business: { id: string; code: string; name: string; locality: string | null };
+    assignedStaff: { id: string; code: string; name: string } | null;
+    assignedStaffOnLeave: boolean;
+  }>;
+  agents: Array<{ id: string; code: string; name: string; onLeaveToday: boolean }>;
+}
+
+/**
+ * Planned visits already with a field agent (21 Nov): Reassign moves one to another of the
+ * team's field agents, with a reason. An agent on approved leave today is marked in the list
+ * and picking him is allowed with that warning. GET /field-assignments/open,
+ * POST /field-assignments/:id/reassign.
+ */
+function PlannedVisits() {
+  const open = useQuery({ queryKey: ['field-assignments', 'open'], queryFn: () => api.get<OpenAssignments>('/field-assignments/open') });
+  const rows = open.data?.assignments;
+  const agents = open.data?.agents ?? [];
+  const columns: Column<OpenAssignments['assignments'][number]>[] = [
+    { key: 'biz', header: 'Business', cell: (a) => `${a.business.name}${a.business.locality ? ` · ${a.business.locality}` : ''}` },
+    { key: 'why', header: 'Why', cell: (a) => PURPOSE[a.purpose] ?? humanize(a.purpose) },
+    {
+      key: 'agent',
+      header: 'With',
+      cell: (a) => (
+        <span>
+          {a.assignedStaff?.name ?? '—'} {a.assignedStaffOnLeave ? <StatusPill tone="warn">On leave today</StatusPill> : null}
+        </span>
+      ),
+      filter: 'select',
+      filterValue: (a) => a.assignedStaff?.name ?? '—',
+    },
+    { key: 'when', header: 'Asked', cell: (a) => formatDateIST(a.createdAt), sortValue: (a) => a.createdAt },
+    {
+      key: 'act',
+      header: '',
+      cell: (a) => {
+        const options = agents.filter((g) => g.id !== a.assignedStaff?.id).map((g) => ({ value: g.id, label: g.onLeaveToday ? `${g.name} (on leave today)` : g.name }));
+        return (
+          <ActionButton
+            label="Reassign"
+            title={`Reassign the visit to ${a.business.name}`}
+            description="The visit moves to the field agent you pick. Someone marked “on leave today” can still be picked."
+            choice={{ label: 'Field agent', options }}
+            reason={{ label: 'Why it moves', required: true }}
+            run={({ choice, reason }) =>
+              api.post(`/field-assignments/${a.id}/reassign`, {
+                assignedStaffId: choice,
+                reason,
+                confirmLeave: agents.some((g) => g.id === choice && g.onLeaveToday),
+              })
+            }
+            success={(r) => ((r as { onLeave?: boolean } | undefined)?.onLeave ? 'Visit reassigned — this field agent is on leave today' : 'Visit reassigned')}
+            disabled={!options.length}
+          />
+        );
+      },
+    },
+  ];
+  return (
+    <Card title="Planned visits (with a field agent)" flush>
+      <DataTable columns={columns} rows={rows} rowKey={(a) => a.id} caption="Planned visits" loading={open.isPending} error={open.error} onRetry={() => void open.refetch()} emptyTitle="No planned visits waiting." />
+    </Card>
   );
 }

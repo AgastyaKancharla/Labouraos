@@ -25,6 +25,13 @@ import { PricingService } from '../pricing/pricing.service';
 import { isMinimumWageZone, legalMinimumFor } from '../trade/minimum-wage';
 import { tradeNameKey } from '../trade/trade.service';
 import { ownerVisitOtpPurpose } from '../../common/otp/bound-otp-purposes';
+import { onApprovedLeave } from '../field-visit/field-handover.service';
+
+/** The IST calendar day of an instant, "YYYY-MM-DD". */
+function getCalendarDateKey(at: Date): string {
+  const p = getCalendarPartsInTimezone(at, 'Asia/Kolkata');
+  return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
+}
 
 // business_signup: a business that signed up in the customer app (proposal 4.2).
 const VISIT_PURPOSES = ['verification', 'revisit', 'interview_attendance', 'follow_up', 'business_signup'] as const;
@@ -325,7 +332,9 @@ export class BusinessVerificationService {
     });
     // Customer app notification (Agent C): "visit booked" when the owner picked a time in the app.
     await this.customerNotifications?.visitAssigned(updated.id);
-    return updated;
+    // 21 Nov: assigning to someone on approved leave today goes ahead with a warning on the screen.
+    const onLeave = await onApprovedLeave(this.prisma, [assignedStaffId], getCalendarDateKey(this.clock.now()));
+    return { ...updated, assignedStaffOnLeave: onLeave.has(assignedStaffId) };
   }
 
   /**
