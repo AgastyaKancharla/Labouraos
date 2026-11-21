@@ -295,12 +295,14 @@ export class FieldWorkExtrasService {
   async notificationsList(actor: Actor, query: { limit?: string } = {}) {
     await this.catchUp(actor.sub);
     const list = await this.notifications.list(actor.sub, { status: 'all', limit: query.limit ?? '50' });
-    return {
-      unseenCount: list.unseenCount,
-      openCount: list.openCount,
-      items: list.items.map((item) => ({ ...item, target: fieldTarget(item as unknown as NotificationRow) })),
-      asOf: list.asOf,
-    };
+    const items = list.items.map((item) => ({ ...item, target: fieldTarget(item as unknown as NotificationRow) }));
+    // A new match opens the candidates of its vacancy's business.
+    const vacancyIds = [...new Set(items.map((i) => i.target?.vacancyId).filter((id): id is string => Boolean(id)))];
+    if (vacancyIds.length) {
+      const owners = new Map((await this.prisma.vacancy.findMany({ where: { id: { in: vacancyIds } }, select: { id: true, businessId: true } })).map((v) => [v.id, v.businessId]));
+      for (const item of items) if (item.target?.vacancyId) item.target.businessId = owners.get(item.target.vacancyId);
+    }
+    return { unseenCount: list.unseenCount, openCount: list.openCount, items, asOf: list.asOf };
   }
 
   private async catchUp(staffId: string): Promise<void> {
@@ -365,7 +367,7 @@ export class FieldWorkExtrasService {
 type NotificationRow = { kind: string; subjectType: string; subjectId: string };
 
 /** Where a notification opens in Laboura Field (the app maps it to its own screens). */
-export function fieldTarget(n: NotificationRow): { type: string; id: string; vacancyId?: string } | null {
+export function fieldTarget(n: NotificationRow): { type: string; id: string; vacancyId?: string; businessId?: string } | null {
   switch (n.kind) {
     case 'field_visit_assigned':
       return { type: 'visit_assignment', id: n.subjectId };

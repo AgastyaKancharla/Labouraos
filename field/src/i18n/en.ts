@@ -5,6 +5,7 @@ import { staffPhotoEn } from './staffPhoto.en';
 import { accessEn } from './access.en';
 import { redesignEn } from './redesign.en';
 import { fixes17En } from './fixes17.en';
+import { fixes21En } from './fixes21.en';
 /**
  * English — the only language of Laboura Field (Master Guide rev 193). Keys are grouped by the
  * screen that owns them: `fa03.*` belongs to FA03-Home, and so on. Shared
@@ -21,6 +22,7 @@ export const en = {
   ...accessEn,
   ...redesignEn,
   ...fixes17En,
+  ...fixes21En,
   'common.appName': 'Laboura Field',
   'common.brand': 'Laboura',
   'common.logoHome': 'Laboura — go to Home',

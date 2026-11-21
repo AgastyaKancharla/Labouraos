@@ -47,6 +47,10 @@ export interface RevisitDue {
   locality: string | null;
   outcome: string | null;
   revisitOn: string | null;
+  /** 21 Nov: the come-back time, "HH:mm" IST. */
+  revisitTime?: string | null;
+  /** 21 Nov: a teammate's revisit handed over on leave. */
+  covering?: boolean;
   note: string | null;
   latitude: number;
   longitude: number;
@@ -64,6 +68,8 @@ export interface FieldVisits {
     interview: { id: string; startsAt: string; candidateName: string; candidateArrivedAt: string | null } | null;
     /** business_signup (a business that signed up in the Laboura app): the time the owner picked. */
     requestedFor?: string | null;
+    /** 21 Nov: a verification visit's job card (address, owner, phone last 4, last try). */
+    job?: import('./fieldOps').VerificationJob | null;
   }[];
   revisitsDue: RevisitDue[];
   doneToday: {

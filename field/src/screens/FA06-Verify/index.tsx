@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useI18n } from '@/i18n';
-import { Banner, Button, Card, CodeInput, EmptyState, ErrorState, IconTile, LoadingState, Screen, StatusChip, Text } from '@/components';
+import { Banner, Button, Card, CodeInput, EmptyState, ErrorState, IconTile, LoadingState, Screen, StatusChip, Text, TextField } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { useAfterSave } from '@/api/refresh';
@@ -20,6 +20,8 @@ import { AppHeader } from '../_shared/AppHeader';
 import { CameraSheet } from '../_visits/CameraSheet';
 import { photoRequest } from '../_visits/photo';
 import { SAME_SPOT_METERS } from '../FA22-VisitProof';
+import { VerificationJobCard } from '../_visits/VerificationJobCard';
+import { AGREEMENT_POLL_MS } from '../FA07b-Agreement';
 
 /**
  * FA06 — Verification visit. The agent proves he is at the business with the
@@ -30,8 +32,9 @@ import { SAME_SPOT_METERS } from '../FA22-VisitProof';
  */
 export default function VerifyScreen() {
   const { t } = useI18n();
-  const params = useLocalSearchParams<{ businessId?: string; assignmentId?: string }>();
-  const { fieldWork, visits } = useEndpoints();
+  const params = useLocalSearchParams<{ businessId?: string; assignmentId?: string; visitId?: string }>();
+  const { fieldWork, visits, fieldOps, redesign } = useEndpoints();
+  const client = useQueryClient();
   const queue = useOfflineQueue();
   const afterSave = useAfterSave();
   const location = useLocation();
@@ -41,13 +44,44 @@ export default function VerifyScreen() {
     queryFn: () => fieldWork.business(params.businessId!),
     enabled: Boolean(params.businessId),
   });
-  const [visitId] = useState(() => newId());
+  const [visitId] = useState(() => params.visitId || newId());
   const [camera, setCamera] = useState<'board' | 'selfie' | null>(null);
-  const [boardDone, setBoardDone] = useState(false);
-  const [selfieDone, setSelfieDone] = useState(false);
+  const [boardTaken, setBoardDone] = useState(false);
+  const [selfieTaken, setSelfieDone] = useState(false);
+  // A started visit (from Today or Planned): what was already taken is not asked again.
+  const resumed = useQuery({ queryKey: queryKeys.visit(visitId), queryFn: () => visits.get(visitId), enabled: Boolean(params.visitId) });
+  const boardDone = boardTaken || Boolean(resumed.data?.hasBoardPhoto);
+  const selfieDone = selfieTaken || Boolean(resumed.data?.hasSelfie);
+  const jobs = useQuery({ queryKey: queryKeys.verificationVisits, queryFn: () => fieldOps.verificationVisits(), enabled: Boolean(params.assignmentId) });
+  const job = jobs.data?.find((j) => j.assignmentId === params.assignmentId) ?? null;
+  const [pinOpen, setPinOpen] = useState(false);
+  const [pinReason, setPinReason] = useState('');
+  const [pinMoved, setPinMoved] = useState<number | null | 'new'>(null);
+  const movePin = useMutation({
+    mutationFn: async () => {
+      const reading = location.fix ?? (await read());
+      if (!reading) throw new Error(t('fa16.needGps'));
+      return queue.live(() =>
+        fieldOps.updatePin(params.assignmentId!, { latitude: reading.latitude, longitude: reading.longitude, accuracy: reading.accuracy, reason: pinReason.trim() }),
+      );
+    },
+    onSuccess: (r) => {
+      setPinMoved(r.movedMeters === null ? 'new' : r.movedMeters);
+      setPinOpen(false);
+      void client.invalidateQueries({ queryKey: ['field-work'] });
+      void business.refetch();
+    },
+  });
   const [otp, setOtp] = useState<{ requestId: string; phone: string } | null>(null);
   const [code, setCode] = useState('');
   const [agreementSent, setAgreementSent] = useState(false);
+  // One button, and "Signed" turns green live when the owner signs on his phone.
+  const agreement = useQuery({
+    queryKey: queryKeys.agreement(params.businessId ?? ''),
+    queryFn: () => redesign.agreement(params.businessId!),
+    enabled: Boolean(params.businessId) && agreementSent,
+    refetchInterval: (query) => (query.state.data?.state === 'signed' ? false : AGREEMENT_POLL_MS),
+  });
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -132,7 +166,7 @@ export default function VerifyScreen() {
       // go on to the agreement while it is unsigned (he may act on it now), else to the finish step.
       const next = { businessId: b.id, visitId, ...(done?.becameAccountAgent ? { accountAgent: 'new' } : {}) };
       const mine = Boolean(done?.isAccountAgent || done?.becameAccountAgent);
-      router.replace({ pathname: mine && !b.agreement ? routes.visitAgreement : routes.visitDone, params: next });
+      router.replace({ pathname: mine && !b.agreement && agreement.data?.state !== 'signed' ? routes.visitAgreement : routes.visitDone, params: next });
     } catch (e) {
       explain(e);
     } finally {
@@ -141,11 +175,13 @@ export default function VerifyScreen() {
   }
 
   const done = <StatusChip tone="green" label={t('fa06.done')} />;
+  const signed = Boolean(b.agreement) || agreement.data?.state === 'signed';
   return (
     <View style={styles.flex} testID="screen-FA06">
       <AppHeader title={t('fa06.title')} />
       <Screen>
         <Text variant="h1">{t('fa06.verify', { name: b.name })}</Text>
+        {job ? <VerificationJobCard job={job} showVerify={false} testID="fa06-job" /> : null}
         <Card stripe accent="royal">
           <View style={styles.row}>
             <IconTile icon="location" accent="royal" size={30} />
@@ -156,6 +192,21 @@ export default function VerifyScreen() {
             {fromPin !== null ? t('fa06.fromPin', { meters: fromPin }) : b.latitude === null ? t('fa06.noPin') : location.errorKey ? t(location.errorKey) : t('fa20.gpsFinding')}
           </Text>
           {!atShop ? <Button label={t('common.retry')} variant="secondary" onPress={() => void read()} /> : null}
+          {pinMoved !== null ? (
+            <Banner tone="ok" message={pinMoved === 'new' ? t('fa06.pinMovedNew') : t('fa06.pinMoved', { meters: pinMoved })} testID="fa06-pin-moved" />
+          ) : null}
+          {!atShop && fix && params.assignmentId && pinMoved === null ? (
+            pinOpen ? (
+              <View style={styles.pin} testID="fa06-pin-form">
+                <Text variant="muted">{t('fa06.updatePinHelp')}</Text>
+                <TextField label={t('fa06.pinReason')} value={pinReason} onChangeText={setPinReason} testID="fa06-pin-reason" />
+                {movePin.error ? <Banner tone="error" message={isApiError(movePin.error) ? movePin.error.message : movePin.error instanceof Error ? movePin.error.message : t('common.error')} testID="fa06-pin-error" /> : null}
+                <Button label={t('fa06.pinSave')} disabled={pinReason.trim().length < 5} loading={movePin.isPending} onPress={() => movePin.mutate()} testID="fa06-pin-save" />
+              </View>
+            ) : (
+              <Button label={t('fa06.updatePin')} variant="secondary" onPress={() => setPinOpen(true)} testID="fa06-update-pin" />
+            )
+          ) : null}
         </Card>
         <Card stripe accent="cyan">
           <View style={styles.row}>
@@ -186,10 +237,10 @@ export default function VerifyScreen() {
           <View style={styles.row}>
             <IconTile icon="document" accent="green" size={30} />
             <Text variant="bodyStrong" style={styles.flex1}>{t('fa06.step4')}</Text>
-            {b.agreement ? <StatusChip tone="green" label={t('fa06.signed')} /> : agreementSent ? <StatusChip tone="amber" label={t('fa06.linkSent')} /> : null}
+            {signed ? <StatusChip tone="green" label={t('fa06.signed')} /> : agreementSent ? <StatusChip tone="amber" label={t('fa06.linkSent')} /> : null}
           </View>
           <Text variant="muted">{t('fa06.agreementText')}</Text>
-          {!b.agreement ? <Button label={t('fa06.sendAgreement')} variant="secondary" loading={busy === 'agreement'} onPress={() => void sendAgreement()} testID="fa06-agreement" /> : null}
+          {!signed && !agreementSent ? <Button label={t('fa06.sendAgreement')} variant="secondary" loading={busy === 'agreement'} onPress={() => void sendAgreement()} testID="fa06-agreement" /> : null}
         </Card>
         <Text variant="muted">{t('fa06.help')}</Text>
         {problem ? <Banner tone="error" message={problem} testID="fa06-problem" /> : null}
@@ -217,5 +268,6 @@ const styles = StyleSheet.create({
   flex1: { flex: 1 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 6 },
   buttons: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  pin: { gap: 8, marginTop: 8 },
   title: { fontFamily: fonts.display700 },
 });

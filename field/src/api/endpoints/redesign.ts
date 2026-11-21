@@ -14,8 +14,12 @@ export type AgreementState = 'signed' | 'link_sent' | 'link_expired' | 'not_sent
 
 /** Where a Needs-you-now item (or a Today's work row) opens. */
 export interface NeedsTarget {
-  type: 'interview' | 'visit' | 'business' | 'vacancy' | 'placement' | 'revisit' | 'followup';
+  type: 'interview' | 'visit' | 'business' | 'vacancy' | 'placement' | 'revisit' | 'followup' | 'verification';
   id: string;
+  /** verification (21 Nov): the visit assignment; visit_unfinished of a verification visit too. */
+  assignmentId?: string | null;
+  /** verification: a started visit (shop photo taken) to resume. */
+  visitId?: string;
   step?: string;
   businessId?: string | null;
   vacancyId?: string | null;
@@ -27,6 +31,7 @@ export interface NeedsTarget {
 
 export type NeedsKind =
   | 'interview_today'
+  | 'verification_visit'
   | 'visit_unfinished'
   | 'agreement_waiting'
   | 'vacancy_awaiting_owner'
@@ -51,6 +56,13 @@ export interface NeedsItem {
   vacancy?: { code: string; trade: string; headcount: number };
   placement?: { code: string; joiningDate: string | null; candidateFirstName: string };
   revisitOn?: string | null;
+  /** 21 Nov: the come-back time ("HH:mm") and, for a revisit handed over on leave, whose it was. */
+  revisitTime?: string | null;
+  coverFor?: string | null;
+  /** verification_visit (21 Nov): the job card. */
+  job?: import('./fieldOps').VerificationJob;
+  /** followup_task (21 Nov): "Repeat business — day 30". */
+  kindLabel?: string;
   /** vacancies_to_fill (17 Nov): open seats left across the business's open vacancies. */
   toFill?: { count: number; vacancies: number; trades: string[] };
   taskKind?: string;

@@ -72,6 +72,12 @@ export const queryKeys = {
   myJobSeekers: (q: string) => ['field-work', 'my-job-seekers', q] as const,
   referral: (id: string) => ['referrals', id] as const,
   referralStatus: (id: string) => ['referrals', id, 'status'] as const,
+  // 21 Nov fixes (verification job cards, calling phone, bell, follow-ups, similar shops)
+  verificationVisits: ['field-work', 'verification-visits'] as const,
+  callingPhone: ['field-work', 'calling-phone'] as const,
+  notifications: ['field-work', 'notifications'] as const,
+  followUp: (id: string) => ['field-work', 'follow-up', id] as const,
+  similarShops: (name: string, lat: number, lng: number) => ['field-work', 'similar-shops', name, lat.toFixed(4), lng.toFixed(4)] as const,
   // Search (CA16-Search for the field app)
   search: (q: string, type: string) => ['search', q, type] as const,
 };

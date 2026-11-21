@@ -1,7 +1,12 @@
-import { useNavigation } from 'expo-router';
+import { router, useNavigation } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
+import { useEndpoints } from '@/api/ApiProvider';
+import { queryKeys } from '@/api/queryClient';
+import { routes } from '@/navigation/routes';
 import { TopBar } from '@/components';
 import { useAuth } from '@/auth/AuthProvider';
 import { goBack, useTabRoot, type ParentNavigation } from '@/navigation/useFlow';
+import { OfflineNotices } from './OfflineNotices';
 
 interface Props {
   title: string;
@@ -14,21 +19,36 @@ interface Props {
   onBack?: () => void;
 }
 
+/** How often a tab's main page asks for the bell's unread count. */
+export const BELL_POLL_MS = 60_000;
+
 /**
  * The signed-in header: back arrow on every inner screen, title, subtitle,
- * language switcher and the avatar with Log out.
+ * language switcher and the avatar with Log out. A tab's main page also
+ * shows the bell with the unread count (21 Nov), opening Notifications.
  */
 export function AppHeader({ title, subtitle, root = false, backTo, onBack }: Props) {
   const { session, logout } = useAuth();
   const tab = useTabRoot();
   const navigation = useNavigation() as unknown as ParentNavigation | undefined;
+  const { fieldOps } = useEndpoints();
+  const bell = useQuery({
+    queryKey: queryKeys.notifications,
+    queryFn: () => fieldOps.notifications(),
+    enabled: root && session?.staff.role === 'field_agent',
+    refetchInterval: BELL_POLL_MS,
+  });
   return (
+    <>
     <TopBar
       title={title}
       subtitle={subtitle}
       personName={session?.staff.name}
       onLogout={() => void logout()}
       onBack={root ? undefined : (onBack ?? (() => goBack(backTo ?? tab.root, navigation)))}
+      bell={root && session ? { count: bell.data?.unseenCount ?? 0, onPress: () => router.push(routes.notifications) } : undefined}
     />
+    <OfflineNotices />
+    </>
   );
 }

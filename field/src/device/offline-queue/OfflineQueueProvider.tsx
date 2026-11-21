@@ -41,6 +41,8 @@ interface QueueValue {
   flushAndCheck: (pathPart: string) => Promise<boolean>;
   retry: (id: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
+  /** 21 Nov: the last tap saved on the phone instead of sent ("Saved — will send when online"). */
+  lastQueued: { label: string; at: number } | null;
 }
 
 const QueueContext = createContext<QueueValue | null>(null);
@@ -51,6 +53,7 @@ export function OfflineQueueProvider({ children, queue: injected }: { children: 
   const staffId = session?.staff.id ?? null;
   const [all, setAll] = useState<QueueItem[]>([]);
   const [online, setOnline] = useState(true);
+  const [lastQueued, setLastQueued] = useState<{ label: string; at: number } | null>(null);
 
   useEffect(() => {
     const unsubscribe = queue.subscribe(setAll);
@@ -90,7 +93,10 @@ export function OfflineQueueProvider({ children, queue: injected }: { children: 
       online,
       submit: <T,>(label: string, request: QueuedRequest) => {
         if (!staffId) return Promise.reject(new Error('Sign in first'));
-        return queue.submit<T>(staffId, label, request);
+        return queue.submit<T>(staffId, label, request).then((result) => {
+          if (result.status === 'queued') setLastQueued({ label, at: Date.now() });
+          return result;
+        });
       },
       live: (step) => runLive(online, step),
       flush,
@@ -100,10 +106,16 @@ export function OfflineQueueProvider({ children, queue: injected }: { children: 
       },
       retry: (id) => (staffId ? queue.retry(id, staffId) : Promise.resolve()),
       remove: (id) => queue.remove(id),
+      lastQueued,
     };
-  }, [all, staffId, online, queue, flush]);
+  }, [all, staffId, online, queue, flush, lastQueued]);
 
   return <QueueContext.Provider value={value}>{children}</QueueContext.Provider>;
+}
+
+/** The queue when inside the provider, else null (shared pieces such as the header). */
+export function useOptionalOfflineQueue(): QueueValue | null {
+  return useContext(QueueContext);
 }
 
 export function useOfflineQueue(): QueueValue {

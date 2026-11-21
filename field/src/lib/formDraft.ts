@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { secureStorage, type KeyValueStore } from './storage';
 
 /**
@@ -178,24 +178,18 @@ export function clearAllFormDrafts(): void {
  * signed-in agent. Returns [value, set, clear].
  */
 export function useFormDraft<T>(key: string, initial: T | (() => T)) {
-  const touched = useRef(false);
-  const [value, setValue] = useState<T>(() => {
+  // `touched`: the form holds a draft or something he typed, so a draft read back later never overwrites it.
+  const [state, setState] = useState<{ value: T; touched: boolean }>(() => {
     const k = fullKey(key);
-    if (drafts.has(k)) {
-      touched.current = true;
-      return drafts.get(k) as T;
-    }
-    return typeof initial === 'function' ? (initial as () => T)() : initial;
+    if (drafts.has(k)) return { value: drafts.get(k) as T, touched: true };
+    return { value: typeof initial === 'function' ? (initial as () => T)() : initial, touched: false };
   });
   // A draft read back from the phone after the form opened fills it, unless he typed already.
   useEffect(() => {
     const onHydrated = () => {
-      if (touched.current) return;
       const k = fullKey(key);
-      if (drafts.has(k)) {
-        touched.current = true;
-        setValue(drafts.get(k) as T);
-      }
+      if (!drafts.has(k)) return;
+      setState((prev) => (prev.touched ? prev : { value: drafts.get(k) as T, touched: true }));
     };
     hydrationListeners.add(onHydrated);
     onHydrated();
@@ -205,16 +199,15 @@ export function useFormDraft<T>(key: string, initial: T | (() => T)) {
   }, [key]);
   const set = useCallback(
     (next: T | ((prev: T) => T)) => {
-      touched.current = true;
-      setValue((prev) => {
-        const v = typeof next === 'function' ? (next as (p: T) => T)(prev) : next;
+      setState((prev) => {
+        const v = typeof next === 'function' ? (next as (p: T) => T)(prev.value) : next;
         drafts.set(fullKey(key), v);
         if (owner) persist(owner, key, v);
-        return v;
+        return { value: v, touched: true };
       });
     },
     [key],
   );
   const clear = useCallback(() => clearFormDraft(key), [key]);
-  return [value, set, clear] as const;
+  return [state.value, set, clear] as const;
 }
