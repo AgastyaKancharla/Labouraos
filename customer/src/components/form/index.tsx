@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
 import { useI18n } from '@/i18n';
 import { colors, fonts, fontSize, radius, touch } from '@/theme';
 import { Text } from '../Text';
@@ -99,6 +99,10 @@ export function SelectField<V extends string>({
  */
 function Sheet({ open, onClose, title, header, children }: { open: boolean; onClose: () => void; title: string; header?: ReactNode; children: ReactNode }) {
   const { t } = useI18n();
+  // The list gets its own height limit in points. Inside a box that only has a "max 80%" height, Android
+  // lets the list grow to its full length and cuts it off instead of scrolling (Agastya, 22 Nov, again).
+  const { height } = useWindowDimensions();
+  const listMax = Math.round(height * (header ? 0.5 : 0.6));
   return (
     <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.backdrop}>
@@ -108,7 +112,7 @@ function Sheet({ open, onClose, title, header, children }: { open: boolean; onCl
             {title}
           </Text>
           {header}
-          <ScrollView style={styles.sheetList} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+          <ScrollView style={[styles.sheetList, { maxHeight: listMax }]} keyboardShouldPersistTaps="handled" nestedScrollEnabled testID="choice-sheet-list">
             {children}
           </ScrollView>
         </View>

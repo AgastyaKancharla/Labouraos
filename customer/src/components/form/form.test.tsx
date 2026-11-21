@@ -51,3 +51,14 @@ describe('choice sheets', () => {
     expect(StyleSheet.flatten(backdrop.props.style)).toMatchObject({ position: 'absolute' });
   });
 });
+
+describe('long lists scroll', () => {
+  it('the list has its own height limit (Android does not scroll a list that only its box limits)', async () => {
+    await wrap(<Area />);
+    await fireEvent.press(screen.getByTestId('area'));
+    const list = screen.getByTestId('choice-sheet-list');
+    const style = StyleSheet.flatten(list.props.style);
+    expect(typeof style.maxHeight).toBe('number');
+    expect(style.maxHeight).toBeGreaterThan(0);
+  });
+});
