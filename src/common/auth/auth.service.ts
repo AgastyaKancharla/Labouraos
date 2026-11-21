@@ -875,6 +875,8 @@ export class AuthService {
         lastActivityAt: now,
         absoluteExpiresAt,
         loginCodeRequestId,
+        // From the injectable clock: the day rules read it (SessionDayService, a code once a day).
+        createdAt: now,
       },
     });
 
