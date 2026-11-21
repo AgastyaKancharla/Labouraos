@@ -244,10 +244,40 @@ export class RbacGuard implements CanActivate {
         throw new ForbiddenException('Access denied: the record this request acts on was not named');
       }
       for (const value of values) {
+        if (
+          target.kind === 'business' &&
+          targetScope === 'own_team' &&
+          (await this.signupVisitAssignRuledByService(user, request, value))
+        ) {
+          continue;
+        }
         await this.checkOneRecord(team, user, target.kind, value, targetScope, permission.resource);
       }
     }
     return true;
+  }
+
+  /**
+   * B1 (21 Nov): a Team Lead assigning a customer-app sign-up's verification
+   * visit (purpose business_signup). Such a business often has no account
+   * agent or lead creator yet, so ownsBusiness would refuse it; the service
+   * applies the sign-up rule instead (BusinessVerificationService.assign: the
+   * business's team, else the suggested field agent's team, and only the
+   * Team Lead's own field agents). Only this route and only a sign-up
+   * assignment of this very business defer; everything else is checked here.
+   */
+  private async signupVisitAssignRuledByService(user: JwtPayload, request: Request, businessRef: string): Promise<boolean> {
+    if (user.role !== 'team_lead') return false;
+    if (request.method.toUpperCase() !== 'POST') return false;
+    if (declaredPath(request) !== '/businesses/:businessId/visit-assignments/:assignmentId/assign') return false;
+    const assignmentId = request.params?.assignmentId;
+    if (typeof assignmentId !== 'string' || !assignmentId) return false;
+    const assignment = await this.prisma.visitAssignment.findUnique({
+      where: { id: assignmentId },
+      select: { purpose: true, business: { select: { id: true, code: true } } },
+    });
+    if (!assignment || assignment.purpose !== 'business_signup') return false;
+    return assignment.business.id === businessRef || assignment.business.code === businessRef;
   }
 
   private async checkOneRecord(

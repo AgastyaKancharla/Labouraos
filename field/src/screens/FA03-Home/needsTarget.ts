@@ -16,7 +16,17 @@ export function needsTarget(item: NeedsItem): Href | null {
   switch (item.kind) {
     case 'interview_today':
       return visitFlow.interviewDay(tg.id);
+    case 'verification_visit':
+      // 21 Nov: a verification visit (app sign-up or call-agent lead) opens its verification steps,
+      // resuming a started visit; a revisit of it too (M2).
+      return {
+        pathname: routes.visitVerify,
+        params: { businessId: tg.businessId ?? '', assignmentId: tg.assignmentId ?? tg.id, ...(tg.visitId ? { visitId: tg.visitId } : {}) },
+      };
     case 'visit_unfinished':
+      if (tg.step === 'verify' && tg.assignmentId && tg.businessId) {
+        return { pathname: routes.visitVerify, params: { businessId: tg.businessId, assignmentId: tg.assignmentId, visitId: tg.id } };
+      }
       switch (tg.step) {
         case 'continue_business_form':
           return { pathname: routes.visitBusiness, params: { visitId: tg.id } };
@@ -45,11 +55,8 @@ export function needsTarget(item: NeedsItem): Href | null {
         params: tg.businessId ? { businessId: tg.businessId, name: item.title } : { revisitOf: tg.id, name: item.title },
       };
     case 'followup_task':
-      if (tg.relatedType === 'placement' && tg.relatedId) return sellingRoutes.paid(tg.relatedId);
-      if (tg.relatedType === 'interview' && tg.relatedId) return sellingRoutes.interviewDay(tg.relatedId);
-      if (tg.subjectType === 'business' && tg.subjectId) return pageRoutes.business(tg.subjectId);
-      if (tg.subjectType === 'job_seeker' && tg.subjectId) return pageRoutes.seekerProgress(tg.subjectId);
-      return null;
+      // 21 Nov (M4): the follow-up screen: call, what they said, Done.
+      return pageRoutes.followUp(tg.id);
     default:
       return null;
   }

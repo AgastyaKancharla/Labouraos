@@ -17,6 +17,7 @@ import {
   shiftOf,
 } from '../telephony/call-agent-load';
 import { FollowUpHandoverService, HandoverChoice } from './follow-up-handover.service';
+import { FieldHandoverService } from '../field-visit/field-handover.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Registration started, not paid: the stuck registrations an agent chases. */
@@ -28,10 +29,10 @@ export const NO_SHOW_AFTER_MINUTES = 60;
  * Field items (visits, interviews to attend, revisits, joinings) are Builder C's
  * (Laboura Field): `FieldHandoverService.handOver(agentId, pickedTeammateId | 'spread',
  * { reason, actorId, leaveRequestId, until })`, exported by FieldVisitModule
- * (src/modules/field-visit/field-handover.service.ts, PR #169). It is looked up at
- * run time (that file may not be on this branch yet), under its class or under
- * the FIELD_HANDOVER token; until it is there, field items stay where they are
- * and the answer says `field: 'not_connected'`.
+ * (src/modules/field-visit/field-handover.service.ts), injected directly; the
+ * FIELD_HANDOVER token is only for hand-built test doubles. `until` is an
+ * instant on the last approved leave day: FieldHandoverService works out the
+ * end itself (handoverEnd = the start of the next IST day).
  */
 export const FIELD_HANDOVER = 'FIELD_HANDOVER';
 export interface FieldHandoverPort {
@@ -40,16 +41,6 @@ export interface FieldHandoverPort {
     to: string | 'spread',
     options: { reason: string; actorId?: string | null; leaveRequestId?: string | null; until?: Date | null },
   ): Promise<unknown>;
-}
-
-/** The FieldHandoverService class, when its file is in this build. */
-function fieldHandoverClass(): unknown {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return (require('../field-visit/field-handover.service') as { FieldHandoverService?: unknown }).FieldHandoverService ?? null;
-  } catch {
-    return null;
-  }
 }
 
 export const WHATSAPP_HANDOVER = 'WHATSAPP_HANDOVER';
@@ -130,6 +121,8 @@ export class WorkHandoverService {
     private readonly pricing: PricingService,
     private readonly followUps: FollowUpHandoverService,
     @Optional() private readonly moduleRef?: ModuleRef,
+    // Builder C's field handover (FieldVisitModule): visits, interviews, revisits, joinings.
+    @Optional() private readonly fieldService?: FieldHandoverService,
   ) {}
 
   private lookUp<T>(...tokens: unknown[]): T | null {
@@ -147,7 +140,7 @@ export class WorkHandoverService {
   }
 
   private fieldHandover(): FieldHandoverPort | null {
-    return this.lookUp<FieldHandoverPort>(fieldHandoverClass(), FIELD_HANDOVER);
+    return this.fieldService ?? this.lookUp<FieldHandoverPort>(FIELD_HANDOVER);
   }
 
   /** Counts for T-Req-Sneha: what is open for the person in the leave days. */

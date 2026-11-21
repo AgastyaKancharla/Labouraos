@@ -691,6 +691,8 @@ describe('21 Nov fixes: call work and leads', () => {
     const service = app.get(WorkHandoverService);
     await service.onLeaveApproved(lead1.id, leave.id, { mode: 'share' });
     await service.sweepLeaves(LEAVE_MORNING);
+    // The real FieldHandoverService (FieldVisitModule) is wired in: the field step ran once for this leave.
+    expect(await prisma.workHandover.findFirst({ where: { leaveRequestId: leave.id, recordType: 'field' } })).toMatchObject({ recordId: 'moved' });
     expect(await prisma.callTask.count({ where: { staffId: extra.id, status: 'open' } })).toBe(3);
     expect(await prisma.callTask.count({ where: { staffId: agentB.id, status: 'open' } })).toBe(3);
     await prisma.staff.update({ where: { id: extra.id }, data: { status: 'deactivated' } });

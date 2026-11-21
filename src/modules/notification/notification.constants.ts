@@ -68,6 +68,11 @@ export const NOTIFICATION_KINDS = [
   'missed_call_waiting',
   // 21 Nov fixes: a business asked in the app for its verification visit — the Team Lead sends a field agent.
   'signup_visit_request',
+  // Laboura Field's bell (owner approved 17 Nov; 21 Nov fixes): a visit assigned or moved to the field agent,
+  // an agreement signed on his business, open work handed over to him on a teammate's leave.
+  'field_visit_assigned',
+  'field_agreement_signed',
+  'field_work_handed_over',
 ] as const;
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
@@ -76,7 +81,7 @@ export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
  * Kinds that tell someone something rather than ask them to do something.
  * Reading them is the work: marking one as seen clears it.
  */
-export const INFORMATIONAL_KINDS: readonly NotificationKind[] = ['request_decided', 'hit_reversed', 'stuck_work_reminder', 'agent_reminder', 'payslip_ready', 'weekly_report', 'fee_unpaid_reminder', 'new_match_registered', 'password_reset', 'signed_in_without_code', 'day_resumed_again', 'job_seeker_assigned', 'referral_assigned', 'business_assigned'];
+export const INFORMATIONAL_KINDS: readonly NotificationKind[] = ['request_decided', 'hit_reversed', 'stuck_work_reminder', 'agent_reminder', 'payslip_ready', 'weekly_report', 'fee_unpaid_reminder', 'new_match_registered', 'password_reset', 'signed_in_without_code', 'day_resumed_again', 'job_seeker_assigned', 'referral_assigned', 'business_assigned', 'field_visit_assigned', 'field_agreement_signed', 'field_work_handed_over'];
 
 /** Kinds that carry rupee amounts. They only ever go to the CEO or Finance. */
 export const MONEY_KINDS: readonly NotificationKind[] = [
@@ -187,6 +192,9 @@ const LINKS: Record<NotificationKind, LinkTable> = {
   business_assigned: { team_lead: 'businesses/:id', manager: 'businesses/:id', field_agent: '' },
   missed_call_waiting: { team_lead: 'missed-calls', manager: 'call-center', ceo: 'call-center' },
   signup_visit_request: { team_lead: 'app-signups', manager: 'app-signups', ceo: 'app-signups' },
+  field_visit_assigned: { field_agent: '' },
+  field_agreement_signed: { field_agent: '' },
+  field_work_handed_over: { field_agent: '' },
 };
 
 /**

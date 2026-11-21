@@ -101,7 +101,6 @@ export default function VisitStartScreen() {
       <AppHeader title={t('fa20.title')} />
       <Screen>
         <StepHeader step={1} revisit={Boolean(params.businessId ?? sameShop?.businessId)} />
-        {!queue.online ? <Banner tone="info" icon="wifi-off" message={t('common.offline')} /> : null}
         <Card title={t('fa20.photoTitle')} icon="camera" accent="royal">
           <View style={styles.gps} testID="fa20-gps">
             <IconTile icon="location" accent={fix ? 'green' : 'navy'} size={30} />

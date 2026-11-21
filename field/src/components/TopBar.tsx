@@ -22,6 +22,8 @@ interface Props {
   onLogout?: () => void;
   /** A back arrow before the logo (every screen inside a tab except its main page). */
   onBack?: () => void;
+  /** The bell (21 Nov): unread count and where it opens. */
+  bell?: { count: number; onPress: () => void };
 }
 
 /**
@@ -29,7 +31,7 @@ interface Props {
  * logo, title and subtitle and the avatar that opens
  * "Log out". Followed by the swoosh stripe.
  */
-export function TopBar({ title, subtitle, personName, onLogout, onBack }: Props) {
+export function TopBar({ title, subtitle, personName, onLogout, onBack, bell }: Props) {
   const insets = useSafeAreaInsets();
   const { t } = useI18n();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -75,6 +77,22 @@ export function TopBar({ title, subtitle, personName, onLogout, onBack }: Props)
           </View>
         </View>
         <View style={styles.right}>
+          {bell ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('bell.open', { count: bell.count })}
+              onPress={bell.onPress}
+              style={styles.tap}
+              testID="header-bell"
+            >
+              <Icon name="bell" size={22} color={colors.white} strokeWidth={2.2} />
+              {bell.count > 0 ? (
+                <View style={styles.badge} testID="header-bell-count">
+                  <Text style={styles.badgeText}>{bell.count > 99 ? '99+' : String(bell.count)}</Text>
+                </View>
+              ) : null}
+            </Pressable>
+          ) : null}
           {personName ? (
             <Pressable
               accessibilityRole="button"
@@ -143,6 +161,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   avatarText: { fontFamily: fonts.display700, fontSize: 12, color: colors.navy },
+  badge: {
+    position: 'absolute', top: 4, right: 2, minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4,
+    backgroundColor: colors.tomato, alignItems: 'center', justifyContent: 'center',
+  },
+  badgeText: { fontFamily: fonts.display700, fontSize: 10, color: colors.white },
   backdrop: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: colors.surface,

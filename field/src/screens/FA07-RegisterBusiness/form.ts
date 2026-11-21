@@ -110,8 +110,6 @@ export function formErrors(form: FormState, findTrade: (row: StaffRow) => Trade 
     const min = paise(row.salaryMin);
     const max = paise(row.salaryMax);
     if (!staffTrade(row) || !min || !row.shift || !row.startDate || (max !== null && max < (min ?? 0))) e.push(`staff${i}`);
-    const trade = findTrade(row);
-    if (trade && min && min < trade.legalMinimumPaise && !row.ownerTold) e.push(`staffLegal${i}`);
   });
   return e;
 }

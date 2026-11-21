@@ -79,6 +79,9 @@ type Tab = 'Today' | 'Visits' | 'Businesses' | 'Job seekers' | 'Me';
 const SCREENS: [design: string, url: string, tab: Tab][] = [
   ['Search from Today', routes.search, 'Today'],
   ['FA14-Pitch', routes.feeCalculator, 'Today'],
+  // 21 Nov: the bell and a follow-up task live in Today.
+  ['FA25-Notifications', routes.notifications, 'Today'],
+  ['FA26-FollowUp', pageRoutes.followUp('t-1'), 'Today'],
   // The whole visit-and-onboard job lives in Visits.
   ['FA05b-TodaysWork', pageRoutes.todaysWork('2026-11-16', 'visit'), 'Visits'],
   ['FA13 Shops near me', routes.shopsNearMe, 'Visits'],

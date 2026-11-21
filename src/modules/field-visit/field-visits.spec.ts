@@ -270,7 +270,8 @@ describe('Laboura Field shop visits: proof, outcomes, Team Lead checks, Home/Map
       .set(auth)
       .send({ outcome: 'onboard_now', shopName: 'Sri Krishna Hotel', spokeTo: 'owner' })
       .expect(201);
-    expect(talk.body).toMatchObject({ outcome: null, durationSeconds: 14 * 60 });
+    // 21 Nov: "onboard now" ends the talk, not the shop time: it runs until the business is registered.
+    expect(talk.body).toMatchObject({ outcome: null, durationSeconds: null });
 
     const phone = `+919${String(stamp).slice(-7)}77`;
     const otpRequestId = await verifiedOtpFor(app, phone);
