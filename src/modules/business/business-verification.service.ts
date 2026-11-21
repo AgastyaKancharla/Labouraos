@@ -123,6 +123,8 @@ export class BusinessVerificationService {
       where = { status: 'pending', OR: [
         { business: businessesOwnedBy(teamIds) },
         { purpose: 'business_signup', suggestedStaffId: { in: teamIds }, business: { leadCreatedByStaffId: null, accountAgentId: null } },
+        // B1 (21 Nov): an app sign-up nobody was suggested for is open to every Team Lead of its city.
+        { purpose: 'business_signup', suggestedStaffId: null, business: { leadCreatedByStaffId: null, accountAgentId: null, city: staff.city } },
       ] };
     } else {
       where = { status: 'pending' };
@@ -280,9 +282,12 @@ export class BusinessVerificationService {
       // is no team's (Managers and the CEO). The field agent sent is always the Team Lead's own.
       const team = new OwnTeam(this.prisma);
       const owners = businessOwners(assignment.business);
+      // B1 (21 Nov): with no owner and no suggestion, any Team Lead of the business's city may send one of theirs.
       const mine = owners.length
         ? await team.includesAny(actor.id, owners)
-        : Boolean(assignment.suggestedStaffId) && (await team.includes(actor.id, assignment.suggestedStaffId));
+        : assignment.suggestedStaffId
+          ? await team.includes(actor.id, assignment.suggestedStaffId)
+          : actor.city === assignment.business.city;
       if (!mine) throw new ForbiddenException('Team Leads may only assign visits for their own team’s businesses');
       if (!(await team.includes(actor.id, assignedStaffId))) throw new ForbiddenException('Team Leads may only send their own field agents');
     } else {

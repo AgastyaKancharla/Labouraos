@@ -41,6 +41,9 @@ export interface CallActor {
   role: string;
 }
 
+/** Statuses (besides Available) in which a field agent may place a call (21 Nov, B2). */
+const FIELD_CALLING_STATUSES: readonly string[] = ['on_visit', 'travelling'];
+
 @Injectable()
 export class CallService {
   private readonly logger = new Logger(CallService.name);
@@ -351,12 +354,18 @@ export class CallService {
     });
     if (!caller?.callRoutingPhone) {
       throw new BadRequestException(
-        'Set the phone the calling system rings before placing a call: Home → "Your calling phone" (a Team Lead, Manager or the CEO can also set it on Team & Access)',
+        actor.role === 'field_agent'
+          ? 'Set the phone the calling system rings before placing a call: Laboura Field → Me → "Your calling phone" (your Team Lead can also set it)'
+          : 'Set the phone the calling system rings before placing a call: Home → "Your calling phone" (a Team Lead, Manager or the CEO can also set it on Team & Access)',
       );
     }
     const agentPhone = normaliseIndianMobile(decryptCallRoutingPhone(caller.callRoutingPhone));
-    if (!(await this.attendance.isAvailable(actor.id))) {
-      throw new BadRequestException('Calls are placed only while you are Available');
+    if (!(await this.mayPlaceCallNow(actor))) {
+      throw new BadRequestException(
+        actor.role === 'field_agent'
+          ? 'Calls are placed only while you are Available, On visit or Travelling'
+          : 'Calls are placed only while you are Available',
+      );
     }
 
     const provider = this.telephony.getCapacity().vendor;
@@ -397,6 +406,18 @@ export class CallService {
     }
 
     return { callRecordId: created.id };
+  }
+
+  /**
+   * Who may place a call right now (21 Nov, B2): Available, and for a field
+   * agent also On visit or Travelling, since at a shop the status is On visit
+   * (calling candidates from the shop is the whole point of the visit).
+   */
+  private async mayPlaceCallNow(actor: CallActor): Promise<boolean> {
+    if (await this.attendance.isAvailable(actor.id)) return true;
+    if (actor.role !== 'field_agent') return false;
+    const today = await this.attendance.today(actor.id);
+    return Boolean(today.status && FIELD_CALLING_STATUSES.includes(today.status) && !today.logoutAt);
   }
 
   async recordOutcome(

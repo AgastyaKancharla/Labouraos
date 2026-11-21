@@ -327,12 +327,19 @@ export class FieldVisitService {
     const note = body.note?.trim() ? body.note.trim().slice(0, 1000) : null;
 
     const startedAt = visit.startedAt ?? visit.visitedAt;
-    const endedAt = visit.endedAt ?? this.clampTime(body.endedAt, startedAt, now);
-    const durationSeconds = visit.durationSeconds ?? Math.round((endedAt.getTime() - startedAt.getTime()) / 1000);
+    // 21 Nov (shop time): "onboard now" only ends the talk; the agent is still in the shop until
+    // the onboarding finishes, so the shop time (durationSeconds) is set then, not now. A visit
+    // whose onboarding was started (endedAt set, no duration yet) finishes with this result.
+    const onboardingOpen = this.onboardingOpen(visit);
+    const endedAt = onboardingOpen ? now : visit.endedAt ?? this.clampTime(body.endedAt, startedAt, now);
+    const durationSeconds = onboardNow
+      ? null
+      : visit.durationSeconds ?? Math.round((endedAt.getTime() - startedAt.getTime()) / 1000);
+    const shopTimeEnds = durationSeconds !== null && visit.durationSeconds === null;
 
     const data: Prisma.BusinessVisitUpdateInput = {
       shopName,
-      endedAt,
+      endedAt: onboardNow ? visit.endedAt ?? endedAt : endedAt,
       durationSeconds,
       ...(spokeTo ? { spokeTo } : {}),
       ...(contactPhone ? { contactPhone } : {}),
@@ -353,11 +360,11 @@ export class FieldVisitService {
       changedFields: ['outcome', 'outcomeReason', 'revisitOn', 'note', 'spokeTo', 'contactPhone', 'endedAt'],
       reason: visit.outcome ? 'Visit outcome changed' : 'Visit outcome recorded',
     });
-    if (!visit.endedAt && now.getTime() - endedAt.getTime() <= LIVE_WINDOW_MS && !onboardNow) {
+    if (shopTimeEnds && now.getTime() - endedAt.getTime() <= LIVE_WINDOW_MS) {
       await this.attendance.noteBusinessCheckOut(staffId).catch((e: unknown) => this.logger.warn(`Travelling not set: ${String(e)}`));
     }
     const policy = await this.pricing.current();
-    if (!visit.endedAt && isShortVisit(durationSeconds, policy.visitShortMinutes)) {
+    if (shopTimeEnds && isShortVisit(durationSeconds, policy.visitShortMinutes)) {
       await this.raise('visit_short', visit, { durationSeconds, shortMinutes: policy.visitShortMinutes });
     }
     if (!onboardNow && recorded !== ALREADY_ONBOARDED) await this.checkNoOnboarding(staffId, now, policy);
@@ -516,6 +523,7 @@ export class FieldVisitService {
     const startedAt = visit.startedAt ?? visit.visitedAt;
     const proofAt = this.clampTime(fields.takenAt, startedAt, now);
     const geofenceFlag = visit.geofenceFlag || this.outsideGeofence(visit.business, reading);
+    const stillInShop = this.onboardingOpen(visit) || (isVerificationVisitPurpose(visit.purpose) && !visit.outcome);
     await this.prisma.businessVisit.update({
       where: { id },
       data: {
@@ -527,7 +535,9 @@ export class FieldVisitService {
         proofAt,
         proofDistanceMeters: Math.round(distance),
         geofenceFlag,
-        ...(visit.endedAt ? {} : { endedAt: proofAt, durationSeconds: Math.round((proofAt.getTime() - startedAt.getTime()) / 1000) }),
+        // 21 Nov (shop time): the selfie ends the shop time only for a visit that is not
+        // onboarding (onboard now) or verifying; those stay On visit until they finish.
+        ...(visit.endedAt || stillInShop ? {} : { endedAt: proofAt, durationSeconds: Math.round((proofAt.getTime() - startedAt.getTime()) / 1000) }),
       },
     });
     await this.audit.log({
@@ -548,7 +558,7 @@ export class FieldVisitService {
       },
     );
     if (gps.length) await this.markGpsSuspect(visit, gps);
-    if (now.getTime() - proofAt.getTime() <= LIVE_WINDOW_MS) {
+    if (!stillInShop && now.getTime() - proofAt.getTime() <= LIVE_WINDOW_MS) {
       await this.attendance.noteBusinessCheckOut(staffId).catch((e: unknown) => this.logger.warn(`Travelling not set: ${String(e)}`));
     }
     return this.present(await this.load(id));
@@ -570,6 +580,7 @@ export class FieldVisitService {
     const owners = valid ? await this.otp.isVerified(body.ownerOtpRequestId, business.phone, ownerVisitOtpPurpose(visit.assignmentId)) : false;
     if (!owners) throw new BadRequestException("Wrong code. Ask the owner to read the latest code again.");
     const verifiedOutcome = (await this.wasOnboardedBefore(business.id, id)) ? ALREADY_ONBOARDED : 'onboarded';
+    const shopTime = this.shopTimeUntil(visit, this.clock.now());
     const accountAgentSetAt = await this.prisma.$transaction(async (tx) => {
       // B19 (rev 188): a completed verification visit has its result, like every visit.
       await tx.businessVisit.update({
@@ -578,6 +589,9 @@ export class FieldVisitService {
           ownerOtpRequestId: body.ownerOtpRequestId,
           outcome: visit.outcome ?? verifiedOutcome,
           outcomeRecordedAt: visit.outcomeRecordedAt ?? this.clock.now(),
+          // 21 Nov (shop time): a verification visit's shop time runs until the owner's code.
+          endedAt: visit.durationSeconds === null ? shopTime.endedAt : visit.endedAt,
+          durationSeconds: visit.durationSeconds === null ? shopTime.durationSeconds : visit.durationSeconds,
         },
       });
       const done = await tx.visitAssignment.updateMany({
@@ -609,6 +623,7 @@ export class FieldVisitService {
       city: business.city,
     });
     await this.verification.advanceToPendingTlCheckIfReady(business.id, staffId);
+    if (visit.durationSeconds === null) await this.leaveShop(staffId);
     const after = await this.prisma.business.findUniqueOrThrow({ where: { id: business.id }, select: { verificationStatus: true, accountAgentId: true } });
     return {
       ...this.present(await this.load(id)),
@@ -637,6 +652,7 @@ export class FieldVisitService {
     const now = this.clock.now();
     const visit = await this.assertCanRegisterFrom(staffId, id);
     const business = await this.prisma.business.findUniqueOrThrow({ where: { id: businessId } });
+    const shopTime = this.shopTimeUntil(visit, now);
     const geofenceFlag = this.outsideGeofence(business, {
       latitude: visit.proofLatitude ?? visit.latitude,
       longitude: visit.proofLongitude ?? visit.longitude,
@@ -644,7 +660,12 @@ export class FieldVisitService {
     await this.prisma.$transaction([
       this.prisma.businessVisit.update({
         where: { id },
-        data: { businessId, outcome: 'onboarded', outcomeRecordedAt: now, geofenceFlag, shopName: visit.shopName ?? business.name },
+        data: {
+          businessId, outcome: 'onboarded', outcomeRecordedAt: now, geofenceFlag, shopName: visit.shopName ?? business.name,
+          // 21 Nov (shop time): registering the business finishes the onboarding and the shop time.
+          endedAt: visit.durationSeconds === null ? shopTime.endedAt : visit.endedAt,
+          durationSeconds: visit.durationSeconds === null ? shopTime.durationSeconds : visit.durationSeconds,
+        },
       }),
       this.prisma.business.update({
         where: { id: businessId },
@@ -667,6 +688,31 @@ export class FieldVisitService {
       city: business.city,
     });
     await this.verification.advanceToPendingTlCheckIfReady(businessId, staffId);
+    if (visit.durationSeconds === null) {
+      await this.leaveShop(staffId);
+      const { durationSeconds } = shopTime;
+      const policy = await this.pricing.current();
+      if (isShortVisit(durationSeconds, policy.visitShortMinutes)) {
+        await this.raise('visit_short', visit, { durationSeconds, shortMinutes: policy.visitShortMinutes });
+      }
+    }
+  }
+
+  /** "Onboard now" was chosen and the onboarding has not finished: the agent is still in the shop. */
+  private onboardingOpen(visit: { outcome: string | null; endedAt: Date | null; durationSeconds: number | null }): boolean {
+    return !visit.outcome && Boolean(visit.endedAt) && visit.durationSeconds === null;
+  }
+
+  /** The shop time from the shop photo to `at` (21 Nov: the visit or onboarding finished). */
+  private shopTimeUntil(visit: { startedAt: Date | null; visitedAt: Date }, at: Date): { endedAt: Date; durationSeconds: number } {
+    const startedAt = visit.startedAt ?? visit.visitedAt;
+    const endedAt = at.getTime() < startedAt.getTime() ? startedAt : at;
+    return { endedAt, durationSeconds: Math.round((endedAt.getTime() - startedAt.getTime()) / 1000) };
+  }
+
+  /** The agent left the shop: Travelling (only while his day is open). */
+  private async leaveShop(staffId: string): Promise<void> {
+    await this.attendance.noteBusinessCheckOut(staffId).catch((e: unknown) => this.logger.warn(`Travelling not set: ${String(e)}`));
   }
 
   // --------------------------------------------------------- interview day
