@@ -140,6 +140,74 @@ describe('Aadhaar Secure QR parser (guide: an in-house check, no outside company
     });
   });
 
+  describe('22 Nov (owner: "not getting correct details"): every format reads the right fields, and the signature is always enforced', () => {
+    // Synthetic people only. The care-of field holds another person's name on purpose: it must never
+    // be read as the name (a shifted field split would show the parent's name).
+    const address = { careOf: 'D/O Lakshmamma Testappa', district: 'Bengaluru Urban', pincode: '560076', location: 'JP Nagar 8th Phase' };
+    const formats: Array<{ label: string; input: Parameters<typeof buildSecureQr>[1] }> = [
+      { label: 'older numeric QR, no email or mobile (indicator 0)', input: { indicator: 0 } },
+      { label: 'older numeric QR, email hash only (indicator 1)', input: { indicator: 1 } },
+      { label: 'older numeric QR, mobile hash only (indicator 2)', input: { indicator: 2, mobile: '9876500001' } },
+      { label: 'older numeric QR, email and mobile hashes (indicator 3)', input: { indicator: 3, mobile: '9876500001' } },
+      { label: 'V2 (2022 onwards), mobile last 4', input: { version: 'V2', indicator: 2, mobile: '9876500001' } },
+      { label: 'V2 with no mobile on the Aadhaar', input: { version: 'V2', indicator: 0 } },
+      { label: 'V3 (newer e-Aadhaar)', input: { version: 'V3', indicator: 3, mobile: '9876500001' } },
+      { label: 'a later V-number', input: { version: 'V5' as 'V3', indicator: 2, mobile: '9876500001' } },
+    ];
+    for (const { label, input } of formats) {
+      it(`${label}: name, date of birth, gender, reference and photo in the right places; any other key or an edit is refused`, () => {
+        const text = buildSecureQr(signer, { ...input, name: 'Kavya Ramesh', dob: '15-08-1998', gender: 'F', last4: '4321', timestamp: '20250102030405678', address });
+        const parsed = parseSecureQr(text);
+        expect(parsed.name).toBe('Kavya Ramesh');
+        expect(parsed.dateOfBirth).toBe('15-08-1998');
+        expect(parsed.gender).toBe('F');
+        expect(parsed.referenceLast4).toBe('4321');
+        expect(parsed.referenceTimestamp).toBe('20250102030405678');
+        expect(parsed.address.careOf).toBe('D/O Lakshmamma Testappa');
+        expect(areaAndPincode(parsed.address)).toEqual({ area: 'JP Nagar 8th Phase', pincode: '560076' });
+        expect(parsed.photo.equals(SYNTHETIC_JP2_PHOTO)).toBe(true);
+        expect(jpeg2000ToJpeg(parsed.photo)?.subarray(0, 2).toString('hex')).toBe('ffd8');
+        // Signed by the trusted key: passes. By anyone else (a QR made up or from another source): refused.
+        expect(verifySecureQrSignature(parsed, [signer.trusted])).not.toBeNull();
+        expect(verifySecureQrSignature(parsed, [other.trusted])).toBeNull();
+        // The name changed after signing (same length, so every field still splits): refused.
+        const signed = secureQrSignedBytes({ ...input, name: 'Kavya Ramesh', dob: '15-08-1998', gender: 'F', last4: '4321', timestamp: '20250102030405678', address });
+        const signature = sign('sha256', signed, signer.privateKey);
+        const edited = Buffer.from(signed.toString('latin1').replace('Kavya Ramesh', 'Ravya Ramesh'), 'latin1');
+        const fake = parseSecureQr(secureQrText(edited, signer, { signature }));
+        expect(fake.name).toBe('Ravya Ramesh');
+        expect(verifySecureQrSignature(fake, [signer.trusted])).toBeNull();
+        // No signature at all (the last 256 bytes zeroed, or cut off): refused or unreadable, never trusted.
+        const zeroed = parseSecureQr(secureQrText(signed, signer, { signature: Buffer.alloc(256) }));
+        expect(verifySecureQrSignature(zeroed, [signer.trusted])).toBeNull();
+        const cut = bytesToDecimal(gzipSync(signed));
+        let cutResult: 'refused' | 'unreadable' = 'refused';
+        try {
+          expect(verifySecureQrSignature(parseSecureQr(cut), [signer.trusted])).toBeNull();
+        } catch (error) {
+          expect(error).toBeInstanceOf(SecureQrError);
+          cutResult = 'unreadable';
+        }
+        expect(['refused', 'unreadable']).toContain(cutResult);
+        // No trusted key loaded: nothing passes.
+        expect(verifySecureQrSignature(parsed, [])).toBeNull();
+      });
+    }
+
+    it('a V2 photo followed by extra bytes before the signature still decodes (the JPEG 2000 end marker ends it)', () => {
+      const photo = Buffer.concat([SYNTHETIC_JP2_PHOTO, Buffer.alloc(64, 0xab)]);
+      const parsed = parseSecureQr(buildSecureQr(signer, { version: 'V2', mobile: '9876500001', photo }));
+      expect(parsed.name).toBe('Kavya Ramesh');
+      expect(jpeg2000ToJpeg(parsed.photo)?.subarray(0, 2).toString('hex')).toBe('ffd8');
+    });
+
+    it("a different person's genuine-looking QR is read as that person, and the name check (not the parser) refuses it", () => {
+      const parsed = parseSecureQr(buildSecureQr(signer, { version: 'V2', name: 'Test Person Two', mobile: '9876500001' }));
+      expect(parsed.name).toBe('Test Person Two');
+      expect(checkIdName('Kavya Ramesh', parsed.name).matches).toBe(false);
+    });
+  });
+
   describe('refusals', () => {
     it('refuses the old unsigned XML QR with its own reason', () => {
       expect(failure(() => parseSecureQr('<?xml version="1.0" encoding="UTF-8"?><PrintLetterBarcodeData uid="xxxx" name="A"/>'))).toBe('old_unsigned_qr');

@@ -123,7 +123,12 @@ describe('P01d-IDCheck (Aadhaar Secure QR, guide 14 Nov)', () => {
     const take = screen.getByRole('button', { name: 'Take photo of the card' });
     expect(take).toHaveAttribute('data-facing', 'environment');
     await userEvent.click(take);
-    expect(await screen.findByTestId('id-pending')).toHaveTextContent(/Sent to a Team Lead\..*nothing is charged before the check/);
+    expect(await screen.findByTestId('id-pending')).toHaveTextContent(/Sent to a Team Lead\..*nothing is charged before the check/i);
+    // 22 Nov: what happens next, and Done.
+    expect(screen.getByTestId('id-pending-next')).toHaveTextContent(/Team Lead checks your card.*open this same link again to pay.*You can close this page/);
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(screen.getByTestId('id-pending-done')).toHaveTextContent(/All done for now\..*close this page/);
+    expect(screen.queryByRole('button', { name: /scan the QR code/i })).toBeNull();
     const sent = api.fetch.mock.calls.find(([url]) => String(url).endsWith(`/registration/${TOKEN}/other-id`));
     const form = sent![1]!.body as FormData;
     expect(form.get('idType')).toBe('pan');
@@ -163,7 +168,7 @@ describe('P01d-IDCheck (Aadhaar Secure QR, guide 14 Nov)', () => {
     verifiedInThisTab();
     mockApi({ [`GET /registration/${TOKEN}/status`]: atId({ idCheck: { waitingForTeamLead: true, lastResult: 'pending' } }) });
     render();
-    expect(await screen.findByTestId('id-pending')).toHaveTextContent(/Open this link again later to pay/);
+    expect(await screen.findByTestId('id-pending')).toHaveTextContent(/open this same link again to pay/);
     expect(screen.getByRole('button', { name: 'Aadhaar: scan the QR code' })).toBeEnabled();
     expect(screen.queryByTestId('navigated-away')).not.toBeInTheDocument();
   });

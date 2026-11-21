@@ -34,13 +34,19 @@ describe('P04-Agreement / P04b-Signed', () => {
     // One button: no "Sign agreement" button; "Send code to sign" waits for the ticks.
     expect(screen.queryByRole('button', { name: 'Sign agreement' })).not.toBeInTheDocument();
     const send = screen.getByRole('button', { name: 'Send code to sign' });
-    expect(send).toBeDisabled();
+    // 22 Nov: never a silently dead button — pressed too early it says what is missing and marks it.
+    expect(send).toBeEnabled();
     expect(screen.getByText('Write your name and tick the three boxes first.')).toBeInTheDocument();
+    await userEvent.click(send);
+    expect(api.calls('POST /consent/send-otp')).toHaveLength(0);
+    expect(screen.getByTestId('send-blocked')).toHaveTextContent('Before the code can be sent: tick the 3 box(es) still empty.');
+    expect(terms).toHaveAttribute('aria-invalid', 'true');
     await userEvent.click(terms);
     await userEvent.click(recording);
-    expect(send).toBeDisabled();
+    expect(screen.getByTestId('send-blocked')).toHaveTextContent('tick the 1 box(es) still empty');
+    expect(terms).not.toHaveAttribute('aria-invalid');
     await userEvent.click(authority);
-    expect(send).toBeEnabled();
+    expect(screen.queryByTestId('send-blocked')).toBeNull();
     await userEvent.click(send);
     expect(api.calls('POST /consent/send-otp')).toHaveLength(1);
     expect(api.calls('POST /consent/submit')).toHaveLength(0);
@@ -96,5 +102,25 @@ describe('P04-Agreement / P04b-Signed', () => {
     mockApi({ 'GET /consent/atok': apiError(400, 'Consent link has expired') });
     render();
     expect(await screen.findByText(/This link has expired/)).toBeInTheDocument();
+  });
+
+  it('22 Nov: the contact name is filled in and editable; an empty name is marked; a server refusal is shown', async () => {
+    const api = mockApi({
+      'GET /consent/atok': details,
+      'POST /consent/send-otp': apiError(400, 'This link has no phone number for the code. Ask Laboura for a new link.'),
+    });
+    render();
+    const name = await screen.findByRole('textbox', { name: /Your full name/ });
+    expect(name).toHaveValue('Shankar Rao');
+    await userEvent.clear(name);
+    for (const box of screen.getAllByRole('checkbox')) await userEvent.click(box);
+    await userEvent.click(screen.getByRole('button', { name: 'Send code to sign' }));
+    expect(screen.getByTestId('send-blocked')).toHaveTextContent('Before the code can be sent: write your full name.');
+    expect(name).toHaveAttribute('aria-invalid', 'true');
+    expect(api.calls('POST /consent/send-otp')).toHaveLength(0);
+    await userEvent.type(name, 'Shankar R');
+    await userEvent.click(screen.getByRole('button', { name: 'Send code to sign' }));
+    await waitFor(() => expect(api.calls('POST /consent/send-otp')).toHaveLength(1));
+    expect(await screen.findByText('This link has no phone number for the code. Ask Laboura for a new link.')).toBeInTheDocument();
   });
 });

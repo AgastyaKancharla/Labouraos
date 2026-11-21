@@ -205,22 +205,30 @@ export class ReferralService {
 
     if (!dto.whatsappPhone?.trim()) throw new BadRequestException('WhatsApp number is required');
     const whatsappPhone = requireIndianMobile(dto.whatsappPhone, 'whatsappPhone');
-    if (!dto.locality?.trim()) throw new BadRequestException('Locality is required');
-    if (!/^\d{6}$/.test(dto.pincode ?? '')) throw new BadRequestException('A valid 6-digit pincode is required');
+    // 22 Nov (owner testing): a partner who is a registered business takes the area, pincode and pin
+    // of that business (CA15 no longer asks for them); typed values count only where the business has none.
+    let fromBusiness: { locality: string | null; pincode: string | null; latitude: number | null; longitude: number | null } | null = null;
+    if (type === 'business' && dto.businessId) {
+      fromBusiness = await this.prisma.business.findUnique({ where: { id: dto.businessId }, select: { locality: true, pincode: true, latitude: true, longitude: true } });
+      if (!fromBusiness) throw new BadRequestException('businessId must reference a registered business');
+    }
+    const businessPin = fromBusiness && fromBusiness.latitude !== null && fromBusiness.longitude !== null ? { latitude: fromBusiness.latitude, longitude: fromBusiness.longitude } : null;
+    const locality = fromBusiness?.locality?.trim() || dto.locality?.trim() || '';
+    const pincode = fromBusiness?.pincode && /^\d{6}$/.test(fromBusiness.pincode) ? fromBusiness.pincode : dto.pincode;
+    if (!locality) throw new BadRequestException('Locality is required');
+    if (!/^\d{6}$/.test(pincode ?? '')) throw new BadRequestException('A valid 6-digit pincode is required');
     if (!(HEARD_FROM_VALUES as readonly string[]).includes(dto.heardFrom)) {
       throw new BadRequestException('heardFrom is required and must be a supported value');
     }
-    if ((dto.latitude === undefined) !== (dto.longitude === undefined)) {
+    if (!businessPin && (dto.latitude === undefined) !== (dto.longitude === undefined)) {
       throw new BadRequestException('latitude and longitude must be provided together');
     }
     if (type === 'individual' && !INDIVIDUAL_ROLES.includes(dto.individualRole ?? '')) {
       throw new BadRequestException('A valid individualRole is required for individual partners');
     }
     if (type === 'business') {
-      if (dto.businessId) {
-        const business = await this.prisma.business.findUnique({ where: { id: dto.businessId }, select: { id: true } });
-        if (!business) throw new BadRequestException('businessId must reference a registered business');
-      } else if (!dto.partnerBusinessType?.trim() || !dto.partnerBusinessName?.trim()) {
+      // A registered business (dto.businessId) was checked above (fromBusiness).
+      if (!dto.businessId && (!dto.partnerBusinessType?.trim() || !dto.partnerBusinessName?.trim())) {
         throw new BadRequestException('partnerBusinessType and partnerBusinessName are required for a business partner');
       }
     }
@@ -278,10 +286,10 @@ export class ReferralService {
         businessId: type === 'business' ? dto.businessId ?? null : null,
         partnerBusinessType: type === 'business' ? dto.partnerBusinessType?.trim() ?? null : null,
         partnerBusinessName: type === 'business' ? dto.partnerBusinessName?.trim() ?? null : null,
-        locality: dto.locality.trim(),
-        pincode: dto.pincode,
-        latitude: dto.latitude ?? null,
-        longitude: dto.longitude ?? null,
+        locality,
+        pincode,
+        latitude: businessPin ? businessPin.latitude : dto.latitude ?? null,
+        longitude: businessPin ? businessPin.longitude : dto.longitude ?? null,
         heardFrom: dto.heardFrom,
         // Who registered the partner: a Team Lead reads only their team's partners.
         registeredByStaffId: options.selfRegisteredByAccountId ? null : this.registeringStaffId(actorId),

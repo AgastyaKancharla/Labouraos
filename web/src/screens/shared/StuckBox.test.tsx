@@ -28,7 +28,7 @@ describe('Where they’re stuck', () => {
   });
 
   it('waiting for the Team Lead’s ID check shows that, with no resend button', async () => {
-    mockApi({ 'GET /profile-stuck': view({ step: 'id_check', state: 'in_progress', waitingForTeamLead: true, actions: [], reason: 'Waiting for the Team Lead to check the ID card photo' }) });
+    mockApi({ 'GET /profile-stuck': view({ step: 'id_check', state: 'in_progress', waitingForTeamLead: true, actions: [], reason: "Waiting for the Team Lead's ID check" }) });
     signInAs('call_agent');
     renderScreen(<StuckBox kind="job_seeker" id="js-1" />, { portal: 'call-agent', path: '/call-agent/people/js-1' });
     expect(await screen.findByTestId('stuck-waiting')).toHaveTextContent('Waiting for the Team Lead’s ID check');

@@ -103,6 +103,7 @@ export default function PartnerIdCheckPage() {
         getCaptureNonce={getCaptureNonce}
         onContinue={() => void refresh().then(() => navigate(to('P-PartnerUPI', { token })))}
         pending={pending}
+        partner
       />
       <ActionError error={error} />
     </>

@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { mockApi, renderScreen, signInAs } from '../../../test/utils';
 import RegisterReferral from './index';
-import { EMPTY_REFERRAL, referralBody, type ReferralForm } from './payload';
+import { EMPTY_REFERRAL, placeFromBusiness, referralBody, type ReferralForm } from './payload';
 
 const form: ReferralForm = {
   ...EMPTY_REFERRAL,
@@ -56,5 +56,34 @@ describe('Register a referral partner (CA15)', () => {
       partnerBusinessName: 'Ganesh Stores',
       partnerBusinessType: 'retail_shop',
     });
+  });
+
+  it('22 Nov: a partner who is a registered business takes its area, pincode and pin (fields hidden)', async () => {
+    const zoom = {
+      id: 'b5', code: 'BZ-00005', name: 'Zoom food court', locality: 'JP Nagar', pincode: '560078', hasPin: true,
+      verificationStatus: 'verified', canShowCandidates: true, contactName: null, contactRole: null, branches: [],
+    };
+    const user = userEvent.setup();
+    const api = mockApi(routes({ 'POST /referrals': { id: 'ref-2', code: 'RF-00044', registrationLinkSent: true } }));
+    signInAs('call_agent');
+    const draft: ReferralForm = { ...form, type: 'business', individualRole: '', business: zoom, place: { area: '', pincode: '', latitude: null, longitude: null } };
+    sessionStorage.setItem('laboura.draft.referral.staff-ca', JSON.stringify(draft));
+    renderScreen(<RegisterReferral />, { portal: 'call-agent', path: '/call-agent/register/referral' });
+    expect(await screen.findByTestId('place-from-business')).toHaveTextContent('From BZ-00005: JP Nagar, 560078');
+    expect(screen.getByTestId('place-from-business')).toHaveTextContent('Map pin from the business too.');
+    expect(screen.queryByLabelText(/Pincode/)).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Send OTP' }));
+    await user.click(await screen.findByLabelText('Digit 1 of 6'));
+    await user.paste('123456');
+    await screen.findByText('✓ Verified');
+    await user.click(screen.getByRole('button', { name: 'Save and create Partner ID' }));
+    await waitFor(() => expect(api.calls('POST /referrals')).toHaveLength(1));
+    expect(api.calls('POST /referrals')[0].body).toEqual({
+      name: 'Raju Kumar', phone: '9945670011', otpRequestId: 'otp-r', type: 'business', whatsappPhone: '9945670011',
+      businessId: 'b5', locality: 'JP Nagar', pincode: '560078', heardFrom: 'field_visit', city: 'Bengaluru',
+    });
+    // A business with no pincode on file: the fields are asked as before.
+    expect(placeFromBusiness({ type: 'business', business: { ...zoom, pincode: null } })).toBeNull();
+    expect(placeFromBusiness({ type: 'individual', business: zoom })).toBeNull();
   });
 });

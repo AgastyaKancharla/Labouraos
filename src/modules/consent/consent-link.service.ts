@@ -667,7 +667,9 @@ export class ConsentLinkService {
         agreementBodyHtml: record.agreement.bodyHtml ?? null,
         version: record.agreement.version,
         previousVersion: previous?.version ?? null,
-        ownerName: business.ownerName ?? null,
+        // 22 Nov (owner testing): the contact person (who the link was sent to) — registration keeps
+        // the name the agent typed there; the owner's name only when no contact person is on file.
+        ownerName: business.additionalContactName?.trim() || business.ownerName?.trim() || null,
         terms: {
           feePercent: record.agreement.feePercent,
           gstPercent: record.agreement.gstPercent,

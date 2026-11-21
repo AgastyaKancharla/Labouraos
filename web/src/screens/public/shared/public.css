@@ -386,3 +386,7 @@
   color: var(--muted, #5b6478);
   text-align: center;
 }
+
+/* 22 Nov (owner testing): what is missing before "Send code to sign", next to the button. */
+.lb-pub-opt--missing { border-color: var(--danger, #c62828) !important; box-shadow: 0 0 0 2px rgba(198, 40, 40, 0.18); }
+.lb-pub-blocked { color: var(--danger, #c62828); font-size: 13px; font-weight: 600; }

@@ -62,6 +62,7 @@ export function Choice({
   title,
   description,
   disabled,
+  missing,
 }: {
   type?: 'checkbox' | 'radio';
   name?: string;
@@ -70,10 +71,12 @@ export function Choice({
   title: ReactNode;
   description?: ReactNode;
   disabled?: boolean;
+  /** 22 Nov: highlighted when a button was pressed without this box ticked. */
+  missing?: boolean;
 }) {
   return (
-    <label className={checked ? 'opt on lb-pub-opt' : 'opt lb-pub-opt'}>
-      <input type={type} name={name} checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+    <label className={`${checked ? 'opt on lb-pub-opt' : 'opt lb-pub-opt'}${missing && !checked ? ' lb-pub-opt--missing' : ''}`}>
+      <input type={type} name={name} checked={checked} disabled={disabled} aria-invalid={missing && !checked ? true : undefined} onChange={(e) => onChange(e.target.checked)} />
       <span className="lb-pub-opt__text">
         <span>{title}</span>
         {description && <span className="sub">{description}</span>}
@@ -168,6 +171,23 @@ export function ActionError({ error }: { error: unknown }) {
   );
 }
 
+/**
+ * 22 Nov (owner testing): a refused "Send code" shows the server's own message (why it was refused),
+ * not a guess from its words (a message about "codes" is not a wrong code). Offline / server errors
+ * keep the usual wording.
+ */
+export function SendError({ error }: { error: unknown }) {
+  if (!error) return null;
+  if (isApiError(error) && !error.isNetworkError && error.status >= 400 && error.status < 500 && error.status !== 429 && error.message) {
+    return (
+      <p className="vno" role="alert">
+        {error.message}
+      </p>
+    );
+  }
+  return <ActionError error={error} />;
+}
+
 const RESEND_SECONDS = 30;
 const MAX_RESENDS = 3;
 
@@ -198,6 +218,8 @@ export function OtpBlock({
   onComplete,
   submitting,
   submittingLabel,
+  checkBeforeSend,
+  onBlocked,
 }: {
   maskedPhone: string;
   send: () => Promise<OtpSent>;
@@ -215,9 +237,19 @@ export function OtpBlock({
   onComplete?: (code: string) => void;
   submitting?: boolean;
   submittingLabel?: string;
+  /**
+   * 22 Nov (owner testing): instead of a silently disabled button, the button stays on and this
+   * says what is missing (null = ready). The reason is shown next to the button.
+   */
+  checkBeforeSend?: () => string | null;
+  /** Called when a press was blocked by checkBeforeSend (the page marks the missing fields). */
+  onBlocked?: () => void;
 }) {
   const t = useT();
   const hintId = useId();
+  // After a press that was blocked, the reason stays up to date as the fields are filled in.
+  const [triedBlocked, setTriedBlocked] = useState(false);
+  const blocked = triedBlocked && checkBeforeSend ? checkBeforeSend() : null;
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [resends, setResends] = useState(0);
@@ -231,6 +263,12 @@ export function OtpBlock({
   }, [wait]);
 
   const doSend = async (isResend: boolean) => {
+    const missing = checkBeforeSend ? checkBeforeSend() : null;
+    if (missing) {
+      setTriedBlocked(true);
+      onBlocked?.();
+      return;
+    }
     setSending(true);
     setError(null);
     try {
@@ -258,14 +296,20 @@ export function OtpBlock({
         <button
           type="button"
           className={`btn ${onComplete ? 'bp' : 'bs'} full`}
-          disabled={sending || sendDisabled}
+          disabled={sending || (sendDisabled && !checkBeforeSend)}
           aria-busy={sending || undefined}
           onClick={() => void doSend(false)}
         >
           {sendLabel ?? t('pub.otp.send', { phone: maskedPhone })}
         </button>
-        {hint && <span className="sub">{hint}</span>}
-        <ActionError error={error} />
+        {blocked ? (
+          <span className="lb-pub-blocked" role="alert" data-testid="send-blocked">
+            {blocked}
+          </span>
+        ) : (
+          hint && <span className="sub">{hint}</span>
+        )}
+        <SendError error={error} />
       </div>
     );
   }
@@ -291,7 +335,7 @@ export function OtpBlock({
           {wait > 0 ? t('pub.otp.resendIn', { seconds: wait }) : t('pub.otp.resend')}
         </button>
       )}
-      <ActionError error={error} />
+      <SendError error={error} />
     </div>
   );
 }

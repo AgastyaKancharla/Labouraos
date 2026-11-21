@@ -631,11 +631,16 @@ export class CallWorkService {
       select: { subjectId: true, createdAt: true, expiresAt: true, usedAt: true, revokedAt: true },
       orderBy: { createdAt: 'desc' },
     });
-    const sent = seekers.filter((s) => links.some((l) => l.subjectId === s.id)).slice(0, STUCK_LIST_LIMIT);
+    // 22 Nov (owner testing): also people registered on the call (consent by the read-aloud OTP, no
+    // link sent) who went on past consent — stuck at the selfie, the ID, the Team Lead's check or
+    // payment. Before, only people with a link were listed, so one of two stuck people was missing.
+    const allConsents = await this.consentMap(ids);
+    const startedOnCall = (id: string) => REQUIRED_CONSENTS.every((p) => (allConsents.get(id) ?? new Set<string>()).has(p));
+    const sent = seekers.filter((s) => links.some((l) => l.subjectId === s.id) || startedOnCall(s.id)).slice(0, STUCK_LIST_LIMIT);
     if (sent.length === 0) return [];
     const sentIds = sent.map((s) => s.id);
     const [consents, verifications, payments] = await Promise.all([
-      this.consentMap(sentIds),
+      Promise.resolve(allConsents),
       this.prisma.identityVerification.findMany({
         where: { jobSeekerId: { in: sentIds } },
         orderBy: { createdAt: 'desc' },
@@ -658,8 +663,8 @@ export class CallWorkService {
       else if (idv?.status !== 'verified') step = idv?.status === 'pending' ? 'id_team_lead_check' : 'id_check';
       else if (s.guaranteeFloorPaise === null) step = 'trade_pending';
       else step = failures > 0 ? 'payment_failed' : 'payment';
-      const latest = links.find((l) => l.subjectId === s.id)!;
-      const linkLive = !latest.usedAt && !latest.revokedAt && latest.expiresAt > ctx.now;
+      const latest = links.find((l) => l.subjectId === s.id) ?? null;
+      const linkLive = Boolean(latest && !latest.usedAt && !latest.revokedAt && latest.expiresAt > ctx.now);
       return {
         jobSeekerId: s.id,
         code: s.code,
@@ -671,7 +676,7 @@ export class CallWorkService {
         linkLive,
         // Nothing for him to do (no Resend): the Team Lead checks the ID card photo.
         waitingForTeamLead: step === 'id_team_lead_check',
-        since: latest.createdAt.toISOString(),
+        since: (latest?.createdAt ?? s.createdAt).toISOString(),
       };
     });
   }
@@ -810,7 +815,7 @@ export class CallWorkService {
 
   private async doneToday(staffId: string, ctx: QueueContext) {
     const since = ctx.todayStart;
-    const [regs, interviews, vacancies, outcomes] = await Promise.all([
+    const [regs, interviews, vacancies, outcomes, businessRegs, partnerRegs] = await Promise.all([
       this.prisma.jobSeeker.findMany({
         where: { registeredByStaffId: staffId, createdAt: { gte: since } },
         select: { id: true, code: true, name: true, status: true, createdAt: true },
@@ -835,12 +840,27 @@ export class CallWorkService {
         orderBy: { agentOutcomeAt: 'desc' },
         take: 10,
       }),
+      // 22 Nov: businesses and referral partners he registered today, as for job seekers.
+      this.prisma.business.findMany({
+        where: { leadCreatedByStaffId: staffId, createdAt: { gte: since } },
+        select: { code: true, name: true, verificationStatus: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      }),
+      this.prisma.referral.findMany({
+        where: { registeredByStaffId: staffId, createdAt: { gte: since } },
+        select: { code: true, name: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      }),
     ]);
     const subjects = await this.loadSubjects(
       outcomes.filter((o) => o.subjectType && o.subjectId).map((o) => ({ type: o.subjectType as SubjectType, id: o.subjectId! })),
     );
     const rows = [
       ...regs.map((r) => ({ kind: 'registered', at: r.createdAt.toISOString(), name: r.name, code: r.code, status: r.status, extra: null as string | null })),
+      ...businessRegs.map((b) => ({ kind: 'business_registered', at: b.createdAt.toISOString(), name: b.name, code: b.code, status: b.verificationStatus ?? 'lead', extra: null as string | null })),
+      ...partnerRegs.map((r) => ({ kind: 'partner_registered', at: r.createdAt.toISOString(), name: r.name, code: r.code, status: 'registered', extra: null as string | null })),
       ...interviews.map((i) => ({ kind: 'interview_booked', at: i.proposedAt.toISOString(), name: i.jobSeeker.name, code: i.jobSeeker.code, status: i.status, extra: i.slotStartsAt.toISOString() })),
       ...vacancies.map((v) => ({ kind: 'vacancy_added', at: v.createdAt.toISOString(), name: v.business.name, code: v.code, status: 'captured', extra: v.tradeSkill })),
       ...outcomes.map((o) => {

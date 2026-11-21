@@ -53,6 +53,15 @@ export const reg21NovEn = {
 
   // 5. "Where they're stuck" on every profile
   'stuck.title': 'Where they’re stuck',
+  // 22 Nov: "Stuck registrations" lists (call agent home, Team Lead Work list).
+  'stuck.kind.job_seeker': 'Job seeker',
+  'stuck.kind.business': 'Business',
+  'stuck.kind.referral': 'Referral partner',
+  'stuck.list.waiting': "Waiting for the Team Lead's ID check",
+  'stuck.list.waitingApproval': "Waiting for the Team Lead's approval",
+  'stuck.list.agreement': 'agreement not signed',
+  'stuck.list.none': 'No stuck registrations.',
+  'stuck.list.agent': 'Agent',
   'stuck.owner': 'Account owner',
   'stuck.noOwner': 'No owner yet',
   'stuck.step': 'Current step',

@@ -540,6 +540,30 @@ describe('21 Nov fixes: call work and leads', () => {
     expect(home.body.work.items.map((i: { subjectId: string }) => i.subjectId)).not.toContain(waiting.id);
   });
 
+  it('22 Nov: stuck registrations include people registered on the call with no link; Done today lists businesses and partners too', async () => {
+    const onCall = await makeSeeker({ name: 'On Call Payment', registeredByStaffId: agentA.id, status: 'consented' });
+    for (const purpose of ['job_matching', 'profile_sharing', 'call_recording', 'aadhaar_verification', 'job_updates']) {
+      await prisma.consent.create({ data: { subjectType: 'job_seeker', subjectId: onCall.id, purpose, noticeVersion: 'fix-22nov', granted: true, language: 'en', method: 'staff_otp', grantedAt: NOW } });
+    }
+    await prisma.jobSeeker.update({ where: { id: onCall.id }, data: { photoStoragePath: `job-seekers/${onCall.id}/selfie.jpg`, guaranteeFloorPaise: 1500000 } });
+    await prisma.identityVerification.create({ data: { jobSeekerId: onCall.id, method: 'aadhaar_qr', vendor: 'uidai_secure_qr', status: 'verified', isAdult: true, nameMatches: true, verifiedAt: NOW } });
+    const business = await prisma.business.create({ data: { code: `BZ-8${String(stamp).slice(-5)}`, name: 'Done Today Shop', phone: `+91${digits(++seq)}`, leadCreatedByStaffId: agentA.id, verificationStatus: 'lead', createdAt: NOW } });
+    const partner = await prisma.referral.create({ data: { code: `RF-8${String(stamp).slice(-5)}`, name: 'Done Today Partner', phone: `+91${digits(++seq)}`, registeredByStaffId: agentA.id, createdAt: NOW } });
+    try {
+      const home = await request(app.getHttpServer()).get('/call-work/home').set('Authorization', `Bearer ${token(agentA)}`).expect(200);
+      expect(home.body.stuck.find((s: { jobSeekerId: string }) => s.jobSeekerId === onCall.id)).toMatchObject({ step: 'payment', waitingForTeamLead: false, linkLive: false });
+      const done = home.body.doneToday as Array<{ kind: string; name: string; code: string }>;
+      expect(done).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: 'business_registered', name: 'Done Today Shop', code: business.code }),
+        expect.objectContaining({ kind: 'partner_registered', name: 'Done Today Partner', code: partner.code }),
+      ]));
+    } finally {
+      await prisma.identityVerification.deleteMany({ where: { jobSeekerId: onCall.id } });
+      await prisma.business.delete({ where: { id: business.id } });
+      await prisma.referral.delete({ where: { id: partner.id } });
+    }
+  });
+
   it('TeleCMI webhook: refused without our key; a missed call lands on the missed-call list once; an outgoing report updates our call', async () => {
     process.env.TELECMI_WEBHOOK_KEY = 'telecmi_webhook_key_for_tests_32_chars_x';
     process.env.TELECMI_APP_ID = '1111113';

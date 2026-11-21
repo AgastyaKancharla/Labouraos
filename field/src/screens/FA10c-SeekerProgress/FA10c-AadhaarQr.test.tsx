@@ -124,7 +124,7 @@ describe('FA10c "Scan Aadhaar QR" (guide, Aadhaar verification, 14 Nov)', () => 
   it('shows "waiting for the Team Lead" on the ID step while another ID is pending', async () => {
     const { route } = routeTable({
       '/screens/call-registration/job-seekers/js-uuid': atIdStep({
-        steps: { phone: { state: 'done' }, consent: { state: 'done' }, selfie: { state: 'done' }, idCheck: { state: 'in_progress', reason: 'Waiting for the Team Lead to check the ID card photo' }, payment: { state: 'not_started' } },
+        steps: { phone: { state: 'done' }, consent: { state: 'done' }, selfie: { state: 'done' }, idCheck: { state: 'in_progress', reason: "Waiting for the Team Lead's ID check" }, payment: { state: 'not_started' } },
       }),
     });
     await renderWithApp(<SeekerProgress />, { signedInAs: kiran, route });

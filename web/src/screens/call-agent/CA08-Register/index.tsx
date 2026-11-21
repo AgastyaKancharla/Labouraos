@@ -47,7 +47,7 @@ import { jobSeekerConsentScript } from '../_registration/scripts';
 import { useDraft } from '../_registration/useDraft';
 import { initialMobileState, useServerDraftSync } from '../_registration/serverDraft';
 import { useAuth } from '../../../auth/AuthProvider';
-import { createBody, EMPTY_FORM, profileBody, tradeName, validate, type FieldError, type JobSeekerForm, type TradeRow } from './payload';
+import { createBody, EMPTY_FORM, hasDriverTrade, profileBody, tradeName, validate, type FieldError, type JobSeekerForm, type TradeRow } from './payload';
 
 /**
  * Register a job seeker — designs CA08-Register, CA08v-Verified,
@@ -396,17 +396,10 @@ export default function RegisterJobSeeker() {
                 <input type="checkbox" checked={form.noQualification} onChange={(e) => set('noQualification', e.target.checked)} /> {t('reg.js.noQualification')}
               </label>
             </div>
-            <SelectField label={t('reg.js.licence')} value={form.licence} onChange={(v) => set('licence', v)} options={choiceOptions(t, LICENCES)} />
-            <div className="fld">
-              <span className="reg-label">{t('reg.js.has')}</span>
-              <div className="chk">
-                {(['ownVehicle', 'police', 'smartphone'] as const).map((key) => (
-                  <label key={key} className={form[key] ? 'on' : ''}>
-                    <input type="checkbox" checked={form[key]} onChange={(e) => set(key, e.target.checked)} /> {t(`reg.js.has.${key}`)}
-                  </label>
-                ))}
-              </div>
-            </div>
+            {/* 22 Nov: the licence only when a chosen trade is Driver; the "Has" ticks are no longer asked. */}
+            {hasDriverTrade(form) ? (
+              <SelectField label={t('reg.js.licence')} value={form.licence} onChange={(v) => set('licence', v)} options={choiceOptions(t, LICENCES)} />
+            ) : null}
             <ReferredBy form={form} setForm={setForm} />
           </div>
         </fieldset>

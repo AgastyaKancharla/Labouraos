@@ -4,6 +4,7 @@ import { Button } from '../../../components/Button';
 import { Card } from '../../../components/Card';
 import { StatusPill } from '../../../components/Badge';
 import { api } from '../../../lib/api/client';
+import { ZoomablePhoto } from '../../../components/PhotoLightbox';
 import { ApiError } from '../../../lib/api/errors';
 import { formatDateTimeIST } from '../../../lib/format/date';
 import { ActionButton } from './actions';
@@ -83,13 +84,23 @@ export function AadhaarCheckCard({ jobSeekerId, subjects = 'job-seekers', title 
         <>
           <div className="tl-photos" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
             <figure style={{ margin: 0 }}>
-              <div className="lb-idphoto">{data.selfieUrl ? <img src={data.selfieUrl} alt="Live selfie" /> : 'No selfie'}</div>
+              <div className="lb-idphoto">
+                {data.selfieUrl ? (
+                  <ZoomablePhoto src={data.selfieUrl} alt="Live selfie">
+                    <img src={data.selfieUrl} alt="Live selfie" style={{ objectFit: 'contain' }} />
+                  </ZoomablePhoto>
+                ) : (
+                  'No selfie'
+                )}
+              </div>
               <figcaption className="sub">Live selfie</figcaption>
             </figure>
             <figure style={{ margin: 0 }}>
               <div className="lb-idphoto">
                 {idPhotoUrl ? (
-                  <img src={idPhotoUrl} alt={card ? 'Live photo of the ID card' : 'Photo from the Aadhaar QR'} />
+                  <ZoomablePhoto src={idPhotoUrl} alt={card ? 'Live photo of the ID card' : 'Photo from the Aadhaar QR'}>
+                    <img src={idPhotoUrl} alt={card ? 'Live photo of the ID card' : 'Photo from the Aadhaar QR'} style={{ objectFit: 'contain' }} />
+                  </ZoomablePhoto>
                 ) : (
                   `${card ? 'Card photo' : 'QR photo'} ${DELETED[c.photo.deletedReason ?? ''] ?? 'not kept'}`
                 )}

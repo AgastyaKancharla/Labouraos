@@ -365,7 +365,7 @@ export class ScreensCallRegistrationService {
       take: 10,
       select: {
         id: true, code: true, name: true, locality: true, verificationStatus: true, inPersonOnboardedAt: true,
-        pausedAt: true, additionalContactName: true, contactRole: true,
+        pausedAt: true, additionalContactName: true, contactRole: true, pincode: true, latitude: true, longitude: true,
         branches: { select: { id: true, name: true, locality: true } },
       },
     });
@@ -379,6 +379,9 @@ export class ScreensCallRegistrationService {
       contactName: row.additionalContactName,
       contactRole: row.contactRole,
       branches: row.branches,
+      // 22 Nov: CA15 takes a business partner's area, pincode and pin from the business.
+      pincode: row.pincode,
+      hasPin: row.latitude !== null && row.longitude !== null,
     }));
   }
 

@@ -19,6 +19,16 @@ export const aadhaarQrEn = {
   'pub.id.changeNumber': 'Change the ID or number',
   'pub.id.pendingTitle': 'Sent to a Team Lead.',
   'pub.id.pendingBody': 'A Laboura Team Lead will compare the photo of your card with your selfie. Open this link again later to pay — nothing is charged before the check.',
+  // 22 Nov (owner testing): a clear next step after the photo of another ID is sent.
+  'pub.id.nextTitle': 'What happens next',
+  'pub.id.nextBody':
+    "A Laboura Team Lead checks your card against your selfie. When it is approved, open this same link again to pay ₹499 (your Laboura agent can also send you the payment link). Nothing is charged before the check. You can close this page.",
+  'pub.id.nextBodyPartner':
+    'A Laboura Team Lead checks your card against your selfie. When it is approved, open this same link again to add your UPI ID for payouts. You can close this page.',
+  'pub.id.done': 'Done',
+  'pub.id.doneBodyPartner': 'Your ID card is with a Team Lead. You can close this page and open this link again after the check to add your UPI ID.',
+  'pub.id.doneTitle': 'All done for now.',
+  'pub.id.doneBody': 'Your ID card is with a Team Lead. You can close this page and open this link again after the check to pay.',
   'pub.id.pendingOrQr': 'Have your Aadhaar with you? Scan its QR code to continue now.',
   'pub.qr.certMissing': 'This Aadhaar is newer than our check supports. Please use another ID.',
   'pub.id.photoExpired': 'The photo of your ID card expired before a Team Lead could check it. Please take a new photo of the card.',
@@ -57,8 +67,8 @@ export const aadhaarQrEn = {
     "Your Aadhaar is genuine, but the name on it doesn't match the name you registered with. A Laboura Team Lead will check it, or you can use another ID now.",
   'pub.qr.oldCard':
     "This Aadhaar has an older QR code without UIDAI's signature. Download your free e-Aadhaar from UIDAI (myaadhaar.uidai.gov.in) and open it here, or use another ID.",
-  'pub.qr.badSignature': "This QR code failed UIDAI's signature check. Scan the QR code on your own Aadhaar again, or use another ID.",
-  'pub.qr.unreadable': "That wasn't an Aadhaar Secure QR code. Try the big QR code on your Aadhaar again, or use another ID.",
+  'pub.qr.badSignature': "Couldn't read this QR: it failed UIDAI's signature check, so nothing from it was used. Try again with the QR code on your own Aadhaar, or use another ID.",
+  'pub.qr.unreadable': "Couldn't read this QR. It isn't an Aadhaar Secure QR code. Try again with the big QR code on your Aadhaar, or use another ID.",
   'pub.pdf.file': 'Your e-Aadhaar PDF',
   'pub.pdf.password': 'PDF password',
   'pub.pdf.passwordHint': 'The first 4 letters of your name in capitals and your year of birth — for example KAVY1998.',

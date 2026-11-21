@@ -1643,7 +1643,7 @@ export class JobSeekerService {
       reason: under18Stop
         ? 'Under 18: registration stops (only a Manager or the CEO can lift it)'
         : latestVerification?.status === 'pending'
-          ? 'Waiting for the Team Lead to check the ID card photo'
+          ? "Waiting for the Team Lead's ID check"
           : latestVerification?.failureReason ?? null,
     };
     const payment = {

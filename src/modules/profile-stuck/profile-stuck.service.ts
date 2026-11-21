@@ -36,7 +36,20 @@ export interface StuckView {
   /** Waiting for the Team Lead's ID check: shown as that, with no resend. */
   waitingForTeamLead: boolean;
   actions: StuckAction[];
+  /** The owner's staff id (assigned ?? registered; business: account agent ?? lead creator), for "Remind". */
+  ownerId?: string | null;
 }
+
+/** One row of a "Stuck registrations" list (22 Nov): a stuck job seeker, business or partner. */
+export interface StuckListRow extends StuckView {
+  /** When the record was created (newest first). */
+  since: string;
+}
+
+/** Job seekers who have not paid yet and may be stuck in registration. */
+const OPEN_SEEKER_STATUSES = ['lead', 'consented', 'pending_activation'];
+/** At most this many of each kind are looked at (newest first). */
+const LIST_CAP = 40;
 
 type Actor = { id: string; role: string };
 
@@ -78,6 +91,79 @@ export class ProfileStuckService {
     return this.referral(scope ? { AND: [scope.referral, byRef] } : byRef);
   }
 
+  /**
+   * "Stuck registrations" (22 Nov, owner testing): every stuck job seeker, business and referral
+   * partner the viewer answers for, worked out with the same steps as the profile box — job seekers
+   * stuck at payment, waiting for the Team Lead's ID check (no resend) or with the link not finished;
+   * businesses whose agreement is not signed; partners whose terms, selfie, ID or UPI is not done.
+   * Owner = the agent a record is assigned to, else the agent who registered it (business: account
+   * agent, else lead creator). A call agent: his own; a Team Lead or Manager: his team's.
+   */
+  async list(actor: Actor): Promise<{ rows: StuckListRow[] }> {
+    const scope = await this.ownerScope(actor);
+    const [seekers, businesses, referrals] = await Promise.all([
+      this.prisma.jobSeeker.findMany({
+        where: { AND: [scope.seeker, { status: { in: OPEN_SEEKER_STATUSES }, paymentReceivedAt: null, anonymisedAt: null }] },
+        select: { id: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+        take: LIST_CAP,
+      }),
+      this.prisma.business.findMany({
+        where: { AND: [scope.business, { anonymisedAt: null, agreements: { none: {} } }] },
+        select: { id: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+        take: LIST_CAP,
+      }),
+      this.prisma.referral.findMany({
+        where: { AND: [scope.referral, { anonymisedAt: null, pausedAt: null }] },
+        select: { id: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+        take: LIST_CAP,
+      }),
+    ]);
+    // A job seeker still at the consent step counts only once his link went out ("link not finished").
+    const linked = new Set(
+      seekers.length
+        ? (await this.prisma.publicLink.findMany({ where: { purpose: 'registration', subjectType: 'job_seeker', subjectId: { in: seekers.map((s) => s.id) } }, select: { subjectId: true } })).map((l) => l.subjectId)
+        : [],
+    );
+    const rows: StuckListRow[] = [];
+    for (const s of seekers) {
+      const view = await this.jobSeeker({ id: s.id });
+      if (view.step === 'complete' || view.step === 'closed') continue;
+      if (view.step === 'consent' && !linked.has(s.id)) continue;
+      rows.push({ ...view, since: s.createdAt.toISOString() });
+    }
+    for (const b of businesses) {
+      const view = await this.business({ id: b.id });
+      if (view.step === 'agreement') rows.push({ ...view, since: b.createdAt.toISOString() });
+    }
+    for (const r of referrals) {
+      const view = await this.referral({ id: r.id });
+      if (view.step !== 'complete') rows.push({ ...view, since: r.createdAt.toISOString() });
+    }
+    rows.sort((a, b) => b.since.localeCompare(a.since));
+    return { rows };
+  }
+
+  /** Whose records a "Stuck registrations" list holds (owner rules of own-team.ts / record-scope.ts). */
+  private async ownerScope(actor: Actor): Promise<RecordWheres> {
+    if (actor.role === 'call_agent' || actor.role === 'field_agent') {
+      const mine = { OR: [{ assignedStaffId: actor.id }, { assignedStaffId: null, registeredByStaffId: actor.id }] };
+      return {
+        seeker: mine as Prisma.JobSeekerWhereInput,
+        referral: mine as Prisma.ReferralWhereInput,
+        business: { OR: [{ accountAgentId: actor.id }, { accountAgentId: null, leadCreatedByStaffId: actor.id }] },
+        vacancy: {},
+        interview: {},
+        placement: {},
+      };
+    }
+    if (actor.role === 'team_lead') return (await this.teamLeadRecords.scope(actor)).team;
+    if (actor.role === 'manager') return (await this.managerRecords.sectionScope(actor)).team;
+    throw new ForbiddenException('Not available for this role');
+  }
+
   /** The viewer's record scope (null = every record). */
   private async scopeFor(actor: Actor): Promise<RecordWheres | null> {
     if (actor.role === 'ceo' || actor.role === 'call_agent') return null;
@@ -97,11 +183,14 @@ export class ProfileStuckService {
       where,
       select: {
         id: true, code: true, name: true, status: true, paymentReceivedAt: true,
-        assignedStaff: STAFF, registeredBy: STAFF,
+        assignedStaff: STAFF, registeredBy: STAFF, assignedStaffId: true, registeredByStaffId: true,
       },
     });
     if (!seeker) throw new NotFoundException('Job seeker not found');
-    const base = { kind: 'job_seeker' as const, id: seeker.id, code: seeker.code, name: seeker.name, owner: staffLabel(seeker.assignedStaff ?? seeker.registeredBy) };
+    const base = {
+      kind: 'job_seeker' as const, id: seeker.id, code: seeker.code, name: seeker.name,
+      owner: staffLabel(seeker.assignedStaff ?? seeker.registeredBy), ownerId: seeker.assignedStaffId ?? seeker.registeredByStaffId ?? null,
+    };
     const { steps } = await this.jobSeekers.getRegistrationStatus(seeker.id);
     if (seeker.status === 'active' || (seeker.paymentReceivedAt && steps.payment.state === 'done')) {
       return { ...base, step: 'complete', state: 'done', reason: null, waitingForTeamLead: false, actions: [] };
@@ -142,7 +231,7 @@ export class ProfileStuckService {
     if (!business) throw new NotFoundException('Business not found');
     const ownerId = business.accountAgentId ?? business.leadCreatedByStaffId;
     const owner = ownerId ? await this.prisma.staff.findUnique({ where: { id: ownerId }, select: { name: true, code: true } }) : null;
-    const base = { kind: 'business' as const, id: business.id, code: business.code, name: business.name, owner: staffLabel(owner) };
+    const base = { kind: 'business' as const, id: business.id, code: business.code, name: business.name, owner: staffLabel(owner), ownerId: ownerId ?? null };
     const status = business.verificationStatus ?? 'lead';
     const verified = status === 'verified' || Boolean(business.inPersonOnboardedAt);
     if (!business.agreements[0]) {
@@ -168,12 +257,15 @@ export class ProfileStuckService {
       where,
       select: {
         id: true, code: true, name: true, photoStoragePath: true, pausedAt: true,
-        assignedStaff: STAFF, registeredBy: STAFF,
+        assignedStaff: STAFF, registeredBy: STAFF, assignedStaffId: true, registeredByStaffId: true,
         identityVerifications: { orderBy: { createdAt: 'desc' }, take: 1, select: { status: true, nameMatches: true, isAdult: true, failureReason: true } },
       },
     });
     if (!referral) throw new NotFoundException('Referral partner not found');
-    const base = { kind: 'referral' as const, id: referral.id, code: referral.code, name: referral.name, owner: staffLabel(referral.assignedStaff ?? referral.registeredBy) };
+    const base = {
+      kind: 'referral' as const, id: referral.id, code: referral.code, name: referral.name,
+      owner: staffLabel(referral.assignedStaff ?? referral.registeredBy), ownerId: referral.assignedStaffId ?? referral.registeredByStaffId ?? null,
+    };
     const [terms, account] = await Promise.all([
       this.prisma.consent.findFirst({ where: { subjectType: 'referral', subjectId: referral.id, purpose: 'agreement_terms', granted: true, withdrawnAt: null }, select: { id: true } }),
       this.prisma.payoutAccount.findFirst({ where: { ownerType: 'referral', ownerId: referral.id, status: { not: 'superseded' } }, orderBy: { createdAt: 'desc' }, select: { status: true, nameMatches: true } }),
@@ -185,7 +277,7 @@ export class ProfileStuckService {
     const idDone = identity?.status === 'verified' && identity.nameMatches === true && identity.isAdult === true;
     if (!idDone) {
       if (identity?.status === 'pending') {
-        return { ...base, step: 'id_check', state: 'in_progress', reason: 'Waiting for the Team Lead to check the ID card photo', waitingForTeamLead: true, actions: [] };
+        return { ...base, step: 'id_check', state: 'in_progress', reason: "Waiting for the Team Lead's ID check", waitingForTeamLead: true, actions: [] };
       }
       if (identity && identity.isAdult === false) {
         return { ...base, step: 'id_check', state: 'stuck', reason: 'Under 18: registration stops (only a Manager or the CEO can lift it)', waitingForTeamLead: false, actions: [] };

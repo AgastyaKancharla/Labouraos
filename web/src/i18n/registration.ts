@@ -485,6 +485,8 @@ export const registrationEn = {
   "reg.ref.orType": "Not registered? Type its name and type below.",
   "reg.ref.businessName": "Business name",
   "reg.ref.location": "Location",
+  "reg.ref.placeFromBusiness": "From {code}: {area}, {pincode}",
+  "reg.ref.pinFromBusiness": "Map pin from the business too.",
   "reg.ref.explain": "Explain the partner terms — read this to them",
   "reg.ref.explainNote": "They agree and enter their UPI themselves. You never type a UPI ID for anyone.",
   "reg.ref.save": "Save and create Partner ID",

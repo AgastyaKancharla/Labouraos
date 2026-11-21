@@ -171,7 +171,11 @@ export class AadhaarQrController {
    */
   @Post('identity/:subjects/:id/other-id/decision')
   @HttpCode(HttpStatus.OK)
-  @RequireRoles('manager', 'ceo')
+  // 22 Nov (owner testing): the Team Lead's "Looks right" / "Fake" on the job seeker's (or partner's)
+  // page posts here too. Who may decide is the same rule for everyone (rightFor below and in
+  // recordDecision): the Team Lead of the registering agent's team, another Team Lead of the city when
+  // that team has none, a Manager of the city or the CEO when no other Team Lead can; never the registrar.
+  @RequireRoles('team_lead', 'manager', 'ceo')
   async decideOtherId(@Req() req: Authed, @Param('subjects') subjects: string, @Param('id') id: string, @Body() body: { verdict?: unknown; note?: unknown }) {
     const subjectType = subjectTypeOf(subjects);
     const pendingWhere = { status: 'pending', vendor: 'team_lead_check' };

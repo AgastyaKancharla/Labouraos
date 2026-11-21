@@ -272,4 +272,35 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
     await request(app.getHttpServer()).get(`/consent/${linkToken}`).expect(400);
     service.setTtlMs(24 * 60 * 60 * 1000);
   });
+
+  it('22 Nov: the page fills in the contact person\'s name, and "Send code to sign" sends a code (test mode shows it)', async () => {
+    const contactPhone = `+9197${phoneDigits}`;
+    const contactBusiness = await prisma.business.create({
+      data: {
+        code: `BZ-AGC-${suffix}`, name: `Agreement Contact ${suffix}`, phone: contactPhone, phoneVerified: true,
+        ownerName: null, additionalContactName: 'Contact Person Test', contactRole: 'manager',
+        leadCreatedByStaffId: staffId, leadChannel: 'phone_call', verificationStatus: 'lead',
+      },
+    });
+    const before = process.env.OTP_TEST_MODE;
+    process.env.OTP_TEST_MODE = 'on';
+    try {
+      const { token: linkToken } = await withIssuedLinkToken(app, () => request(app.getHttpServer())
+        .post(`/businesses/${contactBusiness.id}/agreement-links`)
+        .set('Authorization', `Bearer ${agentToken}`)
+        .send({ language: 'en' })
+        .expect(201));
+      const page = await request(app.getHttpServer()).get(`/consent/${linkToken}`).set('Accept', 'application/json').expect(200);
+      expect(page.body.ownerName).toBe('Contact Person Test');
+      const otp = await request(app.getHttpServer()).post('/consent/send-otp').send({ token: linkToken }).expect(201);
+      expect(otp.body).toMatchObject({ success: true, requestId: expect.any(String), testModeCode: expect.stringMatching(/^\d{6}$/) });
+      expect(otp.body.testModeBanner).toBe(`Test mode code: ${otp.body.testModeCode}`);
+    } finally {
+      if (before === undefined) delete process.env.OTP_TEST_MODE;
+      else process.env.OTP_TEST_MODE = before;
+      await prisma.messageLog.deleteMany({ where: { subjectType: 'business', subjectId: contactBusiness.id } });
+      await prisma.auditLog.deleteMany({ where: { entityCode: contactBusiness.code } });
+      await prisma.business.deleteMany({ where: { id: contactBusiness.id } });
+    }
+  });
 });

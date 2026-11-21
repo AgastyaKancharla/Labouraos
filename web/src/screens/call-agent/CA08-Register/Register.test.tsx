@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { apiError, mockApi, renderScreen, signInAs } from '../../../test/utils';
 import RegisterJobSeeker from './index';
-import { createBody, EMPTY_FORM, profileBody, validate, type JobSeekerForm } from './payload';
+import { createBody, EMPTY_FORM, hasDriverTrade, profileBody, validate, type JobSeekerForm } from './payload';
 
 const NOW = new Date('2026-11-11T05:30:00Z');
 const housekeeping = { id: 't1', name: 'Housekeeping', salaryMinPaise: 1600000, salaryMaxPaise: 2300000, minimumWageLevel: 'unskilled', legalMinimumPaise: 2340000 };
@@ -31,7 +31,6 @@ const filled: JobSeekerForm = {
   shift: 'day',
   jobType: 'full_time',
   spoken: ['Kannada', 'Hindi'],
-  smartphone: true,
 };
 
 function routes(overrides: Record<string, unknown> = {}) {
@@ -120,9 +119,12 @@ describe('Register a job seeker (CA08)', () => {
     expect(api.calls('PATCH /job-seekers/js-uuid/profile')[0].body).toMatchObject({
       whatsappPhone: '9845012345',
       preferredLocalities: ['JP Nagar'],
-      hasSmartphone: true,
       reason: 'Filled on the registration form',
     });
+    // 22 Nov: the "Has" ticks are no longer asked or sent.
+    expect(api.calls('PATCH /job-seekers/js-uuid/profile')[0].body).not.toHaveProperty('hasSmartphone');
+    expect(api.calls('PATCH /job-seekers/js-uuid/profile')[0].body).not.toHaveProperty('ownVehicle');
+    expect(api.calls('PATCH /job-seekers/js-uuid/profile')[0].body).not.toHaveProperty('policeVerified');
     expect(await screen.findByTestId('navigated-away')).toBeInTheDocument();
     expect(sessionStorage.getItem('laboura.draft.job-seeker.staff-ca')).toBeNull();
   });
@@ -219,5 +221,36 @@ describe('job seeker payload', () => {
   it('sends current salary instead of last salary when working now', () => {
     expect(profileBody({ ...filled, workingNow: 'yes', lastSalaryPaise: 1200000 })).toMatchObject({ currentlyWorking: true, currentSalaryPaise: 1200000 });
     expect(profileBody({ ...filled, workingNow: 'no', lastSalaryPaise: 1200000, noQualification: true })).toMatchObject({ lastSalaryPaise: 1200000, educationLevel: 'none' });
+  });
+
+  it('22 Nov: no "Has" ticks; the driving licence appears only when a chosen trade is Driver', async () => {
+    seedDraft(filled);
+    mockApi(routes({ 'GET /trades': [housekeeping, painter, { ...painter, id: 't3', name: 'Driver' }] }));
+    signInAs('call_agent');
+    renderScreen(<RegisterJobSeeker />, { portal: 'call-agent', path: '/call-agent/register/job-seeker', now: NOW });
+    expect(await screen.findByRole('heading', { name: 'Register a job seeker' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Driving licence')).toBeNull();
+    expect(screen.queryByText('Own vehicle')).toBeNull();
+    expect(screen.queryByText('Police verification')).toBeNull();
+    expect(screen.queryByText('Smartphone')).toBeNull();
+    // A second trade "Driver" brings the licence question.
+    await screen.findAllByRole('option', { name: 'Driver' });
+    const tradeSelects = screen.getAllByRole('combobox', { name: /^Trade/ });
+    await userEvent.selectOptions(tradeSelects[tradeSelects.length - 1]!, 'Driver');
+    expect(await screen.findByLabelText('Driving licence')).toBeInTheDocument();
+    expect(screen.queryByText('Smartphone')).toBeNull();
+  });
+
+  it('22 Nov: the licence is sent only for a driver; the ticks never', () => {
+    expect(hasDriverTrade(filled)).toBe(false);
+    const legacy = { ...filled, licence: 'lmv', ownVehicle: true, police: true, smartphone: true } as JobSeekerForm;
+    expect(profileBody(legacy)).not.toHaveProperty('drivingLicenceType');
+    expect(profileBody(legacy)).not.toHaveProperty('hasSmartphone');
+    const driver = { ...legacy, trades: [{ trade: 'Driver', other: '', years: '3' }] };
+    expect(hasDriverTrade(driver)).toBe(true);
+    expect(hasDriverTrade({ trades: [{ trade: '__other__', other: 'Delivery driver', years: '1' }] })).toBe(true);
+    expect(profileBody(driver)).toMatchObject({ drivingLicenceType: 'lmv' });
+    expect(profileBody(driver)).not.toHaveProperty('ownVehicle');
+    expect(profileBody(driver)).not.toHaveProperty('policeVerified');
   });
 });

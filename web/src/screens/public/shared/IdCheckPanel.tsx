@@ -53,6 +53,7 @@ export function IdCheckPanel({
   getCaptureNonce,
   onContinue,
   pending,
+  partner = false,
 }: {
   busy: boolean;
   /** The last Aadhaar QR answer on this page. */
@@ -68,12 +69,16 @@ export function IdCheckPanel({
   onContinue: () => void;
   /** Another ID is waiting for the Team Lead's check. */
   pending?: boolean;
+  /** A referral partner's link: the next step after the check is the UPI ID, not the ₹499. */
+  partner?: boolean;
 }) {
   const t = useT();
   const inputId = useId();
   const [mode, setMode] = useState<Mode>('choose');
   const [other, setOther] = useState<OtherId | null>(null);
   const [number, setNumber] = useState('');
+  // 22 Nov: "Done" after the card photo was sent — the page says what happens next and can be closed.
+  const [finished, setFinished] = useState(false);
   const otherDef = OTHER_IDS.find((o) => o.id === other);
   const cleanNumber = number.toUpperCase().replace(/\s+/g, '');
   // The camera's one-time token: asked for when the card camera opens, and again after each try
@@ -164,6 +169,16 @@ export function IdCheckPanel({
   if (mode === 'pdf') return <EAadhaarPdf onText={(text) => onQr(text)} onCancel={() => setMode('choose')} />;
 
   const qrProblem = qrResult ? QR_PROBLEM[qrResult.result] : null;
+  if (pending && !qrResult && finished) {
+    return (
+      <div className="card lb-pub-card" data-testid="id-pending-done">
+        <Ok>
+          <strong>{t('pub.id.doneTitle')}</strong>
+        </Ok>
+        <span className="sub">{t(partner ? 'pub.id.doneBodyPartner' : 'pub.id.doneBody')}</span>
+      </div>
+    );
+  }
   return (
     <>
       {pending && !qrResult && (
@@ -171,7 +186,11 @@ export function IdCheckPanel({
           <Ok>
             <strong>{t('pub.id.pendingTitle')}</strong>
           </Ok>
-          <span className="sub">{t('pub.id.pendingBody')}</span>
+          <strong>{t('pub.id.nextTitle')}</strong>
+          <span className="sub" data-testid="id-pending-next">{t(partner ? 'pub.id.nextBodyPartner' : 'pub.id.nextBody')}</span>
+          <button type="button" className="btn bp full" onClick={() => setFinished(true)}>
+            {t('pub.id.done')}
+          </button>
           <span className="sub">{t('pub.id.pendingOrQr')}</span>
         </div>
       )}

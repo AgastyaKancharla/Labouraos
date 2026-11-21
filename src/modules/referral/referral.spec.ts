@@ -231,6 +231,38 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
     expect(res.body.type).toBe('business');
   });
 
+  it('22 Nov: a partner who is a registered business takes its area, pincode and pin (typed values ignored)', async () => {
+    const business = await prisma.business.create({
+      data: {
+        code: `BZ-RF-${timestamp}`, name: 'Zoom Test Court', phone: `+9183${timestamp.toString().slice(-8)}`, phoneVerified: true,
+        locality: 'JP Nagar', pincode: '560078', latitude: 12.9063, longitude: 77.5857,
+        leadCreatedByStaffId: callAgentId, leadChannel: 'phone_call', verificationStatus: 'verified',
+      },
+    });
+    try {
+      const phone = `84${timestamp.toString().slice(-8)}`;
+      const otpRequestId = await getVerifiedOtp(phone);
+      const res = await request(app.getHttpServer())
+        .post('/referrals')
+        .set('Authorization', `Bearer ${callAgentToken}`)
+        .send({ name: 'Antony Test', phone, type: 'business', whatsappPhone: phone, businessId: business.id, locality: 'Madiwala', pincode: '560068', heardFrom: 'walk_in', otpRequestId });
+      expect(res.status).toBe(201);
+      const saved = await prisma.referral.findUniqueOrThrow({ where: { id: res.body.id } });
+      expect(saved).toMatchObject({ businessId: business.id, locality: 'JP Nagar', pincode: '560078', latitude: 12.9063, longitude: 77.5857 });
+      // Without any typed place at all it still saves (CA15 no longer asks).
+      const phone2 = `85${timestamp.toString().slice(-8)}`;
+      const otp2 = await getVerifiedOtp(phone2);
+      const res2 = await request(app.getHttpServer())
+        .post('/referrals')
+        .set('Authorization', `Bearer ${callAgentToken}`)
+        .send({ name: 'Antony Test Two', phone: phone2, type: 'business', whatsappPhone: phone2, businessId: business.id, heardFrom: 'walk_in', otpRequestId: otp2 });
+      expect(res2.status).toBe(201);
+      await prisma.referral.deleteMany({ where: { id: { in: [res.body.id, res2.body.id] } } });
+    } finally {
+      await prisma.business.delete({ where: { id: business.id } });
+    }
+  });
+
   it('rejects referral with invalid type (400)', async () => {
     const phone = `83${timestamp.toString().slice(-8)}`;
     const otpRequestId = await getVerifiedOtp(phone);

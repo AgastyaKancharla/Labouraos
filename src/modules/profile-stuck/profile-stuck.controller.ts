@@ -20,6 +20,13 @@ import { ProfileStuckService } from './profile-stuck.service';
 export class ProfileStuckController {
   constructor(private readonly service: ProfileStuckService) {}
 
+  /** "Stuck registrations" (22 Nov): the viewer's own (call agent) or team's (Team Lead, Manager) stuck people. */
+  @Get('list')
+  @RequireRoles('call_agent', 'team_lead', 'manager')
+  list(@Req() req: Request & { user: JwtPayload }) {
+    return this.service.list({ id: req.user.sub, role: req.user.role });
+  }
+
   @Get()
   @RequireRoles('call_agent', 'team_lead', 'manager', 'ceo')
   stuck(@Req() req: Request & { user: JwtPayload }, @Query('kind') kind: unknown, @Query('id') id: unknown) {

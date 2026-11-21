@@ -131,8 +131,12 @@ export class TeamLeadChecksService {
     const appAgents = await this.appSignupAgents(people);
     const [stuck, followUpsOverdue, interviewsToday, overdue, businesses] = await Promise.all([
       this.prisma.jobSeeker.findMany({
-        where: { ...this.registeredOrAssigned(people, appAgents), status: { in: Object.keys(STUCK_STATUSES) }, createdAt: { lte: new Date(now.getTime() - DAY_MS), gte: new Date(now.getTime() - 30 * DAY_MS) }, anonymisedAt: null },
-        select: { id: true, code: true, name: true, status: true, createdAt: true, registeredByStaffId: true },
+        // 22 Nov: the owner is the agent it is assigned to, else the registering agent (as every other list).
+        where: {
+          AND: [{ OR: [this.registeredOrAssigned(people, appAgents), { assignedStaffId: { in: people } }] }],
+          status: { in: Object.keys(STUCK_STATUSES) }, createdAt: { lte: new Date(now.getTime() - DAY_MS), gte: new Date(now.getTime() - 30 * DAY_MS) }, anonymisedAt: null,
+        },
+        select: { id: true, code: true, name: true, status: true, createdAt: true, registeredByStaffId: true, assignedStaffId: true },
         orderBy: { createdAt: 'asc' },
         take: 50,
       }),
@@ -165,7 +169,7 @@ export class TeamLeadChecksService {
       summary: { stuck: stuck.length, followUpsOverdue, interviewsToday: interviewsToday.length, resultsOverdue: overdue.length },
       stuck: stuck.map((row) => ({
         jobSeeker: { id: row.id, code: row.code, firstName: row.name.split(' ')[0] },
-        agent: nameOf(row.registeredByStaffId ?? appAgents.get(row.id)),
+        agent: nameOf(row.assignedStaffId ?? row.registeredByStaffId ?? appAgents.get(row.id)),
         where: STUCK_STATUSES[row.status] ?? row.status,
         hours: Math.floor((now.getTime() - row.createdAt.getTime()) / HOUR_MS),
       })),

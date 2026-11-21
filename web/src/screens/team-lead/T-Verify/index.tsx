@@ -9,6 +9,7 @@ import { StatGrid, StatTile } from '../../../components/StatTile';
 import { TopBar } from '../../../components/TopBar';
 import { useToast } from '../../../components/Toast';
 import { api } from '../../../lib/api/client';
+import { ZoomablePhoto } from '../../../components/PhotoLightbox';
 import { ApiError } from '../../../lib/api/errors';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { ActionButton } from '../../ceo/_kit/actions';
@@ -155,14 +156,20 @@ function RegistrationCard({ row, managerName }: { row: Registration; managerName
         <div className="tl-photos">
         <div>
           <div className="tl-photo">
-            {photos?.selfieUrl ? <img src={photos.selfieUrl} alt={`Selfie of ${person.name}`} /> : !row.hasSelfie ? 'No selfie yet' : photos ? 'No selfie stored' : 'Selfie'}
+            {photos?.selfieUrl ? (
+              <ZoomablePhoto src={photos.selfieUrl} alt={`Selfie of ${person.name}`}>
+                <img src={photos.selfieUrl} alt={`Selfie of ${person.name}`} style={{ objectFit: 'contain' }} />
+              </ZoomablePhoto>
+            ) : !row.hasSelfie ? 'No selfie yet' : photos ? 'No selfie stored' : 'Selfie'}
           </div>
           <div className="tl-sub">Live selfie</div>
         </div>
         <div>
           <div className="tl-photo">
             {idPhotoUrl ? (
-              <img src={idPhotoUrl} alt={card ? `Photo of the ${METHOD[id!.method] ?? 'ID'} card of ${person.name}` : `Photo from the Aadhaar QR of ${person.name}`} />
+              <ZoomablePhoto src={idPhotoUrl} alt={card ? `Photo of the ${METHOD[id!.method] ?? 'ID'} card of ${person.name}` : `Photo from the Aadhaar QR of ${person.name}`}>
+                <img src={idPhotoUrl} alt={card ? `Photo of the ${METHOD[id!.method] ?? 'ID'} card of ${person.name}` : `Photo from the Aadhaar QR of ${person.name}`} style={{ objectFit: 'contain' }} />
+              </ZoomablePhoto>
             ) : !id ? (
               'ID not checked yet'
             ) : photoKept && !photos ? (

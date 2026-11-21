@@ -15,6 +15,8 @@ import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import '../../ceo/_kit/ceo.css';
 import { firstName, useTeam, type Brief } from '../_kit/api';
+import { ErrorState } from '../../../components/ErrorState';
+import { StuckList, useStuckList } from '../../shared/StuckList';
 
 /** Work list — design T-Work.dc.html, plus N2 (paid, no interview 10+ days) and N3 shortage tasks. */
 interface Work {
@@ -43,6 +45,7 @@ export default function TeamLeadWork() {
   const now = useNow();
   const team = useTeam();
   const work = useQuery({ queryKey: ['team-lead', 'work'], queryFn: () => api.get<Work>('/team-lead/work') });
+  const stuck = useStuckList();
   const refund = useQuery({ queryKey: ['close-to-refund', 'job_seekers'], queryFn: () => api.get<Refund>('/close-to-refund', { query: { who: 'job_seekers' } }) });
   const n2 = useQuery({ queryKey: ['growth', 'days-to-first-interview'], queryFn: () => api.get<N2>('/growth/days-to-first-interview') });
   const n3 = useQuery({ queryKey: ['growth', 'shortage-tasks'], queryFn: () => api.get<Shortage[]>('/growth/shortage-tasks') });
@@ -61,12 +64,6 @@ export default function TeamLeadWork() {
     { key: 'left', header: 'Guarantee left', cell: (r) => `${r.daysLeftOnGuarantee} days` },
     { key: 'agent', header: 'Agent', cell: (r) => r.registeredBy?.name ?? '—' },
     { key: 'act', header: '', cell: (r) => (r.registeredBy ? <Remind staffId={r.registeredBy.id} jobSeekerId={r.jobSeekerId} name={r.registeredBy.name} text="Paid 10+ days ago, no interview booked yet — find a match today" /> : null) },
-  ];
-  const stuckColumns: Column<Work['stuck'][number]>[] = [
-    { key: 'js', header: 'Job seeker', cell: (r) => `${r.jobSeeker.code} · ${r.jobSeeker.firstName}` },
-    { key: 'agent', header: 'Agent', cell: (r) => r.agent?.name ?? '—', filter: 'select', filterValue: (r) => r.agent?.name ?? '—' },
-    { key: 'where', header: 'Where it stopped', cell: (r) => `${r.where} · ${r.hours} h`, sortValue: (r) => r.hours },
-    { key: 'act', header: '', cell: (r) => (r.agent ? <Remind staffId={r.agent.id} jobSeekerId={r.jobSeeker.id} name={r.agent.name} text={`Registration stopped: ${r.where.toLowerCase()} — call him`} /> : null) },
   ];
   const interviewColumns: Column<Work['interviews'][number]>[] = [
     { key: 'when', header: 'When', cell: (r) => (istDateKey(r.at) === istDateKey(now) ? formatTimeIST(r.at) : formatDateIST(r.at)), sortValue: (r) => r.at },
@@ -102,8 +99,26 @@ export default function TeamLeadWork() {
           ))}
         </Card>
       )}
-      <Card title="Registrations stuck" flush>
-        <DataTable columns={stuckColumns} rows={w?.stuck} rowKey={(r) => r.jobSeeker.id} caption="Registrations stuck" loading={work.isPending} error={work.error} emptyTitle="No registration is stuck." />
+      {/* 22 Nov: every stuck job seeker, business and partner of the team (GET /profile-stuck/list), with the
+          agent each belongs to (assigned, else registered) and the profile box's buttons. */}
+      <Card title={`Stuck registrations${stuck.data ? ` (${stuck.data.rows.length})` : ''}`}>
+        {stuck.error ? <ErrorState error={stuck.error} onRetry={() => void stuck.refetch()} /> : null}
+        <StuckList
+          rows={stuck.data?.rows}
+          showOwner
+          extra={(r) => {
+            const agent = r.ownerId ? team.data?.members.find((m) => m.id === r.ownerId) : undefined;
+            if (!agent) return null;
+            return (
+              <Remind
+                staffId={agent.id}
+                jobSeekerId={r.kind === 'job_seeker' ? r.id : undefined}
+                name={agent.name}
+                text={r.kind === 'job_seeker' ? undefined : `${r.code} · ${r.name}: registration not finished — call them`}
+              />
+            );
+          }}
+        />
       </Card>
       <Card title="Interviews" flush>
         <DataTable columns={interviewColumns} rows={w?.interviews} rowKey={(r) => r.id} caption="Interviews" loading={work.isPending} error={work.error} emptyTitle="No interviews today and no results overdue." />
@@ -114,7 +129,7 @@ export default function TeamLeadWork() {
   );
 }
 
-function Remind({ staffId, jobSeekerId, name, text }: { staffId: string; jobSeekerId: string; name: string; text?: string }) {
+function Remind({ staffId, jobSeekerId, name, text }: { staffId: string; jobSeekerId?: string; name: string; text?: string }) {
   const toast = useToast();
   const remind = useMutation({
     mutationFn: () => api.post('/team-lead/remind', { staffId, jobSeekerId, text }),

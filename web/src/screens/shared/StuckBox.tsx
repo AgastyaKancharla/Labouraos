@@ -38,7 +38,7 @@ export interface StuckView {
   actions: StuckAction[];
 }
 
-const STEP: Record<string, MessageKey> = {
+export const STEP: Record<string, MessageKey> = {
   consent: 'stuck.step.consent',
   selfie: 'stuck.step.selfie',
   id_check: 'stuck.step.id_check',
@@ -60,7 +60,7 @@ const STATE: Record<string, MessageKey> = {
   confirming: 'stuck.state.in_progress',
 };
 
-const ACTION: Record<Exclude<StuckAction, 'someone_else_pays'>, { label: MessageKey; run: (id: string) => Promise<unknown> }> = {
+export const ACTION: Record<Exclude<StuckAction, 'someone_else_pays'>, { label: MessageKey; run: (id: string) => Promise<unknown> }> = {
   registration_link: { label: 'stuck.action.registration_link', run: (id) => api.post('/consent/links', { jobSeekerId: id }) },
   payment_link: { label: 'stuck.action.payment_link', run: (id) => api.post(`/job-seekers/${encodeURIComponent(id)}/resend-payment`, {}) },
   agreement_link: { label: 'stuck.action.agreement_link', run: (id) => api.post(`/businesses/${encodeURIComponent(id)}/agreement-links`, {}) },
