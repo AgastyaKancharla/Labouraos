@@ -70,7 +70,7 @@ export function PartnerSteps({ token, openInBrowser, browserBusy, onFinished }: 
         steps={[t('rp.step1'), t('rp.step2'), t('rp.step3'), t('rp.step4')]}
         maskedPhone={data.maskedPhone}
         warning={data.otpRequired && data.registrationComplete ? t('reg.alreadyComplete') : null}
-        codeRanOut={codeRanOut}
+        codeRanOut={codeRanOut || requestId !== null}
         send={() => api.sendLinkOtp(token)}
         verify={async (id, code) => {
           const opened = await api.verifyPartnerOtp(token, id, code);
@@ -248,6 +248,11 @@ function IdStep({ token, requestId, status, onCodeExpired, refresh, openInBrowse
           });
           return ok ? 'done' : 'retry';
         }}
+        onNonceFailed={(e) =>
+          void run(async () => {
+            throw e;
+          })
+        }
         onContinue={() => void refresh()}
         onOpenPdf={openInBrowser}
         pdfBusy={browserBusy}

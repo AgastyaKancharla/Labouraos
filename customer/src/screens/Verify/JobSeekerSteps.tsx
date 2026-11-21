@@ -52,7 +52,7 @@ export function JobSeekerSteps({ token, openInBrowser, browserBusy, onFinished }
     // While "Paid — confirming": ask again every 5 seconds until the bank confirms.
     refetchInterval: (q) => {
       const d = q.state.data;
-      return d && !d.otpRequired && paidTapped && d.payment.state !== 'confirmed' ? 5_000 : false;
+      return d && !d.otpRequired && paidTapped && d.payment.state !== 'confirmed' && d.payment.state !== 'failed' ? 5_000 : false;
     },
   });
   const codeExpired = useCallback(() => {
@@ -71,10 +71,11 @@ export function JobSeekerSteps({ token, openInBrowser, browserBusy, onFinished }
         testID="reg-code"
         title={t('reg.title')}
         intro={t('reg.intro')}
-        steps={[t('reg.step1'), t('reg.step2'), t('reg.step3'), t('reg.step4', { amount: rupees(49900) })]}
+        steps={[t('reg.step1'), t('reg.step2'), t('reg.step3'), t('reg.step4Plain')]}
         maskedPhone={data.maskedPhone}
         warning={data.otpRequired && data.registrationComplete ? t('reg.alreadyComplete') : null}
-        codeRanOut={codeRanOut}
+        // A code that ran out while on a step (the status answers "locked" again).
+        codeRanOut={codeRanOut || requestId !== null}
         send={() => api.sendLinkOtp(token)}
         verify={async (id, code) => {
           const opened = await api.verifyRegistrationOtp(token, id, code);
@@ -263,6 +264,11 @@ function IdStep({ token, requestId, status, onCodeExpired, refresh, openInBrowse
           });
           return ok ? 'done' : 'retry';
         }}
+        onNonceFailed={(e) =>
+          void run(async () => {
+            throw e;
+          })
+        }
         onContinue={() => void refresh()}
         onOpenPdf={openInBrowser}
         pdfBusy={browserBusy}

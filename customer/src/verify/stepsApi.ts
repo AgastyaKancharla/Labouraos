@@ -129,8 +129,12 @@ export function tokenFromLink(url: string): string | null {
 
 /** The code for this link ran out (or was never verified): back to the code step; finished steps stay finished. */
 export function isCodeExpired(error: unknown): boolean {
-  return isApiError(error) && error.status === 400 && /otp|code/i.test(error.message);
+  // Only the server's "no verified code for this link" answers (registration, partner and consent
+  // controllers) — not any message that happens to say "code" (e.g. "A valid IFSC code is required").
+  return isApiError(error) && error.status === 400 && CODE_EXPIRED.test(error.message);
 }
+
+const CODE_EXPIRED = /OTP to the registered mobile is required|OTP verification is required|Valid owner OTP is required|Invalid or expired OTP|Wrong or expired code/i;
 
 /** The link was already used up (the agreement is signed, the partner's payout details saved). */
 export function isLinkUsed(error: unknown): boolean {

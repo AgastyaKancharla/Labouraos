@@ -1,10 +1,10 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Image, Linking, StyleSheet, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Banner, Button, Card, Text } from '@/components';
 import { useI18n } from '@/i18n';
 import { colors, radius } from '@/theme';
-import { preparePhoto, type PhotoKind } from './photo';
+import { discardPhoto, preparePhoto, type PhotoKind } from './photo';
 import type { PhotoFile } from './types';
 
 interface Props {
@@ -34,6 +34,16 @@ export function LiveCapture({ kind, tips, takeLabel, savingLabel, onCapture, tes
   const [sending, setSending] = useState(false);
   const [takeFailed, setTakeFailed] = useState(false);
   const [preview, setPreview] = useState<PhotoFile | null>(null);
+  // The prepared photo is deleted once sent, on "Take again", and when the step closes.
+  const shown = useRef<string | null>(null);
+  useEffect(() => {
+    shown.current = preview?.uri ?? null;
+  }, [preview]);
+  useEffect(() => () => discardPhoto(shown.current), []);
+  const dropPreview = () => {
+    discardPhoto(preview?.uri);
+    setPreview(null);
+  };
 
   if (!permission) return <View style={styles.frame} testID={`${testID}-waiting`} />;
   if (!permission.granted) {
@@ -59,7 +69,7 @@ export function LiveCapture({ kind, tips, takeLabel, savingLabel, onCapture, tes
     try {
       // No EXIF from the camera; preparePhoto saves a fresh JPEG anyway.
       const shot = await camera.current.takePictureAsync({ quality: 0.9, exif: false, shutterSound: false });
-      setPreview(await preparePhoto(shot, kind));
+      setPreview(await preparePhoto(shot.uri, kind));
     } catch {
       setTakeFailed(true);
     } finally {
@@ -72,7 +82,8 @@ export function LiveCapture({ kind, tips, takeLabel, savingLabel, onCapture, tes
     setSending(true);
     try {
       const outcome = await onCapture(preview);
-      if (outcome === 'retry') setPreview(null);
+      if (outcome === 'retry') dropPreview();
+      else discardPhoto(preview.uri);
     } finally {
       setSending(false);
     }
@@ -84,7 +95,7 @@ export function LiveCapture({ kind, tips, takeLabel, savingLabel, onCapture, tes
         <Image source={{ uri: preview.uri }} style={styles.frame} resizeMode="cover" accessibilityIgnoresInvertColors />
         {sending ? <Text variant="muted">{savingLabel}</Text> : null}
         <Button label={t('camera.use')} onPress={() => void send()} loading={sending} testID={`${testID}-use`} />
-        <Button label={t('camera.retake')} variant="secondary" disabled={sending} onPress={() => setPreview(null)} testID={`${testID}-retake`} />
+        <Button label={t('camera.retake')} variant="secondary" disabled={sending} onPress={dropPreview} testID={`${testID}-retake`} />
       </View>
     );
   }

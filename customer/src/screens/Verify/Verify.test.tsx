@@ -143,6 +143,32 @@ describe('Job seeker steps in the app', () => {
       expect(steps.registrationOtherId).toHaveBeenCalledWith(TOKEN, expect.any(String), 'pan', 'ABCDE1234F', { uri: 'file:///cache/prepared.jpg', name: 'id-card.jpg', type: 'image/jpeg' }, 'nonce'),
     );
     expect(await screen.findByTestId('id-pending')).toHaveTextContent(/Sent to a Team Lead/);
+    // No picture of the card stays on the phone: the camera file and the sent JPEG are deleted.
+    const deleted = (jest.requireMock('expo-file-system') as { __deleted: string[] }).__deleted;
+    expect(deleted).toEqual(expect.arrayContaining(['file:///camera/shot.jpg', 'file:///cache/prepared.jpg']));
+  });
+
+  it('no capture token: the card photo is not sent and the reason shows', async () => {
+    const steps = spiedSteps();
+    steps.registrationCaptureNonce.mockRejectedValue(new ApiError({ status: 409, messages: ['Your registration is being checked by our team'] }));
+    const atId = {
+      otpRequired: false, maskedPhone: '+91 ••••• •4321', firstName: 'Ravi', jobSeekerCode: 'JS-1', currentStep: 'id_check',
+      steps: { consent: true, selfie: true, idCheck: false, payment: false }, idCheck: { waitingForTeamLead: false, lastResult: 'none' }, stopped: null,
+      waitingForTrade: false, termsAcceptedAt: null, payment: { state: 'not_started', amountPaise: 49900, upiReference: null, confirmedAt: null, guaranteeEndsAt: null, paymentId: null }, receiptToken: null,
+    } as const;
+    steps.registrationStatus.mockImplementation(async (_token, requestId) => (requestId ? atId : { otpRequired: true, maskedPhone: '+91 ••••• •4321', registrationComplete: false }));
+    steps.verifyRegistrationOtp.mockImplementation(async () => atId);
+    await renderVerify('registration', 'p-js', steps);
+    await openWithCode('reg-code');
+    await fireEvent.press(await screen.findByTestId('reg-resume-continue'));
+    await fireEvent.press(await screen.findByTestId('id-other'));
+    await fireEvent.press(screen.getByTestId('id-type-voter_id'));
+    await fireEvent.changeText(screen.getByTestId('id-number'), 'ABC1234567');
+    await fireEvent.press(screen.getByTestId('id-next'));
+    await fireEvent.press(await screen.findByTestId('id-card-camera-take'));
+    await fireEvent.press(await screen.findByTestId('id-card-camera-use'));
+    expect(await screen.findByTestId('reg-id-error')).toHaveTextContent(/being checked by our team/);
+    expect(steps.registrationOtherId).not.toHaveBeenCalled();
   });
 
   it('the e-Aadhaar PDF opens the same step on the Laboura page in the browser sheet', async () => {

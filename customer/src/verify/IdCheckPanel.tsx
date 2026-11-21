@@ -51,6 +51,8 @@ interface Props {
   onQr: (qrText: string) => void;
   onOtherId: (method: OtherIdType, idNumber: string, photo: PhotoFile, captureNonce: string) => Promise<'done' | 'retry'>;
   getCaptureNonce: () => Promise<string>;
+  /** The one-time capture token could not be had: show why (the photo is not sent without it). */
+  onNonceFailed: (error: unknown) => void;
   onContinue: () => void;
   /** The e-Aadhaar PDF: opens this step on the Laboura page in the browser sheet. */
   onOpenPdf: () => void;
@@ -58,7 +60,7 @@ interface Props {
   pending: boolean;
 }
 
-export function IdCheckPanel({ busy, qrResult, otherIdFailed, onQr, onOtherId, getCaptureNonce, onContinue, onOpenPdf, pdfBusy, pending }: Props) {
+export function IdCheckPanel({ busy, qrResult, otherIdFailed, onQr, onOtherId, getCaptureNonce, onNonceFailed, onContinue, onOpenPdf, pdfBusy, pending }: Props) {
   const { t } = useI18n();
   const [mode, setMode] = useState<Mode>('choose');
   const [other, setOther] = useState<OtherIdType | null>(null);
@@ -68,13 +70,16 @@ export function IdCheckPanel({ busy, qrResult, otherIdFailed, onQr, onOtherId, g
   const numberOk = Boolean(otherDef?.pattern.test(cleanNumber));
 
   // One capture token each time the card camera opens, and a new one after a failed try (it works once, for 2 minutes).
-  const nonce = useRef<Promise<string | null> | null>(null);
+  const nonce = useRef<Promise<{ token: string } | { error: unknown }> | null>(null);
   const ask = useRef(getCaptureNonce);
   useEffect(() => {
     ask.current = getCaptureNonce;
   });
   const freshNonce = useCallback(() => {
-    nonce.current = ask.current().catch(() => null);
+    nonce.current = ask.current().then(
+      (token) => ({ token }),
+      (error: unknown) => ({ error }),
+    );
   }, []);
   useEffect(() => {
     if (mode === 'card') freshNonce();
@@ -141,8 +146,13 @@ export function IdCheckPanel({ busy, qrResult, otherIdFailed, onQr, onOtherId, g
           takeLabel={t('id.cardTake')}
           savingLabel={t('id.cardSaving')}
           onCapture={async (photo) => {
-            const token = (await (nonce.current ?? Promise.resolve(null))) ?? '';
-            const outcome = await onOtherId(otherDef.id, cleanNumber, photo, token);
+            const got = nonce.current ? await nonce.current : { error: new Error('NO_CAPTURE_TOKEN') };
+            if ('error' in got) {
+              onNonceFailed(got.error);
+              freshNonce();
+              return 'retry';
+            }
+            const outcome = await onOtherId(otherDef.id, cleanNumber, photo, got.token);
             if (outcome === 'retry') freshNonce();
             return outcome;
           }}

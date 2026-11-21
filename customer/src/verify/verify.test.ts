@@ -71,6 +71,8 @@ describe('problems', () => {
   it('tells a code that ran out from a used link and other problems', () => {
     expect(isCodeExpired(err(400, 'OTP to the registered mobile is required'))).toBe(true);
     expect(isCodeExpired(err(409, 'OTP limit'))).toBe(false);
+    expect(isCodeExpired(err(400, 'A valid 11-character IFSC code is required'))).toBe(false);
+    expect(isCodeExpired(err(400, 'Valid owner OTP is required to sign referral terms'))).toBe(true);
     expect(isLinkUsed(err(400, 'This link has already been used'))).toBe(true);
     expect(stepProblemKey(err(409, 'Your registration is being checked by our team'))).toBe('verr.underReview');
     expect(stepProblemKey(err(400, 'This link has expired'))).toBe('verr.expired');
@@ -82,21 +84,43 @@ describe('problems', () => {
 
 describe('preparePhoto', () => {
   const manipulate = ImageManipulator.manipulate as jest.Mock;
-  beforeEach(() => manipulate.mockClear());
+  const mocked = jest.requireMock('expo-image-manipulator') as { __size: { width: number; height: number } };
+  const deleted = (jest.requireMock('expo-file-system') as { __deleted: string[] }).__deleted;
+  beforeEach(() => {
+    manipulate.mockClear();
+    deleted.length = 0;
+    mocked.__size.width = 1600;
+    mocked.__size.height = 1200;
+  });
 
-  it('an ID card longer than 1280 px is scaled down along its longest side and saved as a fresh JPEG', async () => {
-    const photo = await preparePhoto({ uri: 'file:///shot.jpg', width: 1200, height: 1600 }, 'card');
-    const context = manipulate.mock.results[0]!.value;
-    expect(context.resize).toHaveBeenCalledWith({ height: 1280 });
+  it('sizes from the drawn picture: a portrait card over 1280 px is scaled along its height, saved as a fresh JPEG, and the camera file deleted', async () => {
+    mocked.__size.width = 1200;
+    mocked.__size.height = 1600;
+    const photo = await preparePhoto('file:///shot.jpg', 'card');
+    expect(manipulate).toHaveBeenCalledTimes(2);
+    expect(manipulate.mock.results[1]!.value.resize).toHaveBeenCalledWith({ height: 1280 });
     expect(photo).toEqual({ uri: 'file:///cache/prepared.jpg', name: 'id-card.jpg', type: 'image/jpeg' });
+    expect(deleted).toEqual(['file:///shot.jpg']);
+  });
+
+  it('a card already small enough is only saved again (no resize)', async () => {
+    mocked.__size.width = 1024;
+    mocked.__size.height = 768;
+    await preparePhoto('file:///shot.jpg', 'card');
+    expect(manipulate).toHaveBeenCalledTimes(1);
   });
 
   it('a selfie is kept at 960 px wide', async () => {
-    await preparePhoto({ uri: 'file:///shot.jpg', width: 3000, height: 4000 }, 'selfie');
-    expect(manipulate.mock.results[0]!.value.resize).toHaveBeenCalledWith({ width: 960 });
+    mocked.__size.width = 3000;
+    mocked.__size.height = 4000;
+    await preparePhoto('file:///shot.jpg', 'selfie');
+    expect(manipulate.mock.results[1]!.value.resize).toHaveBeenCalledWith({ width: 960 });
   });
 
-  it('refuses a card photo smaller than the server accepts', async () => {
-    await expect(preparePhoto({ uri: 'file:///shot.jpg', width: 200, height: 150 }, 'card')).rejects.toThrow('PHOTO_TOO_SMALL');
+  it('refuses a card whose shortest side is under 240 px, and still deletes the camera file', async () => {
+    mocked.__size.width = 1000;
+    mocked.__size.height = 200;
+    await expect(preparePhoto('file:///shot.jpg', 'card')).rejects.toThrow('PHOTO_TOO_SMALL');
+    expect(deleted).toEqual(['file:///shot.jpg']);
   });
 });

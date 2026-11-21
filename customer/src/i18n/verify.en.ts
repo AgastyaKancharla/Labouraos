@@ -62,6 +62,7 @@ export const verifyEn = {
   'reg.step2': '2. A selfie',
   'reg.step3': '3. Check your ID',
   'reg.step4': '4. Pay {amount}',
+  'reg.step4Plain': '4. Your terms and payment',
   'reg.alreadyComplete': 'Your registration is already complete. Type the code to see the details.',
   'reg.welcomeBack': 'Welcome back, {name}',
   'reg.doneOf': "You've already done {done} of 4 steps. You won't be asked again.",

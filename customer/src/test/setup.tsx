@@ -113,8 +113,29 @@ jest.mock('expo-camera', () => {
 });
 
 jest.mock('expo-image-manipulator', () => {
-  const render = { saveAsync: jest.fn(async () => ({ uri: 'file:///cache/prepared.jpg', width: 1280, height: 960 })) };
-  const context: { resize: jest.Mock; renderAsync: jest.Mock } = { resize: jest.fn(), renderAsync: jest.fn(async () => render) };
-  context.resize.mockImplementation(() => context);
-  return { ImageManipulator: { manipulate: jest.fn(() => context) }, SaveFormat: { JPEG: 'jpeg', PNG: 'png' } };
+  // `__size` is the size of the drawn picture; tests change it to try other shapes.
+  const size = { width: 1600, height: 1200 };
+  const saveAsync = jest.fn(async () => ({ uri: 'file:///cache/prepared.jpg', width: 1280, height: 960 }));
+  const makeContext = () => {
+    const context: { resize: jest.Mock; renderAsync: jest.Mock } = { resize: jest.fn(), renderAsync: jest.fn(async () => ({ width: size.width, height: size.height, saveAsync })) };
+    context.resize.mockImplementation(() => context);
+    return context;
+  };
+  return { ImageManipulator: { manipulate: jest.fn(() => makeContext()) }, SaveFormat: { JPEG: 'jpeg', PNG: 'png' }, __size: size };
+});
+
+// Photos are deleted from the cache after use; `__deleted` lists what was deleted.
+jest.mock('expo-file-system', () => {
+  const deleted: string[] = [];
+  class File {
+    uri: string;
+    exists = true;
+    constructor(uri: string) {
+      this.uri = uri;
+    }
+    delete() {
+      deleted.push(this.uri);
+    }
+  }
+  return { File, __deleted: deleted };
 });
