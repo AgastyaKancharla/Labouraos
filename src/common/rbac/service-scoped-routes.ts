@@ -127,6 +127,12 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
     test: 'modules/aadhaar-qr/aadhaar-qr.e2e.spec.ts',
     proof: "expect((await get(otherLead, `/identity/job-seekers/${s.id}/aadhaar-check`)).status).toBe(404);",
   },
+  'AadhaarQrController.decideOtherId': {
+    reason:
+      "22 Nov: the Team Lead's \"Looks right\" / \"Fake\" from the job seeker's page. Who may decide is OtherIdApprovalService.rightFor (in decideRegistration and again in OtherIdService.recordDecision): the Team Lead of the registering agent's team, another Team Lead of the city only when that team has none, never the registrar; anyone else is 403.",
+    test: 'modules/aadhaar-qr/aadhaar-qr.e2e.spec.ts',
+    proof: "expect((await post(otherLead, `/identity/job-seekers/${s.id}/other-id/decision`, { verdict: 'ok' })).status).toBe(403);",
+  },
 
   // ---------------------------------------------------------------- attendance
   'AttendanceController.approve': {
