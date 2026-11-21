@@ -13,6 +13,8 @@ import { formatTimeIST } from '../../../lib/format/date';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { qk, type ReferralHeader, type ReferralStatus, type Step } from '../_registration/api';
 import { StepLegend, StepRow } from '../_registration/kit';
+import { PartnerShareLink, SendOnWhatsAppButton } from '../CA18-WhatsApp/SendOnWhatsApp';
+import '../CA18-WhatsApp/whatsapp.css';
 import '../_registration/registration.css';
 
 /**
@@ -101,11 +103,13 @@ export default function ReferralSaved() {
               {t('reg.ref.resend')}
             </Button>
           )}
+          {status.data?.currentStep !== 'complete' && <SendOnWhatsAppButton kind="referral_terms" id={referralId} />}
           <ButtonLink to={to('CA03-Home')}>{t('reg.backHome')}</ButtonLink>
         </div>
         <p className="muted" style={{ marginTop: 10 }}>
           {t('reg.ref.note', { name: first, code: r.code })}
         </p>
+        <PartnerShareLink referralId={referralId} code={r.code} />
       </Card>
     </div>
   );

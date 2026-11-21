@@ -26,6 +26,8 @@ export const HEARD_FROM_VALUES = [
   'social_media', 'walk_in', 'other',
   // Signed up themselves in the Laboura app (customer app proposal C3).
   'laboura_app',
+  // Wrote to Laboura on WhatsApp (Master Guide rev 202, 21 Nov).
+  'whatsapp',
 ] as const;
 
 export const SHIFT_PREFERENCES = ['day', 'night', 'rotational', 'any'] as const;

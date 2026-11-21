@@ -215,6 +215,8 @@ export const callAgentScreens: readonly ScreenDef[] = [
   { id: 'CA13b-BusinessSaved', path: 'register/business/saved', title: 'screen.CA13b-BusinessSaved' },
   { id: 'CA15-RegisterReferral', path: 'register/referral', title: 'screen.CA15-RegisterReferral' },
   { id: 'CA15b-ReferralSaved', path: 'register/referral/saved', title: 'screen.CA15b-ReferralSaved' },
+  // No design file: the WhatsApp tab (Master Guide rev 202, 21 Nov).
+  { id: 'CA18-WhatsApp', path: 'whatsapp', title: 'screen.CA18-WhatsApp' },
 ];
 
 export const publicScreens: readonly ScreenDef[] = [
@@ -246,5 +248,7 @@ export const publicScreens: readonly ScreenDef[] = [
   { id: 'P-PartnerUPI', path: 'partner/:token/upi', title: 'screen.P-PartnerUPI' },
   { id: 'P-PartnerDone', path: 'partner/:token/done', title: 'screen.P-PartnerDone' },
   { id: 'P-PartnerReconsent', path: 'partner/:token/updated-terms', title: 'screen.P-PartnerReconsent' },
+  // No design file: a referral partner's personal share link (rev 202). Keep in step with shareLinkPath() in src/modules/referral/referral-share-link.ts.
+  { id: 'P-ReferralLink', path: 'ref/:slug', title: 'screen.P-ReferralLink' },
 ];
 

@@ -11,11 +11,15 @@ import { ReviewFlagModule } from '../review-flag/review-flag.module';
 import { PricingModule } from '../pricing/pricing.module';
 import { ReferralTermsController } from './referral-terms.controller';
 import { AadhaarQrModule } from '../aadhaar-qr/aadhaar-qr.module';
+import { ReportingScopeModule } from '../staff/reporting-scope.module';
+import { WhatsAppInboxModule } from '../whatsapp-inbox/whatsapp-inbox.module';
+import { ReferralLeadService } from './referral-lead.service';
+import { ReferralLeadCustomerController, ReferralLeadStaffController, ReferralLinkPublicController } from './referral-lead.controller';
 
 @Module({
-  imports: [ConsentModule, JobSeekerModule, PayoutAccountModule, ReviewFlagModule, PricingModule, MessageModule, AadhaarQrModule, LegalModule],
-  controllers: [ReferralController, ReferralRegistrationController, ReferralTermsController],
-  providers: [ReferralService],
-  exports: [ReferralService],
+  imports: [ConsentModule, JobSeekerModule, PayoutAccountModule, ReviewFlagModule, PricingModule, MessageModule, AadhaarQrModule, LegalModule, ReportingScopeModule, WhatsAppInboxModule],
+  controllers: [ReferralController, ReferralRegistrationController, ReferralTermsController, ReferralLeadStaffController, ReferralLinkPublicController, ReferralLeadCustomerController],
+  providers: [ReferralService, ReferralLeadService],
+  exports: [ReferralService, ReferralLeadService],
 })
 export class ReferralModule {}
