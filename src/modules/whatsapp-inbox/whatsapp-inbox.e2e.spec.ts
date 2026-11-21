@@ -13,6 +13,7 @@ import { WhatsAppInboxService } from './whatsapp-inbox.service';
 import { WhatsAppEventsService } from './whatsapp-events.service';
 import { ConsentLinkService } from '../consent/consent-link.service';
 import { WhatsAppInboxJob } from '../../jobs/whatsapp-inbox.job';
+import { MessagingService } from '../message/messaging.service';
 
 const APP_SECRET = 'whatsapp_app_secret_for_e2e_tests_32ch';
 const VERIFY_TOKEN = 'verify-token-for-e2e-tests';
@@ -384,6 +385,21 @@ describe('WhatsApp (rev 202): inbound conversations as tracked leads, the WhatsA
     const res = await api().post(`/whatsapp/conversations/${conv.id}/template`).set('Authorization', bearer(agentA)).send({ template: 'whatsapp_missed_you' });
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('DO_NOT_CONTACT');
+    // Every automatic message is skipped (recorded as blocked); the provider is never called.
+    const before = provider.sentMessages.length;
+    const auto = await app.get(MessagingService).send({ channel: 'whatsapp', template: 'call_attempt_notice', subjectType: 'job_seeker', subjectId: seeker.id, variables: {} });
+    expect(auto.status).toBe('blocked');
+    const link = await api().post(`/whatsapp/send-link/registration/${seeker.id}`).set('Authorization', bearer(agentA)).expect(200);
+    expect(link.body).toEqual({ sentBy: null });
+    expect(provider.sentMessages.length).toBe(before);
+    // ...and no off-shift automatic reply either, while an agent may still answer him (he wrote first).
+    await prisma.attendanceDay.updateMany({ where: { staffId: { in: [agentA.id, agentB.id] }, date: DAY1 }, data: { logoutAt: clock.now() } });
+    await prisma.whatsAppConversation.update({ where: { id: conv.id }, data: { autoReplyAt: null } });
+    await deliver(webhookBody(seeker.phone, 'Please stop calling, only WhatsApp').raw).expect(200);
+    expect((await conversation(seeker.phone)).autoReplyAt).toBeNull();
+    await api().post(`/whatsapp/conversations/${conv.id}/reply`).set('Authorization', bearer(agentA)).send({ text: 'Noted, we will only message you here.' }).expect(200);
+    expect(provider.sentMessages.length).toBe(before + 1);
+    await prisma.attendanceDay.updateMany({ where: { staffId: { in: [agentA.id, agentB.id] }, date: DAY1 }, data: { logoutAt: null } });
     await prisma.callRecord.deleteMany({ where: { subjectId: seeker.id } });
   });
 

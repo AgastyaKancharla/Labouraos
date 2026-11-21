@@ -32,7 +32,16 @@ export interface SendMessageInput {
    * are not the "we tried to call you" notice.
    */
   contactAttempt?: boolean;
+  /**
+   * An agent answering someone who wrote to us first. Only then may a message
+   * reach a person with a live "wrong number" or "do not call" block; every
+   * automatic message is skipped (recorded with status `blocked`).
+   */
+  agentReply?: boolean;
 }
+
+/** Records a message can be about that carry a person's phone (and so a contact block). */
+const PERSON_SUBJECTS = new Set(['job_seeker', 'business', 'referral']);
 
 /** WhatsApp first, SMS when WhatsApp is not available or fails (21 Nov, rev 202). */
 export interface PreferWhatsAppResult {
@@ -87,7 +96,12 @@ export class MessagingService {
    * call with another outcome clears it).
    */
   async messagingBlocked(subjectType: string | null | undefined, subjectId: string | null | undefined): Promise<boolean> {
-    if (!subjectType || !subjectId) return false;
+    if (!subjectType || !subjectId || !PERSON_SUBJECTS.has(subjectType)) return false;
+    // INTEGRATION POINT (Builder B, PR #166): once ContactBlock is on main, this
+    // body becomes `return messagesBlocked(this.prisma, { subjectType, subjectId });`
+    // (src/modules/call/contact-block.ts). Until then the same rule is read from the
+    // call outcomes B records ('do_not_call' any time; 'wrong_number' as the latest).
+    // Every automatic message goes through here (send() and sendPreferWhatsApp()).
     const dnc = await this.prisma.callRecord.findFirst({
       where: { subjectType, subjectId, agentOutcome: 'do_not_call' },
       select: { id: true },
@@ -102,6 +116,21 @@ export class MessagingService {
   }
 
   async send(input: SendMessageInput) {
+    // Wrong number / do not call (rev 202): no automatic message reaches the person.
+    if (!input.agentReply && (await this.messagingBlocked(input.subjectType, input.subjectId))) {
+      const blocked = await this.prisma.messageLog.create({
+        data: {
+          channel: input.channel,
+          template: input.template,
+          subjectType: input.subjectType,
+          subjectId: input.subjectId,
+          relatedType: input.relatedType ?? null,
+          relatedId: input.relatedId ?? null,
+          status: 'blocked',
+        },
+      });
+      return this.toPublic(blocked);
+    }
     // Test site only (pretend SMS): the request that sent a link answers with it (DEPLOY.md F12).
     recordTestModeLink(input.template, input.variables?.link);
     const row = await this.prisma.messageLog.create({

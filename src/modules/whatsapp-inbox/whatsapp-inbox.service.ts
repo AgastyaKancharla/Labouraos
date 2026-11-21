@@ -222,6 +222,8 @@ export class WhatsAppInboxService {
 
   /** "Thanks! An agent will call you by 10 AM." Free text inside the window (they just wrote), the template otherwise. */
   private async sendAutoReply(conversation: WhatsAppConversation, now: Date) {
+    // An automatic message: never to a person with a wrong number / do not call block.
+    if (await this.messaging.messagingBlocked(conversation.subjectType, conversation.subjectId)) return;
     const text = renderTemplate('whatsapp_off_shift_reply');
     const result = this.provider.sendTextMessage
       ? await this.provider.sendTextMessage(conversation.phone, text)

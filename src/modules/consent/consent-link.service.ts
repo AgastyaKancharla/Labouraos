@@ -331,7 +331,9 @@ export class ConsentLinkService {
       return result.channel;
     }
     const row = await this.messagingService.send({ channel: 'sms', ...message });
-    return row?.status === 'failed' ? null : 'sms';
+    // A test double may answer nothing (treated as sent); failed or blocked (wrong number / do not call) is not sent.
+    if (!row) return 'sms';
+    return row.status === 'failed' || row.status === 'blocked' ? null : 'sms';
   }
 
   /** The agreement link, in English (rev 193; a language an older client sends is ignored). */
