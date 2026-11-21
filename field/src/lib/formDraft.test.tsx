@@ -2,7 +2,7 @@ import { act, fireEvent, renderHook, screen, waitFor } from '@testing-library/re
 import { Pressable, Text, TextInput } from 'react-native';
 import { useAuth } from '@/auth/AuthProvider';
 import { kiran, renderWithApp } from '@/test/render';
-import { clearDrafts, getDraft, saveDraft, updateDraft } from '@/screens/_visits/visitDraft';
+import { clearDrafts, forgetDraft, getDraft, saveDraft, updateDraft } from '@/screens/_visits/visitDraft';
 import { createMemoryStore } from '@/lib/storage/types';
 import { clearAllDrafts, clearAllFormDrafts, clearFormDraft, draftOwner, draftStorageIdle, readFormDraft, setDraftOwner, setDraftStorage, useFormDraft } from './formDraft';
 
@@ -185,6 +185,23 @@ describe('21 Nov review: the visit in progress and other agents after a restart'
     setDraftOwner('fa-1');
     await draftStorageIdle();
     expect(getDraft('v-9')).toMatchObject({ shopName: 'Ganesh Stores', spokeTo: 'owner' });
+  });
+
+  it('once the visit has its result, its draft leaves memory and the phone', async () => {
+    const phone = createMemoryStore();
+    setDraftStorage(phone);
+    setDraftOwner('fa-1');
+    saveDraft(visit('v-10'));
+    await draftStorageIdle();
+    forgetDraft('v-10');
+    await draftStorageIdle();
+    expect(getDraft('v-10')).toBeNull();
+    clearDrafts();
+    clearAllFormDrafts();
+    setDraftOwner(null);
+    setDraftOwner('fa-1');
+    await draftStorageIdle();
+    expect(getDraft('v-10')).toBeNull();
   });
 
   it('another agent signing in after a restart (memory no longer knows the last one) drops his stored drafts', async () => {

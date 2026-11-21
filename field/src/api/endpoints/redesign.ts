@@ -50,7 +50,7 @@ export interface NeedsItem {
   at: string | null;
   due: Due | null;
   target: NeedsTarget;
-  interview?: { startsAt: string; candidateName: string };
+  interview?: { startsAt: string; candidateName: string; candidateArrivedAt?: string | null };
   visit?: { startedAt: string; purpose: string | null };
   agreement?: { state: AgreementState; linkSentAt: string | null; linkExpiresAt: string | null };
   vacancy?: { code: string; trade: string; headcount: number };

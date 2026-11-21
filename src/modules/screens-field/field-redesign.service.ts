@@ -384,7 +384,7 @@ export class FieldRedesignService {
       where: {
         slotStartsAt: { gte: dayStart, lt: dayEnd },
         status: { in: ['offered', 'confirmed'] },
-        candidateArrivedAt: null,
+        // 21 Nov re-check: an arrived candidate stays until the owner's decision is recorded.
         resultRecordedAt: null,
         OR: [
           { id: { in: interviewAssignments.map((a) => a.relatedId!) } },
@@ -392,7 +392,7 @@ export class FieldRedesignService {
         ],
       },
       orderBy: { slotStartsAt: 'asc' },
-      select: { id: true, code: true, slotStartsAt: true, jobSeeker: { select: { name: true } }, business: { select: { id: true, name: true, locality: true } } },
+      select: { id: true, code: true, slotStartsAt: true, candidateArrivedAt: true, jobSeeker: { select: { name: true } }, business: { select: { id: true, name: true, locality: true } } },
     });
     const interviewsAway = await handedAwayIds(this.prisma, staffId, 'interview', now);
     for (const i of interviewsToday) {
@@ -400,8 +400,11 @@ export class FieldRedesignService {
       items.push({
         id: `interview_today:${i.id}`, kind: 'interview_today', title: i.business.name, subtitle: i.business.locality,
         at: i.slotStartsAt.toISOString(), due: 'today',
-        target: { type: 'interview', id: i.id, step: 'attend', businessId: i.business.id },
-        interview: { code: i.code, startsAt: i.slotStartsAt.toISOString(), candidateName: shortName(i.jobSeeker.name) },
+        target: { type: 'interview', id: i.id, step: i.candidateArrivedAt ? 'owner_decision' : 'attend', businessId: i.business.id },
+        interview: {
+          code: i.code, startsAt: i.slotStartsAt.toISOString(), candidateName: shortName(i.jobSeeker.name),
+          candidateArrivedAt: i.candidateArrivedAt?.toISOString() ?? null,
+        },
       });
     }
 

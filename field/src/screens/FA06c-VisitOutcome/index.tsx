@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -17,7 +17,7 @@ import { type Accent, colors } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { ChoiceList } from '../_visits/ChoiceList';
 import { DatePicker } from '../_visits/DatePicker';
-import { useDraft } from '../_visits/visitDraft';
+import { forgetDraft, useDraft } from '../_visits/visitDraft';
 
 /** The results picked here. Onboarded is never picked: saving the business form sets it. */
 export const PICKED_OUTCOMES = ['interested_later', 'not_interested', 'owner_not_there'] as const;
@@ -94,6 +94,10 @@ function OutcomeForm({ visit, initial }: {
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
   const [problem, setProblem] = useState<string | null>(null);
   const [saved, setSaved] = useState<'sent' | 'queued' | null>(null);
+  const savedRef = useRef(false);
+  useEffect(() => () => {
+    if (savedRef.current) forgetDraft(visit.id);
+  }, [visit.id]);
   const [busy, setBusy] = useState(false);
   const [openedAt] = useState(() => Date.now());
   const { outcome, revisitOn, reason, note } = form;
@@ -123,6 +127,9 @@ function OutcomeForm({ visit, initial }: {
         },
       });
       clearForm();
+      // Sent or saved on the phone to send later (the queue keeps the request): the visit's draft
+      // is no longer needed — it leaves the phone when this screen closes.
+      savedRef.current = true;
       setSaved(result.status);
       void client.invalidateQueries({ queryKey: ['field-work'] });
       void client.invalidateQueries({ queryKey: ['field-visits'] });

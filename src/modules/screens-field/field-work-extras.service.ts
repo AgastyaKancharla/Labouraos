@@ -170,12 +170,13 @@ export class FieldWorkExtrasService {
     if (assignment.status !== 'assigned' || !isVerificationVisitPurpose(assignment.purpose)) {
       throw new BadRequestException('The pin can be moved only during an open verification visit');
     }
-    // One move per visit: a second move would let the pin walk away from where it was when assigned.
-    const earlier = await this.prisma.auditLog.findFirst({
-      where: { action: 'business.pin_updated_at_visit', entityCode: assignment.business.code, createdAt: { gte: assignment.createdAt } },
+    // One agent move per business until a Team Lead has checked it (the pin-move flag is resolved):
+    // a second move would let the pin walk away from where it was, visit after visit.
+    const unchecked = await this.prisma.reviewFlag.findFirst({
+      where: { kind: 'gps_mismatch', subjectType: 'business', subjectId: assignment.business.id, status: 'open' },
       select: { id: true },
     });
-    if (earlier) throw new BadRequestException('The pin was already moved on this visit. Ask your Team Lead to check the address.');
+    if (unchecked) throw new BadRequestException('The pin was already moved and waits for your Team Lead to check it. Ask your Team Lead.');
     const before = { latitude: assignment.business.latitude, longitude: assignment.business.longitude };
     const moved = before.latitude !== null && before.longitude !== null
       ? Math.round(calculateHaversineDistanceMeters(before.latitude, before.longitude, latitude, longitude))

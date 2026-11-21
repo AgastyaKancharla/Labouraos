@@ -176,7 +176,9 @@ function NeedsRow({ item, last }: { item: NeedsItem; last: boolean }) {
   const vacancy = item.vacancy ? (item.vacancy.headcount > 1 ? `${item.vacancy.trade} × ${item.vacancy.headcount}` : item.vacancy.trade) : null;
   const what =
     item.kind === 'interview_today' && item.interview
-      ? t('needs.interview_today', { time: formatTimeIst(item.interview.startsAt), name: item.interview.candidateName })
+      ? item.interview.candidateArrivedAt
+        ? t('needs.interview_arrived', { name: item.interview.candidateName })
+        : t('needs.interview_today', { time: formatTimeIst(item.interview.startsAt), name: item.interview.candidateName })
       : item.kind === 'visit_unfinished'
         ? t(`needs.visit.${item.target.step ?? 'record_result'}` as MessageKey)
         : item.kind === 'agreement_waiting'

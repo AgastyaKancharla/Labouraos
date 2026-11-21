@@ -430,7 +430,13 @@ export class BusinessVerificationService {
       // a hashed selfie, no faked-GPS sign — the same proof as in-person onboarding): candidates can be
       // shown straight away. Anything less waits for the Team Lead's check, as before.
       // A business with no map pin cannot be checked against it: it waits for the Team Lead.
-      const atShop = business.latitude !== null && business.longitude !== null && isAtShopVerification(verificationVisit);
+      // A pin a field agent moved himself proves nothing until a Team Lead has checked it (the
+      // pin-move flag is resolved): the verification would be measured against his own pin.
+      const pinMovedUnchecked = await tx.reviewFlag.findFirst({
+        where: { kind: 'gps_mismatch', subjectType: 'business', subjectId: businessId, status: 'open' },
+        select: { id: true },
+      });
+      const atShop = business.latitude !== null && business.longitude !== null && !pinMovedUnchecked && isAtShopVerification(verificationVisit);
       await tx.business.update({
         where: { id: businessId },
         data: { verificationStatus: 'pending_tl_check', fieldVerifiedAt: atShop ? this.clock.now() : null },

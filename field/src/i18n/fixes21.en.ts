@@ -20,6 +20,7 @@ export const fixes21En = {
   'job.signup': 'Signed up in the Laboura app',
   'job.lead': 'Asked for a visit',
   'needs.verification_visit': 'Verification visit',
+  'needs.interview_arrived': '{name} arrived · record the owner’s decision',
 
   // Update the pin (item 3)
   'fa06.updatePin': 'Update the pin',

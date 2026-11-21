@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { readFormDraft, registerDraftStore, subscribeDraftsHydrated, writeFormDraft } from '@/lib/formDraft';
+import { clearFormDraft, readFormDraft, registerDraftStore, subscribeDraftsHydrated, writeFormDraft } from '@/lib/formDraft';
 
 /**
  * The visit in progress while the agent walks through FA20 → FA21 → FA22 → FA07.
@@ -50,6 +50,13 @@ export function updateDraft(id: string, patch: Partial<VisitDraft>): void {
 export function getDraft(id: string | undefined): VisitDraft | null {
   if (!id) return null;
   return drafts.get(id) ?? readFormDraft<VisitDraft>(storedKey(id)) ?? null;
+}
+
+/** The visit has its result: its draft leaves memory and the phone (21 Nov re-check). */
+export function forgetDraft(id: string): void {
+  drafts.delete(id);
+  clearFormDraft(storedKey(id));
+  emit();
 }
 
 export function clearDrafts(): void {

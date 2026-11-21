@@ -44,8 +44,9 @@ async function pieceDone(prisma: Db, row: HandoverRow): Promise<boolean> {
       return !a || a.status !== 'assigned' || a.assignedStaffId !== row.toStaffId;
     }
     case 'interview': {
-      const i = await prisma.interview.findUnique({ where: { id: row.recordId }, select: { status: true, candidateArrivedAt: true, resultRecordedAt: true } });
-      return !i || Boolean(i.candidateArrivedAt) || Boolean(i.resultRecordedAt) || !['offered', 'confirmed'].includes(i.status);
+      // 21 Nov re-check: arrival is not the end — the cover still records the owner's decision.
+      const i = await prisma.interview.findUnique({ where: { id: row.recordId }, select: { status: true, resultRecordedAt: true } });
+      return !i || Boolean(i.resultRecordedAt) || !['offered', 'confirmed'].includes(i.status);
     }
     case 'revisit': {
       const v = await prisma.businessVisit.findUnique({ where: { id: row.recordId }, select: { id: true, businessId: true, visitedAt: true } });
@@ -87,12 +88,28 @@ export async function liveHandovers(
   }
   if (ended.length) {
     await prisma.fieldHandover.updateMany({ where: { id: { in: ended }, endedAt: null }, data: { endedAt: now } });
-    // An interview the cover was sent to for the agent and never attended: his attendance visit ends with the cover.
-    for (const row of rows.filter((r) => r.kind === 'interview' && ended.includes(r.id))) {
-      await prisma.visitAssignment.updateMany({
-        where: { relatedType: 'interview', relatedId: row.recordId, assignedStaffId: row.toStaffId, status: 'assigned', purpose: 'interview_attendance' },
-        data: { status: 'cancelled' },
-      });
+    for (const row of rows.filter((r) => ended.includes(r.id) && r.until && r.until.getTime() <= now.getTime())) {
+      if (row.kind === 'interview') {
+        // An interview the cover was sent to and the candidate never arrived at: his attendance visit ends
+        // with the cover. Once the candidate arrived it is never cancelled (the owner's decision follows).
+        const arrived = await prisma.interview.findFirst({ where: { id: row.recordId, candidateArrivedAt: { not: null } }, select: { id: true } });
+        if (!arrived) {
+          await prisma.visitAssignment.updateMany({
+            where: { relatedType: 'interview', relatedId: row.recordId, assignedStaffId: row.toStaffId, status: 'assigned', purpose: 'interview_attendance' },
+            data: { status: 'cancelled' },
+          });
+        }
+      }
+      if (row.kind === 'visit_assignment') {
+        // The leave is over: a visit the cover has not started goes back to the agent (like revisits and joinings).
+        const started = await prisma.businessVisit.findFirst({ where: { assignmentId: row.recordId, staffId: row.toStaffId }, select: { id: true } });
+        if (!started) {
+          await prisma.visitAssignment.updateMany({
+            where: { id: row.recordId, status: 'assigned', assignedStaffId: row.toStaffId },
+            data: { assignedStaffId: row.fromStaffId },
+          });
+        }
+      }
     }
   }
   return live;
@@ -266,7 +283,9 @@ export class FieldHandoverService {
     const untilKey = typeof body?.until === 'string' ? body.until.trim() : '';
     const todayKey = istDateKey(now);
     const maxKey = istDateKey(new Date(now.getTime() + 90 * DAY_MS));
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(untilKey) || untilKey < todayKey || untilKey > maxKey) {
+    const real = /^\d{4}-\d{2}-\d{2}$/.test(untilKey) && !Number.isNaN(new Date(`${untilKey}T00:00:00.000Z`).getTime())
+      && new Date(`${untilKey}T00:00:00.000Z`).toISOString().slice(0, 10) === untilKey;
+    if (!real || untilKey < todayKey || untilKey > maxKey) {
       throw new BadRequestException('Pick the last day the field agent is away (today or later, at most 90 days ahead)');
     }
     await this.assertMayMove(actor, toRaw === 'spread' ? [fromStaffId] : [fromStaffId, toRaw]);
@@ -294,10 +313,13 @@ export class FieldHandoverService {
           });
         }
         if (row.kind === 'interview') {
-          await tx.visitAssignment.updateMany({
-            where: { relatedType: 'interview', relatedId: row.recordId, assignedStaffId: row.toStaffId, status: 'assigned', purpose: 'interview_attendance' },
-            data: { status: 'cancelled' },
-          });
+          const arrived = await tx.interview.findFirst({ where: { id: row.recordId, candidateArrivedAt: { not: null } }, select: { id: true } });
+          if (!arrived) {
+            await tx.visitAssignment.updateMany({
+              where: { relatedType: 'interview', relatedId: row.recordId, assignedStaffId: row.toStaffId, status: 'assigned', purpose: 'interview_attendance' },
+              data: { status: 'cancelled' },
+            });
+          }
         }
       });
     }
