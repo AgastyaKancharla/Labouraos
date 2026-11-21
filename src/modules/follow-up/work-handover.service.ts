@@ -358,8 +358,9 @@ export class WorkHandoverService {
       const day = dayOf.get(agent.id);
       if (!onLeave && (day?.loginAt || day?.dayType === 'leave')) continue;
       const shift = shiftOf(policy);
-      const start = clockMinutes(shift.start) ?? 9 * 60 + 30;
-      const end = clockMinutes(shift.end) ?? 18 * 60 + 30;
+      const start = clockMinutes(shift.start);
+      const end = clockMinutes(shift.end);
+      if (start === null || end === null) continue;
       if (minute < (onLeave ? start : start + NO_SHOW_AFTER_MINUTES) || minute >= end) continue;
       const lead = teamLeadOf(agent);
       if (!lead) continue;
