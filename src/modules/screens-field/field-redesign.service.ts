@@ -24,6 +24,8 @@ import { VacancyConfirmationService } from '../vacancy/vacancy-confirmation.serv
 import { REVISIT_OUTCOMES } from '../field-visit/field-visit.constants';
 import { DAY_MS, FieldVisitClock, istDateKey, istDayStart, keyFromDate } from '../field-visit/field-visit-clock';
 import { visitNextStep } from '../field-visit/field-visit.service';
+import { handedAwayIds, handedTo, sweepHandovers } from '../field-visit/field-handover.service';
+import { FIELD_REVISIT_EXCLUDE, FOLLOW_UP_KIND_LABELS, FieldWorkExtrasService } from './field-work-extras.service';
 
 type Actor = { sub: string; role: string };
 
@@ -62,6 +64,7 @@ export interface NeedsYouItem {
   id: string;
   kind:
     | 'interview_today'
+    | 'verification_visit'
     | 'visit_unfinished'
     | 'agreement_waiting'
     | 'vacancy_awaiting_owner'
@@ -81,6 +84,7 @@ export interface NeedsYouItem {
 
 const NEEDS_ORDER: NeedsYouItem['kind'][] = [
   'interview_today',
+  'verification_visit',
   'visit_unfinished',
   'agreement_waiting',
   'vacancy_awaiting_owner',
@@ -102,6 +106,7 @@ type BusinessForStep = {
   suspendedAt: Date | null;
   suspendedUntil: Date | null;
   inPersonOnboardedAt: Date | null;
+  fieldVerifiedAt?: Date | null;
   vacancies: Array<{ id: string; status: string }>;
 };
 
@@ -198,6 +203,7 @@ export class FieldRedesignService {
     private readonly metrics: FieldAgentMetricsService,
     private readonly consentLinks: ConsentLinkService,
     private readonly confirmation: VacancyConfirmationService,
+    private readonly extras: FieldWorkExtrasService,
   ) {}
 
   // ------------------------------------------------------------------ Today
@@ -283,6 +289,7 @@ export class FieldRedesignService {
   /** "Needs you now": everything waiting on the agent, each opening the exact step. */
   async needsYou(actor: Actor, now: Date = this.clock.now()): Promise<NeedsYouItem[]> {
     const staffId = actor.sub;
+    await sweepHandovers(this.prisma, staffId, now);
     const todayKey = istDateKey(now);
     const tomorrowKey = istDateKey(new Date(now.getTime() + DAY_MS));
     const dayStart = istDayStart(now);
@@ -296,7 +303,7 @@ export class FieldRedesignService {
       take: 500,
       select: {
         id: true, code: true, name: true, locality: true, verificationStatus: true, pausedAt: true,
-        suspendedAt: true, suspendedUntil: true, inPersonOnboardedAt: true, accountAgentId: true, leadCreatedByStaffId: true,
+        suspendedAt: true, suspendedUntil: true, inPersonOnboardedAt: true, fieldVerifiedAt: true, accountAgentId: true, leadCreatedByStaffId: true,
         createdAt: true,
         vacancies: {
           where: { status: { in: ['draft', 'awaiting_confirmation', 'open'] } },
@@ -371,14 +378,14 @@ export class FieldRedesignService {
 
     // Interviews at a shop today that I attend.
     const interviewAssignments = await this.prisma.visitAssignment.findMany({
-      where: { assignedStaffId: staffId, relatedType: 'interview', relatedId: { not: null } },
+      where: { assignedStaffId: staffId, relatedType: 'interview', relatedId: { not: null }, status: { in: ['assigned', 'done'] } },
       select: { relatedId: true },
     });
     const interviewsToday = await this.prisma.interview.findMany({
       where: {
         slotStartsAt: { gte: dayStart, lt: dayEnd },
         status: { in: ['offered', 'confirmed'] },
-        candidateArrivedAt: null,
+        // 21 Nov re-check: an arrived candidate stays until the owner's decision is recorded.
         resultRecordedAt: null,
         OR: [
           { id: { in: interviewAssignments.map((a) => a.relatedId!) } },
@@ -386,16 +393,40 @@ export class FieldRedesignService {
         ],
       },
       orderBy: { slotStartsAt: 'asc' },
-      select: { id: true, code: true, slotStartsAt: true, jobSeeker: { select: { name: true } }, business: { select: { id: true, name: true, locality: true } } },
+      select: { id: true, code: true, slotStartsAt: true, candidateArrivedAt: true, jobSeeker: { select: { name: true } }, business: { select: { id: true, name: true, locality: true } } },
     });
+    const interviewsAway = await handedAwayIds(this.prisma, staffId, 'interview', now);
     for (const i of interviewsToday) {
+      if (interviewsAway.has(i.id) && !interviewAssignments.some((a) => a.relatedId === i.id)) continue;
       items.push({
         id: `interview_today:${i.id}`, kind: 'interview_today', title: i.business.name, subtitle: i.business.locality,
         at: i.slotStartsAt.toISOString(), due: 'today',
-        target: { type: 'interview', id: i.id, step: 'attend', businessId: i.business.id },
-        interview: { code: i.code, startsAt: i.slotStartsAt.toISOString(), candidateName: shortName(i.jobSeeker.name) },
+        target: { type: 'interview', id: i.id, step: i.candidateArrivedAt ? 'owner_decision' : 'attend', businessId: i.business.id },
+        interview: {
+          code: i.code, startsAt: i.slotStartsAt.toISOString(), candidateName: shortName(i.jobSeeker.name),
+          candidateArrivedAt: i.candidateArrivedAt?.toISOString() ?? null,
+        },
       });
     }
+
+    // 21 Nov: open verification visits (customer-app sign-ups and call-agent leads) as job cards,
+    // opening the verification steps; a started one shows once, as the visit to finish.
+    const cards = await this.extras.verificationJobCards(staffId);
+    for (const c of cards) {
+      const revisitKey = c.lastAttempt?.revisitOn ?? null;
+      items.push({
+        id: `verification_visit:${c.assignmentId}`, kind: 'verification_visit', title: c.business.name || c.business.code,
+        subtitle: c.business.address ?? c.business.locality,
+        at: c.requestedFor ?? (revisitKey ? `${revisitKey}T${c.lastAttempt?.revisitTime ?? '00:00'}:00.000+05:30` : null),
+        due: c.requestedFor ? whenOf(istDateKey(new Date(c.requestedFor)), todayKey, tomorrowKey) : revisitKey ? whenOf(revisitKey, todayKey, tomorrowKey) : 'today',
+        target: {
+          type: 'verification', id: c.assignmentId, step: 'verify', businessId: c.business.id,
+          assignmentId: c.assignmentId, ...(c.unfinishedVisitId ? { visitId: c.unfinishedVisitId } : {}),
+        },
+        job: c,
+      });
+    }
+    const cardAssignments = new Set(cards.map((c) => c.assignmentId));
 
     // My visits that are not finished (B8: resume the onboarding).
     const unfinished = await this.prisma.businessVisit.findMany({
@@ -412,6 +443,8 @@ export class FieldRedesignService {
       const step = visitNextStep(v);
       if (step === 'done') continue;
       if (isVerificationVisitPurpose(v.purpose) && v.assignmentId) {
+        // The verification job card above resumes it (21 Nov: one row per verification visit).
+        if (cardAssignments.has(v.assignmentId)) continue;
         const open = await this.prisma.visitAssignment.findFirst({
           where: { id: v.assignmentId, assignedStaffId: staffId, status: 'assigned' },
           select: { id: true },
@@ -420,21 +453,24 @@ export class FieldRedesignService {
       }
       const startedAt = v.startedAt ?? v.visitedAt;
       items.push({
-        id: `visit_unfinished:${v.id}`, kind: 'visit_unfinished', title: v.business?.name ?? v.shopName ?? '',
+        id: `visit_unfinished:${v.id}`, kind: 'visit_unfinished', title: v.business?.name || v.shopName || v.business?.locality || 'Shop visit',
         subtitle: v.business?.locality ?? null, at: startedAt.toISOString(),
         due: whenOf(istDateKey(startedAt), todayKey, tomorrowKey),
-        target: { type: 'visit', id: v.id, step, businessId: v.businessId },
+        target: { type: 'visit', id: v.id, step, businessId: v.businessId, assignmentId: v.assignmentId },
         visit: { startedAt: startedAt.toISOString(), purpose: v.purpose },
       });
     }
 
     // Joinings to confirm by tomorrow.
+    // 21 Nov: joinings handed over to me on a teammate's leave come in; mine handed away go out.
+    const [joiningsIn, joiningsAway] = await Promise.all([handedTo(this.prisma, staffId, 'joining', now), handedAwayIds(this.prisma, staffId, 'joining', now)]);
     const joinings = await this.prisma.placement.findMany({
       where: {
         joinedDate: null,
         joiningDate: { lt: tomorrowEnd },
         status: { in: ['confirmed', 'active'] },
-        OR: [{ createdByStaffId: staffId }, { business: { accountAgentId: staffId } }],
+        OR: [{ createdByStaffId: staffId }, { business: { accountAgentId: staffId } }, { id: { in: joiningsIn.map((j) => j.recordId) } }],
+        ...(joiningsAway.size ? { id: { notIn: [...joiningsAway] } } : {}),
       },
       take: 50,
       select: { id: true, code: true, joiningDate: true, jobSeeker: { select: { name: true } }, business: { select: { id: true, name: true } } },
@@ -451,11 +487,13 @@ export class FieldRedesignService {
     // Revisits due by today.
     for (const r of await this.revisitsDue(staffId, todayKey)) {
       items.push({
-        id: `revisit_due:${r.visitId}`, kind: 'revisit_due', title: r.name, subtitle: r.locality,
-        at: r.revisitOn ? `${r.revisitOn}T00:00:00.000+05:30` : null,
+        id: `revisit_due:${r.visitId}`, kind: 'revisit_due', title: r.name || r.locality || 'Shop visit', subtitle: r.locality,
+        at: r.revisitOn ? `${r.revisitOn}T${r.revisitTime ?? '00:00'}:00.000+05:30` : null,
         due: r.revisitOn ? whenOf(r.revisitOn, todayKey, tomorrowKey) : null,
         target: { type: 'revisit', id: r.visitId, step: 'start_visit', businessId: r.businessId },
         revisitOn: r.revisitOn,
+        revisitTime: r.revisitTime,
+        coverFor: r.coverFor,
       });
     }
 
@@ -478,13 +516,14 @@ export class FieldRedesignService {
     ]);
     for (const t of tasks) {
       items.push({
-        id: `followup_task:${t.id}`, kind: 'followup_task', title: names.get(t.subjectId) ?? '', subtitle: null,
+        id: `followup_task:${t.id}`, kind: 'followup_task', title: names.get(t.subjectId) || FOLLOW_UP_KIND_LABELS[t.kind] || t.code, subtitle: FOLLOW_UP_KIND_LABELS[t.kind] ?? null,
         at: t.dueAt.toISOString(), due: whenOf(istDateKey(t.dueAt), todayKey, tomorrowKey),
         target: {
           type: 'followup', id: t.id, step: t.kind,
           subjectType: t.subjectType, subjectId: t.subjectId, relatedType: t.relatedType, relatedId: t.relatedId,
         },
         taskKind: t.kind,
+        kindLabel: FOLLOW_UP_KIND_LABELS[t.kind] ?? t.kind.replace(/_/g, ' '),
         code: t.code,
       });
     }
@@ -734,7 +773,7 @@ export class FieldRedesignService {
       take: LIST_LIMIT,
       select: {
         id: true, code: true, name: true, locality: true, verificationStatus: true, pausedAt: true, suspendedAt: true,
-        suspendedUntil: true, inPersonOnboardedAt: true, leadChannel: true, accountAgentId: true,
+        suspendedUntil: true, inPersonOnboardedAt: true, fieldVerifiedAt: true, leadChannel: true, accountAgentId: true,
         vacancies: {
           where: { status: { in: ['draft', 'awaiting_confirmation', 'open'] } },
           orderBy: { createdAt: 'asc' },
@@ -1317,18 +1356,27 @@ export class FieldRedesignService {
 
   /** My revisits due by `byKey`: the latest visit of each shop that brings me back, with no later visit. */
   private async revisitsDue(staffId: string, byKey: string) {
+    // 21 Nov: revisits handed over to me on a teammate's leave come in; mine handed away go out;
+    // a verification visit still open is its job card, not a revisit (no double row, M2).
+    const [handedIn, away] = await Promise.all([handedTo(this.prisma, staffId, 'revisit', this.clock.now()), handedAwayIds(this.prisma, staffId, 'revisit', this.clock.now())]);
     const rows = await this.prisma.businessVisit.findMany({
-      where: { staffId, outcome: { in: [...REVISIT_OUTCOMES] }, revisitOn: { lte: new Date(`${byKey}T00:00:00.000Z`) } },
+      where: {
+        OR: [{ staffId }, { id: { in: handedIn.map((h) => h.recordId) } }],
+        outcome: { in: [...REVISIT_OUTCOMES] },
+        revisitOn: { lte: new Date(`${byKey}T00:00:00.000Z`) },
+      },
       orderBy: { visitedAt: 'desc' },
       include: { business: { select: { id: true, name: true, locality: true } } },
       take: 200,
     });
-    const result: Array<{ visitId: string; businessId: string | null; name: string; locality: string | null; revisitOn: string | null }> = [];
+    const openVerification = await this.extras.openVerificationVisitIds(rows);
+    const result: Array<{ visitId: string; businessId: string | null; name: string; locality: string | null; revisitOn: string | null; revisitTime: string | null; coverFor: string | null }> = [];
     const seen = new Set<string>();
     for (const v of rows) {
       const shopKey = v.businessId ?? v.id;
       if (seen.has(shopKey)) continue;
       seen.add(shopKey);
+      if (away.has(v.id) || openVerification.has(v.id) || FIELD_REVISIT_EXCLUDE.has(v.purpose ?? '')) continue;
       const later = v.businessId
         ? await this.prisma.businessVisit.findFirst({ where: { businessId: v.businessId, visitedAt: { gt: v.visitedAt } }, select: { id: true } })
         : await this.prisma.businessVisit.findFirst({ where: { revisitOfVisitId: v.id }, select: { id: true } });
@@ -1339,7 +1387,14 @@ export class FieldRedesignService {
         name: v.business?.name ?? v.shopName ?? '',
         locality: v.business?.locality ?? null,
         revisitOn: keyFromDate(v.revisitOn),
+        revisitTime: v.revisitTime,
+        coverFor: v.staffId !== staffId ? v.staffId : null,
       });
+    }
+    const coverIds = [...new Set(result.map((r) => r.coverFor).filter((id): id is string => Boolean(id)))];
+    if (coverIds.length) {
+      const names = new Map((await this.prisma.staff.findMany({ where: { id: { in: coverIds } }, select: { id: true, name: true } })).map((p) => [p.id, firstName(p.name)]));
+      for (const r of result) if (r.coverFor) r.coverFor = names.get(r.coverFor) ?? null;
     }
     return result;
   }

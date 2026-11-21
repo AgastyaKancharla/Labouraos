@@ -67,7 +67,7 @@ import {
 import { IdCheckAccessService } from '../aadhaar-qr/id-check-access.service';
 import { verifiedByUidai } from '../aadhaar-qr/id-check-photo.service';
 import { maskedAadhaarReference } from '../aadhaar-qr/secure-qr.parser';
-import { assertIdReadyForPayment } from './id-payment-gate';
+import { assertIdReadyForPayment, ID_WAITING_FOR_TEAM_LEAD } from './id-payment-gate';
 
 /** Another ID waits for the Team Lead's check before terms and payment (rev 154). */
 export { ID_WAITING_FOR_TEAM_LEAD } from './id-payment-gate';
@@ -1676,8 +1676,20 @@ export class JobSeekerService {
       where: { jobSeekerId: seeker.id, type: 'activation', status: 'pending', expectedAmountPaise: { not: null } },
       orderBy: { createdAt: 'desc' },
     });
-    if (!payment) throw new BadRequestException('A pending activation payment is required before sending a payment-only link');
-    await this.assertIdReadyForPayment(seeker);
+    // 21 Nov: say plainly why someone else cannot pay yet (the money and ID rules themselves are unchanged).
+    if (!payment) {
+      throw new BadRequestException(
+        'Someone else can pay once the job seeker has opened the payment step on his link and agreed to the terms there. Ask him to open his link, then send the payment-only link again.',
+      );
+    }
+    try {
+      await this.assertIdReadyForPayment(seeker);
+    } catch (error) {
+      if (error instanceof BadRequestException && error.message === ID_WAITING_FOR_TEAM_LEAD) {
+        throw new BadRequestException('Someone else can pay after the Team Lead has checked the photo of his ID card (it is waiting for the check now).');
+      }
+      throw error;
+    }
     await this.assertTermsCurrent(seeker.id);
 
     const now = this.consentClock?.now() ?? new Date();

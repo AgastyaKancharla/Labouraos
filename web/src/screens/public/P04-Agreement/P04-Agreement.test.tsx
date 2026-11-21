@@ -55,7 +55,9 @@ describe('P04-Agreement / P04b-Signed', () => {
     expect(await screen.findByText('Agreement signed, Shankar Rao')).toBeInTheDocument();
     expect(screen.getByText('9 Nov, 12:40 PM')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Download' })).toHaveAttribute('href', '/consent/atok/signed/copy');
-    expect(screen.getByText(/Team Lead will call you/)).toBeInTheDocument();
+    // 21 Nov: true for in-person onboarding too (no "a Team Lead will call you").
+    expect(screen.getByText(/Your Laboura agent will take you through the next step/)).toBeInTheDocument();
+    expect(screen.queryByText(/Team Lead will call you/)).not.toBeInTheDocument();
   });
 
   it('a wrong code keeps the page; typing the right code then signs', async () => {

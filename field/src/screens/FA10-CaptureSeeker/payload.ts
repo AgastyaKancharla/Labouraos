@@ -22,7 +22,7 @@ export const YEARS = [
 
 export const GENDERS = ['female', 'male', 'other'] as const;
 export const BEST_TIME = ['09-12', '12-15', '15-18', '18-21', '09-21'] as const;
-export const HEARD_FROM = ['toll_free_missed_call', 'ad', 'referral_partner', 'field_visit', 'social_media', 'walk_in', 'other'] as const;
+export const HEARD_FROM = ['toll_free_missed_call', 'ad', 'referral_partner', 'field_visit', 'social_media', 'whatsapp', 'walk_in', 'other'] as const;
 export const TRAVEL_KM = ['3', '5', '8', '10', '15', '20'] as const;
 export const SHIFT_PREFERENCES = ['day', 'night', 'rotational', 'any'] as const;
 export const JOB_TYPES = ['full_time', 'part_time', 'live_in'] as const;

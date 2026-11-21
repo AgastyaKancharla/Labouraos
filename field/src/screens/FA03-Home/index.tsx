@@ -13,7 +13,7 @@ import { queryKeys } from '@/api/queryClient';
 import { useOfflineQueue } from '@/device/offline-queue';
 import type { NeedsItem, TodayView } from '@/api/endpoints';
 import type { DayKind } from '../_visits/DayWork';
-import { formatDayIst, formatStampIst, formatTimeIst } from '@/lib/format';
+import { formatDayIst, formatShiftTime, formatStampIst, formatTimeIst } from '@/lib/format';
 import { pageRoutes, routes, sellingRoutes } from '@/navigation/routes';
 import { type Accent, colors, fonts, fontSize } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
@@ -21,6 +21,7 @@ import { formatDateKey } from '../_visits/format';
 import { useAttendanceToday } from './useHome';
 import { DayControls } from '../_attendance/DayControls';
 import { needsTarget } from './needsTarget';
+import { VerificationJobCard } from '../_visits/VerificationJobCard';
 
 export { STATUS_CHOICES } from '../_attendance/DayControls';
 
@@ -39,6 +40,7 @@ const NUMBERS: { key: keyof TodayView['numbers']; label: MessageKey; accent: Acc
 
 const NEEDS_LOOK: Record<NeedsItem['kind'], { icon: IconName; accent: Accent }> = {
   interview_today: { icon: 'calendar', accent: 'royal' },
+  verification_visit: { icon: 'shield', accent: 'royal' },
   visit_unfinished: { icon: 'camera', accent: 'gold' },
   agreement_waiting: { icon: 'document', accent: 'orange' },
   vacancy_awaiting_owner: { icon: 'briefcase', accent: 'gold' },
@@ -86,7 +88,6 @@ export default function TodayScreen() {
     <View style={styles.flex}>
       <AppHeader title={t('today.title')} subtitle={`${name} · ${formatDayIst(now)}`} root />
       <Screen onRefresh={refresh} refreshing={today.isRefetching} testID="screen-FA03">
-        {!queue.online ? <Banner tone="info" icon="wifi-off" message={t('common.offline')} testID="offline-banner" /> : null}
         {/* Once, after a password reset (rev 174–175): if it was not them, they tell their Team Lead at once. */}
         {resetNotice ? (
           <Banner
@@ -168,12 +169,16 @@ export default function TodayScreen() {
 /** One item of Needs you now: what it is (in the agent's language), when, and where it opens. */
 function NeedsRow({ item, last }: { item: NeedsItem; last: boolean }) {
   const { t, tn } = useI18n();
+  // 21 Nov (M12): a verification visit shows as its job card (address, owner, Call owner, Open in Maps, Verify).
+  if (item.kind === 'verification_visit' && item.job) return <VerificationJobCard job={item.job} testID={`needs-${item.id}`} />;
   const look = NEEDS_LOOK[item.kind] ?? { icon: 'bell', accent: 'navy' };
   const href = needsTarget(item);
   const vacancy = item.vacancy ? (item.vacancy.headcount > 1 ? `${item.vacancy.trade} × ${item.vacancy.headcount}` : item.vacancy.trade) : null;
   const what =
     item.kind === 'interview_today' && item.interview
-      ? t('needs.interview_today', { time: formatTimeIst(item.interview.startsAt), name: item.interview.candidateName })
+      ? item.interview.candidateArrivedAt
+        ? t('needs.interview_arrived', { name: item.interview.candidateName })
+        : t('needs.interview_today', { time: formatTimeIst(item.interview.startsAt), name: item.interview.candidateName })
       : item.kind === 'visit_unfinished'
         ? t(`needs.visit.${item.target.step ?? 'record_result'}` as MessageKey)
         : item.kind === 'agreement_waiting'
@@ -184,9 +189,21 @@ function NeedsRow({ item, last }: { item: NeedsItem; last: boolean }) {
             ? t('needs.joining_due', { name: item.placement.candidateFirstName })
             : vacancy && (item.kind === 'vacancy_awaiting_owner' || item.kind === 'vacancy_draft' || item.kind === 'ready_show_candidates')
               ? t(`needs.${item.kind}` as MessageKey, { vacancy })
-              : t(`needs.${item.kind}` as MessageKey, { vacancy: '' });
+              : item.kind === 'followup_task' && item.kindLabel
+                ? item.kindLabel
+                : item.kind === 'revisit_due'
+                  ? [
+                      t('needs.revisit_due'),
+                      item.revisitTime ? t('fa05.comeBackAt', { time: formatShiftTime(item.revisitTime) }) : null,
+                      item.coverFor ? t('needs.coverFor', { name: item.coverFor }) : null,
+                    ].filter(Boolean).join(' · ')
+                  : t(`needs.${item.kind}` as MessageKey, { vacancy: '' });
   // A vacancy's trade is already in the sentence ("Waiting for the owner's code · Cook"): never twice (A8).
-  const extra = item.vacancy && item.subtitle?.trim().toLowerCase() === item.vacancy.trade.trim().toLowerCase() ? null : item.subtitle;
+  const extra =
+    (item.vacancy && item.subtitle?.trim().toLowerCase() === item.vacancy.trade.trim().toLowerCase()) ||
+    (item.kind === 'followup_task' && item.subtitle === item.kindLabel)
+      ? null
+      : item.subtitle;
   const dueLabel =
     item.due === 'overdue'
       ? t('needs.overdue')

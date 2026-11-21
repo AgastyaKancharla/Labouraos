@@ -48,3 +48,10 @@ jest.mock('expo-linear-gradient', () => {
   const { View } = require('react-native');
   return { LinearGradient: View };
 });
+
+// 21 Nov: form drafts are kept on the phone; every test starts with an empty phone store.
+beforeEach(() => {
+  const { setDraftStorage } = require('@/lib/formDraft');
+  const { createMemoryStore } = require('@/lib/storage/types');
+  setDraftStorage(createMemoryStore());
+});

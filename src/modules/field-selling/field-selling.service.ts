@@ -1,3 +1,8 @@
+import { coversPiece } from '../field-visit/field-handover.service';
+import { LegalDocumentService } from '../legal/legal-document.service';
+import { BUSINESS_SUSPENDED_MESSAGE, isBusinessSuspended } from '../business/business-candidate-access';
+import { ReconsentRequiredException } from '../legal/legal-status';
+import { assertNoOpenBanReview } from '../conduct/permanent-ban.check';
 import { OwnTeam, teamLeadOf } from '../../common/rbac/own-team';
 import {
   BadRequestException,
@@ -125,6 +130,7 @@ export class FieldSellingService {
     private readonly interviews: InterviewService,
     private readonly fieldVisits: FieldVisitService,
     @Inject(TELEPHONY_PROVIDER) private readonly telephony: TelephonyProvider,
+    private readonly legal: LegalDocumentService,
   ) {}
 
   // ---------------------------------------------------------------- access
@@ -139,10 +145,16 @@ export class FieldSellingService {
   /** Field agents act only on their own account businesses; a Team Lead on the team's. */
   private async assertActsOnBusiness(
     actor: SellingActor,
-    business: { accountAgentId: string | null; leadCreatedByStaffId: string | null },
+    business: { id?: string; accountAgentId: string | null; leadCreatedByStaffId: string | null },
+    piece?: { kind: 'interview' | 'joining'; recordId: string },
   ) {
     await this.staff(actor);
-    if (actor.role === 'field_agent' && business.accountAgentId !== actor.id) {
+    // 21 Nov: a field agent covering one handed-over piece (an interview to attend, a joining) acts
+    // on that piece only — never on the rest of the business.
+    if (
+      actor.role === 'field_agent' && business.accountAgentId !== actor.id &&
+      !(piece && (await this.worksOnPiece(actor.id, piece)))
+    ) {
       throw new ForbiddenException('Field agents act only on their own account businesses');
     }
     if (actor.role === 'team_lead') {
@@ -169,7 +181,7 @@ export class FieldSellingService {
       include: { business: true, jobSeeker: true, vacancy: { include: { branch: true } } },
     });
     if (!interview) throw new NotFoundException('Interview not found');
-    await this.assertActsOnBusiness(actor, interview.business);
+    await this.assertActsOnBusiness(actor, interview.business, { kind: 'interview', recordId: interview.id });
     return interview;
   }
 
@@ -228,6 +240,17 @@ export class FieldSellingService {
     return this.calls.place(actor, {
       subjectType: 'job_seeker', subjectId: seeker.id, purpose: 'offer', relatedType: 'vacancy', relatedId: vacancy.id,
     });
+  }
+
+  /** A field agent covering this handed-over piece, or sent to attend this very interview. */
+  private async worksOnPiece(staffId: string, piece: { kind: 'interview' | 'joining'; recordId: string }): Promise<boolean> {
+    if (await coversPiece(this.prisma, staffId, piece.kind, piece.recordId, this.clock.now())) return true;
+    if (piece.kind !== 'interview') return false;
+    const visit = await this.prisma.visitAssignment.findFirst({
+      where: { relatedType: 'interview', relatedId: piece.recordId, assignedStaffId: staffId, status: 'assigned', purpose: 'interview_attendance' },
+      select: { id: true },
+    });
+    return Boolean(visit);
   }
 
   /**
@@ -558,7 +581,16 @@ export class FieldSellingService {
       !Number.isFinite(body.latitude) || !Number.isFinite(body.longitude)) {
       throw new BadRequestException('Your GPS location is needed to mark this');
     }
-    if (interview.status !== 'confirmed') throw new BadRequestException('This interview is not waiting for the candidate');
+    // 21 Nov: a candidate who turns up without replying to the offer can be marked Arrived:
+    // turning up counts as accepting (recorded and audited below). "Didn't come" stays for confirmed ones.
+    const acceptsByArriving = interview.status === 'offered' && body.arrived === true;
+    if (interview.status !== 'confirmed' && !acceptsByArriving) {
+      throw new BadRequestException(
+        interview.status === 'offered'
+          ? 'He has not replied to the offer yet: mark him Arrived when he turns up (that counts as accepting)'
+          : 'This interview is not waiting for the candidate',
+      );
+    }
     if (interview.interviewType === 'phone' || interview.interviewType === 'in_shop_call') {
       throw new BadRequestException('Arrival is marked only for interviews at the shop');
     }
@@ -572,9 +604,17 @@ export class FieldSellingService {
         throw new BadRequestException('Arrival can be marked only on the interview day, from an hour before');
       }
       // The field visits module owns "candidate arrived" (GPS at the shop, distance from the pin).
+      // 21 Nov: while the offer is unanswered, arriving counts as accepting — the same checks as a
+      // yes on the offer page (no suspended business, current terms), then one atomic write.
+      if (acceptsByArriving) {
+        if (isBusinessSuspended(interview.business, now)) throw new BadRequestException(BUSINESS_SUSPENDED_MESSAGE);
+        await assertNoOpenBanReview(this.prisma, 'job_seeker', interview.jobSeekerId);
+        const terms = await this.legal.status('job_seeker', interview.jobSeekerId);
+        if (terms.needsReconsent) throw new ReconsentRequiredException(terms);
+      }
       return this.fieldVisits.candidateArrived(actor.id, interviewId, {
         latitude: body.latitude, longitude: body.longitude, accuracy: body.accuracyM,
-      });
+      }, { acceptOffer: acceptsByArriving });
     }
     if (interview.candidateArrivedAt) throw new BadRequestException('He was already marked as arrived');
     if (now.getTime() < interview.slotEndsAt.getTime()) {
@@ -720,7 +760,7 @@ export class FieldSellingService {
       include: { business: true, jobSeeker: true },
     });
     if (!placement) throw new NotFoundException('Placement not found');
-    await this.assertActsOnBusiness(actor, placement.business);
+    await this.assertActsOnBusiness(actor, placement.business, { kind: 'joining', recordId: placement.id });
     if (placement.status !== 'confirmed' || !placement.joiningDate) {
       throw new BadRequestException('Joining is confirmed only after the fee is paid');
     }

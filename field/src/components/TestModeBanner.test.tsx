@@ -66,6 +66,18 @@ describe('Test mode link banner (Laboura Field, pretend SMS)', () => {
     open.mockRestore();
   });
 
+  it('21 Nov: the owner code and the agreement link sent by one tap show together', async () => {
+    const codeApi = apiAnswering({ success: true, requestId: 'otp-1', phone: '******4321', testModeBanner: 'Test mode code: 391108' });
+    const linkApi = apiAnswering({ smsSent: true, testModeLink: 'https://field.test/p/agreement/tok-9' });
+    const screen = await renderBanner();
+    await act(async () => {
+      await codeApi.post('/businesses/b-1/visit-assignments/a-1/owner-otp', {});
+      await linkApi.post('/businesses/b-1/agreement-links', {});
+    });
+    expect(screen.getByText('Test mode code: 391108')).toBeTruthy();
+    expect(screen.getByText('Test mode link')).toBeTruthy();
+  });
+
   it('shows no link when the answer has none (live system)', async () => {
     const api = apiAnswering({ success: true, sentToLast4: '3210' });
     const screen = await renderBanner();

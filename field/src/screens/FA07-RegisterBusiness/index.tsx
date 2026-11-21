@@ -8,7 +8,7 @@ import { useEndpoints } from '@/api/ApiProvider';
 import { readOtpSend, duplicateMessage } from '@/lib/otp-send';
 import { queryKeys } from '@/api/queryClient';
 import { isApiError } from '@/api/errors';
-import { errorCode, type Trade } from '@/api/endpoints';
+import { errorCode, type SimilarShop, type Trade } from '@/api/endpoints';
 import { isNeedsSignalError, useOfflineQueue } from '@/device/offline-queue';
 import { readLocation } from '@/device/location/location';
 import { locationProvider } from '@/device/location/provider';
@@ -27,7 +27,7 @@ import { StepHeader } from '../_visits/StepHeader';
 import { businessBody, DEFAULT_CITY, formErrors, type FormState, type MobileState, type StaffRow } from './form';
 
 const ROLES = ['owner', 'manager', 'hr', 'supervisor', 'other'] as const;
-const HEARD = ['toll_free_missed_call', 'ad', 'referral_partner', 'field_visit', 'social_media', 'walk_in', 'other'] as const;
+const HEARD = ['toll_free_missed_call', 'ad', 'referral_partner', 'field_visit', 'social_media', 'whatsapp', 'walk_in', 'other'] as const;
 const BTYPES = [
   'restaurant_hotel', 'bakery', 'retail_shop', 'supermarket', 'apartment_society', 'household', 'office',
   'factory', 'warehouse', 'hospital_clinic', 'construction', 'security_agency', 'salon', 'other',
@@ -90,7 +90,7 @@ export default function RegisterBusinessScreen() {
 
 function RegisterForm({ visitId, visit }: { visitId: string | null; visit: VisitDraft | null }) {
   const { t } = useI18n();
-  const { registration, visits, legal, redesign } = useEndpoints();
+  const { registration, visits, legal, redesign, fieldOps } = useEndpoints();
   const queue = useOfflineQueue();
   const client = useQueryClient();
   const options = useQuery({ queryKey: queryKeys.registrationOptions, queryFn: () => registration.options(), staleTime: 3_600_000 });
@@ -136,6 +136,9 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
     staff: [],
   }));
   const [showErrors, setShowErrors] = useState(false);
+  // 21 Nov: a shop nearby with a similar name: "Is this the same shop?" before a second record.
+  const [similar, setSimilar] = useState<SimilarShop | null>(null);
+  const [differentShop, setDifferentShop] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   // A Send OTP / Verify problem is shown right under that mobile field and next to its
   // button (owner, testing 16 Nov: the banner at the bottom of the form was never seen).
@@ -302,6 +305,17 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
       if (visitId && (await queue.flushAndCheck(visitId))) {
         setProblem(t('fa07.photosWaiting'));
         return;
+      }
+      if (!differentShop && form.pin && form.boardName.trim()) {
+        const pin = form.pin;
+        const found = await queue
+          .live(() => fieldOps.similarShops(form.boardName.trim(), pin.latitude, pin.longitude))
+          .then((r) => r.matches[0] ?? null)
+          .catch(() => null);
+        if (found) {
+          setSimilar(found);
+          return;
+        }
       }
       const created = await queue.live(() => registration.createBusiness(businessBody(form, visitId)));
       clearForm();
@@ -551,12 +565,16 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
                 {trade ? (
                   <Text variant="muted">
                     {t('fa07.tradeHint', { trade: trade.name, from: (trade.salaryMinPaise / 100).toLocaleString('en-IN'), to: (trade.salaryMaxPaise / 100).toLocaleString('en-IN') })}
+                    {/* 21 Nov: a usual pay below the legal minimum never reads as advice to pay less. */}
+                    {trade.legalMinimumPaise > trade.salaryMinPaise
+                      ? ` ${t('fa07.tradeHintLegal', { amount: (trade.legalMinimumPaise / 100).toLocaleString('en-IN') })}`
+                      : ''}
                   </Text>
                 ) : null}
                 {below ? (
                   <>
-                    <Banner tone="warn" title={t('fa07.belowMinimum')} message={t('fa07.belowMinimumBody', { amount: (trade!.legalMinimumPaise / 100).toLocaleString('en-IN') })} />
-                    <Toggle label={t('fa07.ownerTold')} value={row.ownerTold} onChange={(v) => update({ ownerTold: v })} error={err(`staffLegal${i}`)} />
+                    {/* 21 Nov: the owner-told tick is asked once, when the vacancy is sent to the owner (where it is recorded). */}
+                    <Banner tone="warn" title={t('fa07.belowMinimum')} message={t('fa07.belowMinimumOnce', { amount: (trade!.legalMinimumPaise / 100).toLocaleString('en-IN') })} testID={`fa07-staff-${i}-below`} />
                   </>
                 ) : null}
                 <Button label={t('fa07.remove')} variant="danger" onPress={() => set({ staff: form.staff.filter((_, j) => j !== i) })} testID={`fa07-staff-${i}-remove`} />
@@ -580,6 +598,29 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
           <Text variant="muted">{t('fa07.ownerAgrees')}</Text>
         </Card>
 
+        {similar && !differentShop ? (
+          <Card stripe accent="red" testID="fa07-similar">
+            <Text variant="h2">{t('dup.title')}</Text>
+            <Text>{t('dup.body', { name: similar.name, code: similar.code, meters: similar.distanceMeters })}</Text>
+            <Text variant="muted">{t('dup.tl')}</Text>
+            <View style={styles.dupButtons}>
+              <Button
+                label={t('dup.revisit')}
+                onPress={() => router.replace({ pathname: routes.visitStart, params: { businessId: similar.id, name: similar.name } })}
+                testID="fa07-similar-revisit"
+              />
+              <Button
+                label={t('dup.different')}
+                variant="secondary"
+                onPress={() => {
+                  setDifferentShop(true);
+                  setSimilar(null);
+                }}
+                testID="fa07-similar-different"
+              />
+            </View>
+          </Card>
+        ) : null}
         {problem ? <Banner tone="error" message={problem} testID="fa07-problem" /> : null}
         <Button label={t('fa07.save')} loading={busy === 'save'} onPress={() => void save()} testID="fa07-save" />
       </Screen>
@@ -627,6 +668,7 @@ function MoneyField({ label, value, onChange, error, testID }: { label: string; 
 }
 
 const styles = StyleSheet.create({
+  dupButtons: { gap: 8, marginTop: 8 },
   flex: { flex: 1, backgroundColor: colors.bg },
   flex1: { flex: 1 },
   block: { gap: 8 },

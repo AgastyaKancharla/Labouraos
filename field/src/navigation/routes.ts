@@ -30,6 +30,7 @@ export const routes = {
   home: '/', // FA03 Today
   search: '/search', // Search from Today
   feeCalculator: '/fee-calculator', // FA14
+  notifications: '/notifications', // FA25 the bell (21 Nov)
   // Visits
   visits: '/visits', // FA05 Visits
   visitsSearch: '/visits/search',
@@ -94,6 +95,7 @@ export const pageRoutes = {
   visitDetails: (visitId: string, base: SellingBase = '/visit') =>
     base === '/visit' ? `/visit/details/${e(visitId)}` : `/businesses/visit/${e(visitId)}`,
   todaysWork: (date?: string, kind?: string) => `/visits/work${q({ date, kind })}`, // FA05b
+  followUp: (taskId: string) => `/follow-up/${e(taskId)}`, // FA26 follow-up task (21 Nov), in Today
 } as const;
 
 /**

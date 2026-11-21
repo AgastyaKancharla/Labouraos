@@ -1,11 +1,11 @@
 import { useSyncExternalStore } from 'react';
-import { registerDraftStore } from '@/lib/formDraft';
+import { clearFormDraft, readFormDraft, registerDraftStore, subscribeDraftsHydrated, writeFormDraft } from '@/lib/formDraft';
 
 /**
- * The visit in progress, kept in memory only while the agent walks through
- * FA20 → FA21 → FA22 → FA07 (the guide: the app keeps nothing on the phone
- * except forms waiting to send). If the app is closed mid-visit, the screens
- * read the visit back from the server instead.
+ * The visit in progress while the agent walks through FA20 → FA21 → FA22 → FA07.
+ * Kept on the phone too (21 Nov: drafts are kept on the phone), under the
+ * signed-in agent, so a reload mid-visit keeps what he typed (shop name, who he
+ * spoke to); the screens also read the visit back from the server.
  */
 export interface VisitDraft {
   id: string;
@@ -32,20 +32,31 @@ function emit() {
   for (const l of listeners) l();
 }
 
+/** 21 Nov: the visit in progress is also kept on the phone (with the form drafts), so a reload keeps the shop name. */
+const storedKey = (id: string) => `visit:${id}`;
+
 export function saveDraft(draft: VisitDraft): void {
   drafts.set(draft.id, draft);
+  writeFormDraft(storedKey(draft.id), draft);
   emit();
 }
 
 export function updateDraft(id: string, patch: Partial<VisitDraft>): void {
-  const current = drafts.get(id);
+  const current = getDraft(id);
   if (!current) return;
-  drafts.set(id, { ...current, ...patch });
-  emit();
+  saveDraft({ ...current, ...patch });
 }
 
 export function getDraft(id: string | undefined): VisitDraft | null {
-  return id ? (drafts.get(id) ?? null) : null;
+  if (!id) return null;
+  return drafts.get(id) ?? readFormDraft<VisitDraft>(storedKey(id)) ?? null;
+}
+
+/** The visit has its result: its draft leaves memory and the phone (21 Nov re-check). */
+export function forgetDraft(id: string): void {
+  drafts.delete(id);
+  clearFormDraft(storedKey(id));
+  emit();
 }
 
 export function clearDrafts(): void {
@@ -54,6 +65,8 @@ export function clearDrafts(): void {
 }
 // Log out (or another agent signing in) empties the visits in progress too (fix list A6).
 registerDraftStore(clearDrafts);
+// Visits read back from the phone after a restart show up in the open screens.
+subscribeDraftsHydrated(emit);
 
 export function useDraft(id: string | undefined): VisitDraft | null {
   useSyncExternalStore(

@@ -101,6 +101,8 @@ export default function TeamLeadVisits() {
       <Card title="Visit requests to assign" flush>
         <DataTable columns={assignColumns} rows={assignments.data} rowKey={(a) => a.id} caption="Visit requests to assign" loading={assignments.isPending} error={assignments.error} onRetry={() => void assignments.refetch()} emptyTitle="No visit requests waiting." />
       </Card>
+      <PlannedVisits />
+      <AwayAgents />
       <Card title="Today's visits and their proof" flush>
         <DataTable columns={visitColumns} rows={b?.rows} rowKey={(v) => v.id} caption="Today's visits" loading={board.isPending} error={board.error} onRetry={() => void board.refetch()} emptyTitle="No shop visits today yet." />
         <div className="tl-note" style={{ padding: '0 18px 14px' }}>
@@ -115,15 +117,18 @@ function Assign({ assignment, agents }: { assignment: Assignment; agents: Brief[
   const [agent, setAgent] = useState(assignment.suggestedStaff?.id ?? '');
   const toast = useToast();
   const qc = useQueryClient();
-  const assign = useMutation({
+  const assign = useMutation<unknown>({
     mutationFn: () =>
       // A business that signed up in the Laboura app has no agent yet: its visit is confirmed through the sign-up route.
       assignment.purpose === 'business_signup'
         ? api.post(`/signup-tracker/visit-requests/${assignment.id}/assign`, { assignedStaffId: agent })
         : api.post(`/businesses/${assignment.business.id}/visit-assignments/${assignment.id}/assign`, { assignedStaffId: agent }),
-    onSuccess: () => {
-      toast.success('Visit assigned');
+    onSuccess: (result) => {
+      // 21 Nov: assigning to someone on approved leave goes ahead, with a warning.
+      if ((result as { assignedStaffOnLeave?: boolean } | undefined)?.assignedStaffOnLeave) toast.error('Visit assigned — but this field agent is on approved leave today');
+      else toast.success('Visit assigned');
       void qc.invalidateQueries({ queryKey: ['businesses', 'visit-assignments'] });
+      void qc.invalidateQueries({ queryKey: ['field-assignments', 'open'] });
     },
     onError: (e) => toast.error(e instanceof ApiError ? e.message : 'Could not assign the visit'),
   });
@@ -169,5 +174,180 @@ function VisitActions({ visit, managerName }: { visit: VisitRow; managerName: st
         <p className="tl-sub">Links work for 5 minutes and are never public.</p>
       </Modal>
     </div>
+  );
+}
+
+interface OpenAssignments {
+  assignments: Array<{
+    id: string;
+    purpose: string;
+    createdAt: string;
+    requestedFor: string | null;
+    business: { id: string; code: string; name: string; locality: string | null };
+    assignedStaff: { id: string; code: string; name: string } | null;
+    assignedStaffOnLeave: boolean;
+  }>;
+  agents: Array<{ id: string; code: string; name: string; onLeaveToday: boolean }>;
+}
+
+/**
+ * Planned visits already with a field agent (21 Nov): Reassign moves one to another of the
+ * team's field agents, with a reason. An agent on approved leave today is marked in the list
+ * and picking him is allowed with that warning. GET /field-assignments/open,
+ * POST /field-assignments/:id/reassign.
+ */
+function PlannedVisits() {
+  const open = useQuery({ queryKey: ['field-assignments', 'open'], queryFn: () => api.get<OpenAssignments>('/field-assignments/open') });
+  const rows = open.data?.assignments;
+  const agents = open.data?.agents ?? [];
+  const columns: Column<OpenAssignments['assignments'][number]>[] = [
+    { key: 'biz', header: 'Business', cell: (a) => `${a.business.name}${a.business.locality ? ` · ${a.business.locality}` : ''}` },
+    { key: 'why', header: 'Why', cell: (a) => PURPOSE[a.purpose] ?? humanize(a.purpose) },
+    {
+      key: 'agent',
+      header: 'With',
+      cell: (a) => (
+        <span>
+          {a.assignedStaff?.name ?? '—'} {a.assignedStaffOnLeave ? <StatusPill tone="warn">On leave today</StatusPill> : null}
+        </span>
+      ),
+      filter: 'select',
+      filterValue: (a) => a.assignedStaff?.name ?? '—',
+    },
+    { key: 'when', header: 'Asked', cell: (a) => formatDateIST(a.createdAt), sortValue: (a) => a.createdAt },
+    {
+      key: 'act',
+      header: '',
+      cell: (a) => {
+        const options = agents.filter((g) => g.id !== a.assignedStaff?.id).map((g) => ({ value: g.id, label: g.onLeaveToday ? `${g.name} (on leave today)` : g.name }));
+        return (
+          <ActionButton
+            label="Reassign"
+            title={`Reassign the visit to ${a.business.name}`}
+            description="The visit moves to the field agent you pick. Someone marked “on leave today” can still be picked."
+            choice={{ label: 'Field agent', options }}
+            reason={{ label: 'Why it moves', required: true }}
+            run={({ choice, reason }) =>
+              api.post(`/field-assignments/${a.id}/reassign`, {
+                assignedStaffId: choice,
+                reason,
+                confirmLeave: agents.some((g) => g.id === choice && g.onLeaveToday),
+              })
+            }
+            success={(r) => ((r as { onLeave?: boolean } | undefined)?.onLeave ? 'Visit reassigned — this field agent is on leave today' : 'Visit reassigned')}
+            disabled={!options.length}
+          />
+        );
+      },
+    },
+  ];
+  return (
+    <Card title="Planned visits (with a field agent)" flush>
+      <DataTable columns={columns} rows={rows} rowKey={(a) => a.id} caption="Planned visits" loading={open.isPending} error={open.error} onRetry={() => void open.refetch()} emptyTitle="No planned visits waiting." />
+    </Card>
+  );
+}
+
+/** Today in IST, "YYYY-MM-DD". */
+function todayIst(): string {
+  return new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
+}
+
+/**
+ * Field agents away (21 Nov review): "Hand over" moves an agent's open visits, interviews to
+ * attend, revisits and joinings due by the last day away to a teammate (or spreads them across
+ * the team); "Hand back" ends the cover when he is back. POST /field-assignments/hand-over,
+ * POST /field-assignments/hand-back.
+ */
+function AwayAgents() {
+  const open = useQuery({ queryKey: ['field-assignments', 'open'], queryFn: () => api.get<OpenAssignments>('/field-assignments/open') });
+  const agents = open.data?.agents ?? [];
+  const columns: Column<OpenAssignments['agents'][number]>[] = [
+    { key: 'name', header: 'Field agent', cell: (a) => <span>{a.name} {a.onLeaveToday ? <StatusPill tone="warn">On leave today</StatusPill> : null}</span> },
+    {
+      key: 'act',
+      header: '',
+      cell: (a) => (
+        <div className="tl-actions">
+          <HandOver agent={a} agents={agents} />
+          <ActionButton
+            label="Hand back"
+            title={`${a.name} is back`}
+            description="Every cover of his work ends: open visits go back to him, his revisits and joinings are his again."
+            run={() => api.post('/field-assignments/hand-back', { fromStaffId: a.id })}
+            success={(r) => `Handed back (${(r as { ended?: number } | undefined)?.ended ?? 0})`}
+          />
+        </div>
+      ),
+    },
+  ];
+  return (
+    <Card title="Hand over a field agent's work" flush>
+      <DataTable columns={columns} rows={open.data?.agents} rowKey={(a) => a.id} caption="Field agents" loading={open.isPending} error={open.error} onRetry={() => void open.refetch()} emptyTitle="No field agents." />
+    </Card>
+  );
+}
+
+function HandOver({ agent, agents }: { agent: OpenAssignments['agents'][number]; agents: OpenAssignments['agents'] }) {
+  const [show, setShow] = useState(false);
+  const [to, setTo] = useState('');
+  const [until, setUntil] = useState(todayIst());
+  const [reason, setReason] = useState('');
+  const toast = useToast();
+  const qc = useQueryClient();
+  const send = useMutation<{ moved: unknown[]; left: unknown[] }>({
+    mutationFn: () => api.post('/field-assignments/hand-over', { fromStaffId: agent.id, toStaffId: to || undefined, until, reason: reason.trim() }),
+    onSuccess: (r) => {
+      toast.success(`Handed over: ${r.moved.length} moved${r.left.length ? `, ${r.left.length} left (nobody free)` : ''}`);
+      setShow(false);
+      void qc.invalidateQueries();
+    },
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : 'Could not hand over'),
+  });
+  const others = agents.filter((g) => g.id !== agent.id);
+  return (
+    <>
+      <Button size="compact" onClick={() => setShow(true)}>
+        Hand over
+      </Button>
+      <Modal
+        open={show}
+        onClose={() => setShow(false)}
+        title={`Hand over ${agent.name}'s work`}
+        footer={
+          <>
+            <Button onClick={() => setShow(false)} disabled={send.isPending}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={() => send.mutate()} loading={send.isPending} disabled={!reason.trim() || !until}>
+              Hand over
+            </Button>
+          </>
+        }
+      >
+        <div className="tl-form">
+          <label>
+            To
+            <select aria-label="Hand over to" value={to} onChange={(e) => setTo(e.target.value)}>
+              <option value="">Spread across the team (fewest open items first)</option>
+              {others.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.onLeaveToday ? `${g.name} (on leave today)` : g.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Last day away
+            <input type="date" aria-label="Last day away" value={until} min={todayIst()} onChange={(e) => e.target.value && setUntil(e.target.value)} />
+          </label>
+          <label>
+            Why
+            <textarea aria-label="Why the work moves" value={reason} onChange={(e) => setReason(e.target.value)} />
+          </label>
+          <p className="tl-sub">Visits, interviews to attend, revisits and joinings due by that day move; the cover ends after it.</p>
+        </div>
+      </Modal>
+    </>
   );
 }

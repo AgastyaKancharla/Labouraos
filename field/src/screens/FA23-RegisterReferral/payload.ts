@@ -3,7 +3,7 @@
  * its mapping onto CreateReferralDto (src/modules/referral/dto/create-referral.dto.ts).
  */
 export const INDIVIDUAL_ROLES = ['auto_driver', 'shop_staff', 'shop_owner', 'security_guard', 'existing_worker', 'other'] as const;
-export const HEARD_FROM = ['toll_free_missed_call', 'ad', 'referral_partner', 'field_visit', 'social_media', 'walk_in', 'other'] as const;
+export const HEARD_FROM = ['toll_free_missed_call', 'ad', 'referral_partner', 'field_visit', 'social_media', 'whatsapp', 'walk_in', 'other'] as const;
 export const PARTNER_BUSINESS_TYPES = [
   'restaurant_hotel', 'bakery', 'retail_shop', 'supermarket', 'apartment_society', 'office',
   'factory', 'warehouse', 'hospital_clinic', 'construction', 'security_agency', 'salon', 'other',

@@ -7,6 +7,7 @@ import { routes } from '@/navigation/routes';
 import { type Accent, colors, fonts } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { placementsProgress, useTargetDashboard } from '../FA03-Home/useHome';
+import { CallingPhoneCard } from './CallingPhoneCard';
 
 const LINKS: { key: string; title: 'me.targets' | 'me.today' | 'me.attendance' | 'me.leave' | 'me.corrections' | 'me.payslips'; href: string; icon: IconName; accent: Accent }[] = [
   { key: 'targets', title: 'me.targets', href: routes.targets, icon: 'trophy', accent: 'gold' },
@@ -21,6 +22,7 @@ const LINKS: { key: string; title: 'me.targets' | 'me.today' | 'me.attendance' |
  * FA24 — Me, the fifth tab (redesign, 16 Nov): targets and leaderboard, my
  * attendance, leave, corrections, payslips and log out (English only, rev 193:
  * no language choice). Data: GET /targets/dashboard for the placements bar.
+ * 21 Nov: "Your calling phone" (CallingPhoneCard).
  */
 export default function MeScreen() {
   const { t } = useI18n();
@@ -56,6 +58,7 @@ export default function MeScreen() {
             />
           ))}
         </Card>
+        <CallingPhoneCard />
         <Button label={t('common.logout')} variant="danger" icon={<Icon name="logout" color={colors.white} />} onPress={() => void logout()} testID="me-logout" />
       </Screen>
     </View>

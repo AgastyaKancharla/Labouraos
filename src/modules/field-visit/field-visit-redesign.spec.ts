@@ -264,7 +264,8 @@ describe('Laboura Field redesign: visit results, change result, details, own-onl
     expect((await details(agent, id).expect(200)).body.nextStep).toBe('take_selfie');
     await selfie(agent, id).expect(201);
     const body = (await details(agent, id).expect(200)).body;
-    expect(body).toMatchObject({ durationSeconds: 600, nextStep: 'continue_business_form', canChangeResult: false, resultHistory: [] });
+    // 21 Nov: "onboard now" keeps the shop time running until the onboarding finishes (no duration yet).
+    expect(body).toMatchObject({ durationSeconds: null, nextStep: 'continue_business_form', canChangeResult: false, resultHistory: [] });
     expect(body.boardPhoto.url).toMatch(/^data:image\/jpeg;base64,/);
     expect(body.boardPhoto.takenAt).toBe(new Date(START.getTime() + 300 * MIN).toISOString());
     expect(body.selfie).toMatchObject({ distanceMeters: expect.any(Number) });

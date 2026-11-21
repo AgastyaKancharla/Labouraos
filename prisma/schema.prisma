@@ -494,6 +494,9 @@ model Business {
   /// OTP. Candidates and interviews are then allowed the same day, before the
   /// Team Lead's review (Master Guide, decided 9 Nov).
   inPersonOnboardedAt      DateTime?
+  /// 21 Nov: a field agent's verification visit was completed (owner OTP + signed agreement): candidates
+  /// can be shown straight away while it waits for the Team Lead's check, like in-person onboarding.
+  fieldVerifiedAt          DateTime?
   /// A Team Lead (or above) paused the business: no matching and no new
   /// interviews until it is unpaused.
   pausedAt                 DateTime?
@@ -1315,6 +1318,8 @@ model BusinessVisit {
   outcomeReason     String?
   /// Come back on this IST date (interested later, owner not there).
   revisitOn         DateTime? @db.Date
+  /// 21 Nov: the come-back time on revisitOn, "HH:mm" IST (optional).
+  revisitTime       String?
   note              String?
   outcomeRecordedAt DateTime?
   /// Second GPS check with the proof selfie, and its distance from the start.
@@ -3514,5 +3519,32 @@ model BusinessShift {
   vacancies          Vacancy[]
 
   @@unique([businessId, name])
+  @@index([businessId])
+}
+
+/// 21 Nov (leave handover, Laboura Field): one piece of a field agent's open work moved to a
+/// teammate — a visit assignment, an interview to attend, a revisit or a joining to confirm.
+/// The original record keeps who did it; this row says who covers it now.
+model FieldHandover {
+  id               String    @id @default(uuid())
+  /// visit_assignment, interview, revisit, joining
+  kind             String
+  /// The VisitAssignment, Interview, BusinessVisit (the visit to come back to) or Placement id.
+  recordId         String
+  businessId       String?
+  fromStaffId      String
+  toStaffId        String
+  reason           String
+  leaveRequestId   String?
+  createdByStaffId String?
+  createdAt        DateTime  @default(now())
+  /// Set when a later handover moves the same piece again, the agent is back, or the piece is done.
+  endedAt          DateTime?
+  /// 21 Nov review: the cover ends at this instant (the start of the IST day after the leave's last day).
+  until            DateTime?
+
+  @@index([toStaffId, kind, endedAt])
+  @@index([fromStaffId, kind, endedAt])
+  @@index([kind, recordId])
   @@index([businessId])
 }
