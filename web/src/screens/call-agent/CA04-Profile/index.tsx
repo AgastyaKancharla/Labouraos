@@ -49,6 +49,7 @@ function isFollowUp(item: WorkItem | null): boolean {
 }
 
 function callBlockReason(profile: Profile, t: ReturnType<typeof useT>): string | null {
+  if (profile.contactBlocks?.includes('do_not_call')) return t('ca.locked.do_not_call');
   if (!profile.inCallingHours) return t('ca.locked.outside_calling_hours', { start: clock12(profile.callingHours.start), end: clock12(profile.callingHours.end) });
   if (!profile.attendanceAvailable) return t('ca.blocked.not_available');
   if (profile.type === 'job_seeker') {
@@ -81,6 +82,9 @@ function ProfileBody({ profile, followUpView }: { profile: Profile; followUpView
             <strong>{t('ca.profile.why')}</strong> {whyText(profile.onList, t)}
           </div>
         )}
+        {profile.contactBlocks?.map((kind) => (
+          <div key={kind} className="warn" role="status">{t(`ca.block.${kind}`)}</div>
+        ))}
         <SignupHelpBox item={profile.onList} />
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <Button variant="primary" onClick={placeCall} loading={placing} disabled={Boolean(blocked)}>

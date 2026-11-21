@@ -27,7 +27,7 @@ import { useLiveCall } from '../_lib/useLiveCall';
  * agent picks what was said from the fixed list; "Call me back" needs a date
  * and time; turning down an offer needs a reason.
  */
-const OUTCOMES = ['interested', 'accepted_offer', 'rejected_offer', 'callback_requested', 'not_interested', 'working_now', 'other'] as const;
+const OUTCOMES = ['interested', 'accepted_offer', 'rejected_offer', 'callback_requested', 'not_interested', 'working_now', 'wrong_number', 'do_not_call', 'busy', 'switched_off', 'other'] as const;
 type Outcome = (typeof OUTCOMES)[number];
 
 export default function OnCall() {

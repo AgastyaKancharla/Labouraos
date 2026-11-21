@@ -10,6 +10,7 @@ export const callAgentEn = {
 
   'ca.today': 'Today',
   'ca.tomorrow': 'Tomorrow',
+  'ca.yesterday': 'Yesterday',
   'ca.you': 'you',
   'ca.years': '{count} yrs',
   'ca.km': '{km} km',
@@ -45,6 +46,7 @@ export const callAgentEn = {
   'ca.reason.offerReply': 'Offer reply by {time}',
   'ca.reason.callback': 'Callback {time}',
   'ca.reason.missedCall': 'Called us {time}',
+  'ca.reason.missedCallMany': 'Called us {count}× · last {time}',
   'ca.reason.retry': 'Try again {time}',
   'ca.reason.interviewToday': 'Interview today {time}',
   'ca.reason.refundCheck': 'Refund check',
@@ -76,6 +78,25 @@ export const callAgentEn = {
   'ca.locked.no_call_consent': 'no call-recording consent',
   'ca.locked.no_matching_consent': 'no job-matching consent',
   'ca.locked.due_later': 'due {time}',
+  'ca.locked.do_not_call': 'asked not to be called',
+  'ca.locked.wrong_number': 'wrong number — Team Lead to fix',
+
+  'ca.newCallers.title': 'New callers ({count})',
+  'ca.newCallers.row': 'New caller {phone} — register as…',
+  'ca.newCallers.when': 'called {time}',
+  'ca.newCallers.times': 'called {count}× · last {time}',
+  'ca.newCallers.done': 'Not a lead',
+  'ca.newCallers.doneToast': 'Taken off your list',
+  'ca.newCallers.none': 'No new callers.',
+  'ca.stuck.waitingNote': 'nothing to do — the Team Lead checks the ID',
+
+  'ca.na.labelIt': 'What did you hear?',
+  'ca.na.busy': 'Busy',
+  'ca.na.switchedOff': 'Switched off',
+  'ca.na.labelSaved': 'Saved — it counts as no answer',
+
+  'ca.block.do_not_call': 'Do not call: he asked not to be called. Calls and messages are blocked until a Team Lead lifts it.',
+  'ca.block.wrong_number': 'Wrong number: retries and messages are stopped until the number is corrected.',
 
   'ca.blocked.outside_calling_hours': 'Calls are placed only between {start} and {end}.',
   'ca.blocked.not_available': 'Calls start when your status is Available on Attendance.',
@@ -109,6 +130,10 @@ export const callAgentEn = {
   'ca.outcome.callback_requested': 'Call me back',
   'ca.outcome.not_interested': 'Not interested',
   'ca.outcome.working_now': 'Already working',
+  'ca.outcome.wrong_number': 'Wrong number',
+  'ca.outcome.do_not_call': 'Do not call',
+  'ca.outcome.busy': 'Busy',
+  'ca.outcome.switched_off': 'Switched off',
   'ca.outcome.other': 'Other',
 
   'ca.seekerStatus.lead': 'Lead',
