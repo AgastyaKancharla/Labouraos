@@ -565,12 +565,16 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
                 {trade ? (
                   <Text variant="muted">
                     {t('fa07.tradeHint', { trade: trade.name, from: (trade.salaryMinPaise / 100).toLocaleString('en-IN'), to: (trade.salaryMaxPaise / 100).toLocaleString('en-IN') })}
+                    {/* 21 Nov: a usual pay below the legal minimum never reads as advice to pay less. */}
+                    {trade.legalMinimumPaise > trade.salaryMinPaise
+                      ? ` ${t('fa07.tradeHintLegal', { amount: (trade.legalMinimumPaise / 100).toLocaleString('en-IN') })}`
+                      : ''}
                   </Text>
                 ) : null}
                 {below ? (
                   <>
-                    <Banner tone="warn" title={t('fa07.belowMinimum')} message={t('fa07.belowMinimumBody', { amount: (trade!.legalMinimumPaise / 100).toLocaleString('en-IN') })} />
-                    <Toggle label={t('fa07.ownerTold')} value={row.ownerTold} onChange={(v) => update({ ownerTold: v })} error={err(`staffLegal${i}`)} />
+                    {/* 21 Nov: the owner-told tick is asked once, when the vacancy is sent to the owner (where it is recorded). */}
+                    <Banner tone="warn" title={t('fa07.belowMinimum')} message={t('fa07.belowMinimumOnce', { amount: (trade!.legalMinimumPaise / 100).toLocaleString('en-IN') })} testID={`fa07-staff-${i}-below`} />
                   </>
                 ) : null}
                 <Button label={t('fa07.remove')} variant="danger" onPress={() => set({ staff: form.staff.filter((_, j) => j !== i) })} testID={`fa07-staff-${i}-remove`} />

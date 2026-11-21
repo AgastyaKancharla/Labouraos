@@ -236,7 +236,7 @@ export const en = {
   "pub.agree.signedAt": "Signed",
   "pub.agree.copy": "A copy",
   "pub.agree.download": "Download",
-  "pub.agree.next": "A Laboura Team Lead will call you to finish setting up. Then we can start showing you candidates.",
+  "pub.agree.next": "Thank you. Your Laboura agent will take you through the next step to start showing you candidates.",
   "pub.result.title": "How did {name}'s interview go?",
   "pub.result.sub": "Interview {day} at {business} · please answer by {time}",
   "pub.result.selected": "Selected",

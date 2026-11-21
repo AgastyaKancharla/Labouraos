@@ -138,9 +138,11 @@ describe('FA07 Register a business', () => {
     await fireEvent.press(screen.getByTestId('fa07-staff-0-shift-day'));
     await fireEvent.press(screen.getAllByText('Tomorrow')[0]);
     expect(screen.getByText(/Below the legal minimum wage/)).toBeTruthy();
-    await fireEvent.press(screen.getByTestId('fa07-save'));
-    expect(posted).toHaveLength(0); // the owner-told tick is required
-    await fireEvent.press(screen.getByLabelText('Owner told about the legal minimum wage'));
+    // 21 Nov: the owner-told tick is asked once, when the vacancy is sent to the owner; here it warns only.
+    expect(screen.getByTestId('fa07-staff-0-below')).toHaveTextContent(/you confirm it when you send this vacancy/);
+    expect(screen.queryByLabelText('Owner told about the legal minimum wage')).toBeNull();
+    // The usual pay for Cook (₹18,000) is below the legal minimum (₹23,400): the hint says so.
+    expect(screen.getByText(/never offer less/)).toBeTruthy();
     await fireEvent.press(screen.getByTestId('fa07-save'));
     await waitFor(() => expect(posted).toHaveLength(1));
     expect(posted[0]).toMatchObject({
