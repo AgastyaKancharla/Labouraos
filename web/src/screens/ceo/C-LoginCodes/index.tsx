@@ -19,6 +19,7 @@ import { ActionButton } from '../_kit/actions';
 import { NewTempPasswordButton, PasswordResetHistory, PendingResetCards, usePendingResets } from '../../shared/staffAccess';
 import { useT } from '../../../i18n/I18nProvider';
 import { roleLabel } from '../_kit/format';
+import { NoCodeSignIns } from '../../../auth/NoCodeSignIns';
 
 /** Login codes — design C-LoginCodes.dc.html. The same requests Managers and Team Leads see for their people. */
 interface Pending {
@@ -150,6 +151,7 @@ export default function LoginCodes() {
         <DataTable columns={codeColumns} rows={a?.codes} rowKey={(r) => r.id} caption="Codes given" loading={access.isPending} error={access.error} onRetry={() => void access.refetch()} download="login-codes-given" emptyTitle="No codes given in this period." />
       </Card>
       <PasswordResetHistory />
+      <NoCodeSignIns />
     </div>
   );
 }

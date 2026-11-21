@@ -27,6 +27,8 @@ interface Day {
   productionSeconds: number;
   breakOverSeconds: number;
   breakCount?: number;
+  /** "Resume my day" presses that day (21 Nov). */
+  resumeCount?: number;
   extraBreaks?: number;
   idleSeconds: number;
   shortfallSeconds: number;
@@ -87,7 +89,17 @@ export default function AttendancePerson() {
 
   const columns: Column<Day>[] = [
     { key: 'day', header: 'Day', cell: (d) => dayLabel(d.date), sortValue: (d) => d.date, csv: (d) => d.date },
-    { key: 'login', header: 'Login', cell: (d) => timeOrDash(d.loginAt), csv: (d) => d.loginAt },
+    {
+      key: 'login',
+      header: 'Login',
+      cell: (d) => (
+        <span>
+          {timeOrDash(d.loginAt)}
+          {d.resumeCount ? <span className="ceo-cell-sub"> · resumed {d.resumeCount === 1 ? 'once' : `${d.resumeCount} times`}</span> : null}
+        </span>
+      ),
+      csv: (d) => d.loginAt,
+    },
     { key: 'late', header: 'Late login', cell: (d) => (d.lateMinutes ? formatLateMinutes(d.lateMinutes) : '—'), csv: (d) => d.lateMinutes },
     { key: 'prod', header: 'Production', cell: (d) => (d.loginAt ? hm(d.productionSeconds) : '—'), sortValue: (d) => d.productionSeconds, csv: (d) => Math.round(d.productionSeconds / 60) },
     {

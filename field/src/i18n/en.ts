@@ -6,6 +6,7 @@ import { accessEn } from './access.en';
 import { redesignEn } from './redesign.en';
 import { fixes17En } from './fixes17.en';
 import { fixes21En } from './fixes21.en';
+import { sessions21En } from './sessions21.en';
 /**
  * English — the only language of Laboura Field (Master Guide rev 193). Keys are grouped by the
  * screen that owns them: `fa03.*` belongs to FA03-Home, and so on. Shared
@@ -23,6 +24,7 @@ export const en = {
   ...redesignEn,
   ...fixes17En,
   ...fixes21En,
+  ...sessions21En,
   'common.appName': 'Laboura Field',
   'common.brand': 'Laboura',
   'common.logoHome': 'Laboura — go to Home',
@@ -78,8 +80,8 @@ export const en = {
   'status.notLoggedIn': 'Not logged in',
   'status.dayEnded': 'Day ended',
 
-  'session.idle': 'You were logged out after 1 hour without activity. Sign in again.',
-  'session.max_length': 'A login lasts at most 2 hours. Sign in again.',
+  'session.idle': 'You were logged out after 1 hour without activity while your working day was not open. Sign in again.',
+  'session.max_length': 'Your login ended (your working day was not open, or it is past the end of your shift). Sign in again.',
   'session.revoked': 'Your login was ended by your Team Lead or Manager, or you logged in on another phone.',
   'session.expired': 'Your login has expired. Sign in again.',
   'session.unauthorized': 'Please sign in again.',

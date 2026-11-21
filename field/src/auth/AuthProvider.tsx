@@ -13,14 +13,22 @@ import {
   type SetupRequiredResponse,
 } from '@/api/endpoints/auth';
 import { ApiError, isApiError } from '@/api/errors';
+import { attendanceApi } from '@/api/endpoints/attendance';
 import { clearAllDrafts, setDraftOwner } from '@/lib/formDraft';
 import { secureStorage, type KeyValueStore } from '@/lib/storage';
 import { getDeviceId } from './device';
-import { reasonFromMessage, SessionStore, tokenNeedsRefresh, type Session, type SignOutReason } from './session';
+import { SessionStore, tokenNeedsRefresh, type Session, type SignOutReason } from './session';
+import { refreshKeptSession } from './refresh';
 
 /** Refresh the 15-minute access token when less than this is left. */
 export const REFRESH_WHEN_LEFT_MS = 5 * 60 * 1000;
 export const CHECK_EVERY_MS = 60 * 1000;
+/** While the app is open in front of the agent it tells attendance he is present this often (decided 21 Nov). */
+export const PRESENCE_EVERY_MS = 60 * 1000;
+/** Taps are sent as activity at most this often. */
+export const ACTIVITY_EVERY_MS = 60 * 1000;
+/** After "the day is not open" (before Log in, after Log out) heartbeats wait this long. */
+const DAY_CLOSED_PAUSE_MS = 5 * 60 * 1000;
 
 /**
  * Sign-outs after which what the agent typed is thrown away (fix list A6):
@@ -66,7 +74,7 @@ interface AuthValue {
   verifyCode: (code: string) => Promise<void>;
   cancelPendingLogin: () => void;
   logout: () => Promise<void>;
-  /** Call on any tap; keeps the 1-hour idle limit honest. */
+  /** Call on any tap: recorded on the phone and sent to attendance as activity (at most once a minute). */
   touch: () => void;
 }
 
@@ -92,43 +100,17 @@ export function AuthProvider({ children, api: injectedApi, store = defaultStore,
   const [pendingSetup, setPendingSetup] = useState<PendingSetup | null>(null);
   const [resetNotice, setResetNotice] = useState<PasswordResetNotice | null>(null);
   const [deviceId, setDeviceId] = useState<string | null>(null);
-  const refreshing = useRef(false);
 
   /**
-   * Gets a fresh access token. Field agents use their refresh token, which
-   * also works after the token ran out while the app was closed; the server
-   * refuses once the 1-hour idle or 2-hour limit has passed and the phone
-   * shows that reason. Anyone else (no refresh token) uses the bearer refresh.
+   * Gets a fresh access token (shared with the API client's renew-on-401, so
+   * the single-use refresh token is never used twice at once). The server
+   * refuses once its rules end the session and the phone shows that reason;
+   * with no signal it tries again next minute.
    */
   const refreshNow = useCallback(async () => {
-    const current = store.get();
-    if (!current || refreshing.current) return;
-    refreshing.current = true;
-    try {
-      if (current.refreshToken && current.sessionId) {
-        const result = await auth.fieldRefresh({
-          sessionId: current.sessionId,
-          refreshToken: current.refreshToken,
-          deviceId: await getDeviceId(storage),
-        });
-        await store.replaceToken(result.accessToken, result.refreshToken);
-      } else {
-        const result = await auth.refresh();
-        await store.replaceToken(result.accessToken);
-      }
-    } catch (error) {
-      // 401: the session is over, say why. Network: try again next minute.
-      if (isApiError(error) && error.status === 401) {
-        const body = error.body as { reason?: string; details?: { reason?: string } } | undefined;
-        const given = body?.details?.reason ?? body?.reason;
-        const reason: SignOutReason =
-          given === 'idle' || given === 'max_length' ? given : given ? 'revoked' : reasonFromMessage(error.message);
-        await store.clear(reason);
-      }
-    } finally {
-      refreshing.current = false;
-    }
-  }, [auth, store, storage]);
+    if (!store.get()) return;
+    await refreshKeptSession(api, store, storage);
+  }, [api, store, storage]);
 
   // Follow the store: 401s from any request clear it, and so do limits.
   useEffect(() => {
@@ -187,6 +169,48 @@ export function AuthProvider({ children, api: injectedApi, store = defaultStore,
       sub.remove();
     };
   }, [status, maintain]);
+
+  // Present while the app is open in front of the agent (decided 21 Nov): a
+  // heartbeat about once a minute; taps go as activity (see touch below).
+  const heartbeatPausedUntil = useRef(0);
+  const lastActivityBeat = useRef(0);
+  const beat = useCallback(
+    (kind: 'presence' | 'activity') => {
+      if (!store.get() || now() < heartbeatPausedUntil.current) return;
+      attendanceApi(api)
+        .heartbeat(kind)
+        .catch((error: unknown) => {
+          // The day is not open (before Log in, after Log out): wait a while.
+          if (isApiError(error) && error.status === 400) heartbeatPausedUntil.current = now() + DAY_CLOSED_PAUSE_MS;
+        });
+    },
+    [api, store, now],
+  );
+  useEffect(() => {
+    if (status !== 'signedIn') return;
+    heartbeatPausedUntil.current = 0;
+    const timer = setInterval(() => {
+      if (AppState.currentState === 'active') beat('presence');
+    }, PRESENCE_EVERY_MS);
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        heartbeatPausedUntil.current = 0;
+        beat('presence');
+      }
+    });
+    return () => {
+      clearInterval(timer);
+      sub.remove();
+    };
+  }, [status, beat]);
+
+  const touch = useCallback(() => {
+    store.touch();
+    const at = now();
+    if (at - lastActivityBeat.current < ACTIVITY_EVERY_MS) return;
+    lastActivityBeat.current = at;
+    beat('activity');
+  }, [store, now, beat]);
 
   const startLogin = useCallback(
     async (staffCode: string, password: string): Promise<StartLoginResult> => {
@@ -260,9 +284,9 @@ export function AuthProvider({ children, api: injectedApi, store = defaultStore,
       verifyCode,
       cancelPendingLogin: () => setPendingLogin(null),
       logout,
-      touch: () => store.touch(),
+      touch,
     }),
-    [status, session, signOutReason, pendingLogin, pendingSetup, resetNotice, deviceId, startLogin, verifyCode, logout, store],
+    [status, session, signOutReason, pendingLogin, pendingSetup, resetNotice, deviceId, startLogin, verifyCode, logout, touch],
   );
 
   // Drafts belong to the signed-in agent: set before the screens below read theirs.

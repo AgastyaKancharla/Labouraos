@@ -42,6 +42,34 @@ describe('API client', () => {
     expect(onUnauthorized).toHaveBeenCalledWith('Session ended after being idle');
   });
 
+  it('on a 401 tries to renew the session first and repeats the request once with the new token (21 Nov)', async () => {
+    let token = 'old';
+    const onUnauthorized = jest.fn();
+    const refreshSession = jest.fn(async () => {
+      token = 'new';
+      return 'renewed' as const;
+    });
+    const fetchImpl = jest.fn(async (_url: string, init: RequestInit) =>
+      (init.headers as Record<string, string>).Authorization === 'Bearer new' ? jsonResponse(200, { ok: 1 }) : jsonResponse(401, { message: 'Invalid or expired token' }),
+    );
+    const api = createApiClient({ baseUrl: '', getToken: () => token, onUnauthorized, refreshSession, fetchImpl: fetchImpl as unknown as typeof fetch });
+    await expect(api.get('/attendance/today')).resolves.toEqual({ ok: 1 });
+    expect(refreshSession).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+
+  it('a session the server ended on renewal is not signed out twice; a renewal with no answer signs out as before', async () => {
+    const onUnauthorized = jest.fn();
+    const fetchImpl = async () => jsonResponse(401, { message: 'Session has been revoked' });
+    const ended = createApiClient({ baseUrl: '', getToken: () => 'tok', onUnauthorized, refreshSession: async () => 'ended', fetchImpl });
+    await expect(ended.get('/x')).rejects.toMatchObject({ status: 401 });
+    expect(onUnauthorized).not.toHaveBeenCalled();
+    const failed = createApiClient({ baseUrl: '', getToken: () => 'tok', onUnauthorized, refreshSession: async () => 'failed', fetchImpl });
+    await expect(failed.get('/x')).rejects.toMatchObject({ status: 401 });
+    expect(onUnauthorized).toHaveBeenCalledWith('Session has been revoked');
+  });
+
   it('does not end a session on a 401 from a login attempt (no token sent)', async () => {
     const onUnauthorized = jest.fn();
     const api = createApiClient({

@@ -192,6 +192,7 @@ export class AttendanceReportsService {
         breakSeconds: row.breakSeconds,
         breakOverSeconds: row.breakOverSeconds,
         breakCount: row.breakCount,
+        resumeCount: row.resumeCount,
         /** Short breaks past the two a day the shift allows (guide, Attendance). */
         extraBreaks: Math.max(0, row.breakCount - SHORT_BREAKS_PER_DAY),
         idleSeconds: row.idleSeconds,

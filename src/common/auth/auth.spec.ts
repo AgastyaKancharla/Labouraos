@@ -156,15 +156,17 @@ describe('Staff Authentication', () => {
       password: rawPassword,
       deviceId,
     });
-    if (!('loginRequestId' in waiting)) {
-      throw new Error('expected a login code');
-    }
-    const response = await authService.verifyLoginCode(
-      waiting.loginRequestId,
-      loginCodeFor(waiting.loginRequestId),
-      undefined,
-      { deviceId, loginRequestProof: waiting.loginRequestProof },
-    );
+    // A code was accepted on this device earlier today in this file: the day's
+    // later sign-ins need only the password (decided 21 Nov). Either way the
+    // answer never carries the password.
+    const response =
+      'loginRequestId' in waiting
+        ? await authService.verifyLoginCode(waiting.loginRequestId, loginCodeFor(waiting.loginRequestId), undefined, {
+            deviceId,
+            loginRequestProof: waiting.loginRequestProof,
+          })
+        : waiting;
+    if (!('accessToken' in response)) throw new Error('expected a session');
 
     const staffObj = response.staff;
     expect((staffObj as Record<string, unknown>).password).toBeUndefined();

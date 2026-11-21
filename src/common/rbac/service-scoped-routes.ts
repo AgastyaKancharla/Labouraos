@@ -57,6 +57,16 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
     test: 'common/rbac/service-scoped-routes.e2e.spec.ts',
     proof: "another team's Team Lead cannot approve a system problem",
   },
+  'AttendanceController.setShift': {
+    reason: "Own shifts (21 Nov): only the person's Team Lead, a Manager over them (personIsUnder) or the CEO; never one's own.",
+    test: 'modules/attendance/attendance-21nov.spec.ts',
+    proof: "set('Authorization', `Bearer ${tokenFor(otherLead)}`).send({ shiftStart: '12:00', shiftEnd: '21:00' }).expect(403)",
+  },
+  'AttendanceController.reopen': {
+    reason: "Reopen today (21 Nov): only the person's Team Lead, a Manager over them or the CEO (canManage); never one's own day.",
+    test: 'modules/attendance/attendance-21nov.spec.ts',
+    proof: "post(tokenFor(otherLead), `/attendance/days/${day.id}/reopen`, { reason: 'Logged out by mistake' }).expect(403)",
+  },
   'AttendanceController.changeDay': {
     reason: "Only the person's Team Lead, their Manager or the CEO; never one's own day.",
     test: 'modules/attendance/phase-21-task-3-day-rules.spec.ts',

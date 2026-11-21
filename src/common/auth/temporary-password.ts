@@ -7,12 +7,13 @@ import { randomInt } from 'node:crypto';
  *
  * 8 characters as two groups of 4 (K7M4-Q2PX), capital letters and digits
  * without the look-alikes 0, O, 1, I and L. Accepted in any case and with or
- * without the dash. Valid for 24 hours, works once (it ends when the person
+ * without the dash. Valid for 72 hours (decided 21 Nov: was 24; a senior can
+ * still reissue one with one tap), works once (it ends when the person
  * finishes setting their own password). Stored only as a bcrypt hash.
  */
 export const TEMP_PASSWORD_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 export const TEMP_PASSWORD_LENGTH = 8;
-export const TEMP_PASSWORD_TTL_MS = 24 * 60 * 60 * 1000;
+export const TEMP_PASSWORD_TTL_MS = 72 * 60 * 60 * 1000;
 
 /** A new temporary password, crypto-random, as "XXXX-XXXX". */
 export function generateTemporaryPassword(): string {

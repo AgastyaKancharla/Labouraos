@@ -156,7 +156,8 @@ describe('Phase 21 Task 2: the working day', () => {
     expect(policy.lateGraceMinutes).toBe(10);
     expect(policy.shortBreakMinutes).toBe(15);
     expect(policy.lunchMinutes).toBe(30);
-    expect(policy.idleAfterMinutes).toBe(10);
+    // "Still there?" after 30 minutes with no call and no click (decided 21 Nov; was 10).
+    expect(policy.idleAfterMinutes).toBe(30);
     expect(policy.casualLeavePerMonth).toBe(1);
     expect(policy.emergencyLeavePerMonth).toBe(1);
     expect(policy.refundPriorityWindowDays).toBe(15);
@@ -485,7 +486,11 @@ describe('Phase 21 Task 2: the working day', () => {
       .post('/attendance/heartbeat')
       .set('Authorization', `Bearer ${token}`)
       .expect(201);
+    // Decided 21 Nov: the clean-up never closes today's day, however late it is run.
     at(new Date(start.getTime() + 5 * 60 * 60 * 1000).toISOString());
+    expect(await attendance.closeForgottenDays(agent.id)).toEqual({ closed: 0 });
+    // The next morning (05:30 IST) it closes yesterday's day.
+    at('2026-11-11T00:00:00.000Z');
     const result = await attendance.closeForgottenDays(agent.id);
     expect(result).toEqual({ closed: 1 });
     const row = await prisma.attendanceDay.findFirstOrThrow({ where: { staffId: agent.id } });
@@ -493,9 +498,10 @@ describe('Phase 21 Task 2: the working day', () => {
     expect(row.flagged).toBe(true);
     expect(row.logoutAt?.toISOString()).toBe(new Date(start.getTime() + 5 * 60 * 1000).toISOString());
     expect(row.productionSeconds).toBe(300);
-    const again = await login(token);
-    expect(again.status).toBe(400);
-    expect(again.body.message).toContain('already closed');
+    // That day stays closed (a correction puts it right); the new day starts normally.
+    expect(row.date.toISOString().slice(0, 10)).toBe('2026-11-10');
+    const today = await login(token).expect(201);
+    expect(today.body.date).toBe('2026-11-11');
   });
   describe('Log in / Log out (17 Nov): once a day, and the status never errors on an open day', () => {
     /** The code is at the top here and under details behind the global exception filter. */
@@ -535,7 +541,8 @@ describe('Phase 21 Task 2: the working day', () => {
       const again = await login(token, { latitude: 12.9116, longitude: 77.6101 });
       expect(again.status).toBe(400);
       expect(codeOf(again.body)).toBe('DAY_ALREADY_ENDED');
-      expect(again.body.message).toContain('already closed');
+      // Ended with Log out today: the answer points at Resume my day (decided 21 Nov).
+      expect(again.body.message).toContain('Resume my day');
     });
 
     it('two Log in taps at the same moment start one day, both answer 201', async () => {

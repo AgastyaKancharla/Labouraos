@@ -37,6 +37,17 @@ export function StatusBanner() {
       </div>
     );
   }
+  if (phase === 'ended' && today.canResume) {
+    // Ended with Log out today (decided 21 Nov): Resume my day, recorded.
+    return (
+      <div className="lb-att-banner lb-att-banner--info" role="status">
+        <span>{t('att.resume.banner')}</span>
+        <button type="button" className="btn bg lb-btn lb-att-banner__btn" onClick={() => void attendance.resume()} disabled={busy}>
+          {t('att.resume.button')}
+        </button>
+      </div>
+    );
+  }
   if (phase !== 'open' || !status || status === 'available' || status === 'on_call' || status === 'after_call_notes') return null;
 
   const def = STATUS_DEFS[status];

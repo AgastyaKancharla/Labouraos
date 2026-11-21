@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useI18n } from '@/i18n';
 import { Banner, Button, ErrorState, Icon, IconTile, LoadingState, StatusChip, Text, type IconName } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
+import { useAuth } from '@/auth/AuthProvider';
 import { queryKeys } from '@/api/queryClient';
 import { errorCode, type AttendanceToday } from '@/api/endpoints';
 import { LOCATION_ERROR_KEYS } from '@/device/location/useLocation';
@@ -73,13 +74,15 @@ export function DayControls({ testID = 'attendance' }: { testID?: string }) {
       : null;
 
   if (state === 'not_started') {
+    // The agent's own shift when a senior set one (decided 21 Nov), else the company shift.
+    const shiftKey = day.ownShift ? 'fa03.ownShift' : 'fa03.shift';
     return (
       <View style={styles.gap}>
         <Banner
           tone="warn"
           icon="clock"
           title={t('fa03.notLoggedIn')}
-          message={t('fa03.shift', { start: formatShiftTime(day.clocks.shiftStart), end: formatShiftTime(day.clocks.shiftEnd) })}
+          message={t(shiftKey, { start: formatShiftTime(day.clocks.shiftStart), end: formatShiftTime(day.clocks.shiftEnd) })}
           testID={`${testID}-not-logged-in`}
         />
         <Button
@@ -102,24 +105,71 @@ export function DayControls({ testID = 'attendance' }: { testID?: string }) {
   }
 
   if (state === 'ended') {
-    return (
+    return <EndedDay day={day} testID={testID} />;
+  }
+
+  return <OpenDay day={day} testID={testID} />;
+}
+
+/**
+ * The ended day. Ended with Log out today (decided 21 Nov): "Resume my day"
+ * opens it again — the time in between is not counted and it is recorded.
+ */
+function EndedDay({ day, testID }: { day: AttendanceToday; testID: string }) {
+  const { t } = useI18n();
+  const { attendance } = useEndpoints();
+  const client = useQueryClient();
+  const resume = useMutation<AttendanceToday, Error>({
+    mutationFn: () => attendance.resume(),
+    onSuccess: (d) => {
+      client.setQueryData(queryKeys.attendanceToday, d);
+      void client.invalidateQueries({ queryKey: ['field-work'] });
+    },
+    onError: (error) => (isDayStateError(error) ? void client.invalidateQueries({ queryKey: queryKeys.attendanceToday }) : undefined),
+  });
+  const resumeError = resume.error && !isDayStateError(resume.error) ? attendanceErrorText(resume.error, 'day.resumeFailed', t) : null;
+  return (
+    <View style={styles.gap}>
       <Banner
         tone="info"
         icon="clock"
         title={t('day.ended', { start: formatTimeIst(day.loginAt!), end: formatTimeIst(day.logoutAt!) })}
-        message={t('day.endedNote')}
+        message={day.canResume ? t('day.resumeNote') : t('day.endedNote')}
         testID={`${testID}-ended`}
       />
-    );
-  }
+      {day.canResume ? (
+        <Button
+          label={resume.isPending ? t('day.resuming') : t('day.resume')}
+          variant="success"
+          icon={<Icon name="check" color={colors.white} />}
+          loading={resume.isPending}
+          onPress={() => resume.mutate()}
+          testID={`${testID}-resume`}
+        />
+      ) : null}
+      {resumeError ? <Banner tone="error" message={resumeError} testID={`${testID}-resume-error`} /> : null}
+    </View>
+  );
+}
 
-  return <OpenDay day={day} testID={testID} />;
+/** Minutes the current lunch or short break has run, ticking every 30 seconds. */
+function useBreakMinutes(status: string | null, since: string | null | undefined): number {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const onBreak = status === 'lunch' || status === 'short_break';
+  useEffect(() => {
+    if (!onBreak) return;
+    const id = setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, [onBreak, since]);
+  if (!onBreak || !since) return 0;
+  return Math.max(0, Math.floor((nowMs - Date.parse(since)) / 60_000));
 }
 
 /** Logged in at …, on time or late, the status chip (tap to change) and Log out. */
 function OpenDay({ day, testID }: { day: AttendanceToday; testID: string }) {
   const { t } = useI18n();
   const { attendance } = useEndpoints();
+  const auth = useAuth();
   const client = useQueryClient();
   const [picking, setPicking] = useState(false);
   const [ending, setEnding] = useState(false);
@@ -140,10 +190,16 @@ function OpenDay({ day, testID }: { day: AttendanceToday; testID: string }) {
     onSuccess: (d) => {
       setEnding(false);
       after(d);
+      // Log out ends the working day and the sign-in with it (decided 21 Nov).
+      void auth.logout();
     },
     onError: (error) => (isDayStateError(error) ? (setEnding(false), reread()) : undefined),
   });
   const status = day.status;
+  // After the allowance: "Back from lunch?" — one tap and he is Available again (decided 21 Nov).
+  const breakMinutes = useBreakMinutes(status, day.statusSince);
+  const allowance = status === 'lunch' ? day.policy?.lunchMinutes : status === 'short_break' ? day.policy?.shortBreakMinutes : undefined;
+  const breakOver = allowance !== undefined && breakMinutes >= allowance;
   const changeError = change.error && !isDayStateError(change.error) ? attendanceErrorText(change.error, 'today.statusFailed', t) : null;
   const endError = end.error && !isDayStateError(end.error) ? attendanceErrorText(end.error, 'day.logoutFailed', t) : null;
   return (
@@ -167,6 +223,24 @@ function OpenDay({ day, testID }: { day: AttendanceToday; testID: string }) {
           <Icon name="chevron-right" size={14} color={colors.greenText} />
         </Pressable>
       </View>
+      {breakOver ? (
+        <View style={styles.gap} testID={`${testID}-back-prompt`}>
+          <Banner
+            tone="warn"
+            icon="clock"
+            title={status === 'lunch' ? t('day.backFromLunch') : t('day.backFromBreak')}
+            message={t('day.breakOver', { minutes: allowance! })}
+          />
+          <Button
+            label={t('day.imBack')}
+            variant="success"
+            icon={<Icon name="check" color={colors.white} />}
+            loading={change.isPending}
+            onPress={() => change.mutate('available')}
+            testID={`${testID}-back`}
+          />
+        </View>
+      ) : null}
       <Button label={t('day.logout')} variant="secondary" icon={<Icon name="clock" color={colors.tomato} />} onPress={() => setEnding(true)} testID={`${testID}-logout`} />
       {changeError || endError ? <Banner tone="error" message={(changeError ?? endError)!} testID={`${testID}-error`} /> : null}
 
