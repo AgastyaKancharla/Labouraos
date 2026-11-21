@@ -1,3 +1,5 @@
+import { onMockProgress } from '@/verify/mockSteps';
+import type { MockPersist } from './mockPersist';
 import { ApiError } from './errors';
 import { announceTestMode } from './testMode';
 import type { CustomerApi } from './customerApi';
@@ -81,19 +83,32 @@ function checkOtp(otp: OtpProof | { code: string }) {
   if (otp.code !== MOCK_OTP) throw fail(400, 'OTP_INVALID', 'Wrong code', { attemptsLeft: 4 });
 }
 
-export function mockCustomerApi({ latencyMs = 250 }: { latencyMs?: number } = {}): CustomerApi {
+export function mockCustomerApi({ latencyMs = 250, persist }: { latencyMs?: number; persist?: MockPersist } = {}): CustomerApi {
   const state: State = { account: null, pendingPhone: null, homes: {}, shifts: {}, workerReports: {}, leads: {}, seq: 0 };
+  // Pretend builds keep the pretend server on the phone (mockPersist.ts).
+  const ready: Promise<void> = persist
+    ? persist
+        .load()
+        .then((json) => {
+          if (json) Object.assign(state, JSON.parse(json) as State);
+        })
+        .catch(() => undefined)
+    : Promise.resolve();
+  const save = () => persist?.save(JSON.stringify(state));
   const wait = <T,>(value: T | (() => T)): Promise<T> =>
     new Promise((resolve, reject) => {
       const run = () => {
         try {
           resolve(typeof value === 'function' ? (value as () => T)() : value);
+          save();
         } catch (err) {
           reject(err);
         }
       };
-      if (latencyMs > 0) setTimeout(run, latencyMs);
-      else run();
+      void ready.then(() => {
+        if (latencyMs > 0) setTimeout(run, latencyMs);
+        else run();
+      });
     });
   const next = () => (state.seq += 1);
   const account = (): CustomerAccount => {
@@ -124,6 +139,43 @@ export function mockCustomerApi({ latencyMs = 250 }: { latencyMs?: number } = {}
     const p = account().profiles.find((x) => x.id === profileId);
     if (p) p.stage = stage;
   };
+
+  // A step finished on the pretend link endpoints: show it on Home, as the real server does.
+  onMockProgress((profileId, event) => {
+    void ready.then(() => {
+      const home = state.homes[profileId];
+      if (!home) return;
+      if (home.kind === 'job_seeker') {
+        if (event === 'consent') home.steps.consent = 'done';
+        if (event === 'selfie') home.steps.selfie = 'done';
+        if (event === 'id_check') home.steps.idCheck = 'done';
+        if (event === 'terms_accepted') {
+          home.steps.payment = 'in_progress';
+          home.payment.status = 'confirming';
+          setStage(profileId, 'payment');
+        }
+        if (event === 'paid') {
+          home.steps.payment = 'done';
+          home.payment.status = 'paid';
+          home.guarantee = { ...home.guarantee, status: 'running', day: 1, hits: 0, endsOn: new Date(Date.now() + 29 * 86_400_000).toISOString().slice(0, 10) };
+          setStage(profileId, 'active');
+        }
+      } else if (home.kind === 'referral_partner') {
+        if (event === 'terms') home.steps.terms = 'done';
+        if (event === 'selfie') home.steps.selfie = 'done';
+        if (event === 'id_check') home.steps.idCheck = 'done';
+        if (event === 'payout') {
+          home.steps.upi = 'done';
+          home.shareLink = `https://app.laboura.com/r/${home.code ?? 'RF'}`;
+          home.documents = [];
+          setStage(profileId, 'active');
+        }
+      } else if (event === 'agreement_signed') {
+        home.tracker = { ...home.tracker, agreement: 'signed', visit: 'booked', visitAt: new Date(Date.now() + 86_400_000).toISOString(), visitAgentFirstName: 'Kiran' };
+      }
+      save();
+    });
+  });
   const signedIn = (acc: CustomerAccount) => {
     state.account = acc;
     return { accessToken: `mock-token-${next()}`, refreshToken: `mock-refresh-${state.seq}`, account: snapshot() };
@@ -271,30 +323,11 @@ export function mockCustomerApi({ latencyMs = 250 }: { latencyMs?: number } = {}
         };
         return { profile: addProfile('referral_partner', form.name, home, code), existing: false };
       }),
-    sheetLink: (profileId, purpose) =>
+    // The steps themselves run on the pretend link endpoints (src/verify/mockSteps.ts), which report
+    // each finished step back here (onMockProgress below) — opening the steps changes nothing by itself.
+    sheetLink: (profileId) =>
       wait(() => {
-        const home = state.homes[profileId];
-        if (!home) throw fail(404, 'PROFILE_NOT_FOUND', 'Not found');
-        if (purpose === 'document') return { url: MOCK_SHEET_URL };
-        if (home.kind === 'job_seeker') {
-          if (home.steps.consent !== 'done') {
-            home.steps = { ...home.steps, consent: 'done', selfie: 'done', idCheck: 'done', payment: 'in_progress' };
-            home.payment.status = 'confirming';
-            setStage(profileId, 'payment');
-          } else if (home.payment.status !== 'paid' || home.guarantee.status === 'deactivated') {
-            home.steps.payment = 'done';
-            home.payment.status = 'paid';
-            home.guarantee = { ...home.guarantee, status: 'running', day: 1, hits: 0, endsOn: new Date(Date.now() + 29 * 86_400_000).toISOString().slice(0, 10) };
-            setStage(profileId, 'active');
-          }
-        } else if (home.kind === 'business') {
-          home.tracker = { ...home.tracker, agreement: 'signed', visit: 'booked', visitAt: new Date(Date.now() + 86_400_000).toISOString(), visitAgentFirstName: 'Kiran' };
-        } else {
-          home.steps = { terms: 'done', selfie: 'done', idCheck: 'done', upi: 'done' };
-          home.shareLink = `https://app.laboura.com/r/${home.code ?? 'RF'}`;
-          home.documents = [];
-          setStage(profileId, 'active');
-        }
+        if (!state.homes[profileId]) throw fail(404, 'PROFILE_NOT_FOUND', 'Not found');
         return { url: MOCK_SHEET_URL };
       }),
 

@@ -10,6 +10,7 @@ import { AppHeader, Banner, Button, ErrorState, LoadingState, Screen } from '@/c
 import { useI18n, type MessageKey } from '@/i18n';
 import { routes } from '@/navigation/routes';
 import { openSecureSheet } from '@/sheet/openSheet';
+import { mockLinkToken } from '@/verify/mockSteps';
 import { tokenFromLink } from '@/verify/stepsApi';
 import { AgreementSteps } from './AgreementSteps';
 import { JobSeekerSteps } from './JobSeekerSteps';
@@ -18,8 +19,6 @@ import { PartnerSteps } from './PartnerSteps';
 export type VerifyPurpose = Exclude<SheetPurpose, 'document'>;
 const PURPOSES: VerifyPurpose[] = ['registration', 'referral_registration', 'business_agreement'];
 const TITLE: Record<VerifyPurpose, MessageKey> = { registration: 'reg.title', referral_registration: 'rp.title', business_agreement: 'bizHome.signAgreement' };
-/** The pretend link in mock mode (EXPO_PUBLIC_API_MODE=mock) has no token; the pretend steps take any. */
-const MOCK_TOKEN = 'mock-link-token-0000000000';
 
 /**
  * The verification steps in the app's own screens (decided 21 Nov: native
@@ -64,7 +63,7 @@ export default function VerifyScreen() {
   );
 
   const url = link.data?.url ?? null;
-  const token = url ? (url === MOCK_SHEET_URL ? MOCK_TOKEN : tokenFromLink(url)) : null;
+  const token = url ? (url === MOCK_SHEET_URL ? mockLinkToken(profileId ?? '') : tokenFromLink(url)) : null;
 
   const openInBrowser = async () => {
     if (!url) return;

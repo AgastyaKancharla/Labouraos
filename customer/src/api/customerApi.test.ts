@@ -4,6 +4,8 @@ import { createApiClient } from './client';
 import { errorText } from './errorText';
 import { ApiError } from './errors';
 import { liveCustomerApi, refreshSession, toAccount, toBusinessHome, toJobSeekerHome, toReferralHome } from './live';
+import { waitFor } from '@testing-library/react-native';
+import { mockLinkToken, mockStepsApi } from '@/verify/mockSteps';
 import { MOCK_OTP, mockCustomerApi } from './mock';
 
 
@@ -249,11 +251,32 @@ describe('pretend data (EXPO_PUBLIC_API_MODE=mock)', () => {
     const step = await api.sendStepUp('register');
     const { profile } = await api.registerJobSeeker({ fullName: 'Ravi Kumar' } as never, { requestId: step.requestId, code: MOCK_OTP });
     expect(profile).toMatchObject({ kind: 'job_seeker', displayName: 'Ravi' });
+    // Opening the steps changes nothing; each step finished on the pretend link endpoints shows on Home.
     await api.sheetLink(profile.id, 'registration');
-    expect(await api.home(profile.id)).toMatchObject({ payment: { status: 'confirming' } });
-    await api.sheetLink(profile.id, 'registration');
-    expect(await api.home(profile.id)).toMatchObject({ payment: { status: 'paid' }, guarantee: { status: 'running', day: 1 }, interview: null });
-    expect(await api.deletionInfo()).toMatchObject({ guaranteeRunning: true });
+    expect(await api.home(profile.id)).toMatchObject({ steps: { consent: 'not_started' } });
+    const steps = mockStepsApi(0);
+    const token = mockLinkToken(profile.id);
+    const code = await steps.sendLinkOtp(token);
+    await steps.verifyRegistrationOtp(token, code.requestId, '123456');
+    await steps.submitConsent(token, code.requestId, ['job_matching']);
+    await steps.registrationSelfie(token, code.requestId, { uri: 'file:///s.jpg', name: 'selfie.jpg', type: 'image/jpeg' });
+    await steps.registrationAadhaarQr(token, code.requestId, 'qr');
+    await steps.acceptRegistrationTerms(token, code.requestId);
+    await waitFor(async () => expect(await api.home(profile.id)).toMatchObject({ steps: { consent: 'done', selfie: 'done', idCheck: 'done' }, payment: { status: 'confirming' } }));
+  });
+
+  it('remembers everything across closing and opening the app (pretend builds keep a file)', async () => {
+    let file: string | null = null;
+    const persist = { load: async () => file, save: (json: string) => void (file = json) };
+    const first = mockCustomerApi({ latencyMs: 0, persist });
+    const sent = await first.sendSignInOtp('9876543210');
+    await first.verifySignInOtp({ phone: '9876543210', requestId: sent.requestId, code: MOCK_OTP, contactConsent: true });
+    const step = await first.sendStepUp('register');
+    const { profile } = await first.registerJobSeeker({ fullName: 'Ravi Kumar' } as never, { requestId: step.requestId, code: MOCK_OTP });
+    // "Close and open the app": a new pretend server reading the same file.
+    const again = mockCustomerApi({ latencyMs: 0, persist });
+    expect((await again.me()).profiles).toEqual([expect.objectContaining({ id: profile.id, kind: 'job_seeker' })]);
+    expect(await again.home(profile.id)).toMatchObject({ kind: 'job_seeker' });
   });
 
   it('Google gives no phone; a number ending 0000 finds the agent-made record', async () => {

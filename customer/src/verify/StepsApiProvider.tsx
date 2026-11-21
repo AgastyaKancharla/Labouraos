@@ -1,11 +1,12 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import { apiBaseUrl, apiMode } from '@/api/config';
+import { fileMockPersist } from '@/api/mockPersist';
 import { mockStepsApi } from './mockSteps';
 import { liveStepsApi, type StepsApi } from './stepsApi';
 
 let defaultApi: StepsApi | null = null;
 function defaultStepsApi(): StepsApi {
-  defaultApi ??= apiMode() === 'mock' ? mockStepsApi() : liveStepsApi(apiBaseUrl());
+  defaultApi ??= apiMode() === 'mock' ? mockStepsApi(300, fileMockPersist('laboura-mock-steps.json')) : liveStepsApi(apiBaseUrl());
   return defaultApi;
 }
 

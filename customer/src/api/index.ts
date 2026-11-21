@@ -6,6 +6,7 @@ import { apiBaseUrl, apiMode } from './config';
 import type { CustomerApi } from './customerApi';
 import { CUSTOMER_API_PATH, liveCustomerApi, refreshSession } from './live';
 import { mockCustomerApi } from './mock';
+import { fileMockPersist } from './mockPersist';
 
 /** The app's one session store, HTTP client and customer API. */
 export const sessionStore = new SessionStore(secureStorage);
@@ -28,7 +29,7 @@ export const httpClient = createApiClient({
   },
 });
 
-export const defaultCustomerApi: CustomerApi = apiMode() === 'mock' ? mockCustomerApi() : liveCustomerApi(httpClient);
+export const defaultCustomerApi: CustomerApi = apiMode() === 'mock' ? mockCustomerApi({ persist: fileMockPersist('laboura-mock-server.json') }) : liveCustomerApi(httpClient);
 
 export { ApiError, isApiError } from './errors';
 export type { ApiClient, RequestOptions } from './client';
