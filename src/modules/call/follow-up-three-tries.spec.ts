@@ -8,13 +8,17 @@ import { CallFollowThroughService, FOLLOW_UP_UNANSWERED_LIMIT } from './call-fol
  * unanswered try raises a follow_up_unanswered flag, which the agent's Team
  * Lead owns (their bell), once.
  */
-describe('follow-up calls: retried next day, Team Lead told after 3 tries', () => {
+describe('follow-up calls: retried next day, stopped and Team Lead told after 3 tries', () => {
   function setup(unansweredSoFar: number) {
     const prisma = {
       followUpTask: {
         findUnique: jest.fn().mockResolvedValue({ id: 'task-1', code: 'FUT-00001', status: 'pending', kind: 'not_selected_day_7', subjectType: 'job_seeker', subjectId: 'js-1' }),
         update: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
+      // No wrong number / do not call on this person; no missed calls to close.
+      contactBlock: { findMany: jest.fn().mockResolvedValue([]) },
+      callbackTask: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
       callRecord: { count: jest.fn().mockResolvedValue(unansweredSoFar) },
       messageLog: { findFirst: jest.fn().mockResolvedValue({ id: 'sent-today' }) },
       jobSeeker: { findUnique: jest.fn().mockResolvedValue({ preferredCallWindowStart: '10:00', preferredCallWindowEnd: '18:00' }) },
@@ -62,6 +66,11 @@ describe('follow-up calls: retried next day, Team Lead told after 3 tries', () =
     expect(reviewFlags.raise).toHaveBeenCalledWith(
       expect.objectContaining({ kind: 'follow_up_unanswered', subjectId: 'js-1', raisedForStaffId: 'agent-1', details: expect.objectContaining({ followUpTaskId: 'task-1', unansweredCalls: 3 }) }),
     );
+    // 21 Nov fixes: the retries stop — the follow-up is closed as missed, not moved to another day.
+    const third = setup(FOLLOW_UP_UNANSWERED_LIMIT);
+    await third.service.onStatusChanged({ answered: false }, missed());
+    expect(third.prisma.followUpTask.update).not.toHaveBeenCalled();
+    expect(third.prisma.followUpTask.updateMany).toHaveBeenCalledWith({ where: { id: 'task-1', status: 'pending' }, data: { status: 'missed' } });
     const fourth = setup(FOLLOW_UP_UNANSWERED_LIMIT + 1);
     await fourth.service.onStatusChanged({ answered: false }, missed());
     expect(fourth.reviewFlags.raise).not.toHaveBeenCalled();

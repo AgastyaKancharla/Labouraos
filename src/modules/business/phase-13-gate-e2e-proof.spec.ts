@@ -218,6 +218,8 @@ describe('Phase 13 gate — complete verification and consent journeys', () => {
     const vacancyId = vacancyResponse.body.id as string;
     await confirmVacancyForTest(app, vacancyResponse.body);
     vacancyIds.push(vacancyId);
+    // 21 Nov review: verified by the old visits route (no live photo), it is not proven at the
+    // shop, so candidates stay hidden until the Team Lead's check.
     await request(server).get(`/vacancies/${vacancyId}/shortlist`)
       .set('Authorization', `Bearer ${visitingAgent.token}`)
       .expect(403);

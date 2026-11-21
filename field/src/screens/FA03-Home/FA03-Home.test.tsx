@@ -1,3 +1,4 @@
+import { Linking } from 'react-native';
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
@@ -111,6 +112,42 @@ describe('FA03 Today', () => {
     expect(router.push).toHaveBeenLastCalledWith('/businesses');
   });
 
+  it('21 Nov: a verification visit is a job card on Today (address, owner, phone, Call owner, Open in Maps, Verify)', async () => {
+    const job = {
+      assignmentId: 'va-1', purpose: 'business_signup', requestedFor: null,
+      business: { id: 'b-7', code: 'BZ-00007', name: 'Sri Sai Tiffins', address: '12, 9th Cross, JP Nagar', locality: 'JP Nagar', ownerName: 'Ramesh', contactName: null, phoneLast4: '4321', latitude: 12.91, longitude: 77.58 },
+      lastAttempt: { visitId: 'v-5', outcome: 'owner_not_there', at: '2026-11-15T06:00:00.000Z', revisitOn: '2026-11-16', revisitTime: '16:30' },
+      unfinishedVisitId: null,
+    };
+    const view = todayView();
+    view.needsYou = [
+      { id: 'verification_visit:va-1', kind: 'verification_visit', title: 'Sri Sai Tiffins', subtitle: '12, 9th Cross, JP Nagar', at: null, due: 'today', target: { type: 'verification', id: 'va-1', step: 'verify', businessId: 'b-7', assignmentId: 'va-1' }, job } as never,
+      ...view.needsYou,
+    ];
+    const { fetchImpl } = await renderWithApp(<HomeScreen />, {
+      signedInAs: kiran,
+      route: api(loggedIn, (url, init) =>
+        url.endsWith('/field-work/today') ? { status: 200, body: view } : url.endsWith('/calls') && init.method === 'POST' ? { status: 201, body: { callRecordId: 'c-1' } } : undefined,
+      ),
+    });
+    await waitFor(() => screen.getByTestId('needs-verification_visit:va-1'));
+    const card = screen.getByTestId('needs-verification_visit:va-1');
+    expect(card).toHaveTextContent(/Sri Sai Tiffins/);
+    expect(screen.getByTestId('job-address')).toHaveTextContent('12, 9th Cross, JP Nagar · JP Nagar');
+    expect(screen.getByTestId('job-owner')).toHaveTextContent('Owner: Ramesh');
+    expect(screen.getByTestId('job-phone')).toHaveTextContent('Phone ••4321');
+    expect(screen.getByTestId('job-last-try')).toHaveTextContent(/owner not there · Come back .*4:30 PM/);
+    const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
+    await fireEvent.press(screen.getByTestId('job-maps'));
+    expect(openURL).toHaveBeenLastCalledWith('https://www.google.com/maps/search/?api=1&query=12.91,77.58');
+    await fireEvent.press(screen.getByTestId('job-call-owner'));
+    await waitFor(() => screen.getByTestId('job-calling'));
+    const call = fetchImpl.mock.calls.find(([url, init]) => String(url).endsWith('/calls') && (init as RequestInit).method === 'POST');
+    expect(JSON.parse(String((call![1] as RequestInit).body))).toEqual({ subjectType: 'business', subjectId: 'b-7', purpose: 'verification' });
+    await fireEvent.press(screen.getByTestId('job-verify'));
+    expect(router.push).toHaveBeenLastCalledWith({ pathname: '/visit/verify', params: { businessId: 'b-7', assignmentId: 'va-1' } });
+  });
+
   it('Needs you now: one list of everything waiting, each opening the exact step of its job', async () => {
     await renderWithApp(<HomeScreen />, { signedInAs: kiran, route: api(loggedIn, (url) => (url.endsWith('/field-work/today') ? { status: 200, body: todayView() } : undefined)) });
     await waitFor(() => screen.getByTestId('needs-interview_today:iv-1'));
@@ -130,7 +167,8 @@ describe('FA03 Today', () => {
       ['vacancies_to_fill:b-4', '/businesses/b-4'],
       ['joining_due:pl-1', '/businesses/placement/pl-1/joining'],
       ['revisit_due:v-9', { pathname: '/visit/start', params: { revisitOf: 'v-9', name: 'Lakshmi Tiffins' } }],
-      ['followup_task:t-1', '/businesses/placement/pl-2'],
+      // 21 Nov (M4): a follow-up task opens its own screen (call, what they said, Done).
+      ['followup_task:t-1', '/follow-up/t-1'],
     ];
     for (const [id, href] of expected) {
       await fireEvent.press(screen.getByTestId(`needs-${id}`));

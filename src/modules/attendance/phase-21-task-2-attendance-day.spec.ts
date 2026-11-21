@@ -414,17 +414,19 @@ describe('Phase 21 Task 2: the working day', () => {
       data: { callId: `AT2-${stamp}`, phone: '+919800044455', status: 'pending' },
     });
     callbackIds.push(task.id);
-    const expected = await attendance.nextAvailableAgent(busy.id);
-    // The missed call is unassigned, so an agent may give it to a colleague
-    // (owner decision, 14 Nov); the busy colleague is skipped.
-    const assigned = await request(app.getHttpServer())
+    // 21 Nov fixes: an agent takes a missed call only for himself, never for a colleague
+    // (a Team Lead gives it out); his own pick sticks.
+    await request(app.getHttpServer())
       .post(`/telephony/callbacks/${task.id}/assign`)
       .set('Authorization', `Bearer ${tokenFor(free)}`)
       .send({ staffId: busy.id })
+      .expect(403);
+    const assigned = await request(app.getHttpServer())
+      .post(`/telephony/callbacks/${task.id}/assign`)
+      .set('Authorization', `Bearer ${tokenFor(free)}`)
+      .send({})
       .expect(201);
-    expect(expected).toBeTruthy();
-    expect(assigned.body.assignedToStaffId).toBe(expected);
-    expect(assigned.body.assignedToStaffId).not.toBe(busy.id);
+    expect(assigned.body.assignedToStaffId).toBe(free.id);
     // Once someone holds it, an agent who does not hold it cannot move it.
     await request(app.getHttpServer())
       .post(`/telephony/callbacks/${task.id}/assign`)

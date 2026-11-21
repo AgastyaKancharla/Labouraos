@@ -8,7 +8,8 @@ import { todayKeyIst } from '@/components/form';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import type { FieldVisits } from '@/api/endpoints';
-import { formatDayIst, formatTimeIst } from '@/lib/format';
+import { formatDayIst, formatShiftTime, formatTimeIst } from '@/lib/format';
+import { VerificationJobCard } from '../_visits/VerificationJobCard';
 import { pageRoutes, routes, sellingRoutesFor } from '@/navigation/routes';
 import { colors } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
@@ -70,6 +71,8 @@ export default function VisitsScreen() {
                 // An app sign-up's visit (business_signup) is its verification visit: the same steps.
                 const verify = p.purpose === 'verification' || p.purpose === 'business_signup';
                 const signup = p.purpose === 'business_signup';
+                // 21 Nov (M12): a verification visit is a job card with the address, owner, Call owner and Open in Maps.
+                if (verify && p.job) return <VerificationJobCard key={p.assignmentId} job={p.job} testID={`fa05-planned-${p.assignmentId}`} />;
                 return (
                   <ListRow
                     key={p.assignmentId}
@@ -115,7 +118,13 @@ export default function VisitsScreen() {
                   key={r.visitId}
                   title={r.name}
                   leading={<IconTile icon={r.when === 'overdue' ? 'alert' : 'clock'} accent={r.when === 'overdue' ? 'red' : 'gold'} size={34} />}
-                  subtitle={r.note ? t('fa05.ownerSaid', { note: r.note }) : r.locality ?? undefined}
+                  subtitle={
+                    [
+                      r.note ? t('fa05.ownerSaid', { note: r.note }) : r.locality,
+                      r.revisitTime ? t('fa05.comeBackAt', { time: formatShiftTime(r.revisitTime) }) : null,
+                      r.covering ? t('fa05.covering') : null,
+                    ].filter(Boolean).join(' · ') || undefined
+                  }
                   trailing={
                     <StatusChip
                       tone={r.when === 'overdue' ? 'tomato' : 'amber'}

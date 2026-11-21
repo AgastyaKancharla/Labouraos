@@ -17,7 +17,7 @@ import { ChipChoices } from '../_visits/ChoiceList';
 import { StepHeader } from '../_visits/StepHeader';
 import { formatTimer } from '../_visits/format';
 import { useVisit } from '../_visits/useVisit';
-import { updateDraft, type VisitDraft } from '../_visits/visitDraft';
+import { saveDraft, type VisitDraft } from '../_visits/visitDraft';
 
 const MOBILE = /^[6-9]\d{9}$/;
 
@@ -88,7 +88,8 @@ function Talk({ visit }: { visit: VisitDraft }) {
   }
 
   function keep(endedAt: string) {
-    updateDraft(visit.id, { shopName: shopName.trim(), spokeTo: spokeTo ?? '', contactPhone: mobile, endedAt });
+    // 21 Nov: written whole (from the server's copy after a reload), so the next step always has it.
+    saveDraft({ ...visit, shopName: shopName.trim(), spokeTo: spokeTo ?? '', contactPhone: mobile, endedAt });
   }
 
   async function onboardNow() {

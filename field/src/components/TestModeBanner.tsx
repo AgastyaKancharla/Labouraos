@@ -18,19 +18,25 @@ import { Text } from './Text';
  * while it shows. Wrap the app in it; the screens below then see no top
  * safe-area inset, because the strip already sits under the status bar.
  */
+/** Notices this close together (one tap that sends a code and a link) show side by side. */
+export const TEST_MODE_TOGETHER_MS = 10_000;
+
 export function TestModeBanner({ children }: { children?: ReactNode }) {
   const [notice, setNotice] = useState<TestModeNotice | null>(null);
   const insets = useSafeAreaInsets();
-  useEffect(
-    () =>
-      onTestModeBanner((next) =>
-        setNotice((prev) => ({
-          code: next.code ?? (next.links ? undefined : prev?.code),
-          links: next.links ?? (next.code ? undefined : prev?.links),
-        })),
-      ),
-    [],
-  );
+  useEffect(() => {
+    let lastAt = 0;
+    return onTestModeBanner((next) => {
+      // 21 Nov: one tap can send both (the verify screen's owner code and agreement link): what arrives
+      // within a few seconds of the last notice is shown together; an older one is replaced.
+      const together = Date.now() - lastAt < TEST_MODE_TOGETHER_MS;
+      lastAt = Date.now();
+      setNotice((prev) => ({
+        code: next.code ?? (next.links && !together ? undefined : prev?.code),
+        links: next.links ?? (next.code && !together ? undefined : prev?.links),
+      }));
+    });
+  }, []);
   const showing = !!notice && (!!notice.code || !!notice.links?.length);
   const below = useMemo(() => (showing ? { ...insets, top: 0 } : insets), [insets, showing]);
   const strip = showing ? <Strip notice={notice!} top={insets.top} onClose={() => setNotice(null)} /> : null;

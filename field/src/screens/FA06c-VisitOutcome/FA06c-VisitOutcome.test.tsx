@@ -47,11 +47,14 @@ describe('FA06c How did the visit go?', () => {
     await fireEvent.press(screen.getByTestId('fa06c-save'));
     expect(screen.getByTestId('fa06c-problem')).toHaveTextContent(/date to come back/);
     await fireEvent.press(screen.getByText('Tomorrow'));
+    // 21 Nov: an optional come-back time.
+    await fireEvent.press(screen.getByTestId('fa06c-time'));
+    await fireEvent.press(screen.getByTestId('fa06c-time-option-16:30'));
     await fireEvent.changeText(screen.getByTestId('fa06c-note'), 'Owner wants 2 cooks after Deepavali');
     await fireEvent.press(screen.getByTestId('fa06c-save'));
     await waitFor(() => expect(screen.getByTestId('fa06c-saved')).toHaveTextContent(/sent when the signal returns/));
     const json = queue.list()[0].request.json as Record<string, string>;
-    expect(json).toMatchObject({ outcome: 'interested_later', note: 'Owner wants 2 cooks after Deepavali' });
+    expect(json).toMatchObject({ outcome: 'interested_later', note: 'Owner wants 2 cooks after Deepavali', revisitTime: '16:30' });
     expect(json.revisitOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 

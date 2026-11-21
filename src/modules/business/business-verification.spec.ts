@@ -321,6 +321,10 @@ describe('Phase 13 Task 5 — verification visits and verified gate', () => {
       where: { subjectType: 'business', subjectId: businessId, kind: 'no_documents_check', status: 'open' },
     })).toBe(1);
 
+    // 21 Nov review: only a verification proven at the shop (Laboura Field: GPS inside the geofence,
+    // live photos, stored selfie) shows candidates before the Team Lead's check. This one came by the
+    // old visits route (no live photo), so candidates stay hidden until the Team Lead approves.
+    expect((await prisma.business.findUniqueOrThrow({ where: { id: businessId } })).fieldVerifiedAt).toBeNull();
     await request(app.getHttpServer())
       .get(`/vacancies/${vacancyId}/shortlist`)
       .set('Authorization', `Bearer ${nearestAgentToken}`)

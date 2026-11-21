@@ -496,6 +496,9 @@ model Business {
   /// OTP. Candidates and interviews are then allowed the same day, before the
   /// Team Lead's review (Master Guide, decided 9 Nov).
   inPersonOnboardedAt      DateTime?
+  /// 21 Nov: a field agent's verification visit was completed (owner OTP + signed agreement): candidates
+  /// can be shown straight away while it waits for the Team Lead's check, like in-person onboarding.
+  fieldVerifiedAt          DateTime?
   /// A Team Lead (or above) paused the business: no matching and no new
   /// interviews until it is unpaused.
   pausedAt                 DateTime?
@@ -1317,6 +1320,8 @@ model BusinessVisit {
   outcomeReason     String?
   /// Come back on this IST date (interested later, owner not there).
   revisitOn         DateTime? @db.Date
+  /// 21 Nov: the come-back time on revisitOn, "HH:mm" IST (optional).
+  revisitTime       String?
   note              String?
   outcomeRecordedAt DateTime?
   /// Second GPS check with the proof selfie, and its distance from the start.
@@ -1415,12 +1420,97 @@ model CallbackTask {
   assignedToStaff   Staff?      @relation(fields: [assignedToStaffId], references: [id], onDelete: SetNull)
   recordingUrl      String?
   recordingConsent  Boolean     @default(false)
+  /// 21 Nov fixes: when and why it went to the agent who holds it
+  /// (inbound_routed, own_agent, fewest_open, same_caller, taken, manual, handover, no_show).
+  assignedAt        DateTime?
+  assignmentReason  String?
+  /// The first call back to the caller (target: within 30 minutes of the missed call).
+  firstAttemptAt    DateTime?
+  completedAt       DateTime?
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 
   @@index([phone])
   @@index([status])
   @@index([createdAt])
+  @@index([assignedToStaffId, status])
+}
+
+/// 21 Nov fixes (leave and no-show): one open item of an absent agent moved to
+/// a teammate — call tasks, missed calls, the people they look after (stuck
+/// registrations, close to a refund) and app sign-ups. Follow-up tasks keep
+/// their own FollowUpHandover. After the leave, people and sign-ups still with
+/// the teammate go back (returnAfter); call tasks and missed calls due during
+/// the leave stay done by the teammate.
+model WorkHandover {
+  id              String    @id @default(uuid())
+  /// leave, no_show
+  reason          String
+  leaveRequestId  String?
+  /// call_task, callback_task, job_seeker, signup_tracker
+  recordType      String
+  recordId        String
+  fromStaffId     String
+  toStaffId       String
+  /// teammate, share (spread across the team by fewest open items)
+  mode            String
+  movedAt         DateTime
+  movedByStaffId  String?
+  /// When it goes back to the owner (end of the leave); null = it stays.
+  returnAfter     DateTime?
+  returnedAt      DateTime?
+  /// returned, done_by_teammate, already_moved, kept_owner_inactive
+  returnOutcome   String?
+  createdAt       DateTime  @default(now())
+
+  @@index([leaveRequestId])
+  @@index([fromStaffId, movedAt])
+  @@index([returnedAt, returnAfter])
+}
+
+/// 21 Nov fixes (leave): the Team Lead's choice at approval for where an
+/// agent's open work goes. Nothing moves at approval: the call-work sweep moves
+/// the work at the start of the first approved leave day (and anything new
+/// during the leave), and it comes back after. mode keep = nothing moves.
+model WorkHandoverPlan {
+  id              String    @id @default(uuid())
+  leaveRequestId  String    @unique
+  staffId         String
+  /// teammate, share, keep
+  mode            String
+  /// The teammate picked (mode teammate).
+  toStaffId       String?
+  decidedByStaffId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([staffId])
+}
+
+/// 21 Nov fixes (call results): a person marked "wrong number" or "do not call"
+/// on a call. Both stop automatic retries and messages; "do not call" also
+/// blocks calls. A wrong number lifts by itself when the number changes
+/// (phoneHash no longer matches). A Team Lead, Manager or the CEO can lift
+/// either, with a reason (audited). No personal data: the phone only as a hash.
+model ContactBlock {
+  id              String    @id @default(uuid())
+  subjectType     String    // job_seeker, business, referral
+  subjectId       String
+  /// wrong_number, do_not_call
+  kind            String
+  /// SHA-256 of the 10 national digits the block was recorded on.
+  phoneHash       String
+  callRecordId    String?
+  byStaffId       String?
+  /// "subjectType|subjectId|kind" while live, null once lifted: one live block per kind.
+  liveKey         String?   @unique
+  liftedAt        DateTime?
+  liftedByStaffId String?
+  liftReason      String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([subjectType, subjectId])
 }
 
 model StaffDevice {
@@ -3621,4 +3711,31 @@ model ReferralLead {
   @@index([referralId])
   @@index([status, assignedStaffId])
   @@index([phone])
+}
+
+/// 21 Nov (leave handover, Laboura Field): one piece of a field agent's open work moved to a
+/// teammate — a visit assignment, an interview to attend, a revisit or a joining to confirm.
+/// The original record keeps who did it; this row says who covers it now.
+model FieldHandover {
+  id               String    @id @default(uuid())
+  /// visit_assignment, interview, revisit, joining
+  kind             String
+  /// The VisitAssignment, Interview, BusinessVisit (the visit to come back to) or Placement id.
+  recordId         String
+  businessId       String?
+  fromStaffId      String
+  toStaffId        String
+  reason           String
+  leaveRequestId   String?
+  createdByStaffId String?
+  createdAt        DateTime  @default(now())
+  /// Set when a later handover moves the same piece again, the agent is back, or the piece is done.
+  endedAt          DateTime?
+  /// 21 Nov review: the cover ends at this instant (the start of the IST day after the leave's last day).
+  until            DateTime?
+
+  @@index([toStaffId, kind, endedAt])
+  @@index([fromStaffId, kind, endedAt])
+  @@index([kind, recordId])
+  @@index([businessId])
 }

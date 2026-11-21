@@ -36,6 +36,8 @@ export interface OutcomeBody {
   contactPhone?: string;
   reason?: string;
   revisitOn?: string;
+  /** 21 Nov: optional come-back time, "HH:mm" IST. */
+  revisitTime?: string;
   note?: string;
   endedAt?: string;
 }

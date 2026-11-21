@@ -103,6 +103,23 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
     proof: '/notifications/${mine!.id}/seen`)).status).toBe(404)',
   },
 
+  // ---------------------------------------------------------------- Laboura Field fixes (21 Nov)
+  'ScreensFieldController.updatePin': {
+    reason: 'Only the field agent the open verification visit is assigned to moves its pin; anyone else gets 404 (FieldWorkExtrasService.updatePin).',
+    test: 'modules/field-visit/field-fixes-21nov.e2e.spec.ts',
+    proof: "await http().post(path).set(authOf(fa2)).send({ ...SHOP, accuracy: 8, reason: 'Pin is on the next street' }).expect(404);",
+  },
+  'ScreensFieldController.followUp': {
+    reason: "Only the field agent the follow-up task is assigned to reads it; anyone else's is 404 (FieldWorkExtrasService.followUp).",
+    test: 'modules/field-visit/field-fixes-21nov.e2e.spec.ts',
+    proof: 'await http().get(`/field-work/follow-ups/${task.id}`).set(authOf(fa2)).expect(404);',
+  },
+  'FieldAssignmentsController.reassign': {
+    reason: "A Team Lead moves a visit only between his own field agents, a Manager inside his line; field agents are refused (FieldHandoverService.assertMayMove).",
+    test: 'modules/field-visit/field-fixes-21nov.e2e.spec.ts',
+    proof: "await http().post(path).set(authOf(leadB)).send({ assignedStaffId: fb1.id, reason: 'Closer to the shop' }).expect(403);",
+  },
+
   // ---------------------------------------------------------------- ID check (PR #135)
   'AadhaarQrController.view': {
     reason:

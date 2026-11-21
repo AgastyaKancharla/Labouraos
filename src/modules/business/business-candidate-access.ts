@@ -10,10 +10,16 @@
  *   `pending_tl_check` for the Team Lead's same-day review.
  * - The Team Lead can **pause** it if something is wrong; a paused business is
  *   shown no candidates and gets no new interviews until it is unpaused.
+ * - 21 Nov: a business a field agent **verified** at the shop (the verification
+ *   visit done with GPS, live photos and the owner's code, and the agreement
+ *   signed: `fieldVerifiedAt`) shows candidates straight away too, the same as
+ *   in-person onboarding, while it waits in `pending_tl_check`.
  */
 export interface BusinessCandidateAccessInput {
   verificationStatus: string | null;
   inPersonOnboardedAt?: Date | null;
+  /** 21 Nov: the field agent's verification visit and the signed agreement are done. */
+  fieldVerifiedAt?: Date | null;
   pausedAt?: Date | null;
   /** D6 (rev 176): suspended by the CEO until suspendedUntil, or for good when that is empty. */
   suspendedAt?: Date | null;
@@ -21,7 +27,7 @@ export interface BusinessCandidateAccessInput {
 }
 
 export type BusinessCandidateAccess =
-  | { allowed: true; basis: 'verified' | 'in_person_onboarding' }
+  | { allowed: true; basis: 'verified' | 'in_person_onboarding' | 'field_verified' }
   | { allowed: false; reason: 'paused' | 'not_verified' | 'suspended' };
 
 export const BUSINESS_PAUSED_MESSAGE =
@@ -50,6 +56,9 @@ export function businessCandidateAccess(business: BusinessCandidateAccessInput, 
   if (business.verificationStatus === 'verified') return { allowed: true, basis: 'verified' };
   if (business.verificationStatus === 'pending_tl_check' && business.inPersonOnboardedAt) {
     return { allowed: true, basis: 'in_person_onboarding' };
+  }
+  if (business.verificationStatus === 'pending_tl_check' && business.fieldVerifiedAt) {
+    return { allowed: true, basis: 'field_verified' };
   }
   return { allowed: false, reason: 'not_verified' };
 }

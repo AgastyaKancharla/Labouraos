@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -10,13 +10,14 @@ import { isApiError } from '@/api/errors';
 import { errorCode, visitPaths } from '@/api/endpoints';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useFormDraft } from '@/lib/formDraft';
+import { TimeField } from '@/components/form';
 import { pageRoutes, routes } from '@/navigation/routes';
 import { finishLater } from '@/navigation/useFlow';
 import { type Accent, colors } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { ChoiceList } from '../_visits/ChoiceList';
 import { DatePicker } from '../_visits/DatePicker';
-import { useDraft } from '../_visits/visitDraft';
+import { forgetDraft, useDraft } from '../_visits/visitDraft';
 
 /** The results picked here. Onboarded is never picked: saving the business form sets it. */
 export const PICKED_OUTCOMES = ['interested_later', 'not_interested', 'owner_not_there'] as const;
@@ -86,15 +87,21 @@ function OutcomeForm({ visit, initial }: {
   const [form, setForm, clearForm] = useFormDraft(`fa06c:${visit.id}`, () => ({
     outcome: (PICKED_OUTCOMES as readonly string[]).includes(initial ?? '') ? (initial as PickedOutcome) : (null as PickedOutcome | null),
     revisitOn: null as string | null,
+    revisitTime: '' as string,
     reason: null as string | null,
     note: '',
   }));
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
   const [problem, setProblem] = useState<string | null>(null);
   const [saved, setSaved] = useState<'sent' | 'queued' | null>(null);
+  const savedRef = useRef(false);
+  useEffect(() => () => {
+    if (savedRef.current) forgetDraft(visit.id);
+  }, [visit.id]);
   const [busy, setBusy] = useState(false);
   const [openedAt] = useState(() => Date.now());
   const { outcome, revisitOn, reason, note } = form;
+  const revisitTime = form.revisitTime ?? '';
   const needsDate = outcome === 'interested_later' || outcome === 'owner_not_there';
 
   async function save() {
@@ -113,12 +120,16 @@ function OutcomeForm({ visit, initial }: {
           ...(visit.spokeTo ? { spokeTo: visit.spokeTo } : {}),
           ...(visit.contactPhone ? { contactPhone: visit.contactPhone } : {}),
           ...(needsDate ? { revisitOn } : {}),
+          ...(needsDate && revisitTime ? { revisitTime } : {}),
           ...(outcome === 'not_interested' ? { reason } : {}),
           ...(note.trim() ? { note: note.trim() } : {}),
           ...(visit.endedAt ? { endedAt: visit.endedAt } : {}),
         },
       });
       clearForm();
+      // Sent or saved on the phone to send later (the queue keeps the request): the visit's draft
+      // is no longer needed — it leaves the phone when this screen closes.
+      savedRef.current = true;
       setSaved(result.status);
       void client.invalidateQueries({ queryKey: ['field-work'] });
       void client.invalidateQueries({ queryKey: ['field-visits'] });
@@ -158,6 +169,8 @@ function OutcomeForm({ visit, initial }: {
         {needsDate ? (
           <Card stripe accent="cyan">
             <DatePicker label={t('fa06c.comeBackOn')} value={revisitOn} onChange={(d) => set({ revisitOn: d })} now={openedAt} testID="fa06c-date" />
+            {/* 21 Nov: an optional come-back time (the owner said "come at 4"). */}
+            <TimeField label={t('fa06c.revisitTime')} value={revisitTime} onChange={(v) => set({ revisitTime: v })} from="07:00" to="21:00" step={30} testID="fa06c-time" />
           </Card>
         ) : null}
         {outcome === 'not_interested' ? (

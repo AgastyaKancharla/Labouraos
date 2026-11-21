@@ -1,5 +1,7 @@
 import { productLanguage } from '../../common/language/english-only';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
+import { SignupTrackerService } from '../signup-tracker/signup-tracker.service';
 import { grievanceContact } from '../legal/legal-documents';
 import { legalCompanyFrom } from '../legal/legal-document.service';
 import { HttpStatus } from '@nestjs/common';
@@ -23,7 +25,10 @@ export class CustomerAccountService {
     private readonly prisma: PrismaService,
     private readonly clock: CustomerAuthClock,
     private readonly scope: CustomerScopeService,
+    @Optional() private readonly moduleRef?: ModuleRef,
   ) {}
+
+  private readonly logger = new Logger(CustomerAccountService.name);
 
   /**
    * PATCH /me: display name, the contact-me tick. The app is English only
@@ -59,6 +64,15 @@ export class CustomerAccountService {
         : { contactMeConsent: false, contactMeConsentAt: now },
     });
     await this.prisma.signupTracker.updateMany({ where: { accountId, outcome: 'open' }, data: { contactConsent: value } });
+    // 21 Nov fixes: the sign-ups are planned again at once (a withdrawal cancels queued help calls,
+    // a late tick plans them). Looked up at run time so this module imports nothing new.
+    try {
+      const tracker = this.moduleRef?.get(SignupTrackerService, { strict: false });
+      if (tracker) await tracker.onContactConsentChanged(accountId);
+    } catch (err) {
+      // The tracker's 5-minute sweep picks it up anyway.
+      this.logger.warn(`Sign-up re-plan after the contact-me change failed: ${(err as Error).message}`);
+    }
   }
 
   /** PUT /me/last-profile: the profile Home opens next time (must be one of mine). */

@@ -58,7 +58,30 @@ export interface RequestDetail extends RequestView {
     handoverNeeded?: boolean;
     teammates: { id: string; code: string; name: string }[];
     handedOver: { count: number; returned: number; to: { id: string; code: string; name: string }[] };
+    /** 21 Nov fixes: everything else open that moves with the same choice. Older answers leave it out. */
+    openWork?: { callTasks: number; missedCalls: number; people: number; signups: number } | null;
   } | null;
+}
+
+/** Follow-ups plus every other open call item a leave hands over. */
+export function leaveWorkCount(fu: RequestDetail['followUps']): number {
+  if (!fu) return 0;
+  const w = fu.openWork;
+  return fu.planned + (w ? w.callTasks + w.missedCalls + w.people + w.signups : 0);
+}
+
+/** "3 follow-ups, 2 calls, 1 missed call, 4 people, 1 app sign-up". */
+export function leaveWorkLine(fu: RequestDetail['followUps']): string {
+  if (!fu) return '';
+  const w = fu.openWork;
+  const parts: Array<[number, string, string]> = [
+    [fu.planned, 'follow-up', 'follow-ups'],
+    [w?.callTasks ?? 0, 'call', 'calls'],
+    [w?.missedCalls ?? 0, 'missed call', 'missed calls'],
+    [w?.people ?? 0, 'person to chase', 'people to chase'],
+    [w?.signups ?? 0, 'app sign-up', 'app sign-ups'],
+  ];
+  return parts.filter(([n]) => n > 0).map(([n, one, many]) => `${n} ${n === 1 ? one : many}`).join(', ');
 }
 
 export interface PaceRow {

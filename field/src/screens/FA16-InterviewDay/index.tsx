@@ -25,6 +25,10 @@ import { ErrorBanner, KeyValue, Note, QueryView, StepRow, useParam, useNow, useS
  * a hit for him; show the owner the next matches on the spot). The owner
  * records the result himself by OTP by 8 PM. Needs signal (the time comes
  * from the server).
+ *
+ * 21 Nov: Arrived also while the offer is unanswered (turning up counts as
+ * accepting; the server records it), and a button to the owner's in-shop
+ * decision once he has arrived.
  */
 export default function InterviewDayScreen() {
   const { t } = useI18n();
@@ -71,7 +75,9 @@ function Day({ interview: i }: { interview: InterviewView }) {
   });
   const now = useNow();
   const over = now >= new Date(i.slotEndsAt).getTime();
-  const decided = i.status !== 'confirmed';
+  // 21 Nov: a candidate who turns up without replying to the offer can be marked Arrived (counts as accepting).
+  const offered = i.status === 'offered';
+  const decided = i.status !== 'confirmed' && !offered;
   const deadline = settings.data ? formatClock(settings.data.interviewResultDeadline) : '';
   return (
     <>
@@ -107,6 +113,7 @@ function Day({ interview: i }: { interview: InterviewView }) {
         <Banner tone="warn" message={t('fa16.noShowSaved', { name: i.candidate.firstName })} testID="no-show-saved" />
       ) : decided ? null : (
         <>
+          {offered ? <Banner tone="info" message={t('fa16.offeredHint')} testID="offered-hint" /> : null}
           <RadioGroup
             label={t('fa16.didCome', { name: i.candidate.firstName })}
             value={came}
@@ -114,7 +121,9 @@ function Day({ interview: i }: { interview: InterviewView }) {
             testID="came"
             options={[
               { value: 'arrived', label: t('fa16.arrived', { time: formatTimeIst(now) }) },
-              { value: 'no_show', label: t('fa16.didntCome', { time: formatTimeIst(i.slotEndsAt) }), tone: 'bad', hint: over ? undefined : t('fa16.waitTillEnd') },
+              ...(offered
+                ? []
+                : [{ value: 'no_show' as const, label: t('fa16.didntCome', { time: formatTimeIst(i.slotEndsAt) }), tone: 'bad' as const, hint: over ? undefined : t('fa16.waitTillEnd') }]),
             ]}
           />
           <Button label={t('fa16.save')} disabled={!came || (came === 'no_show' && !over)} loading={save.isPending} onPress={() => save.mutate()} testID="save" />
@@ -130,6 +139,10 @@ function Day({ interview: i }: { interview: InterviewView }) {
           last
         />
       </Card>
+      {/* 21 Nov: the owner's in-shop decision (selected / not selected, by his OTP) from this screen. */}
+      {i.candidateArrivedAt && !i.resultRecordedAt ? (
+        <Button label={t('fa16.ownerDecision')} onPress={() => router.push(sr.owner(i.id))} testID="owner-decision" />
+      ) : null}
       <Note>{t('fa16.noShowRule')}</Note>
       <Button label={t('fa16.showNext')} variant="secondary" onPress={() => router.push(sr.matches(i.business.id, i.vacancy.id))} testID="show-next" />
     </>
