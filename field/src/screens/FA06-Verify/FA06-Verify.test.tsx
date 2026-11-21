@@ -89,3 +89,64 @@ describe('FA06 Verification visit', () => {
     expect(screen.queryByText(/vendor said no/)).toBeNull();
   });
 });
+
+describe('FA06 fixes of 21 Nov', () => {
+  const job = {
+    assignmentId: 'a-1', purpose: 'business_signup', requestedFor: null,
+    business: { id: 'b-1', code: 'BZ-00310', name: 'Annapoorna Mess', address: '4th Main, BTM', locality: 'BTM', ownerName: 'Manjunath', contactName: null, phoneLast4: '4321', latitude: 12.915, longitude: 77.6389 },
+    lastAttempt: null, unfinishedVisitId: 'v-old',
+  };
+
+  it('shows the job card, resumes a started visit (photos not asked again) and moves a wrong pin with a reason', async () => {
+    searchParams.current = { businessId: 'b-1', assignmentId: 'a-1', visitId: 'v-old' };
+    const pins: unknown[] = [];
+    await renderWithApp(<VerifyScreen />, {
+      signedInAs: kiran,
+      route: (url, init) => {
+        if (url.endsWith('/field-work/businesses/b-1')) return { status: 200, body: { ...business, latitude: 12.915 } };
+        if (url.endsWith('/field-work/verification-visits')) return { status: 200, body: [job] };
+        if (url.endsWith('/field-visits/v-old')) return { status: 200, body: { id: 'v-old', hasBoardPhoto: true, hasSelfie: false } };
+        if (url.endsWith('/field-work/verification-visits/a-1/pin')) {
+          pins.push(JSON.parse(String(init.body)));
+          return { status: 201, body: { businessId: 'b-1', latitude: 12.9116, longitude: 77.6389, movedMeters: 378 } };
+        }
+        return undefined;
+      },
+    });
+    await waitFor(() => screen.getByTestId('fa06-job'));
+    expect(screen.getByTestId('job-owner')).toHaveTextContent('Owner: Manjunath');
+    // The shop photo of the started visit is done; the selfie is next.
+    await waitFor(() => expect(screen.getByTestId('fa06-board').props.accessibilityState.disabled).toBe(true));
+    expect(screen.getByTestId('fa06-selfie').props.accessibilityState.disabled).toBe(false);
+    // GPS far from the pin: Try again, and "Update the pin" with a reason.
+    await waitFor(() => screen.getByTestId('fa06-update-pin'));
+    await fireEvent.press(screen.getByTestId('fa06-update-pin'));
+    expect(screen.getByTestId('fa06-pin-save').props.accessibilityState.disabled).toBe(true);
+    await fireEvent.changeText(screen.getByTestId('fa06-pin-reason'), 'Pin was on the next street');
+    await fireEvent.press(screen.getByTestId('fa06-pin-save'));
+    await waitFor(() => screen.getByTestId('fa06-pin-moved'));
+    expect(screen.getByTestId('fa06-pin-moved')).toHaveTextContent('Pin moved here (378 m).');
+    expect(pins).toEqual([{ latitude: 12.9116, longitude: 77.6389, accuracy: 12, reason: 'Pin was on the next street' }]);
+  });
+
+  it('the agreement is one button and turns Signed live when the owner signs on his phone', async () => {
+    searchParams.current = { businessId: 'b-1', assignmentId: 'a-1' };
+    let signed = false;
+    await renderWithApp(<VerifyScreen />, {
+      signedInAs: kiran,
+      route: (url) => {
+        if (url.endsWith('/field-work/businesses/b-1')) return { status: 200, body: business };
+        if (url.endsWith('/field-work/verification-visits')) return { status: 200, body: [] };
+        if (url.endsWith('/agreement-links')) return { status: 201, body: { smsSent: true } };
+        if (url.endsWith('/field-work/businesses/b-1/agreement')) return { status: 200, body: { businessId: 'b-1', state: signed ? 'signed' : 'link_sent' } };
+        return undefined;
+      },
+    });
+    await waitFor(() => screen.getByTestId('fa06-agreement'));
+    await fireEvent.press(screen.getByTestId('fa06-agreement'));
+    await waitFor(() => screen.getByText('Link sent'));
+    expect(screen.queryByTestId('fa06-agreement')).toBeNull();
+    signed = true;
+    await waitFor(() => screen.getByText('Signed'), { timeout: 15000 });
+  }, 30000);
+});

@@ -31,3 +31,29 @@ describe('FA24 Me', () => {
     await waitFor(() => expect(store.get()).toBeNull());
   });
 });
+
+describe('FA24 Me: your calling phone (21 Nov, B2)', () => {
+  it('not set: says so and saves his own number (PUT /staff/:id/call-routing-phone)', async () => {
+    const sent: unknown[] = [];
+    let set = false;
+    await renderWithApp(<MeScreen />, {
+      signedInAs: kiran,
+      route: (url, init) => {
+        if (url.endsWith('/field-work/calling-phone')) return { status: 200, body: set ? { set: true, last4: '6789' } : { set: false, last4: null } };
+        if (url.endsWith('/staff/fa-1/call-routing-phone') && init.method === 'PUT') {
+          sent.push(JSON.parse(String(init.body)));
+          set = true;
+          return { status: 200, body: { set: true } };
+        }
+        return undefined;
+      },
+    });
+    await waitFor(() => expect(screen.getByTestId('me-calling-phone-state')).toHaveTextContent('Not set yet. Calls from the app need it.'));
+    expect(screen.getByTestId('me-calling-phone-save')).toBeDisabled();
+    await fireEvent.changeText(screen.getByTestId('me-calling-phone-input'), '98765 46789');
+    await fireEvent.press(screen.getByTestId('me-calling-phone-save'));
+    await waitFor(() => screen.getByTestId('me-calling-phone-saved'));
+    expect(sent).toEqual([{ phone: '9876546789' }]);
+    await waitFor(() => expect(screen.getByTestId('me-calling-phone-state')).toHaveTextContent('Set: ••6789'));
+  });
+});
