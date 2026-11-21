@@ -213,13 +213,15 @@ describe('Laboura Field fixes of 21 Nov (server)', () => {
     await http().post(`/businesses/${other.id}/visit-assignments/${visit.id}/assign`).set(authOf(leadA)).send({ assignedStaffId: fa1.id }).expect(403);
   });
 
-  it('B1: an app sign-up nobody was suggested for is listed for every Team Lead of its city, who can send one of theirs (on leave: assigned with a warning)', async () => {
+  it('B1: an app sign-up with no owner and no suggestion stays with Managers and the CEO; assigning to someone on leave warns', async () => {
     clock.at = START;
     const signup = await makeBusiness({ suffix: '03' });
     const visit = await prisma.visitAssignment.create({ data: { businessId: signup.id, purpose: 'business_signup', status: 'pending' } });
     const listed = await http().get('/businesses/visit-assignments').set(authOf(leadB)).expect(200);
-    expect(listed.body.map((r: { id: string }) => r.id)).toContain(visit.id);
-    const res = await http().post(`/businesses/${signup.id}/visit-assignments/${visit.id}/assign`).set(authOf(leadA)).send({ assignedStaffId: fa3.id }).expect(201);
+    expect(listed.body.map((r: { id: string }) => r.id)).not.toContain(visit.id);
+    await http().post(`/businesses/${signup.id}/visit-assignments/${visit.id}/assign`).set(authOf(leadA)).send({ assignedStaffId: fa3.id }).expect(403);
+    const suggested = await prisma.visitAssignment.create({ data: { businessId: signup.id, purpose: 'business_signup', status: 'pending', suggestedStaffId: fa2.id } });
+    const res = await http().post(`/businesses/${signup.id}/visit-assignments/${suggested.id}/assign`).set(authOf(leadA)).send({ assignedStaffId: fa3.id }).expect(201);
     expect(res.body.assignedStaffOnLeave).toBe(true);
   });
 
