@@ -83,8 +83,9 @@ function pair(value: string | null): [number, number] | null {
   return validPin(lat, lng) ? [lat, lng] : null;
 }
 
-function placeNameOf(url: URL): string | null {
-  const m = url.pathname.match(/\/maps\/place\/([^/]+)/);
+/** The place's name in a link (/maps/place/<name>, /maps/search/<name>, q= / query=), or null. */
+export function placeNameOf(url: URL): string | null {
+  const m = url.pathname.match(/\/maps\/(?:place|search)\/([^/@]+)/);
   const fromPath = m ? m[1] : null;
   const q = url.searchParams.get('q') ?? url.searchParams.get('query');
   const raw = fromPath ?? (q && !pair(q) ? q : null);
@@ -179,4 +180,47 @@ export function addressFromNominatim(body: unknown): ReverseAddress | null {
     pincode: postcode && /^\d{6}$/.test(postcode) ? postcode : null,
     displayName: typeof b.display_name === 'string' ? b.display_name.slice(0, 300) : null,
   };
+}
+
+/**
+ * Coordinates typed or pasted on their own ("12.9166, 77.6101", "12.9166 77.6101",
+ * "(12.9166,77.6101)"): both numbers need a decimal point, so a house number and a
+ * pincode are never read as a pin.
+ */
+export function parseCoordinates(text: string): { latitude: number; longitude: number } | null {
+  const m = (text ?? '').trim().match(/^\(?\s*(-?\d{1,2}\.\d+)\s*°?\s*[NS]?\s*[,\s]\s*(-?\d{1,3}\.\d+)\s*°?\s*[EW]?\s*\)?$/i);
+  if (!m) return null;
+  const latitude = Number(m[1]);
+  const longitude = Number(m[2]);
+  return validPin(latitude, longitude) ? { latitude, longitude } : null;
+}
+
+/** Does the text look like a web address (with or without https://)? */
+export function looksLikeLink(text: string): boolean {
+  return /https?:\/\//i.test(text) || /(^|\s)(www\.)?(maps\.app\.goo\.gl|goo\.gl\/maps|(maps\.)?google\.(com|co\.in))\//i.test(text);
+}
+
+/** A pasted link without its scheme gets https:// so it can be read ("maps.app.goo.gl/abc"). */
+export function withScheme(text: string): string {
+  if (/https?:\/\//i.test(text)) return text;
+  return text.replace(/(^|\s)((?:www\.)?(?:maps\.app\.goo\.gl|goo\.gl\/maps|(?:maps\.)?google\.(?:com|co\.in))\/)/i, '$1https://$2');
+}
+
+/** India's box (Nominatim's countrycodes=in already limits the search; this double-checks the answer). */
+export function insideIndia(latitude: number, longitude: number): boolean {
+  return latitude >= 6 && latitude <= 37.5 && longitude >= 68 && longitude <= 97.5;
+}
+
+/** The first usable place in a Nominatim /search answer, with its address. */
+export function placeFromNominatimSearch(body: unknown): { latitude: number; longitude: number; address: ReverseAddress | null } | null {
+  if (!Array.isArray(body)) return null;
+  for (const row of body) {
+    if (!row || typeof row !== 'object') continue;
+    const r = row as { lat?: unknown; lon?: unknown };
+    const latitude = Number(r.lat);
+    const longitude = Number(r.lon);
+    if (!validPin(latitude, longitude) || !insideIndia(latitude, longitude)) continue;
+    return { latitude, longitude, address: addressFromNominatim(row) };
+  }
+  return null;
 }

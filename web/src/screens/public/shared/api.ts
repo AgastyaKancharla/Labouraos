@@ -246,6 +246,10 @@ export interface PaymentPage {
   upiReference: string;
   upiUri: string;
   qrSvg: string;
+  /** 21 Nov (rev 204): card / netbanking only when a bank API offers them (empty today). */
+  extraMethods?: { kind: 'card' | 'netbanking'; label: string; startUrl: string }[];
+  /** The bank confirms payments automatically (a bank API is connected; false today). */
+  confirmsAutomatically?: boolean;
 }
 
 export interface PaymentSummary {

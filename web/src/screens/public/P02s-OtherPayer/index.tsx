@@ -5,6 +5,7 @@ import { useI18n } from '../../../i18n/I18nProvider';
 import { useNow } from '../../../lib/useNow';
 import { paymentOnlyApi, type PaymentOnlyDetails } from '../shared/api';
 import { rupees } from '../shared/format';
+import { UpiAppButtons } from '../shared/UpiApps';
 import { ActionError, LinkProblem, Loading, Muted, OtpBlock, PageTitle, PaidConfirming, UpiQr, Warn } from '../shared/ui';
 
 /**
@@ -93,9 +94,7 @@ export default function OtherPayer() {
         {t('pub.other.timeLeft', { time: timeLeft })}
       </span>
       <UpiQr svg={details.payment.qrSvg} payeeName={details.payment.payeeName} reference={details.payment.upiReference} />
-      <a className="btn bp full" href={details.payment.upiUri} onClick={() => setTapped(true)}>
-        {t('pub.pay.payUpi')}
-      </a>
+      <UpiAppButtons upiUri={details.payment.upiUri} extraMethods={details.payment.extraMethods} onTap={() => setTapped(true)} />
       {tapped && <PaidConfirming />}
       <Muted>{t('pub.other.privacy')}</Muted>
     </>

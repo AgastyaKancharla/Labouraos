@@ -1,5 +1,6 @@
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { afterEach } from 'vitest';
 import { mockApi, renderScreen } from '../../../test/utils';
 import { QR_SVG } from '../shared/testData';
 import OtherPayer from './index';
@@ -8,14 +9,21 @@ const now = new Date('2026-11-11T06:00:00Z');
 const expiresAt = '2026-11-11T06:14:52Z';
 const render = () => renderScreen(<OtherPayer />, { portal: 'public', path: '/p/pay/ptok', route: '/p/pay/:token', now });
 
+const realUa = navigator.userAgent;
+const setUa = (ua: string) => Object.defineProperty(window.navigator, 'userAgent', { value: ua, configurable: true });
+
 describe('P02s-OtherPayer', () => {
+  afterEach(() => setUa(realUa));
+
   it('works from the SMS: code to the payer, then only first name, ID, amount and the QR', async () => {
+    // 21 Nov: on an iPhone the app buttons use each app's own scheme where it is reliable.
+    setUa('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1');
     const api = mockApi({
       'GET /registration/payment/ptok/info': { maskedPhone: '******0000', language: null, expiresAt },
       'POST /registration/payment/ptok/send-otp': { requestId: 'preq', phone: '******0000' },
       'POST /registration/payment/ptok/verify-otp': {
         firstName: 'Kavya', displayName: 'Kavya R.', jobSeekerCode: 'JS-1042', amountPaise: 49900, linkExpiresAt: expiresAt, language: null,
-        payment: { amountPaise: 49900, payeeName: 'LABOURA PRIVATE LIMITED', upiReference: 'PAY-1042-K7Q2', upiUri: 'upi://pay?am=499.00', qrSvg: QR_SVG },
+        payment: { amountPaise: 49900, payeeName: 'LABOURA PRIVATE LIMITED', upiReference: 'PAY-1042-K7Q2', upiUri: 'upi://pay?pa=laboura%40icici&pn=Laboura&am=499.00&tr=PAY-1042-K7Q2&cu=INR', qrSvg: QR_SVG },
       },
     });
     render();
@@ -29,7 +37,10 @@ describe('P02s-OtherPayer', () => {
     expect(await screen.findByRole('heading', { name: 'Pay ₹499 for Kavya R.' })).toBeInTheDocument();
     expect(screen.getByText('Laboura registration · JS-1042 · sent by Kavya')).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'UPI QR code' })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('link', { name: 'Pay with a UPI app' }));
+    expect(screen.getByRole('link', { name: 'PhonePe' })).toHaveAttribute('href', 'phonepe://pay?pa=laboura%40icici&pn=Laboura&am=499.00&tr=PAY-1042-K7Q2&cu=INR');
+    expect(screen.getByRole('link', { name: 'Google Pay' })).toHaveAttribute('href', 'tez://upi/pay?pa=laboura%40icici&pn=Laboura&am=499.00&tr=PAY-1042-K7Q2&cu=INR');
+    expect(screen.getByRole('link', { name: 'BHIM' })).toHaveAttribute('href', 'upi://pay?pa=laboura%40icici&pn=Laboura&am=499.00&tr=PAY-1042-K7Q2&cu=INR');
+    await userEvent.click(screen.getByRole('link', { name: 'Paytm' }));
     expect(screen.getByText('Paid — confirming.')).toBeInTheDocument();
     expect(screen.getByText(/shows only her first name and ID/)).toBeInTheDocument();
   });

@@ -1,3 +1,4 @@
+import { BANK_COLLECTION_PROVIDER, NoBankApiProvider } from './bank-collection-provider';
 import { Module } from '@nestjs/common';
 import { PaymentController } from './payment.controller';
 import { PaymentService } from './payment.service';
@@ -52,9 +53,14 @@ import { CustomerNotificationModule } from '../customer-notification/customer-no
       provide: BANK_FEED_PROVIDER,
       useClass: MockBankFeedProvider,
     },
+    // 21 Nov (rev 204): the seam for a future HDFC/ICICI bank API; no bank integration yet.
+    {
+      provide: BANK_COLLECTION_PROVIDER,
+      useClass: NoBankApiProvider,
+    },
     PaymentService,
     UpiCollectionService,
   ],
-  exports: [PaymentService, PAYMENT_PROVIDER, BANK_FEED_PROVIDER, UpiCollectionService],
+  exports: [PaymentService, PAYMENT_PROVIDER, BANK_FEED_PROVIDER, BANK_COLLECTION_PROVIDER, UpiCollectionService],
 })
 export class PaymentModule {}

@@ -1701,3 +1701,133 @@ img.lb-staffphoto {
   .lb-split-stack dt { font-size: 11px; color: var(--text-faint); }
   .lb-split-stack dd { margin: 2px 0 0; font-weight: 600; font-size: 13.5px; }
 }
+
+/* ---------- date of birth typed (21 Nov): DD-MM-YYYY + calendar button ---------- */
+.lb-dob {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.lb-dob > input {
+  flex: 1;
+  min-width: 0;
+  letter-spacing: 0.04em;
+}
+.lb-dob__calendar {
+  flex: 0 0 auto;
+  min-width: 44px;
+  padding: 0 10px;
+}
+.lb-dob__picker {
+  margin-top: 6px;
+}
+
+/* ---------- map pin preview (21 Nov): "Is this the right place?" ---------- */
+.lb-pinmap {
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid var(--line, #d9dfeb);
+  background: #e8eef3;
+}
+.lb-pinmap__centre {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+}
+.lb-pinmap__centre img {
+  position: absolute;
+  max-width: none;
+  user-select: none;
+  pointer-events: none;
+}
+.lb-pinmap__pin {
+  position: absolute;
+  left: -14px;
+  top: -30px;
+  font-size: 28px;
+  line-height: 1;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35));
+}
+.lb-pinmap__credit {
+  position: absolute;
+  right: 4px;
+  bottom: 2px;
+  font-size: 10px;
+  background: rgba(255, 255, 255, 0.8);
+  padding: 0 4px;
+  border-radius: 4px;
+}
+.lb-pin-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* ---------- "Or pay with" UPI app buttons (21 Nov) ---------- */
+.lb-upi-apps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lb-upi-apps__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.lb-upi-app {
+  text-align: center;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.lb-upi-app--other {
+  grid-column: 1 / -1;
+}
+
+/* ---------- unfinished registrations banner (21 Nov) ---------- */
+.lb-drafts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.lb-drafts__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.lb-drafts__actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ---------- "Where they're stuck" (21 Nov) ---------- */
+.lb-stuck {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.lb-stuck__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.lb-stuck__other {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 420px;
+}
+.lb-stuck__pair {
+  display: inline-flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}

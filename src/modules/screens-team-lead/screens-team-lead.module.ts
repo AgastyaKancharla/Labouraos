@@ -45,5 +45,7 @@ import { TeamLeadTargetsService } from './team-lead-targets.service';
       },
     },
   ],
+  // "Where they're stuck" (21 Nov, rev 204) applies the Team Lead's record scope.
+  exports: [TeamLeadRecordsService],
 })
 export class ScreensTeamLeadModule {}

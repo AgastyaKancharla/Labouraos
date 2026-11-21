@@ -13,6 +13,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { OtpService } from '../../common/otp/otp.service';
+import { clearDraftAfterSubmit, consumeDraftPhoneCheck, draftPhoneCheckHolds } from '../registration-draft/registration-draft.service';
 import { CreateReferralDto } from './dto/create-referral.dto';
 import { assertNoRawAadhaar, HEARD_FROM_VALUES } from '../job-seeker/job-seeker.validator';
 import { EditPolicyService, EditActor, pickEditableFields } from '../../common/edit-policy/edit-policy.service';
@@ -228,7 +229,9 @@ export class ReferralService {
       throw new BadRequestException('otpRequestId is required: mobile number must pass OTP verification');
     }
 
-    const isVerified = await this.otpService.isVerified(dto.otpRequestId, phone);
+    // 21 Nov (rev 204): a resumed call-agent draft whose mobile was checked by OTP keeps that check.
+    const viaDraft = !options.selfRegisteredByAccountId && await draftPhoneCheckHolds(this.prisma, actorId, dto.otpRequestId, 'referral', phone);
+    const isVerified = viaDraft || (await this.otpService.isVerified(dto.otpRequestId, phone));
     if (!isVerified) {
       throw new BadRequestException('Mobile number must pass OTP verification before registration');
     }
@@ -251,7 +254,9 @@ export class ReferralService {
 
     // D11 (rev 176): a permanently banned phone cannot register again.
     await assertNotBanned(this.prisma, { phone });
-    const otpConsumed = await this.otpService.consumeVerified(dto.otpRequestId, phone);
+    const otpConsumed = viaDraft
+      ? await consumeDraftPhoneCheck(this.prisma, actorId, 'referral', phone)
+      : await this.otpService.consumeVerified(dto.otpRequestId, phone);
     if (!otpConsumed) {
       throw new BadRequestException('This verified OTP request has already been used or expired');
     }
@@ -296,6 +301,8 @@ export class ReferralService {
       ],
       city: referral.city,
     });
+    // 21 Nov (rev 204): the agent's unfinished partner form is done.
+    if (!options.selfRegisteredByAccountId) await clearDraftAfterSubmit(this.prisma, actorId, 'referral');
 
     return referral;
   }

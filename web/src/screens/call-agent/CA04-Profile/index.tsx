@@ -12,6 +12,7 @@ import { useScreenPath } from '../../../portals/PortalContext';
 import { useJobs, useProfile, type BusinessProfile, type Profile, type ReferralProfile, type SeekerProfile, type WorkItem } from '../_lib/api';
 import { clock12, followUpKindLabel, whyText } from '../_lib/format';
 import { SignupHelpBox } from '../_lib/SignupHelpBox';
+import { StuckBox } from '../../shared/StuckBox';
 import { BestJobs, Glance, History, ProfileHeader } from '../_lib/ProfileParts';
 import { useCallActions } from '../_lib/useCallActions';
 import { WorkListAside } from '../_lib/WorkListAside';
@@ -86,6 +87,7 @@ function ProfileBody({ profile, followUpView }: { profile: Profile; followUpView
           <div key={kind} className="warn" role="status">{t(`ca.block.${kind}`)}</div>
         ))}
         <SignupHelpBox item={profile.onList} />
+        <StuckBox kind={profile.type} id={profile.id} />
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <Button variant="primary" onClick={placeCall} loading={placing} disabled={Boolean(blocked)}>
             ☎ {t('ca.profile.call', { name: first })}

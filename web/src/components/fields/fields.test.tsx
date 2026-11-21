@@ -65,10 +65,68 @@ describe('MoneyField', () => {
 describe('DateField', () => {
   it('blocks dates of birth under 18', () => {
     renderScreen(<DateField label="Date of birth" mode="dob" value="2010-01-01" onChange={() => {}} />, { now: new Date('2026-11-11T06:00:00Z') });
-    const input = screen.getByLabelText('Date of birth');
-    expect(input).toHaveAttribute('type', 'date');
-    expect(input).toHaveAttribute('max', '2008-11-11');
+    const input = screen.getByLabelText(/^Date of birth/);
+    expect(input).toHaveAttribute('type', 'text');
+    expect(input).toHaveValue('01-01-2010');
     expect(screen.getByRole('alert')).toHaveTextContent('Must be 18 or older.');
+  });
+
+  it('types the date of birth as numbers and adds the dashes (21 Nov)', async () => {
+    const onChange = vi.fn();
+    renderScreen(
+      <Controlled initial="" render={(v, set) => <DateField label="Date of birth" mode="dob" value={v} onChange={(d) => { set(d); onChange(d); }} />} />,
+      { now: new Date('2026-11-11T06:00:00Z') },
+    );
+    const input = screen.getByLabelText(/^Date of birth/);
+    expect(input).toHaveAttribute('inputmode', 'numeric');
+    await userEvent.type(input, '2209');
+    expect(input).toHaveValue('22-09');
+    expect(onChange).not.toHaveBeenCalledWith(expect.stringMatching(/\d/));
+    await userEvent.type(input, '2006');
+    expect(input).toHaveValue('22-09-2006');
+    // Stored exactly as before: the ISO day.
+    expect(onChange).toHaveBeenLastCalledWith('2006-09-22');
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('refuses a day that does not exist and a date in the future', async () => {
+    const onChange = vi.fn();
+    renderScreen(
+      <Controlled initial="" render={(v, set) => <DateField label="Date of birth" mode="dob" value={v} onChange={(d) => { set(d); onChange(d); }} />} />,
+      { now: new Date('2026-11-11T06:00:00Z') },
+    );
+    const input = screen.getByLabelText(/^Date of birth/);
+    await userEvent.type(input, '31022000');
+    expect(input).toHaveValue('31-02-2000');
+    expect(screen.getByRole('alert')).toHaveTextContent('not a real date');
+    expect(onChange).not.toHaveBeenCalledWith('2000-02-31');
+    await userEvent.clear(input);
+    await userEvent.type(input, '01012030');
+    expect(screen.getByRole('alert')).toHaveTextContent('can’t be in the future');
+  });
+
+  it('still refuses under 18 when typed, with the same message', async () => {
+    renderScreen(
+      <Controlled initial="" render={(v, set) => <DateField label="Date of birth" mode="dob" value={v} onChange={set} />} />,
+      { now: new Date('2026-11-11T06:00:00Z') },
+    );
+    await userEvent.type(screen.getByLabelText(/^Date of birth/), '12112008');
+    expect(screen.getByRole('alert')).toHaveTextContent('Must be 18 or older.');
+  });
+
+  it('keeps the calendar beside it as an option, limited to 18 years ago', async () => {
+    const onChange = vi.fn();
+    renderScreen(
+      <Controlled initial="" render={(v, set) => <DateField label="Date of birth" mode="dob" value={v} onChange={(d) => { set(d); onChange(d); }} />} />,
+      { now: new Date('2026-11-11T06:00:00Z') },
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Pick the date of birth from a calendar' }));
+    const picker = screen.getByLabelText('Date of birth (calendar)');
+    expect(picker).toHaveAttribute('type', 'date');
+    expect(picker).toHaveAttribute('max', '2008-11-11');
+    fireEvent.change(picker, { target: { value: '1999-05-04' } });
+    expect(onChange).toHaveBeenLastCalledWith('1999-05-04');
+    expect(screen.getByLabelText(/^Date of birth/)).toHaveValue('04-05-1999');
   });
 });
 

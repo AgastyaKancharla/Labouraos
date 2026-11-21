@@ -1,5 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { PinMap } from '../../../components/PinMap';
+import { api } from '../../../lib/api/client';
+import { isApiError } from '../../../lib/api/errors';
 import { Button, ButtonLink } from '../../../components/Button';
 import { Modal } from '../../../components/Modal';
 import { Skeleton } from '../../../components/Skeleton';
@@ -235,6 +238,9 @@ export function PlaceFields({
   const [pinOpen, setPinOpen] = useState(false);
   const [pinText, setPinText] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
+  // 21 Nov (rev 204): what the typed address, Google Maps link or coordinates point at, to confirm on the map.
+  const [found, setFound] = useState<LocatedPin | null>(null);
+  const [finding, setFinding] = useState(false);
   // The area name the pin filled in, so a later pin can replace it (never one the agent picked).
   const [autoArea, setAutoArea] = useState<string | null>(null);
   const areas = options.data?.areas ?? [];
@@ -250,13 +256,38 @@ export function PlaceFields({
       : noneNear && !value.area
         ? t('reg.area.noneNear', { distance: distanceText(maxMeters) })
         : undefined;
-  const placePin = (pin: { latitude: number; longitude: number }) => {
-    if (!areaFromPin) return onChange({ ...value, ...pin });
-    const found = nearestArea(areas, pin, maxMeters);
+  const placePin = (pin: { latitude: number; longitude: number }, lookedUpPincode?: string | null) => {
+    // The lookup's PIN code fills an empty one only; a PIN code already typed stays.
+    const base = lookedUpPincode && !value.pincode ? { ...value, pincode: lookedUpPincode } : value;
+    if (!areaFromPin) return onChange({ ...base, ...pin });
+    const near = nearestArea(areas, pin, maxMeters);
     const picked = value.area && value.area !== autoArea;
-    if (picked) return onChange({ ...value, ...pin });
-    setAutoArea(found?.name ?? null);
-    onChange({ ...value, ...pin, area: found?.name ?? '', pincode: value.pincode || found?.pincode || '' });
+    if (picked) return onChange({ ...base, ...pin });
+    setAutoArea(near?.name ?? null);
+    onChange({ ...base, ...pin, area: near?.name ?? '', pincode: base.pincode || near?.pincode || '' });
+  };
+  const findPin = async () => {
+    const text = pinText.trim();
+    setPinError(null);
+    setFound(null);
+    if (!text) {
+      setPinError(t('reg.pin.empty'));
+      return;
+    }
+    setFinding(true);
+    try {
+      setFound(await locatePin(text));
+    } catch (e) {
+      // Offline or the lookup is down: plain coordinates still work, as before.
+      const local = parseLatLng(text);
+      if (local && (!isApiError(e) || e.isNetworkError || e.status >= 500 || e.status === 429)) {
+        setFound({ ...local, source: 'coordinates', placeName: null, matched: null, address: null, shortLink: false });
+      } else {
+        setPinError(isApiError(e) && !e.isNetworkError ? e.message : t('reg.pin.invalid'));
+      }
+    } finally {
+      setFinding(false);
+    }
   };
   return (
     <>
@@ -297,6 +328,7 @@ export function PlaceFields({
           onClick={() => {
             setPinText(hasPin ? `${value.latitude}, ${value.longitude}` : '');
             setPinError(null);
+            setFound(null);
             setPinOpen(true);
           }}
         >
@@ -313,31 +345,89 @@ export function PlaceFields({
         open={pinOpen}
         onClose={() => setPinOpen(false)}
         title={t('reg.pin.title')}
+        width={560}
         footer={
           <>
             <Button onClick={() => setPinOpen(false)}>{t('common.cancel')}</Button>
-            <Button
-              variant="primary"
-              onClick={() => {
-                const parsed = parseLatLng(pinText);
-                if (!parsed) {
-                  setPinError(t('reg.pin.invalid'));
-                  return;
-                }
-                placePin(parsed);
-                setPinOpen(false);
-              }}
-            >
-              {t('reg.pin.use')}
-            </Button>
+            {found ? (
+              <>
+                <Button onClick={() => setFound(null)}>{t('reg.pin.searchAgain')}</Button>
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    placePin({ latitude: found.latitude, longitude: found.longitude }, found.address?.pincode ?? null);
+                    setPinOpen(false);
+                  }}
+                >
+                  {t('reg.pin.useThis')}
+                </Button>
+              </>
+            ) : (
+              <Button variant="primary" onClick={() => void findPin()} loading={finding}>
+                {t('reg.pin.find')}
+              </Button>
+            )}
           </>
         }
       >
-        <p className="muted">{t('reg.pin.help')}</p>
-        <TextField label={t('reg.pin.coords')} value={pinText} onChange={setPinText} error={pinError ?? undefined} placeholder="12.9166, 77.6101" />
+        <p className="muted">{t('reg.pin.helpAny')}</p>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void findPin();
+          }}
+        >
+          <TextField
+            label={t('reg.pin.findLabel')}
+            value={pinText}
+            onChange={(v) => {
+              setPinText(v);
+              setFound(null);
+              setPinError(null);
+            }}
+            error={pinError ?? undefined}
+            placeholder={t('reg.pin.findPlaceholder')}
+            autoComplete="off"
+          />
+        </form>
+        {found && (
+          <div className="lb-pin-confirm" data-testid="pin-confirm">
+            <PinMap latitude={found.latitude} longitude={found.longitude} label={t('reg.pin.mapLabel')} />
+            <strong>{t('reg.pin.isRight')}</strong>
+            <span className="sub">
+              {found.matched ?? found.placeName ?? t('reg.pin.at', { lat: found.latitude.toFixed(5), lng: found.longitude.toFixed(5) })}
+            </span>
+            <span className="sub">
+              {t(found.source === 'address' ? 'reg.pin.fromAddress' : found.source === 'link' ? 'reg.pin.fromLink' : 'reg.pin.fromCoords', {
+                lat: found.latitude.toFixed(5),
+                lng: found.longitude.toFixed(5),
+              })}
+            </span>
+          </div>
+        )}
       </Modal>
     </>
   );
+}
+
+/** What POST /maps-link/locate answers (21 Nov, rev 204). */
+export interface LocatedPin {
+  latitude: number;
+  longitude: number;
+  source: 'coordinates' | 'link' | 'address';
+  placeName: string | null;
+  matched: string | null;
+  address: { pincode: string | null; area: string | null; city: string | null; displayName: string | null } | null;
+  shortLink: boolean;
+}
+
+/**
+ * The one reader for every map pin (rev 204): a typed address (OpenStreetMap,
+ * Bengaluru first), any Google Maps link (short links opened on the server)
+ * or coordinates.
+ */
+export function locatePin(text: string): Promise<LocatedPin> {
+  return api.post<LocatedPin>('/maps-link/locate', { text });
 }
 
 /** Chips with × and a "+ Add" picker (preferred areas, spoken languages, extras…). */

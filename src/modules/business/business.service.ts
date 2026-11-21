@@ -17,6 +17,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { OtpService } from '../../common/otp/otp.service';
+import { clearDraftAfterSubmit, consumeDraftPhoneCheck, draftPhoneCheckHolds } from '../registration-draft/registration-draft.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { FieldVisitService } from '../field-visit/field-visit.service';
 import {
@@ -281,7 +282,9 @@ export class BusinessService {
       );
     }
 
-    const isVerified = await this.otpService.isVerified(dto.otpRequestId, phone);
+    // 21 Nov (rev 204): a resumed call-agent draft whose mobile was checked by OTP keeps that check.
+    const viaDraft = !options.selfRegisteredByAccountId && await draftPhoneCheckHolds(this.prisma, actorId, dto.otpRequestId, 'business', phone);
+    const isVerified = viaDraft || (await this.otpService.isVerified(dto.otpRequestId, phone));
     if (!isVerified) {
       throw new BadRequestException(
         'Mobile number must pass OTP verification before registration',
@@ -513,7 +516,10 @@ export class BusinessService {
         ...(dto.pan?.trim() ? [businessIdFingerprint('pan', dto.pan)] : []),
       ],
     });
-    if (!(await this.otpService.consumeVerified(dto.otpRequestId, phone))) {
+    const mainConsumed = viaDraft
+      ? await consumeDraftPhoneCheck(this.prisma, actorId, 'business', phone)
+      : await this.otpService.consumeVerified(dto.otpRequestId, phone);
+    if (!mainConsumed) {
       throw new BadRequestException('This verified OTP request has already been used or expired');
     }
     for (const branch of dto.branches ?? []) {
@@ -732,6 +738,8 @@ export class BusinessService {
       ],
       city: business.city,
     });
+    // 21 Nov (rev 204): the agent's unfinished business form is done.
+    if (!options.selfRegisteredByAccountId) await clearDraftAfterSubmit(this.prisma, actorId, 'business');
 
     return this.presentBusiness(await this.prisma.business.findUniqueOrThrow({
       where: { id: business.id },

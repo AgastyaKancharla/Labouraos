@@ -1,5 +1,5 @@
-import { addressFromNominatim, extractPin, isAllowedMapsUrl, isPrivateAddress, parseMapsUrl } from './maps-link';
-import { MapsFetch, MapsLinkService, MAX_REDIRECTS, NOMINATIM_GAP_MS, TIMEOUT_MS, USER_AGENT } from './maps-link.service';
+import { addressFromNominatim, extractPin, isAllowedMapsUrl, isPrivateAddress, looksLikeLink, parseCoordinates, parseMapsUrl, placeNameOf, withScheme } from './maps-link';
+import { BENGALURU_VIEWBOX, MapsFetch, MapsLinkService, MAX_REDIRECTS, NOMINATIM_GAP_MS, TIMEOUT_MS, USER_AGENT } from './maps-link.service';
 
 const u = (s: string) => new URL(s);
 
@@ -162,11 +162,18 @@ describe('MapsLinkService', () => {
     const json = jest.fn(async () => ({ lat: 1 }));
     const page = fakeFetch({ 'https://maps.google.com/': { status: 200 } });
     const pageFetch: MapsFetch = async (url, init) => ({ ...(await page.fetch(url, init)), json });
-    await expect(new TestMaps(pageFetch, publicDns).resolve('fa-1', 'https://maps.google.com/?q=Hotel+Kamat')).rejects.toMatchObject({
+    // 21 Nov: a link with only a place name is looked up by that name; not found → refused with its code.
+    const noPlace = fakeFetch({ 'https://maps.google.com/': { status: 200 }, 'https://nominatim.openstreetmap.org/search': { status: 200, json: [] } });
+    await expect(new TestMaps(noPlace.fetch, publicDns).resolve('fa-1', 'https://maps.google.com/?q=Hotel+Kamat')).rejects.toMatchObject({
+      response: { code: 'MAPS_LINK_NO_LOCATION', message: expect.stringContaining('Couldn’t find the place in this link') },
+    });
+    expect(noPlace.calls.some((c) => c.url.startsWith('https://maps.google.com/'))).toBe(false);
+    // A link with neither a pin nor a name is opened, and with nothing found says so.
+    await expect(new TestMaps(pageFetch, publicDns).resolve('fa-1', 'https://maps.google.com/?z=12')).rejects.toMatchObject({
       response: { code: 'MAPS_LINK_NO_LOCATION', message: 'This link has no map pin. In Google Maps, long-press to drop a pin, then share that.' },
     });
     expect(json).not.toHaveBeenCalled();
-    const short = fakeFetch({ 'https://maps.app.goo.gl/Search': { status: 302, location: 'https://www.google.com/maps/search/Hotel+Kamat?entry=tts' }, 'https://www.google.com/maps/search': { status: 200 } });
+    const short = fakeFetch({ 'https://maps.app.goo.gl/Search': { status: 302, location: 'https://www.google.com/maps/search/Hotel+Kamat?entry=tts' }, 'https://www.google.com/maps/search': { status: 200 }, 'https://nominatim.openstreetmap.org/search': { status: 200, json: [] } });
     await expect(new TestMaps(short.fetch, publicDns).resolve('fa-1', 'https://maps.app.goo.gl/Search')).rejects.toMatchObject({ response: { code: 'MAPS_LINK_NO_LOCATION' } });
     await expect(new TestMaps(page.fetch, publicDns).resolve('fa-1', 'https://bing.com/maps?cp=12.9~77.6')).rejects.toMatchObject({ response: { code: 'MAPS_LINK_INVALID' } });
     await expect(new TestMaps(page.fetch, publicDns).resolve('fa-1', 42)).rejects.toMatchObject({ response: { code: 'MAPS_LINK_INVALID' } });
@@ -192,5 +199,128 @@ describe('MapsLinkService', () => {
     await expect(maps.resolve('fa-2', 'https://maps.google.com/?q=12.5,77.6')).resolves.toBeTruthy();
     maps.t += 61_000;
     await expect(maps.resolve('fa-1', 'https://maps.google.com/?q=12.5,77.6')).resolves.toBeTruthy();
+  });
+});
+
+const SEARCH = 'https://nominatim.openstreetmap.org/search';
+const lalbagh = [{ lat: '12.9507', lon: '77.5848', display_name: 'Lalbagh Botanical Garden, Mavalli, Bengaluru, Karnataka, 560004, India', address: { road: 'Lalbagh Road', suburb: 'Mavalli', city: 'Bengaluru', state: 'Karnataka', postcode: '560004' } }];
+
+describe('Set the map pin (21 Nov, rev 204): address, any Google Maps link, or coordinates', () => {
+  it('reads coordinates on their own, never a house number or a pincode', () => {
+    expect(parseCoordinates('12.9166, 77.6101')).toEqual({ latitude: 12.9166, longitude: 77.6101 });
+    expect(parseCoordinates('12.9166 77.6101')).toEqual({ latitude: 12.9166, longitude: 77.6101 });
+    expect(parseCoordinates('(12.916600,77.610100)')).toEqual({ latitude: 12.9166, longitude: 77.6101 });
+    expect(parseCoordinates('12.9166° N, 77.6101° E')).toEqual({ latitude: 12.9166, longitude: 77.6101 });
+    expect(parseCoordinates('12, 5th Cross, 560078')).toBeNull();
+    expect(parseCoordinates('12 560078')).toBeNull();
+    expect(parseCoordinates('95.1, 77.1')).toBeNull();
+  });
+
+  it('knows a link with or without https://, and reads place names from /place/, /search/ and q=', () => {
+    expect(looksLikeLink('maps.app.goo.gl/AbC12')).toBe(true);
+    expect(looksLikeLink('Shop https://maps.app.goo.gl/AbC12')).toBe(true);
+    expect(looksLikeLink('24th Main, JP Nagar, Bengaluru')).toBe(false);
+    expect(withScheme('maps.app.goo.gl/AbC12')).toBe('https://maps.app.goo.gl/AbC12');
+    expect(withScheme('Shop www.google.com/maps/@12.9,77.6,15z')).toBe('Shop https://www.google.com/maps/@12.9,77.6,15z');
+    expect(placeNameOf(u('https://www.google.co.in/maps/place/MG+Road,+Bengaluru'))).toBe('MG Road, Bengaluru');
+    expect(placeNameOf(u('https://www.google.com/maps/search/Hotel+Kamat?entry=tts'))).toBe('Hotel Kamat');
+    expect(placeNameOf(u('https://maps.google.com/?q=Hotel+Kamat'))).toBe('Hotel Kamat');
+    expect(placeNameOf(u('https://www.google.com/maps/search/12.9716,+77.5946'))).toBeNull();
+  });
+
+  it('coordinates: the pin as typed, with the address line it matched', async () => {
+    const { fetch, calls } = fakeFetch({ [NOM]: nominatim });
+    const out = await new TestMaps(fetch, publicDns).locate('ca-1', ' 12.9116, 77.6101 ');
+    expect(out).toMatchObject({ latitude: 12.9116, longitude: 77.6101, source: 'coordinates', matched: 'X', shortLink: false });
+    expect(calls.map((c) => c.url.split('?')[0])).toEqual([NOM]);
+  });
+
+  it('every real Google Maps link shape gives its pin', async () => {
+    const shapes: Array<[string, number, number]> = [
+      ['https://www.google.com/maps/place/Lalbagh+Botanical+Garden/@12.9507432,77.5847773,17z/data=!3m1!4b1!4m6!3m5!1s0x3bae15c8b5bb8e43:0x6e6c6f5a5c3f8a2b!8m2!3d12.9507432!4d77.5847773!16zL20vMDJ5eF9n?entry=ttu', 12.9507432, 77.5847773],
+      ['https://www.google.com/maps/@12.9352,77.6245,15z?entry=ttu', 12.9352, 77.6245],
+      ['https://maps.google.com/?q=12.9716,77.5946', 12.9716, 77.5946],
+      ['https://www.google.com/maps?q=12.9716,77.5946&z=17', 12.9716, 77.5946],
+      ['https://www.google.com/maps/search/?api=1&query=12.9716%2C77.5946', 12.9716, 77.5946],
+      ['https://www.google.co.in/maps/search/12.9716,+77.5946?entry=tts', 12.9716, 77.5946],
+      ['Sri Sai Bakery https://www.google.com/maps/place/Sri+Sai+Bakery/@12.91,77.60,17z/data=!8m2!3d12.9116!4d77.6101', 12.9116, 77.6101],
+    ];
+    for (const [link, latitude, longitude] of shapes) {
+      const { fetch, calls } = fakeFetch({ [NOM]: nominatim });
+      const out = await new TestMaps(fetch, publicDns).locate('ca-1', link);
+      expect([link, out.latitude, out.longitude, out.source]).toEqual([link, latitude, longitude, 'link']);
+      // A full link is never opened: only the address lookup.
+      expect(calls.map((c) => c.url.split('?')[0])).toEqual([NOM]);
+    }
+  });
+
+  it('short links (maps.app.goo.gl, goo.gl/maps, pasted without https://) are followed through Google hosts only', async () => {
+    const { fetch, calls } = fakeFetch({
+      'https://goo.gl/maps/AbCdEf123': { status: 301, location: 'https://maps.app.goo.gl/XyZ987' },
+      'https://maps.app.goo.gl/XyZ987': { status: 302, location: 'https://www.google.com/maps/place/Hotel/@12.9,77.6,17z/data=!3d12.9116!4d77.6101?entry=tts' },
+      'https://maps.app.goo.gl/Plain': { status: 302, location: 'https://maps.google.com/maps?q=12.93,77.62&ftid=0x0:0x1' },
+      [NOM]: nominatim,
+    });
+    const maps = new TestMaps(fetch, publicDns);
+    await expect(maps.locate('ca-1', 'https://goo.gl/maps/AbCdEf123')).resolves.toMatchObject({ latitude: 12.9116, longitude: 77.6101, shortLink: true, source: 'link' });
+    await expect(maps.locate('ca-1', 'maps.app.goo.gl/Plain')).resolves.toMatchObject({ latitude: 12.93, longitude: 77.62, shortLink: true });
+    expect(calls.map((c) => c.url.split('?')[0])).toEqual(['https://goo.gl/maps/AbCdEf123', 'https://maps.app.goo.gl/XyZ987', NOM, 'https://maps.app.goo.gl/Plain', NOM]);
+    expect(calls.filter((c) => !c.url.startsWith(NOM)).every((c) => c.init.redirect === 'manual')).toBe(true);
+  });
+
+  it('a short link that ends on a place name only is looked up by that name', async () => {
+    const { fetch, calls } = fakeFetch({
+      'https://maps.app.goo.gl/Name': { status: 302, location: 'https://www.google.com/maps/search/Lalbagh+Botanical+Garden?entry=tts' },
+      'https://www.google.com/maps/search': { status: 200 },
+      [SEARCH]: { status: 200, json: lalbagh },
+    });
+    const out = await new TestMaps(fetch, publicDns).locate('ca-1', 'https://maps.app.goo.gl/Name');
+    expect(out).toMatchObject({ latitude: 12.9507, longitude: 77.5848, placeName: 'Lalbagh Botanical Garden', source: 'link', matched: expect.stringContaining('Lalbagh') });
+    const search = calls.find((c) => c.url.startsWith(SEARCH))!;
+    expect(search.url).toContain('q=Lalbagh%20Botanical%20Garden');
+    expect(search.url).toContain('countrycodes=in');
+  });
+
+  it('a full link with only a place name is looked up without opening the link', async () => {
+    const { fetch, calls } = fakeFetch({ [SEARCH]: { status: 200, json: lalbagh } });
+    const out = await new TestMaps(fetch, publicDns).locate('ca-1', 'https://www.google.co.in/maps/place/Lalbagh+Botanical+Garden');
+    expect(out).toMatchObject({ latitude: 12.9507, longitude: 77.5848, source: 'link' });
+    expect(calls.every((c) => c.url.startsWith(SEARCH))).toBe(true);
+  });
+
+  it('a typed address: Bengaluru first (bounded box), then anywhere in India; cached', async () => {
+    const answers = [[], lalbagh];
+    const calls: string[] = [];
+    const fetch: MapsFetch = async (url) => {
+      calls.push(url);
+      return { status: 200, headers: { get: () => null }, json: async () => answers.shift() ?? [] };
+    };
+    const maps = new TestMaps(fetch, publicDns);
+    const out = await maps.locate('ca-1', 'Lalbagh Road, Mavalli');
+    expect(out).toMatchObject({ latitude: 12.9507, longitude: 77.5848, source: 'address', matched: expect.stringContaining('Mavalli'), address: { pincode: '560004' } });
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toContain(`viewbox=${BENGALURU_VIEWBOX}&bounded=1`);
+    expect(calls[0]).toContain('countrycodes=in');
+    expect(calls[1]).not.toContain('bounded=1');
+    await maps.locate('ca-1', 'lalbagh road,   mavalli');
+    expect(calls).toHaveLength(2);
+  });
+
+  it('an address that is not found, a link to another site, empty text and Nominatim down are refused with their codes', async () => {
+    const empty = fakeFetch({ [SEARCH]: { status: 200, json: [] } });
+    await expect(new TestMaps(empty.fetch, publicDns).locate('ca-1', 'Nowhere Street 99')).rejects.toMatchObject({ response: { code: 'MAPS_ADDRESS_NOT_FOUND' }, status: 422 });
+    await expect(new TestMaps(empty.fetch, publicDns).locate('ca-1', 'https://example.com/maps/@12.9,77.6')).rejects.toMatchObject({ response: { code: 'MAPS_LINK_INVALID' }, status: 400 });
+    await expect(new TestMaps(empty.fetch, publicDns).locate('ca-1', '   ')).rejects.toMatchObject({ response: { code: 'MAPS_TEXT_EMPTY' }, status: 400 });
+    // An answer outside India is never used.
+    const abroad = fakeFetch({ [SEARCH]: { status: 200, json: [{ lat: '51.5', lon: '-0.12', display_name: 'London' }] } });
+    await expect(new TestMaps(abroad.fetch, publicDns).locate('ca-1', 'Baker Street')).rejects.toMatchObject({ response: { code: 'MAPS_ADDRESS_NOT_FOUND' } });
+    const down = fakeFetch({ [SEARCH]: { status: 503 } });
+    await expect(new TestMaps(down.fetch, publicDns).locate('ca-1', 'JP Nagar')).rejects.toMatchObject({ response: { code: 'MAPS_LOOKUP_UNAVAILABLE' }, status: 502 });
+  });
+
+  it('a short link redirected off Google is never followed further', async () => {
+    const off = fakeFetch({ 'https://maps.app.goo.gl/Evil': { status: 302, location: 'https://attacker.example/x?q=12.9,77.6' } });
+    await expect(new TestMaps(off.fetch, publicDns).locate('ca-1', 'https://maps.app.goo.gl/Evil')).rejects.toMatchObject({ response: { code: 'MAPS_LINK_NO_LOCATION' } });
+    expect(off.calls).toHaveLength(1);
   });
 });

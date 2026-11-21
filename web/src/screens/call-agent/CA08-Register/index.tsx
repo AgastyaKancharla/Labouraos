@@ -45,6 +45,8 @@ import {
 import { guaranteeFloorPaise, isAboveMarket } from '../_registration/salary';
 import { jobSeekerConsentScript } from '../_registration/scripts';
 import { useDraft } from '../_registration/useDraft';
+import { initialMobileState, useServerDraftSync } from '../_registration/serverDraft';
+import { useAuth } from '../../../auth/AuthProvider';
 import { createBody, EMPTY_FORM, profileBody, tradeName, validate, type FieldError, type JobSeekerForm, type TradeRow } from './payload';
 
 /**
@@ -87,7 +89,11 @@ export default function RegisterJobSeeker() {
   const now = useNow();
   const todayKey = istDateKey(now);
   const [form, setForm, draft] = useDraft<JobSeekerForm>('job-seeker', EMPTY_FORM);
-  const [mobile, setMobile] = useState<MobileState>({ mobile: form.mobile, requestId: null, verifiedAt: null });
+  // 21 Nov (rev 204): in the call agent console the form is also saved on the server (Resume / Discard
+  // banner); a resumed draft whose number was checked by OTP opens with it still checked.
+  const { session: authSession } = useAuth();
+  const [mobile, setMobile] = useState<MobileState>(() => initialMobileState('job_seeker', authSession?.staff.id, form.mobile));
+  const serverDraft = useServerDraftSync('job_seeker', form, mobile, form.name);
   const [duplicate, setDuplicate] = useState<{ type?: string; code?: string } | null>(null);
   const [showErrors, setShowErrors] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -123,6 +129,7 @@ export default function RegisterJobSeeker() {
     },
     onSuccess: (created) => {
       draft.clear();
+      serverDraft.forget();
       toast.success(t('reg.js.saved', { code: created.code }));
       navigate(to('CA08c-InProgress', { id: created.id }));
     },
@@ -172,6 +179,7 @@ export default function RegisterJobSeeker() {
       <TopBar icon="jobSeekers" iconTone="royal" title={t('screen.CA08-Register')} subtitle={t('reg.js.subtitle')} />
       <DraftNote restored={draft.restored} onDiscard={() => {
         draft.discard();
+        serverDraft.forget();
         setMobile({ mobile: '', requestId: null, verifiedAt: null });
       }} />
       <Card className="reg-form">

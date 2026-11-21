@@ -44,7 +44,7 @@ async function fillRequired() {
 }
 
 describe('FA07 Register a business', () => {
-  it('17 Nov: "Paste Google Maps link" sets the pin and fills — or, pasted again, replaces — shop number, street, area, PIN code and city (all editable)', async () => {
+  it('17 Nov (+21 Nov confirm on the map): "Paste Google Maps link" sets the pin and fills — or, pasted again, replaces — shop number, street, area, PIN code and city (all editable)', async () => {
     searchParams.current = {};
     const sent: unknown[] = [];
     const answers = [
@@ -56,27 +56,32 @@ describe('FA07 Register a business', () => {
       route: (url, init) => {
         if (url.endsWith('/screens/call-registration/options')) return { status: 200, body: { city: 'Bengaluru', areas: [{ name: 'JP Nagar', pincode: '560078', latitude: 12.9116, longitude: 77.6101 }] } };
         if (url.endsWith('/trades')) return { status: 200, body: trades };
-        if (url.endsWith('/maps-link/resolve')) {
-          const body = JSON.parse(String(init.body)) as { url: string };
+        if (url.endsWith('/maps-link/locate')) {
+          const body = JSON.parse(String(init.body)) as { text: string };
           sent.push(body);
-          if (body.url.includes('bing')) return { status: 400, body: { statusCode: 400, message: 'Paste a Google Maps link', details: { code: 'MAPS_LINK_INVALID' } } };
-          return { status: 200, body: answers[sent.length - 2] ?? answers[0] };
+          if (body.text.includes('bing')) return { status: 400, body: { statusCode: 400, message: 'Paste a Google Maps link', details: { code: 'MAPS_LINK_INVALID' } } };
+          return { status: 200, body: { source: 'link', matched: 'x', ...(answers[sent.length - 2] ?? answers[0]) } };
         }
         return undefined;
       },
     });
-    await waitFor(() => screen.getByTestId('fa07-maps-link'));
+    await waitFor(() => screen.getByTestId('fa07-maps-text'));
     // Without a link the city stays the old default.
     expect(screen.getByTestId('fa07-city').props.value).toBe('Bengaluru');
-    await fireEvent.changeText(screen.getByTestId('fa07-maps-link'), 'https://www.bing.com/maps?cp=12.9~77.6');
-    await fireEvent.press(screen.getByTestId('fa07-maps-fill'));
-    await waitFor(() => expect(screen.getByTestId('fa07-maps-note')).toHaveTextContent(/not a Google Maps link/));
+    await fireEvent.changeText(screen.getByTestId('fa07-maps-text'), 'https://www.bing.com/maps?cp=12.9~77.6');
+    await fireEvent.press(screen.getByTestId('fa07-maps-find'));
+    await waitFor(() => screen.getByText(/not a Google Maps link/));
 
     await fireEvent.changeText(screen.getByLabelText('Shop / building number *'), 'No. 7');
-    await fireEvent.changeText(screen.getByTestId('fa07-maps-link'), 'Sri Sai Bakery https://maps.app.goo.gl/AbCdEf');
-    await fireEvent.press(screen.getByTestId('fa07-maps-fill'));
+    await fireEvent.changeText(screen.getByTestId('fa07-maps-text'), 'Sri Sai Bakery https://maps.app.goo.gl/AbCdEf');
+    await fireEvent.press(screen.getByTestId('fa07-maps-find'));
+    // 21 Nov: confirmed on the map first; nothing is filled until "Yes, use this pin".
+    await waitFor(() => screen.getByTestId('fa07-maps-confirm'));
+    expect(screen.getByText('Is this the right place?')).toBeTruthy();
+    expect(screen.getByLabelText('Shop / building number *').props.value).toBe('No. 7');
+    await fireEvent.press(screen.getByTestId('fa07-maps-use'));
     await waitFor(() => expect(screen.getByTestId('fa07-maps-note')).toHaveTextContent(/Pin and shop number, street, area, PIN code, city filled from the link/));
-    expect(sent.at(-1)).toEqual({ url: 'Sri Sai Bakery https://maps.app.goo.gl/AbCdEf' });
+    expect(sent.at(-1)).toEqual({ text: 'Sri Sai Bakery https://maps.app.goo.gl/AbCdEf' });
     expect(screen.getByLabelText('Shop / building number *').props.value).toBe('12');
     expect(screen.getByLabelText('Street *').props.value).toBe('24th Main Road, JP Nagar 6th Phase');
     expect(screen.getByTestId('fa07-pincode').props.value).toBe('560078');
@@ -84,8 +89,10 @@ describe('FA07 Register a business', () => {
     await waitFor(() => expect(screen.getByTestId('fa07-area')).toHaveTextContent(/JP Nagar/));
 
     // Pasted again (another shop, in Mysuru): everything the lookup knows is replaced; the city follows.
-    await fireEvent.changeText(screen.getByTestId('fa07-maps-link'), 'https://www.google.com/maps/@12.3052,76.6552,17z');
-    await fireEvent.press(screen.getByTestId('fa07-maps-fill'));
+    await fireEvent.changeText(screen.getByTestId('fa07-maps-text'), 'https://www.google.com/maps/@12.3052,76.6552,17z');
+    await fireEvent.press(screen.getByTestId('fa07-maps-find'));
+    await waitFor(() => screen.getByTestId('fa07-maps-use'));
+    await fireEvent.press(screen.getByTestId('fa07-maps-use'));
     await waitFor(() => expect(screen.getByTestId('fa07-city').props.value).toBe('Mysuru'));
     expect(screen.getByLabelText('Street *').props.value).toBe('Sayyaji Rao Road');
     expect(screen.getByTestId('fa07-pincode').props.value).toBe('570001');

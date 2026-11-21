@@ -130,11 +130,66 @@ describe('Register a new business (CA13)', () => {
 
     async function setPin(user: ReturnType<typeof userEvent.setup>, coords: string) {
       await user.click(screen.getByRole('button', { name: /Set pin|Pin set · change/ }));
-      const input = await screen.findByLabelText(/Coordinates or maps link/);
+      const input = await screen.findByLabelText(/Address, Google Maps link or coordinates/);
       await user.clear(input);
       await user.type(input, coords);
-      await user.click(screen.getByRole('button', { name: 'Use this pin' }));
+      await user.click(screen.getByRole('button', { name: 'Find on the map' }));
+      // 21 Nov: the pin is shown on the map to confirm before it is used.
+      expect(await screen.findByText('Is this the right place?')).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Yes, use this pin' }));
     }
+
+    it('finds the pin from a typed address and shows it on the map to confirm (21 Nov)', async () => {
+      const user = userEvent.setup();
+      const api = mockApi(
+        routes({
+          'GET /screens/call-registration/options': { city: 'Bengaluru', areas, areaAutoFillMaxMeters: 1000 },
+          'POST /maps-link/locate': {
+            latitude: 12.9229,
+            longitude: 77.6101,
+            source: 'address',
+            placeName: null,
+            matched: '16th Main Road, BTM Layout 2nd Stage, Bengaluru, 560076, India',
+            address: { pincode: '560076', area: 'BTM Layout', city: 'Bengaluru', displayName: '16th Main Road, BTM Layout 2nd Stage, Bengaluru, 560076, India' },
+            shortLink: false,
+          },
+        }),
+      );
+      signInAs('call_agent');
+      sessionStorage.setItem('laboura.draft.business.staff-ca', JSON.stringify({ ...form, place: { area: '', pincode: '', latitude: null, longitude: null } }));
+      renderScreen(<RegisterBusiness />, { portal: 'call-agent', path: '/call-agent/register/business' });
+      const area = (await screen.findByLabelText(/Area \(from the list\)/)) as HTMLSelectElement;
+      await waitFor(() => expect(area.options.length).toBeGreaterThan(2));
+      await user.click(screen.getByRole('button', { name: /Set pin/ }));
+      await user.type(await screen.findByLabelText(/Address, Google Maps link or coordinates/), '16th Main Road, BTM 2nd Stage');
+      await user.click(screen.getByRole('button', { name: 'Find on the map' }));
+      expect(await screen.findByText('Is this the right place?')).toBeInTheDocument();
+      expect(screen.getByText('16th Main Road, BTM Layout 2nd Stage, Bengaluru, 560076, India')).toBeInTheDocument();
+      expect(screen.getByTestId('pin-map')).toBeInTheDocument();
+      expect(api.calls('POST /maps-link/locate')[0].body).toEqual({ text: '16th Main Road, BTM 2nd Stage' });
+      await user.click(screen.getByRole('button', { name: 'Yes, use this pin' }));
+      await waitFor(() => expect(area.value).toBe('BTM Layout 2nd Stage'));
+      expect(screen.getByText('At 12.9229, 77.6101')).toBeInTheDocument();
+    });
+
+    it('shows the server’s reason when an address or link cannot be read, and "No, search again" keeps the old pin', async () => {
+      const user = userEvent.setup();
+      mockApi(
+        routes({
+          'POST /maps-link/locate': { status: 422, body: { statusCode: 422, message: 'Couldn’t find that address. Add the area and city.', details: { code: 'MAPS_ADDRESS_NOT_FOUND' } } },
+        }),
+      );
+      signInAs('call_agent');
+      sessionStorage.setItem('laboura.draft.business.staff-ca', JSON.stringify({ ...form }));
+      renderScreen(<RegisterBusiness />, { portal: 'call-agent', path: '/call-agent/register/business' });
+      await user.click(await screen.findByRole('button', { name: /Pin set · change/ }));
+      const input = await screen.findByLabelText(/Address, Google Maps link or coordinates/);
+      await user.clear(input);
+      await user.type(input, 'Nowhere street');
+      await user.click(screen.getByRole('button', { name: 'Find on the map' }));
+      expect(await screen.findByText('Couldn’t find that address. Add the area and city.')).toBeInTheDocument();
+      expect(screen.queryByText('Is this the right place?')).toBeNull();
+    });
 
     it('fills the area in from a pin within 1 km, and asks the agent to pick when none is that close', async () => {
       const user = userEvent.setup();

@@ -4,6 +4,7 @@ import {
   Logger,
   Optional,
 } from '@nestjs/common';
+import { draftExpiryCutoff } from '../registration-draft/registration-draft.rules';
 import { WhatsAppRetentionResult, cleanupWhatsAppData, openDisputeSubjects } from '../whatsapp-inbox/whatsapp-retention';
 import { BUSINESS_PHOTO_STORAGE, BusinessPhotoStorage } from '../business/storefront-photo.storage';
 import { IdCheckPhotoService } from '../aadhaar-qr/id-check-photo.service';
@@ -87,6 +88,8 @@ export interface RetentionSummary {
   shopVisitPhotoDeleteFailures: number;
   /** Aadhaar QR photos past their 30 days (the Team Lead never completed the check). */
   aadhaarQrPhotosDeleted: number;
+  /** Unfinished call-agent registrations older than 7 days (21 Nov, rev 204). */
+  registrationDraftsDeleted?: number;
   /** WhatsApp message text past its time, anonymised conversations and partner leads (21 Nov). */
   whatsapp?: WhatsAppRetentionResult;
 }
@@ -148,6 +151,7 @@ export class RetentionService {
       shopVisitsCleaned: 0,
       shopVisitPhotoDeleteFailures: 0,
       aadhaarQrPhotosDeleted: 0,
+      registrationDraftsDeleted: 0,
       whatsapp: { messagesCleared: 0, conversationsAnonymised: 0, referralLeadsAnonymised: 0, appLeadsAnonymised: 0 },
     };
 
@@ -176,6 +180,8 @@ export class RetentionService {
       // 8. Aadhaar QR photos the Team Lead never checked (> 30 days; guide, 14 Nov)
       if (this.aadhaarQrPhotos) summary.aadhaarQrPhotosDeleted = await this.aadhaarQrPhotos.deleteExpiredPhotos(now, dryRun);
 
+      // 10. Unfinished registrations in the call agent console (> 7 days; rev 204, 21 Nov)
+      await this.cleanupRegistrationDrafts(now, dryRun, summary);
       // 9. WhatsApp message text (call-recording rule) and the numbers and names of anonymised or stale leads
       summary.whatsapp = await cleanupWhatsAppData(this.prisma, now, dryRun, () => openDisputeSubjects(this.prisma));
     } catch (err: unknown) {
@@ -213,7 +219,8 @@ export class RetentionService {
             summary.otpSessionsDeleted +
             summary.jobRunsDeleted +
             summary.shopVisitsCleaned +
-            summary.aadhaarQrPhotosDeleted,
+            summary.aadhaarQrPhotosDeleted +
+            (summary.registrationDraftsDeleted ?? 0),
           hitsRecorded: 0,
           details: {
             executedAt: summary.executedAt.toISOString(),
@@ -229,6 +236,7 @@ export class RetentionService {
             shopVisitsCleaned: summary.shopVisitsCleaned,
             shopVisitPhotoDeleteFailures: summary.shopVisitPhotoDeleteFailures,
             aadhaarQrPhotosDeleted: summary.aadhaarQrPhotosDeleted,
+            registrationDraftsDeleted: summary.registrationDraftsDeleted ?? 0,
             whatsapp: {
               messagesCleared: summary.whatsapp?.messagesCleared ?? 0,
               conversationsAnonymised: summary.whatsapp?.conversationsAnonymised ?? 0,
@@ -271,8 +279,16 @@ export class RetentionService {
       shopVisitsCleaned: Number(details.shopVisitsCleaned ?? 0),
       shopVisitPhotoDeleteFailures: Number(details.shopVisitPhotoDeleteFailures ?? 0),
       aadhaarQrPhotosDeleted: Number(details.aadhaarQrPhotosDeleted ?? 0),
+      registrationDraftsDeleted: Number(details.registrationDraftsDeleted ?? 0),
       whatsapp: (details.whatsapp as WhatsAppRetentionResult | undefined) ?? { messagesCleared: 0, conversationsAnonymised: 0, referralLeadsAnonymised: 0 },
     };
+  }
+
+  /** Rev 204 (21 Nov): unfinished registrations are deleted automatically after 7 days. */
+  private async cleanupRegistrationDrafts(now: Date, dryRun: boolean, summary: RetentionSummary): Promise<void> {
+    summary.registrationDraftsDeleted = dryRun
+      ? await this.prisma.registrationDraft.count({ where: { updatedAt: { lt: draftExpiryCutoff(now) } } })
+      : (await this.prisma.registrationDraft.deleteMany({ where: { updatedAt: { lt: draftExpiryCutoff(now) } } })).count;
   }
 
   /**

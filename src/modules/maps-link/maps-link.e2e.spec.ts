@@ -21,6 +21,13 @@ describe('POST /maps-link/resolve', () => {
     if (url.startsWith('https://maps.app.goo.gl/')) {
       return { status: 302, headers: { get: () => 'https://www.google.com/maps/place/Shop/@12.9,77.6,17z/data=!3d12.9116!4d77.6101' }, json: async () => ({}) };
     }
+    if (url.includes('/search?')) {
+      return {
+        status: 200,
+        headers: { get: () => null },
+        json: async () => [{ lat: '12.9063', lon: '77.5857', display_name: '24th Main Road, JP Nagar, Bengaluru, 560078, India', address: { road: '24th Main Road', suburb: 'JP Nagar', city: 'Bengaluru', postcode: '560078' } }],
+      };
+    }
     return {
       status: 200,
       headers: { get: () => null },
@@ -68,5 +75,25 @@ describe('POST /maps-link/resolve', () => {
     expect(fetched).toHaveLength(2);
     for (const role of ['call_agent', 'team_lead']) await post(await make(role), { url: 'https://maps.google.com/?q=12.9,77.6' }).expect(403);
     await request(app.getHttpServer()).post('/maps-link/resolve').send({ url: 'https://maps.google.com/?q=12.9,77.6' }).expect(401);
+  });
+
+  it('POST /maps-link/locate: every role that sets a pin gets an address, a link or coordinates read; Finance and no login are refused', async () => {
+    const locate = (who: { id: string; role: string; code: string }, body: unknown) =>
+      request(app.getHttpServer())
+        .post('/maps-link/locate')
+        .set('Authorization', `Bearer ${jwt.sign({ sub: who.id, role: who.role, code: who.code, email: null })}`)
+        .send(body as object);
+    const agent = await make('call_agent');
+    const typed = await locate(agent, { text: '24th Main, JP Nagar' }).expect(200);
+    expect(typed.body).toMatchObject({ latitude: 12.9063, longitude: 77.5857, source: 'address', matched: expect.stringContaining('JP Nagar') });
+    const link = await locate(agent, { text: 'maps.app.goo.gl/XyZ123' }).expect(200);
+    expect(link.body).toMatchObject({ latitude: 12.9116, longitude: 77.6101, source: 'link', shortLink: true });
+    const coords = await locate(agent, { text: '12.9116, 77.6101' }).expect(200);
+    expect(coords.body).toMatchObject({ latitude: 12.9116, longitude: 77.6101, source: 'coordinates' });
+    for (const role of ['field_agent', 'team_lead', 'manager', 'ceo']) await locate(await make(role), { text: '12.95, 77.6' }).expect(200);
+    const bad = await locate(agent, { text: 'https://example.com/maps/@12.9,77.6' }).expect(400);
+    expect(bad.body.code ?? bad.body.details?.code).toBe('MAPS_LINK_INVALID');
+    await locate(await make('finance'), { text: '12.95, 77.6' }).expect(403);
+    await request(app.getHttpServer()).post('/maps-link/locate').send({ text: '12.95, 77.6' }).expect(401);
   });
 });

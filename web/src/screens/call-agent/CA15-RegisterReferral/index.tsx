@@ -27,6 +27,8 @@ import {
 import { BUSINESS_TYPES, HEARD_FROM, INDIVIDUAL_ROLES } from '../_registration/options';
 import { referralScript } from '../_registration/scripts';
 import { useDraft } from '../_registration/useDraft';
+import { initialMobileState, useServerDraftSync } from '../_registration/serverDraft';
+import { useAuth } from '../../../auth/AuthProvider';
 import { EMPTY_REFERRAL, referralBody, referralErrors, type ReferralForm } from './payload';
 
 /**
@@ -44,7 +46,11 @@ export default function RegisterReferral() {
   const navigate = useNavigate();
   const toast = useToast();
   const [form, setForm, draft] = useDraft<ReferralForm>('referral', EMPTY_REFERRAL);
-  const [mobile, setMobile] = useState<MobileState>({ mobile: form.mobile, requestId: null, verifiedAt: null });
+  // 21 Nov (rev 204): in the call agent console the form is also saved on the server (Resume / Discard
+  // banner); a resumed draft whose number was checked by OTP opens with it still checked.
+  const { session: authSession } = useAuth();
+  const [mobile, setMobile] = useState<MobileState>(() => initialMobileState('referral', authSession?.staff.id, form.mobile));
+  const serverDraft = useServerDraftSync('referral', form, mobile, form.name);
   const [duplicate, setDuplicate] = useState<{ type?: string; code?: string } | null>(null);
   const [showErrors, setShowErrors] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -62,6 +68,7 @@ export default function RegisterReferral() {
     mutationFn: () => api.post<{ id: string; code: string; registrationLinkSent?: boolean }>('/referrals', referralBody({ ...form, mobile: mobile.mobile }, mobile.requestId!)),
     onSuccess: (r) => {
       draft.clear();
+      serverDraft.forget();
       toast.success(t('reg.ref.savedToast', { code: r.code }));
       navigate(`${to('CA15b-ReferralSaved')}?id=${encodeURIComponent(r.id)}&new=1`);
     },
@@ -105,6 +112,7 @@ export default function RegisterReferral() {
       <TopBar icon="referrals" iconTone="orange" title={t('screen.CA15-RegisterReferral')} subtitle={t('reg.ref.subtitle')} />
       <DraftNote restored={draft.restored} onDiscard={() => {
         draft.discard();
+        serverDraft.forget();
         setMobile({ mobile: '', requestId: null, verifiedAt: null });
       }} />
       <Card className="reg-form">

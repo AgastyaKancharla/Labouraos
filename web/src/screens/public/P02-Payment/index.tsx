@@ -9,6 +9,7 @@ import { useScreenPath } from '../../../portals/PortalContext';
 import { paymentApi, registrationApi } from '../shared/api';
 import { rupees } from '../shared/format';
 import { paidTappedKey, useStepGuard } from '../shared/registration';
+import { UpiAppButtons } from '../shared/UpiApps';
 import { ActionError, Choice, isOtpExpired, LinkProblem, Loading, Muted, PageTitle, Row, StepsBar, tabMemory, UpiQr, Warn } from '../shared/ui';
 
 /**
@@ -178,16 +179,16 @@ export default function Payment() {
         </div>
       )}
       {accepted && pay ? (
-        <a
-          className="btn bp full"
-          href={pay.upiUri}
-          onClick={() => {
+        // 21 Nov (rev 204): "Or pay with" PhonePe, Google Pay, Paytm, BHIM or another UPI app (phones only),
+        // each with the same payee, exact amount and reference as the QR. Then "Paid — confirming" as before.
+        <UpiAppButtons
+          upiUri={pay.upiUri}
+          extraMethods={pay.extraMethods}
+          onTap={() => {
             tabMemory.set(paidTappedKey(token), '1');
             window.setTimeout(() => navigate(to('P02b-Paid', { token })), 400);
           }}
-        >
-          {t('pub.pay.payUpi')}
-        </a>
+        />
       ) : (
         <button type="button" className="btn bp full" disabled>
           {t('pub.pay.payUpi')}
