@@ -14,7 +14,8 @@
  *   out "me" from the sign-in. Profile ids here are the signed-in person's own.
  */
 
-export type Language = 'kn' | 'hi' | 'en';
+/** English only, everywhere (Master Guide rev 193, 17 Nov). */
+export type Language = 'en';
 export type ProfileKind = 'job_seeker' | 'business' | 'referral_partner';
 export type StepState = 'done' | 'in_progress' | 'not_started';
 export type SalaryPeriod = 'monthly' | 'daily';
@@ -84,6 +85,10 @@ export interface AppConfig {
   /** Not in the v1 contract yet: the Apple button stays hidden until the server says true. */
   appleSignIn: boolean;
   otpTestMode: boolean;
+  /** Referral partners' "Send a lead" form is switched on (contract 7.3b). */
+  referralLeads?: boolean;
+  /** Businesses' "a worker left" report is switched on (contract 8.2). */
+  workerLeftReports?: boolean;
 }
 
 /** A fresh OTP the person typed, sent inside the request it protects. */
@@ -325,9 +330,64 @@ export interface BusinessHome {
     approval: 'waiting' | 'approved' | 'paused';
   };
   vacancies: VacancySummary[];
-  counts: { interviewsUpcoming: number; placements: number };
+  /** workersPlaced: workers whose fee is paid (working now, or due to join) — "Report a worker left" shows above 0. */
+  counts: { interviewsUpcoming: number; placements: number; workersPlaced: number };
   /** D6 (rev 176): suspended by the CEO — no new vacancies, candidates or interviews while it lasts. */
   suspension?: { until: string | null; permanent: boolean; reason: string | null } | null;
+}
+
+/** "A worker left" (contract 8.2): a report that brings a call from the team, not the claim itself. */
+export type WorkerState = 'can_report' | 'reported' | 'claim_open' | 'not_again' | 'guarantee_over' | 'not_started';
+
+export interface PlacedWorker {
+  placementId: string;
+  placementCode: string;
+  workerFirstName: string | null;
+  trade: string;
+  joinedOn: string | null;
+  joiningOn: string | null;
+  /** Selected and paid, joining day passed, never came (D2): only "never joined" can be picked. */
+  neverJoined: boolean;
+  guaranteeLastDay: string | null;
+  leftOnEarliest: string | null;
+  leftOnLatest: string;
+  state: WorkerState;
+}
+
+export interface WorkerLeftReport {
+  id: string;
+  placementCode: string | null;
+  workerFirstName: string | null;
+  workerLeftOn: string | null;
+  reason: string;
+  status: 'open' | 'claim_filed' | 'closed';
+  claimDecision: 'accepted' | 'rejected' | null;
+  reportedAt: string;
+}
+
+export interface WorkersAnswer {
+  /** Switched on by the server (CUSTOMER_WORKER_LEFT_REPORTS). */
+  open: boolean;
+  reasons: { covered: string[]; notCovered: string[]; neverJoined: string[] };
+  reportWithinDays: number;
+  windowDays: number;
+  workers: PlacedWorker[];
+  reports: WorkerLeftReport[];
+}
+
+/** A lead a referral partner sent (contract 7.3b): first name, kind and stage only. */
+export type LeadKind = 'job_seeker' | 'business';
+export interface ReferralLead {
+  id: string;
+  firstName: string | null;
+  /** Null when the referral partner did not say. */
+  kind: LeadKind | null;
+  stage: 'with_team' | 'registered' | 'closed';
+  sentAt: string;
+}
+export interface ReferralLeadsAnswer {
+  open: boolean;
+  leads: ReferralLead[];
 }
 
 export interface ReferralPerson {

@@ -141,7 +141,7 @@ describe('Business Home', () => {
 
   it('visit booked with the agent first name; verified hides the waiting banner; never a phone number', async () => {
     await renderHome(
-      bizHome({ tracker: { phoneVerified: true, agreement: 'signed', visit: 'done', visitAt: '2026-11-16T05:30:00Z', visitAgentFirstName: 'Kiran', approval: 'approved' }, counts: { interviewsUpcoming: 2, placements: 1 } }),
+      bizHome({ tracker: { phoneVerified: true, agreement: 'signed', visit: 'done', visitAt: '2026-11-16T05:30:00Z', visitAgentFirstName: 'Kiran', approval: 'approved' }, counts: { interviewsUpcoming: 2, placements: 1, workersPlaced: 1 } }),
       [bizProfile],
     );
     expect(await screen.findByTestId('biz-step-verified-done')).toBeTruthy();
@@ -152,6 +152,23 @@ describe('Business Home', () => {
     expect(screen.getByTestId('biz-stat-placements')).toHaveTextContent(/1.*People hired/);
     expect(screen.getByTestId('biz-hero-agreement-green')).toBeTruthy();
     expect(screen.getByTestId('biz-hero-approval-green')).toBeTruthy();
+    // A worker placed, but the report is switched off on the server: no card.
+    expect(screen.queryByTestId('biz-home-workers')).toBeNull();
+  });
+
+  it('"Report a worker left" shows when a worker is placed and the server switched it on (contract 8.2)', async () => {
+    const api = fakeApi({
+      home: async () => bizHome({ counts: { interviewsUpcoming: 0, placements: 1, workersPlaced: 1 } }),
+      config: async () => ({ googleSignIn: true, googleWebClientId: null, googleIosClientId: null, appleSignIn: false, otpTestMode: false, workerLeftReports: true }),
+    });
+    await renderWithApp(<Home />, { api, account: account({ profiles: [bizProfile] }), activeProfileId: 'p-biz' });
+    expect(await screen.findByTestId('biz-home-workers')).toHaveTextContent(/Did a worker leave\?/);
+  });
+
+  it('no worker placed yet: no "Report a worker left"', async () => {
+    await renderHome(bizHome(), [bizProfile]);
+    expect(await screen.findByTestId('biz-home-hero')).toBeTruthy();
+    expect(screen.queryByTestId('biz-home-workers')).toBeNull();
   });
 
   it('hero chips colour agreement / visit / approval; stat tiles royal / cyan / green', async () => {
@@ -201,6 +218,19 @@ describe('Referral partner Home', () => {
     expect(screen.getByTestId('ref-home-payout-po-1')).toHaveTextContent(/UPI ref UPI-TEST-1/);
     await fireEvent.press(screen.getByTestId('ref-home-doc-consent'));
     await waitFor(() => expect(api.sheetLink).toHaveBeenCalledWith('p-ref', 'document', 'doc-consent'));
+  });
+
+  it('"Send a lead" shows only when the server switched it on (contract 7.3b)', async () => {
+    await renderHome(refHome(), [refProfile]);
+    expect(await screen.findByTestId('ref-home-link')).toBeTruthy();
+    expect(screen.queryByTestId('ref-home-lead')).toBeNull();
+    const api = fakeApi({
+      home: async () => refHome(),
+      config: async () => ({ googleSignIn: true, googleWebClientId: null, googleIosClientId: null, appleSignIn: false, otpTestMode: false, referralLeads: true }),
+    });
+    screen.unmount();
+    await renderWithApp(<Home />, { api, account: account({ profiles: [refProfile] }), activeProfileId: 'p-ref' });
+    expect(await screen.findByTestId('ref-home-lead')).toHaveTextContent(/Know someone\?/);
   });
 
   it('paused: says so, and hides the share link', async () => {
