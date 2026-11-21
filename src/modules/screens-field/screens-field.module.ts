@@ -10,10 +10,12 @@ import { AttendanceModule } from '../attendance/attendance.module';
 import { ConsentModule } from '../consent/consent.module';
 import { TargetModule } from '../target/target.module';
 import { VacancyModule } from '../vacancy/vacancy.module';
+import { NotificationModule } from '../notification/notification.module';
+import { FieldWorkExtrasService } from './field-work-extras.service';
 
 @Module({
-  imports: [PrismaModule, PricingModule, FieldVisitModule, AuditModule, AttendanceModule, ConsentModule, TargetModule, VacancyModule],
+  imports: [PrismaModule, PricingModule, FieldVisitModule, AuditModule, AttendanceModule, ConsentModule, TargetModule, VacancyModule, NotificationModule],
   controllers: [ScreensFieldController],
-  providers: [ScreensFieldService, FieldRedesignService],
+  providers: [ScreensFieldService, FieldRedesignService, FieldWorkExtrasService],
 })
 export class ScreensFieldModule {}

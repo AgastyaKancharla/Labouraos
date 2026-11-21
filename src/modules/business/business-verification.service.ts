@@ -413,9 +413,10 @@ export class BusinessVerificationService {
       const agreement = await tx.businessAgreement.findFirst({ where: { businessId } });
       if (!agreement) return null;
 
+      // 21 Nov: verified by a field agent at the shop: candidates can be shown straight away.
       await tx.business.update({
         where: { id: businessId },
-        data: { verificationStatus: 'pending_tl_check' },
+        data: { verificationStatus: 'pending_tl_check', fieldVerifiedAt: this.clock.now() },
       });
       await recordStatusChange(tx, {
         subjectType: 'business',

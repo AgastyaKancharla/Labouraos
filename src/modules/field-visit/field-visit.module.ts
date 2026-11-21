@@ -14,13 +14,16 @@ import {
 import { FieldVisitController } from './field-visit.controller';
 import { FieldVisitService } from './field-visit.service';
 import { FieldVisitClock } from './field-visit-clock';
+import { FieldHandoverService } from './field-handover.service';
+import { FieldAssignmentsController } from './field-assignments.controller';
 
 @Module({
   imports: [PrismaModule, AuditModule, OtpModule, PricingModule, ReviewFlagModule, AttendanceModule, BusinessVerificationModule],
-  controllers: [FieldVisitController],
+  controllers: [FieldVisitController, FieldAssignmentsController],
   providers: [
     FieldVisitService,
     FieldVisitClock,
+    FieldHandoverService,
     {
       // Visit photos live with the business photos (private bucket).
       provide: BUSINESS_PHOTO_STORAGE,
@@ -32,6 +35,6 @@ import { FieldVisitClock } from './field-visit-clock';
       },
     },
   ],
-  exports: [FieldVisitService, FieldVisitClock],
+  exports: [FieldVisitService, FieldVisitClock, FieldHandoverService],
 })
 export class FieldVisitModule {}

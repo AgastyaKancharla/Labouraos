@@ -42,6 +42,7 @@ import {
 import { dateFromKey, DAY_MS, FieldVisitClock, istDateKey, keyFromDate } from './field-visit-clock';
 import { gpsSuspicions, isShortVisit, noOnboardingPattern, Reading, travelCheck } from './visit-fraud';
 import { ownerVisitOtpPurpose } from '../../common/otp/bound-otp-purposes';
+import { coversBusiness } from './field-handover.service';
 
 export interface UploadedPhoto {
   buffer: Buffer;
@@ -59,6 +60,8 @@ export interface OutcomeBody {
   contactPhone?: string;
   reason?: string;
   revisitOn?: string;
+  /** 21 Nov: optional come-back time, "HH:mm" IST. */
+  revisitTime?: string;
   note?: string;
   endedAt?: string;
 }
@@ -67,6 +70,7 @@ export interface ChangeResultBody {
   outcome?: string;
   reason?: string;
   revisitOn?: string;
+  revisitTime?: string;
   outcomeReason?: string;
   note?: string;
 }
@@ -160,7 +164,8 @@ export class FieldVisitService {
       const earlier = await this.prisma.businessVisit.findUnique({ where: { id: fields.revisitOfVisitId.trim() } });
       if (!earlier) throw new NotFoundException('The earlier visit was not found');
       // Rev 188: a field agent acts only on his own work; another agent's visit is view-only.
-      if (earlier.staffId !== staffId) {
+      // 21 Nov: a revisit handed over to him on a teammate's leave is his to do.
+      if (earlier.staffId !== staffId && !(await this.revisitHandedTo(staffId, earlier.id))) {
         throw codedError(HttpStatus.FORBIDDEN, 'NOT_YOUR_VISIT', "This shop was visited by another field agent. Start a new visit instead.");
       }
       if (earlier.businessId) businessId = earlier.businessId;
@@ -184,7 +189,7 @@ export class FieldVisitService {
     const business = businessId ? await this.prisma.business.findUnique({ where: { id: businessId } }) : null;
     if (businessId && !business) throw new NotFoundException('Business not found');
     // Rev 188: another agent's business is view-only (an assigned visit is his to do).
-    if (business && !assignmentId && business.accountAgentId && business.accountAgentId !== staffId) {
+    if (business && !assignmentId && business.accountAgentId && business.accountAgentId !== staffId && !(await coversBusiness(this.prisma, staffId, business.id))) {
       throw codedError(HttpStatus.FORBIDDEN, 'NOT_YOUR_BUSINESS', "This business belongs to another field agent. You can view it but not record visits.");
     }
 
@@ -316,6 +321,7 @@ export class FieldVisitService {
       }
     }
     let revisitOn: Date | null = null;
+    let revisitTime: string | null = null;
     if (REVISIT_OUTCOMES.includes(choice)) {
       const key = body.revisitOn?.trim() ?? '';
       if (!DATE_KEY.test(key) || Number.isNaN(dateFromKey(key).getTime())) {
@@ -323,6 +329,12 @@ export class FieldVisitService {
       }
       if (key < istDateKey(visit.startedAt ?? visit.visitedAt)) throw new BadRequestException('The come-back date cannot be in the past');
       revisitOn = dateFromKey(key);
+      // 21 Nov: an optional come-back time ("HH:mm" IST).
+      const time = body.revisitTime?.trim() ?? '';
+      if (time) {
+        if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw new BadRequestException('Pick the come-back time');
+        revisitTime = time;
+      }
     }
     const note = body.note?.trim() ? body.note.trim().slice(0, 1000) : null;
 
@@ -345,7 +357,7 @@ export class FieldVisitService {
       ...(contactPhone ? { contactPhone } : {}),
       ...(onboardNow
         ? {}
-        : { outcome: recorded, outcomeReason: reason, revisitOn, note, outcomeRecordedAt: now }),
+        : { outcome: recorded, outcomeReason: reason, revisitOn, revisitTime, note, outcomeRecordedAt: now }),
     };
     await this.prisma.businessVisit.update({ where: { id }, data });
     await this.audit.log({
@@ -407,6 +419,7 @@ export class FieldVisitService {
       }
     }
     let revisitOn: Date | null = null;
+    let revisitTime: string | null = null;
     if (REVISIT_OUTCOMES.includes(outcome)) {
       const key = (body.revisitOn ?? '').trim();
       if (!DATE_KEY.test(key) || Number.isNaN(dateFromKey(key).getTime()) || keyFromDate(dateFromKey(key)) !== key) {
@@ -414,6 +427,12 @@ export class FieldVisitService {
       }
       if (key < istDateKey(now)) throw codedError(HttpStatus.BAD_REQUEST, 'REVISIT_DATE_PAST', 'The come-back date cannot be in the past');
       revisitOn = dateFromKey(key);
+      // 21 Nov: an optional come-back time ("HH:mm" IST).
+      const time = body.revisitTime?.trim() ?? '';
+      if (time) {
+        if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw new BadRequestException('Pick the come-back time');
+        revisitTime = time;
+      }
     }
     if (outcome === visit.outcome && keyFromDate(revisitOn) === keyFromDate(visit.revisitOn) && outcomeReason === visit.outcomeReason) {
       throw codedError(HttpStatus.BAD_REQUEST, 'RESULT_UNCHANGED', 'The new result is the same as the current one');
@@ -423,7 +442,7 @@ export class FieldVisitService {
       // Only the result that was checked above (a change or onboarding since then wins).
       const changed = await tx.businessVisit.updateMany({
         where: { id, staffId, outcome: visit.outcome, outcomeRecordedAt: visit.outcomeRecordedAt },
-        data: { outcome, outcomeReason, revisitOn, note },
+        data: { outcome, outcomeReason, revisitOn, revisitTime, note },
       });
       if (changed.count !== 1) {
         throw codedError(HttpStatus.CONFLICT, 'VISIT_RESULT_CHANGED', 'The result changed meanwhile. Open the visit again.');
@@ -696,6 +715,11 @@ export class FieldVisitService {
         await this.raise('visit_short', visit, { durationSeconds, shortMinutes: policy.visitShortMinutes });
       }
     }
+  }
+
+  private async revisitHandedTo(staffId: string, visitId: string): Promise<boolean> {
+    const row = await this.prisma.fieldHandover.findFirst({ where: { kind: 'revisit', recordId: visitId, toStaffId: staffId, endedAt: null }, select: { id: true } });
+    return Boolean(row);
   }
 
   /** "Onboard now" was chosen and the onboarding has not finished: the agent is still in the shop. */

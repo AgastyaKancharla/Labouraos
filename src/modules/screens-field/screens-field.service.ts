@@ -1,4 +1,5 @@
 import { OwnTeam } from '../../common/rbac/own-team';
+import { businessCandidateAccess } from '../business/business-candidate-access';
 import { agentSeesFullBusiness, agentViewerFor, fieldAgentCanAct } from '../business/business-agent-view';
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { BusinessVisit, Prisma } from '@prisma/client';
@@ -10,6 +11,8 @@ import { REVISIT_OUTCOMES } from '../field-visit/field-visit.constants';
 import { visitNextStep } from '../field-visit/field-visit.service';
 import { firstOnboardingsBy } from './field-redesign.service';
 import { DAY_MS, FieldVisitClock, istDateKey, istDayStart, keyFromDate } from '../field-visit/field-visit-clock';
+import { handedAwayIds, handedTo } from '../field-visit/field-handover.service';
+import { FIELD_REVISIT_EXCLUDE, FieldWorkExtrasService } from './field-work-extras.service';
 
 /** Map statuses (FA13 legend): onboarded, revisit due, interested, not interested; plus lead. */
 export type ShopStatus = 'onboarded' | 'revisit_due' | 'interested' | 'not_interested' | 'lead';
@@ -53,6 +56,7 @@ export class ScreensFieldService {
     private readonly prisma: PrismaService,
     private readonly pricing: PricingService,
     private readonly clock: FieldVisitClock,
+    private readonly extras: FieldWorkExtrasService,
   ) {}
 
   // ------------------------------------------------------------- FA03 Home
@@ -85,7 +89,7 @@ export class ScreensFieldService {
         where: { signedAt: { gte: since }, business: mine },
         orderBy: { signedAt: 'desc' },
         take: 10,
-        include: { business: { select: { id: true, code: true, name: true, verificationStatus: true, inPersonOnboardedAt: true, pausedAt: true } } },
+        include: { business: { select: { id: true, code: true, name: true, verificationStatus: true, inPersonOnboardedAt: true, fieldVerifiedAt: true, pausedAt: true } } },
       }),
       this.prisma.interview.findMany({
         where: {
@@ -103,10 +107,7 @@ export class ScreensFieldService {
         kind: 'agreement_signed' as const,
         at: a.signedAt.toISOString(),
         business: { id: a.business.id, code: a.business.code, name: a.business.name },
-        canShowCandidates:
-          !a.business.pausedAt &&
-          (a.business.verificationStatus === 'verified' ||
-            (a.business.verificationStatus === 'pending_tl_check' && Boolean(a.business.inPersonOnboardedAt))),
+        canShowCandidates: businessCandidateAccess(a.business).allowed,
       })),
       ...results.map((r) => ({
         kind: 'interview_result' as const,
@@ -241,12 +242,15 @@ export class ScreensFieldService {
       const interview = interviewId ? byInterview.get(interviewId) : undefined;
       return Boolean(interview && (interview.candidateArrivedAt || interview.result === 'candidate_no_show'));
     };
+    // 21 Nov: a verification visit's job card (address, owner, phone last 4, last try) rides on its planned row.
+    const cards = new Map((await this.extras.verificationJobCards(staffId)).map((c) => [c.assignmentId, c]));
     const planned = assignments.filter((a) => !(a.relatedType === 'interview' && attendanceRecorded(a.relatedId))).map((a) => {
       const interview = a.relatedId ? byInterview.get(a.relatedId) : undefined;
       return {
         assignmentId: a.id,
         purpose: a.purpose,
         business: a.business,
+        job: cards.get(a.id) ?? null,
         // business_signup (customer app): the time the owner picked in the app.
         requestedFor: a.requestedFor?.toISOString() ?? null,
         interview: interview
@@ -431,10 +435,7 @@ export class ScreensFieldService {
       documentsStatus: business.documentsStatus,
       paused: Boolean(business.pausedAt),
       inPersonOnboardedAt: business.inPersonOnboardedAt?.toISOString() ?? null,
-      canShowCandidates:
-        !business.pausedAt &&
-        (business.verificationStatus === 'verified' ||
-          (business.verificationStatus === 'pending_tl_check' && Boolean(business.inPersonOnboardedAt))),
+      canShowCandidates: businessCandidateAccess(business).allowed,
       isMine,
       agreement: agreement ? { signedAt: agreement.signedAt.toISOString(), signedName: full ? agreement.signedName : null } : null,
       contact: full
@@ -488,17 +489,27 @@ export class ScreensFieldService {
    * outcome brings them back on a date.
    */
   private async revisitsDue(staffId: string, byKey: string) {
+    // 21 Nov: revisits handed over to me come in, mine handed away go out, and a verification
+    // visit still open is shown once, as its planned verification (not again as a revisit).
+    const [handedIn, away] = await Promise.all([handedTo(this.prisma, staffId, 'revisit'), handedAwayIds(this.prisma, staffId, 'revisit')]);
     const rows = await this.prisma.businessVisit.findMany({
-      where: { staffId, outcome: { in: [...REVISIT_OUTCOMES] }, revisitOn: { lte: new Date(`${byKey}T00:00:00.000Z`) } },
+      where: {
+        OR: [{ staffId }, { id: { in: handedIn.map((h) => h.recordId) } }],
+        outcome: { in: [...REVISIT_OUTCOMES] },
+        revisitOn: { lte: new Date(`${byKey}T00:00:00.000Z`) },
+      },
       orderBy: { visitedAt: 'desc' },
       include: { business: { select: { id: true, code: true, name: true, locality: true, latitude: true, longitude: true } } },
       take: 200,
     });
+    const openVerification = await this.extras.openVerificationVisitIds(rows);
     const result: Array<{
       visitId: string; businessId: string | null; name: string; locality: string | null; outcome: string | null;
-      revisitOn: string | null; note: string | null; latitude: number; longitude: number; lastVisitAt: string;
+      revisitOn: string | null; revisitTime: string | null; note: string | null; latitude: number; longitude: number; lastVisitAt: string;
+      covering: boolean;
     }> = [];
     for (const v of rows) {
+      if (away.has(v.id) || openVerification.has(v.id) || FIELD_REVISIT_EXCLUDE.has(v.purpose ?? '')) continue;
       const later = v.businessId
         ? await this.prisma.businessVisit.findFirst({ where: { businessId: v.businessId, visitedAt: { gt: v.visitedAt } }, select: { id: true } })
         : await this.prisma.businessVisit.findFirst({ where: { revisitOfVisitId: v.id }, select: { id: true } });
@@ -506,14 +517,16 @@ export class ScreensFieldService {
       result.push({
         visitId: v.id,
         businessId: v.businessId,
-        name: v.business?.name ?? v.shopName ?? '',
+        name: v.business?.name || v.shopName || v.business?.locality || 'Shop visit',
         locality: v.business?.locality ?? null,
         outcome: v.outcome,
         revisitOn: keyFromDate(v.revisitOn),
+        revisitTime: v.revisitTime,
         note: v.note,
         latitude: v.business?.latitude ?? v.latitude,
         longitude: v.business?.longitude ?? v.longitude,
         lastVisitAt: v.visitedAt.toISOString(),
+        covering: v.staffId !== staffId,
       });
     }
     return result.sort((a, b) => (a.revisitOn ?? '').localeCompare(b.revisitOn ?? ''));

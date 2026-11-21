@@ -7,6 +7,7 @@ import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { PiiMaskingInterceptor } from '../../common/rbac/pii-masking.interceptor';
 import { ScreensFieldService } from './screens-field.service';
 import { FieldRedesignService } from './field-redesign.service';
+import { FieldWorkExtrasService } from './field-work-extras.service';
 
 type Authed = Request & { user: JwtPayload };
 
@@ -23,7 +24,50 @@ export class ScreensFieldController {
   constructor(
     private readonly screens: ScreensFieldService,
     private readonly redesign: FieldRedesignService,
+    private readonly extras: FieldWorkExtrasService,
   ) {}
+
+  /** Me → "Your calling phone" (21 Nov): set or not, last 4 digits (set it with PUT /staff/:id/call-routing-phone). */
+  @Get('calling-phone')
+  @RequireRoles('field_agent')
+  callingPhone(@Req() req: Authed) {
+    return this.extras.callingPhone(req.user);
+  }
+
+  /** The Field bell (21 Nov): notifications with where each opens; mark read with POST /notifications/:id/seen. */
+  @Get('notifications')
+  @RequireRoles('field_agent')
+  notifications(@Req() req: Authed, @Query('limit') limit?: string) {
+    return this.extras.notificationsList(req.user, { limit });
+  }
+
+  /** Open verification visits as job cards: address, owner, phone last 4, map pin, last try (21 Nov). */
+  @Get('verification-visits')
+  @RequireRoles('field_agent')
+  verificationVisits(@Req() req: Authed) {
+    return this.extras.verificationJobCards(req.user.sub);
+  }
+
+  /** "Update the pin" during an open verification visit: GPS + reason, audited (21 Nov). */
+  @Post('verification-visits/:assignmentId/pin')
+  @RequireRoles('field_agent')
+  updatePin(@Req() req: Authed, @Param('assignmentId') assignmentId: string, @Body() body: { latitude?: unknown; longitude?: unknown; accuracy?: unknown; reason?: unknown }) {
+    return this.extras.updatePin(req.user, assignmentId, body ?? {});
+  }
+
+  /** One follow-up task of mine (repeat business day 30/61…): kind label, owner, answers (21 Nov). */
+  @Get('follow-ups/:id')
+  @RequireRoles('field_agent')
+  followUp(@Req() req: Authed, @Param('id') id: string) {
+    return this.extras.followUp(req.user, id);
+  }
+
+  /** Before registering a shop: businesses nearby with a similar name (21 Nov). */
+  @Get('similar-shops')
+  @RequireRoles('field_agent')
+  similarShops(@Req() req: Authed, @Query('name') name?: string, @Query('lat') lat?: string, @Query('lng') lng?: string) {
+    return this.extras.similarShops(req.user, { name, lat, lng });
+  }
 
   /** Today tab (rev 188): attendance, today's numbers, targets bar, Needs you now. */
   @Get('today')

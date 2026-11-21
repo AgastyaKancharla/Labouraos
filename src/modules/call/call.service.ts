@@ -702,17 +702,31 @@ export class CallService {
   private async assertCanCall(
     actor: CallActor,
     subjectType: 'job_seeker' | 'business' | 'referral',
-    subject: { accountAgentId: string | null },
+    subject: { id: string; accountAgentId: string | null },
   ) {
     const rule = RBAC_MATRIX[actor.role as Role]?.[subjectType]?.read;
     if (!rule?.allowed) {
       throw new ForbiddenException('You cannot call this record');
     }
     if (actor.role === 'field_agent' && subjectType === 'business') {
-      if (subject.accountAgentId !== actor.id) {
+      if (subject.accountAgentId !== actor.id && !(await this.fieldAgentWorksOn(actor.id, subject.id))) {
         throw new ForbiddenException('Field agents may only call their account businesses');
       }
     }
+  }
+
+  /**
+   * 21 Nov (Laboura Field): besides his account businesses a field agent may call the owner of
+   * a business he has an open visit to (a verification visit's "Call owner"), a follow-up task
+   * on, or open work of handed over to him on a teammate's leave.
+   */
+  private async fieldAgentWorksOn(staffId: string, businessId: string): Promise<boolean> {
+    const [visit, task, cover] = await Promise.all([
+      this.prisma.visitAssignment.findFirst({ where: { businessId, assignedStaffId: staffId, status: 'assigned' }, select: { id: true } }),
+      this.prisma.followUpTask.findFirst({ where: { subjectType: 'business', subjectId: businessId, assignedStaffId: staffId, status: 'pending' }, select: { id: true } }),
+      this.prisma.fieldHandover.findFirst({ where: { businessId, toStaffId: staffId, endedAt: null }, select: { id: true } }),
+    ]);
+    return Boolean(visit || task || cover);
   }
 
   private async visibleStaffIds(actor: CallActor): Promise<string[] | null> {

@@ -1,3 +1,4 @@
+import { coversBusiness } from '../field-visit/field-handover.service';
 import { OwnTeam, teamLeadOf } from '../../common/rbac/own-team';
 import {
   BadRequestException,
@@ -139,10 +140,14 @@ export class FieldSellingService {
   /** Field agents act only on their own account businesses; a Team Lead on the team's. */
   private async assertActsOnBusiness(
     actor: SellingActor,
-    business: { accountAgentId: string | null; leadCreatedByStaffId: string | null },
+    business: { id?: string; accountAgentId: string | null; leadCreatedByStaffId: string | null },
   ) {
     await this.staff(actor);
-    if (actor.role === 'field_agent' && business.accountAgentId !== actor.id) {
+    // 21 Nov: a field agent covering a teammate's open work (leave handover) acts on that business too.
+    if (
+      actor.role === 'field_agent' && business.accountAgentId !== actor.id &&
+      !(business.id && (await this.worksOnBusiness(actor.id, business.id)))
+    ) {
       throw new ForbiddenException('Field agents act only on their own account businesses');
     }
     if (actor.role === 'team_lead') {
@@ -227,6 +232,36 @@ export class FieldSellingService {
     }
     return this.calls.place(actor, {
       subjectType: 'job_seeker', subjectId: seeker.id, purpose: 'offer', relatedType: 'vacancy', relatedId: vacancy.id,
+    });
+  }
+
+  /** A field agent covering this business's work (leave handover) or sent to it for an interview. */
+  private async worksOnBusiness(staffId: string, businessId: string): Promise<boolean> {
+    if (await coversBusiness(this.prisma, staffId, businessId)) return true;
+    const visit = await this.prisma.visitAssignment.findFirst({
+      where: { businessId, assignedStaffId: staffId, status: 'assigned', purpose: 'interview_attendance' },
+      select: { id: true },
+    });
+    return Boolean(visit);
+  }
+
+  /** 21 Nov: the candidate came to the shop without replying: the offer counts as accepted. */
+  private async acceptOfferByArrival(actor: SellingActor, interview: { id: string; code: string; business: { city: string } }, now: Date) {
+    const changed = await this.prisma.interview.updateMany({
+      where: { id: interview.id, status: 'offered', candidateRespondedAt: null },
+      data: { status: 'confirmed', candidateRespondedAt: now },
+    });
+    if (changed.count !== 1) return;
+    await recordStatusChange(this.prisma, {
+      subjectType: 'interview', subjectId: interview.id, fromStatus: 'offered', toStatus: 'confirmed',
+      changedByStaffId: actor.id, changedAt: now,
+      reason: 'Candidate turned up at the shop without replying: arriving counts as accepting the offer',
+    });
+    await this.audit.log({
+      actorId: actor.id, action: 'interview.offer_accepted_by_arrival', entityType: 'Interview', entityCode: interview.code,
+      city: interview.business.city, before: { status: 'offered' }, after: { status: 'confirmed', candidateRespondedAt: now.toISOString() },
+      changedFields: ['status', 'candidateRespondedAt'],
+      reason: 'Arrival marked by the attending field agent before the candidate replied',
     });
   }
 
@@ -558,7 +593,16 @@ export class FieldSellingService {
       !Number.isFinite(body.latitude) || !Number.isFinite(body.longitude)) {
       throw new BadRequestException('Your GPS location is needed to mark this');
     }
-    if (interview.status !== 'confirmed') throw new BadRequestException('This interview is not waiting for the candidate');
+    // 21 Nov: a candidate who turns up without replying to the offer can be marked Arrived:
+    // turning up counts as accepting (recorded and audited below). "Didn't come" stays for confirmed ones.
+    const acceptsByArriving = interview.status === 'offered' && body.arrived === true;
+    if (interview.status !== 'confirmed' && !acceptsByArriving) {
+      throw new BadRequestException(
+        interview.status === 'offered'
+          ? 'He has not replied to the offer yet: mark him Arrived when he turns up (that counts as accepting)'
+          : 'This interview is not waiting for the candidate',
+      );
+    }
     if (interview.interviewType === 'phone' || interview.interviewType === 'in_shop_call') {
       throw new BadRequestException('Arrival is marked only for interviews at the shop');
     }
@@ -571,10 +615,13 @@ export class FieldSellingService {
         istDateKey(now) !== istDateKey(interview.slotStartsAt)) {
         throw new BadRequestException('Arrival can be marked only on the interview day, from an hour before');
       }
-      // The field visits module owns "candidate arrived" (GPS at the shop, distance from the pin).
-      return this.fieldVisits.candidateArrived(actor.id, interviewId, {
+      // The field visits module owns "candidate arrived" (GPS at the shop, distance from the pin);
+      // it checks the GPS first, so a refused arrival never accepts the offer.
+      const arrival = await this.fieldVisits.candidateArrived(actor.id, interviewId, {
         latitude: body.latitude, longitude: body.longitude, accuracy: body.accuracyM,
       });
+      if (acceptsByArriving) await this.acceptOfferByArrival(actor, interview, now);
+      return arrival;
     }
     if (interview.candidateArrivedAt) throw new BadRequestException('He was already marked as arrived');
     if (now.getTime() < interview.slotEndsAt.getTime()) {
