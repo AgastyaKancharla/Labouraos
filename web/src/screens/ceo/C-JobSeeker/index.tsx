@@ -15,6 +15,7 @@ import { formatINR } from '../../../lib/format/money';
 import { formatMobile } from '../../../lib/format/phone';
 import { useRecordsPortal } from '../_kit/records';
 import { AssignmentLine, type Assignment } from '../_kit/assign';
+import { StuckBox } from '../../shared/StuckBox';
 import { ProfileHero } from '../_kit/photos';
 import { ActionButton } from '../_kit/actions';
 import { useAuth } from '../../../auth/AuthProvider';
@@ -213,6 +214,8 @@ export default function JobSeekerDetail() {
       />
       {/* Photo at the top of the profile, the name and the ID under it (rev 198). */}
       <ProfileHero kind="job_seeker" id={d.id} name={d.name} code={d.code} hasPhoto={d.registration.hasSelfie} />
+      {/* 21 Nov (rev 204): owner, step and the matching button, in every portal's scope. */}
+      <StuckBox kind="job_seeker" id={d.id} />
 
       <LegalAcceptanceCard subjectType="job_seeker" subjectId={d.id} />
       <StatGrid>

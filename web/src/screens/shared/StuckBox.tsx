@@ -1,0 +1,167 @@
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Button } from '../../components/Button';
+import { MobileField } from '../../components/fields/MobileField';
+import { SelectField } from '../../components/fields';
+import { useToast } from '../../components/Toast';
+import { useT } from '../../i18n/I18nProvider';
+import type { MessageKey } from '../../i18n/en';
+import { api } from '../../lib/api/client';
+import { isApiError } from '../../lib/api/errors';
+import { PAYER_RELATIONS } from '../call-agent/_registration/options';
+
+/**
+ * "Where they're stuck" (Master Guide rev 204, 21 Nov) on every job seeker,
+ * business and referral partner profile in the call agent, Team Lead, Manager
+ * and CEO views: the account owner, the step the person is on and the button
+ * that matches it. Every button calls the existing route with its own
+ * permissions; a refusal (for example a do-not-call or wrong-number block)
+ * shows the server's message. Waiting for the Team Lead's ID check shows that,
+ * with no resend.
+ */
+export type StuckKind = 'job_seeker' | 'business' | 'referral';
+type StuckAction = 'registration_link' | 'payment_link' | 'someone_else_pays' | 'agreement_link' | 'partner_terms_link';
+
+export interface StuckView {
+  kind: StuckKind;
+  id: string;
+  code: string;
+  name: string;
+  owner: { name: string; code: string } | null;
+  step: string;
+  state: string;
+  reason: string | null;
+  waitingForTeamLead: boolean;
+  actions: StuckAction[];
+}
+
+const STEP: Record<string, MessageKey> = {
+  consent: 'stuck.step.consent',
+  selfie: 'stuck.step.selfie',
+  id_check: 'stuck.step.id_check',
+  payment: 'stuck.step.payment',
+  agreement: 'stuck.step.agreement',
+  visit: 'stuck.step.visit',
+  team_lead_check: 'stuck.step.team_lead_check',
+  terms: 'stuck.step.terms',
+  upi: 'stuck.step.upi',
+  complete: 'stuck.step.complete',
+  closed: 'stuck.step.closed',
+};
+
+const STATE: Record<string, MessageKey> = {
+  not_started: 'stuck.state.not_started',
+  in_progress: 'stuck.state.in_progress',
+  stuck: 'stuck.state.stuck',
+  done: 'stuck.state.done',
+  confirming: 'stuck.state.in_progress',
+};
+
+const ACTION: Record<Exclude<StuckAction, 'someone_else_pays'>, { label: MessageKey; run: (id: string) => Promise<unknown> }> = {
+  registration_link: { label: 'stuck.action.registration_link', run: (id) => api.post('/consent/links', { jobSeekerId: id }) },
+  payment_link: { label: 'stuck.action.payment_link', run: (id) => api.post(`/job-seekers/${encodeURIComponent(id)}/resend-payment`, {}) },
+  agreement_link: { label: 'stuck.action.agreement_link', run: (id) => api.post(`/businesses/${encodeURIComponent(id)}/agreement-links`, {}) },
+  partner_terms_link: { label: 'stuck.action.partner_terms_link', run: (id) => api.post(`/referrals/${encodeURIComponent(id)}/terms-links`, {}) },
+};
+
+export function stuckQueryKey(kind: StuckKind, id: string) {
+  return ['profile-stuck', kind, id] as const;
+}
+
+export function StuckBox({ kind, id }: { kind: StuckKind; id: string }) {
+  const t = useT();
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const stuck = useQuery({
+    queryKey: stuckQueryKey(kind, id),
+    queryFn: () => api.get<StuckView>('/profile-stuck', { query: { kind, id } }),
+    enabled: Boolean(id),
+    retry: false,
+  });
+  const [problem, setProblem] = useState<string | null>(null);
+  const [otherOpen, setOtherOpen] = useState(false);
+  const [otherPhone, setOtherPhone] = useState('');
+  const [relation, setRelation] = useState('');
+  const send = useMutation({
+    mutationFn: (fn: () => Promise<unknown>) => fn(),
+    onSuccess: () => {
+      setProblem(null);
+      setOtherOpen(false);
+      setOtherPhone('');
+      toast.success(t('stuck.sent'));
+      void queryClient.invalidateQueries({ queryKey: stuckQueryKey(kind, id) });
+    },
+    // The server's own words: a do-not-call or wrong-number block (409), a one-a-minute limit, a scope refusal.
+    onError: (e) => setProblem(isApiError(e) ? e.message : t('error.server')),
+  });
+
+  if (stuck.isLoading || stuck.error || !stuck.data) return null;
+  const s = stuck.data;
+  const stepLabel = t(STEP[s.step] ?? 'stuck.step.unknown');
+  return (
+    <section className="card lb-stuck" aria-label={t('stuck.title')} data-testid="stuck-box">
+      <h2 className="h2">{t('stuck.title')}</h2>
+      <div className="row">
+        <span>{t('stuck.owner')}</span>
+        <b data-testid="stuck-owner">{s.owner ? `${s.owner.name} · ${s.owner.code}` : t('stuck.noOwner')}</b>
+      </div>
+      <div className="row">
+        <span>{t('stuck.step')}</span>
+        <b data-testid="stuck-step">
+          {stepLabel}
+          {s.step !== 'complete' && STATE[s.state] ? ` · ${t(STATE[s.state])}` : ''}
+        </b>
+      </div>
+      {s.waitingForTeamLead ? (
+        <p className="lb-ca-why" role="status" data-testid="stuck-waiting">
+          {t(s.kind === 'business' ? 'stuck.waitingApproval' : 'stuck.waitingIdCheck')}
+        </p>
+      ) : (
+        s.reason && <p className="sub">{s.reason}</p>
+      )}
+      {s.actions.length > 0 && (
+        <div className="lb-stuck__actions">
+          {s.actions.map((action) =>
+            action === 'someone_else_pays' ? (
+              <Button key={action} onClick={() => setOtherOpen((o) => !o)} aria-expanded={otherOpen}>
+                {t('stuck.action.someone_else_pays')}
+              </Button>
+            ) : (
+              <Button key={action} variant="primary" loading={send.isPending} onClick={() => send.mutate(() => ACTION[action].run(s.id))}>
+                {t(ACTION[action].label)}
+              </Button>
+            ),
+          )}
+        </div>
+      )}
+      {otherOpen && (
+        <div className="lb-stuck__other">
+          <MobileField label={t('stuck.otherPhone')} value={otherPhone} onChange={setOtherPhone} required />
+          <SelectField
+            label={t('stuck.otherRelation')}
+            value={relation}
+            onChange={setRelation}
+            options={PAYER_RELATIONS.map((r) => ({ value: r.value, label: t(r.label as MessageKey) }))}
+          />
+          <Button
+            variant="primary"
+            disabled={otherPhone.length !== 10}
+            loading={send.isPending}
+            onClick={() =>
+              send.mutate(() =>
+                api.post(`/job-seekers/${encodeURIComponent(s.id)}/payment-only-link`, { phone: `+91${otherPhone}`, ...(relation ? { relation } : {}) }),
+              )
+            }
+          >
+            {t('stuck.otherSend')}
+          </Button>
+        </div>
+      )}
+      {problem && (
+        <p className="vno" role="alert" data-testid="stuck-problem">
+          {problem}
+        </p>
+      )}
+    </section>
+  );
+}

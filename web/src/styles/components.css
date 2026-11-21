@@ -1807,3 +1807,22 @@ img.lb-staffphoto {
   display: flex;
   gap: 8px;
 }
+
+/* ---------- "Where they're stuck" (21 Nov) ---------- */
+.lb-stuck {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.lb-stuck__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.lb-stuck__other {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 420px;
+}

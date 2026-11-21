@@ -16,6 +16,7 @@ import { formatMobile } from '../../../lib/format/phone';
 import type { ReactNode } from 'react';
 import { useRecordsPortal } from '../_kit/records';
 import { AssignmentLine, type Assignment } from '../_kit/assign';
+import { StuckBox } from '../../shared/StuckBox';
 import { ProfileHero, VisitPhotos } from '../_kit/photos';
 import { ActionButton } from '../_kit/actions';
 import { Kv, Timeline, dateOrDash, humanize } from '../_kit/kit';
@@ -189,6 +190,8 @@ export default function BusinessDetail() {
       />
       {/* Photo at the top of the profile, the name and the ID under it (rev 198). */}
       <ProfileHero kind="business" id={d.id} name={d.name} code={d.code} visits={d.visits} />
+      {/* 21 Nov (rev 204): owner, step and the matching button, in every portal's scope. */}
+      <StuckBox kind="business" id={d.id} />
       <SuspensionBanner suspension={d.suspension} />
       <StatGrid>
         <StatTile label={`Open vacancies · ${d.tiles.openPositions} positions`} value={d.tiles.openVacancies} tone="gold" />

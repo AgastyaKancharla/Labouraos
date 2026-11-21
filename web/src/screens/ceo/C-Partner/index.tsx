@@ -13,6 +13,7 @@ import { formatMobile } from '../../../lib/format/phone';
 import type { ReactNode } from 'react';
 import { useRecordsPortal } from '../_kit/records';
 import { AssignmentLine, type Assignment } from '../_kit/assign';
+import { StuckBox } from '../../shared/StuckBox';
 import { ProfileHero } from '../_kit/photos';
 import { ActionButton } from '../_kit/actions';
 import { useAuth } from '../../../auth/AuthProvider';
@@ -127,6 +128,8 @@ export default function PartnerDetail() {
       />
       {/* Photo at the top of the profile, the name and the ID under it (rev 198). */}
       <ProfileHero kind="referral" id={d.id} name={d.name} code={d.code} />
+      {/* 21 Nov (rev 204): owner, step and the matching button, in every portal's scope. */}
+      <StuckBox kind="referral" id={d.id} />
       {d.paused && (
         <div className="panel" role="status" style={{ padding: '12px 18px', borderLeft: '4px solid var(--red-raw)' }}>
           <strong>Paused {formatDateIST(d.paused.at)}</strong> — {d.paused.reason ?? 'no reason recorded'}. New referrals from this partner are refused; money already earned is still paid.
