@@ -690,3 +690,7 @@ Any successful write (`POST`/`PUT`/`PATCH`/`DELETE`, not `/attendance/*`, `/auth
 ### Back from lunch?
 
 After the lunch or short-break allowance both apps ask "Back from lunch?" / "Back from your break?"; one tap sets Available. The Team Lead's over-the-break bell is unchanged.
+
+### Calls during a visit; On call never sticks
+
+When a call ends for someone who was On visit or Travelling when it started (a field agent at a shop or on the road), the status goes straight back to On visit / Travelling, not After-call notes and Available, so the shop time keeps counting. Everyone else gets the 2 minutes of After-call notes, then Available. On call with no answered, unended call record behind it (the end event was lost, or the mock telephony never sends one) ends by itself after 2 minutes, at the call's own end time when there is one; and On call never lasts longer than 2 hours.

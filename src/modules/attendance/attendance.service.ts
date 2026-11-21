@@ -33,6 +33,11 @@ import { codedError } from '../../common/http/coded-error';
 
 const AGENT_ROLES = ['call_agent', 'field_agent'];
 
+/** On call with no open call record behind it ends after this grace (the end webhook is late or never comes). */
+export const CALL_STATUS_GRACE_MS = 2 * 60 * 1000;
+/** On call never lasts longer than this, even with a call record still open. */
+export const CALL_STATUS_MAX_MS = 2 * 60 * 60 * 1000;
+
 /**
  * When an Available person becomes Idle (decided 21 Nov), whichever comes first:
  * - away: no sign of an open, visible console or Laboura Field (any heartbeat)
@@ -601,14 +606,79 @@ export class AttendanceService {
     await this.switchStatus(day.id, staffId, 'on_call', 'phone_system', now);
   }
 
+  /**
+   * The call ended. A field agent who was at a shop or travelling when the
+   * call started goes straight back to On visit / Travelling (21 Nov, Builder
+   * C's request: the shop time keeps counting, no false Available); anyone
+   * else gets the 2 minutes of After-call notes, then Available.
+   */
   async onCallEnded(staffId: string | null): Promise<void> {
     if (!staffId) return;
     const now = this.clock.now();
     const day = await this.findOpenDay(staffId, now);
     if (!day) return;
-    const current = await this.openSegment(day.id);
-    if (current?.status === 'after_call_notes') return;
-    await this.switchStatus(day.id, staffId, 'after_call_notes', 'phone_system', now);
+    await this.endCallStatus(day.id, staffId, now);
+  }
+
+  /** Ends On call (or After-call notes) at `at`: back to the visit status from before the call, else After-call notes. */
+  private async endCallStatus(dayId: string, staffId: string, at: Date): Promise<void> {
+    const current = await this.openSegment(dayId);
+    if (!current || (current.status !== 'on_call' && current.status !== 'after_call_notes')) {
+      // Ended without a status of its own (an answered-and-ended event, a status picked meanwhile):
+      // only a call that left nothing else open shows After-call notes, as before.
+      if (!current || current.status === 'available') await this.switchStatus(dayId, staffId, 'after_call_notes', 'phone_system', at);
+      return;
+    }
+    const before = await this.statusBeforeCall(dayId, current.startedAt);
+    if (before) {
+      await this.switchStatus(dayId, staffId, before, 'phone_system', at);
+      return;
+    }
+    if (current.status === 'after_call_notes') return;
+    await this.switchStatus(dayId, staffId, 'after_call_notes', 'phone_system', at);
+  }
+
+  /**
+   * On visit or Travelling when the call (chain of On call / After-call notes
+   * segments ending at `callStartedAt`) began, or null.
+   */
+  private async statusBeforeCall(dayId: string, callStartedAt: Date): Promise<'on_visit' | 'travelling' | null> {
+    const earlier = await this.prisma.attendanceSegment.findMany({
+      where: { dayId, startedAt: { lte: callStartedAt } },
+      orderBy: { startedAt: 'desc' },
+      take: 12,
+      select: { status: true, startedAt: true, endedAt: true },
+    });
+    for (const segment of earlier) {
+      if (segment.status === 'on_call' || segment.status === 'after_call_notes') continue;
+      // A status replaced in the same instant (zero length) was never really held.
+      if (segment.endedAt && segment.endedAt.getTime() <= segment.startedAt.getTime()) continue;
+      return segment.status === 'on_visit' || segment.status === 'travelling' ? segment.status : null;
+    }
+    return null;
+  }
+
+  /**
+   * On call that no call record keeps open (the phone system never sent the
+   * end, e.g. with the mock telephony): ended at the call's own end time if
+   * it has one, else now. A call still open longer than CALL_STATUS_MAX_MS is
+   * ended too, so On call can never stick.
+   */
+  private async endStaleCall(dayId: string, staffId: string, since: Date, now: Date): Promise<boolean> {
+    const open = await this.prisma.callRecord.findFirst({
+      where: { staffId, answeredAt: { not: null }, endedAt: null, createdAt: { gte: new Date(since.getTime() - CALL_STATUS_MAX_MS) } },
+      orderBy: { answeredAt: 'desc' },
+      select: { answeredAt: true },
+    });
+    if (open?.answeredAt && now.getTime() - open.answeredAt.getTime() < CALL_STATUS_MAX_MS) return false;
+    if (!open && now.getTime() - since.getTime() < CALL_STATUS_GRACE_MS) return false;
+    const last = await this.prisma.callRecord.findFirst({
+      where: { staffId, endedAt: { gte: since, lte: now } },
+      orderBy: { endedAt: 'desc' },
+      select: { endedAt: true },
+    });
+    await this.endCallStatus(dayId, staffId, open ? now : (last?.endedAt ?? now));
+    return true;
   }
 
   async isAvailable(staffId: string): Promise<boolean> {
@@ -726,10 +796,16 @@ export class AttendanceService {
     if (!day) return;
     const current = await this.openSegment(day.id);
     if (!current) return;
+    if (current.status === 'on_call') {
+      await this.endStaleCall(day.id, staffId, current.startedAt, now);
+      return;
+    }
     if (current.status === 'after_call_notes') {
       const backAt = new Date(current.startedAt.getTime() + AFTER_CALL_NOTES_MS);
       if (now.getTime() >= backAt.getTime()) {
-        await this.switchStatus(day.id, staffId, 'available', 'phone_system', backAt);
+        // Back to On visit / Travelling when the call came in during a visit, else Available.
+        const before = await this.statusBeforeCall(day.id, current.startedAt);
+        await this.switchStatus(day.id, staffId, before ?? 'available', 'phone_system', backAt);
       }
       return;
     }

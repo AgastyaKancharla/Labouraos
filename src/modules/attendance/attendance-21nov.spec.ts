@@ -232,6 +232,69 @@ describe('Attendance fixes (21 Nov): own shifts, idle, closing and reopening day
     });
   });
 
+  describe('calls during a visit (Builder C request, 21 Nov)', () => {
+    async function fieldAgentOnDay(prefix: string) {
+      const agent = await make('field_agent', prefix, { teamLeadId: lead.id, reportsToId: lead.id });
+      await post(tokenFor(agent), '/attendance/login', { latitude: 12.9, longitude: 77.6 }).expect(201);
+      return agent;
+    }
+    const status = async (staff: { id: string; role: string; code: string }) => (await today(tokenFor(staff))).body.status as string;
+
+    it('a call at the shop ends back On visit, a call while travelling back Travelling — not Available', async () => {
+      const agent = await fieldAgentOnDay('CV1');
+      await attendance.noteBusinessCheckIn(agent.id);
+      at('2026-11-24T04:05:00.000Z');
+      await attendance.onCallAnswered(agent.id);
+      expect(await status(agent)).toBe('on_call');
+      at('2026-11-24T04:06:00.000Z');
+      await attendance.onCallEnded(agent.id);
+      expect(await status(agent)).toBe('on_visit');
+
+      await attendance.noteBusinessCheckOut(agent.id);
+      at('2026-11-24T04:10:00.000Z');
+      await attendance.onCallAnswered(agent.id);
+      at('2026-11-24T04:11:00.000Z');
+      await attendance.onCallEnded(agent.id);
+      expect(await status(agent)).toBe('travelling');
+      // An answered-and-ended event in one go during a visit leaves the visit as it is.
+      await attendance.noteBusinessCheckIn(agent.id);
+      await attendance.onCallEnded(agent.id);
+      expect(await status(agent)).toBe('on_visit');
+    });
+
+    it('a call agent still gets 2 minutes of After-call notes, then Available', async () => {
+      const agent = await agentOf(lead, 'CV2');
+      await post(tokenFor(agent), '/attendance/login').expect(201);
+      at('2026-11-24T04:05:00.000Z');
+      await attendance.onCallAnswered(agent.id);
+      at('2026-11-24T04:06:00.000Z');
+      await attendance.onCallEnded(agent.id);
+      expect(await status(agent)).toBe('after_call_notes');
+      at('2026-11-24T04:08:30.000Z');
+      expect(await status(agent)).toBe('available');
+    });
+
+    it('On call never sticks: with no call record keeping it open (mock telephony, a lost end event) it ends after 2 minutes', async () => {
+      const agent = await fieldAgentOnDay('CV3');
+      await attendance.noteBusinessCheckIn(agent.id);
+      at('2026-11-24T04:05:00.000Z');
+      await attendance.onCallAnswered(agent.id);
+      at('2026-11-24T04:06:00.000Z');
+      expect(await status(agent)).toBe('on_call');
+      at('2026-11-24T04:08:00.000Z');
+      expect(await status(agent)).toBe('on_visit');
+
+      const caller = await agentOf(lead, 'CV4');
+      await post(tokenFor(caller), '/attendance/login').expect(201);
+      at('2026-11-24T04:20:00.000Z');
+      await attendance.onCallAnswered(caller.id);
+      at('2026-11-24T04:23:00.000Z');
+      expect(await status(caller)).toBe('after_call_notes');
+      at('2026-11-24T04:26:00.000Z');
+      expect(await status(caller)).toBe('available');
+    });
+  });
+
   describe('closing and reopening days', () => {
     it('the forgotten-logout clean-up closes only earlier days, never today\'s', async () => {
       const agent = await agentOf(lead, 'FGT');
