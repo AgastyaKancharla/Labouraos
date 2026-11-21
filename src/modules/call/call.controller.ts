@@ -37,6 +37,13 @@ export class CallController {
     return this.calls.applyWebhook(req.rawBody, signature);
   }
 
+  /** TeleCMI call reports (no signature from TeleCMI: the URL carries our key, TELECMI_WEBHOOK_KEY). */
+  @Post('telephony/webhook/telecmi')
+  @Public('webhook: TeleCMI signs nothing, so the sender is checked by the secret key in the URL and the app id')
+  applyTeleCmi(@Query('key') key: string | undefined, @Body() body: Record<string, unknown>) {
+    return this.calls.applyTeleCmiReport(key, body);
+  }
+
   @Get('calls/:id/recording')
   @UseGuards(JwtAuthGuard, RbacGuard, CallAccessGuard)
   @RequireRoles('team_lead', 'manager', 'ceo')

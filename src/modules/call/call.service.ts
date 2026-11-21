@@ -28,6 +28,7 @@ import { CallClock } from './call-clock';
 import { isAgentOutcome, isCallPurpose, NO_ANSWER_OUTCOMES, STOP_OUTCOMES } from './call-outcomes';
 import { ContactBlockKind, callsBlocked, liveKeyOf, phoneHash } from './contact-block';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
+import { mapTeleCmiReport, teleCmiKeyMatches } from '../telephony/telecmi';
 import { isWithinClockWindow } from './call-window';
 import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
@@ -152,6 +153,31 @@ export class CallService {
     const event = toCallStatusEvent(payload);
     if (!event) {
       throw new UnauthorizedException('Invalid call status signature');
+    }
+    return this.applyStatus(event);
+  }
+
+  /**
+   * TeleCMI call reports (21 Nov fixes, src/modules/telephony/telecmi.ts):
+   * a missed inbound call goes on the missed-call list (handed out by the
+   * software); an outbound or answered call updates its call record through
+   * applyStatus, like any other status webhook. Repeats are no-ops.
+   */
+  async applyTeleCmiReport(key: string | undefined, payload: Record<string, unknown>) {
+    if (!teleCmiKeyMatches(key)) throw new UnauthorizedException('Invalid TeleCMI webhook key');
+    const report = mapTeleCmiReport(payload ?? {});
+    if (report.kind === 'ignored') return { ignored: report.reason };
+    if (report.kind === 'missed_inbound') {
+      const result = await this.telephony.handleInboundCall({ callId: report.callId, callerPhone: report.callerPhone, timestamp: report.at });
+      return { callbackTaskId: result.callbackTaskId, duplicate: result.isDuplicate };
+    }
+    const event = { ...report.event };
+    if (report.callRecordId) {
+      const ours = await this.prisma.callRecord.findUnique({ where: { id: report.callRecordId }, select: { provider: true, providerCallId: true } });
+      if (ours) {
+        event.provider = ours.provider;
+        event.providerCallId = ours.providerCallId;
+      }
     }
     return this.applyStatus(event);
   }

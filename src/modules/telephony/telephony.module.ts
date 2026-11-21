@@ -15,6 +15,7 @@ import { ReportingScopeModule } from '../staff/reporting-scope.module';
 import { PricingModule } from '../pricing/pricing.module';
 import { NotificationModule } from '../notification/notification.module';
 import { MissedCallAssigner } from './missed-call-assigner.service';
+import { TeleCmiTelephonyProvider } from './telecmi';
 
 @Module({
   imports: [PrismaModule, AuditModule, AttendanceModule, LiveModule, ReportingScopeModule, PricingModule, NotificationModule],
@@ -28,6 +29,9 @@ import { MissedCallAssigner } from './missed-call-assigner.service';
           rawProvider && rawProvider !== 'undefined' ? rawProvider : 'mock';
         if (providerName === 'mock') {
           return new MockTelephonyProvider(prisma);
+        }
+        if (providerName === 'telecmi') {
+          return new TeleCmiTelephonyProvider(prisma, auditService);
         }
         if (
           providerName === 'real' ||

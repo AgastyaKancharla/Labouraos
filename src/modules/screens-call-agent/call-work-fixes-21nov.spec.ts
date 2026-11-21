@@ -456,6 +456,34 @@ describe('21 Nov fixes: call work and leads', () => {
     expect(home.body.work.items.map((i: { subjectId: string }) => i.subjectId)).not.toContain(waiting.id);
   });
 
+  it('TeleCMI webhook: refused without our key; a missed call lands on the missed-call list once; an outgoing report updates our call', async () => {
+    process.env.TELECMI_WEBHOOK_KEY = 'telecmi_webhook_key_for_tests_32_chars_x';
+    process.env.TELECMI_APP_ID = '1111113';
+    try {
+      const from = digits(98);
+      phones.push(`+91${from}`);
+      const missed = { appid: 1111113, type: 'cdr', direction: 'inbound', cmiuuid: `tc-${stamp}`, status: 'missed', from: Number(from), time: NOW.getTime(), waitedsec: 30 };
+      await request(app.getHttpServer()).post('/telephony/webhook/telecmi?key=wrong').send(missed).expect(401);
+      await request(app.getHttpServer()).post('/telephony/webhook/telecmi').send(missed).expect(401);
+      const url = `/telephony/webhook/telecmi?key=${process.env.TELECMI_WEBHOOK_KEY}`;
+      const first = await request(app.getHttpServer()).post(url).send(missed).expect(201);
+      const again = await request(app.getHttpServer()).post(url).send(missed).expect(201);
+      expect(again.body).toMatchObject({ callbackTaskId: first.body.callbackTaskId, duplicate: true });
+      expect(await prisma.callbackTask.findUniqueOrThrow({ where: { id: first.body.callbackTaskId } })).toMatchObject({ status: 'pending', assignedToStaffId: null });
+
+      const person = await makeSeeker({ name: 'Telecmi Outgoing' });
+      const ours = await callRecord({ staffId: agentA.id, subjectId: person.id, answered: false, status: 'initiated' });
+      const report = { type: 'cdr', appid: 1111113, to: Number(person.phone.slice(-10)), cmiuuid: `tco-${stamp}`, status: 'answered', user: '103_1111113', time: NOW.getTime(), direction: 'outbound', answeredsec: 75, custom: ours.id };
+      await request(app.getHttpServer()).post(url).send(report).expect(201);
+      expect(await prisma.callRecord.findUniqueOrThrow({ where: { id: ours.id } })).toMatchObject({ providerStatus: 'completed', answered: true, durationSec: 75 });
+      const other = await request(app.getHttpServer()).post(url).send({ ...report, appid: 999 }).expect(201);
+      expect(other.body).toEqual({ ignored: 'another app' });
+    } finally {
+      delete process.env.TELECMI_WEBHOOK_KEY;
+      delete process.env.TELECMI_APP_ID;
+    }
+  });
+
   // ------------------------------------------------------------------ leave and no-show
 
   it('on an approved leave everything open moves to the teammate the Team Lead picked (field items too) and people and sign-ups come back after it', async () => {
