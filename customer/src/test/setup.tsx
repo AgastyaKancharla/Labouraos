@@ -62,7 +62,12 @@ jest.mock('react-native-qrcode-svg', () => {
   };
 });
 
-jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => 'install-uuid') }));
+jest.mock('expo-crypto', () => ({
+  randomUUID: jest.fn(() => 'install-uuid'),
+  getRandomBytes: jest.fn((n: number) => new Uint8Array(n).fill(171)),
+  digestStringAsync: jest.fn(async (_algorithm: string, value: string) => `sha256(${value})`),
+  CryptoDigestAlgorithm: { SHA256: 'SHA-256' },
+}));
 
 // Push (Agent C's customer/src/push/ uses these).
 jest.mock('expo-notifications', () => ({

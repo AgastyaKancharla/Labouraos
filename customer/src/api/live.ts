@@ -25,8 +25,7 @@ import type {
   StepState,
   VacancyStatus,
   VacancySummary,
-  LegalDocumentView,
-} from './types';
+  LegalDocumentView, WorkersAnswer, ReferralLeadsAnswer } from './types';
 
 /**
  * The real API: docs/customer-app-api.md (Agent A, merged in PR #140), under
@@ -247,7 +246,7 @@ export function toBusinessHome(w: any): BusinessHome {
       approval: t.approved ? 'approved' : w.verificationStatus === 'paused' ? 'paused' : 'waiting',
     },
     vacancies: [...drafts, ...vacancies],
-    counts: { interviewsUpcoming: w.counts?.interviewsUpcoming ?? 0, placements: w.counts?.placements ?? 0 },
+    counts: { interviewsUpcoming: w.counts?.interviewsUpcoming ?? 0, placements: w.counts?.placements ?? 0, workersPlaced: w.counts?.workersPlaced ?? 0 },
   };
 }
 
@@ -357,13 +356,15 @@ export function liveCustomerApi(api: ApiClient, options: Options = {}): Customer
 
   return {
     config: async () => {
-      const c = await api.get<{ googleSignIn?: boolean; googleClientIds?: { web?: string | null; ios?: string | null }; appleSignIn?: boolean; otpTestMode?: boolean }>('/config', { auth: false });
+      const c = await api.get<{ googleSignIn?: boolean; googleClientIds?: { web?: string | null; ios?: string | null }; appleSignIn?: boolean; otpTestMode?: boolean; referralLeads?: boolean; workerLeftReports?: boolean }>('/config', { auth: false });
       const result: AppConfig = {
         googleSignIn: !!c.googleSignIn,
         googleWebClientId: c.googleClientIds?.web ?? null,
         googleIosClientId: c.googleClientIds?.ios ?? null,
         appleSignIn: c.appleSignIn === true,
         otpTestMode: !!c.otpTestMode,
+        referralLeads: c.referralLeads === true,
+        workerLeftReports: c.workerLeftReports === true,
       };
       return result;
     },
@@ -578,6 +579,17 @@ export function liveCustomerApi(api: ApiClient, options: Options = {}): Customer
         belowLegalMinimum: false,
       };
     },
+
+    workers: (profileId) => api.get<WorkersAnswer>(`${profilePath(profileId)}/workers`),
+    reportWorkerLeft: (profileId, placementId, input) =>
+      api.post<{ reportId: string; status: string }>(`${profilePath(profileId)}/workers/${enc(placementId)}/left`, {
+        workerLeftOn: input.workerLeftOn,
+        reason: input.reason,
+        ...(input.note ? { note: input.note } : {}),
+      }),
+
+    referralLeads: (profileId) => api.get<ReferralLeadsAnswer>(`${profilePath(profileId)}/referral-leads`),
+    sendReferralLead: (profileId, input) => api.post<{ leadId: string; stage: string }>(`${profilePath(profileId)}/referral-leads`, input),
 
     requestCallback: (r) =>
       api.post<{ id: string }>('/me/callback-requests', {

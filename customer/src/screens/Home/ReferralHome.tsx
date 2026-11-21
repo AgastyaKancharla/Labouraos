@@ -2,6 +2,11 @@ import { Linking, Share, StyleSheet, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import QRCode from 'react-native-qrcode-svg';
 import { useState } from 'react';
+import { router } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
+import { useCustomerApi } from '@/api/ApiProvider';
+import { queryKeys } from '@/api/queryClient';
+import { routes } from '@/navigation/routes';
 import type { ReferralHome, ReferralPerson } from '@/api/types';
 import { Banner, Button, Card, EmptyState, HeroCard, heroText, ListRow, ProgressBar, StatGrid, StatTile, StatusChip, StepList, Text, type StepItem } from '@/components';
 import { formatDateKey } from '@/components/form';
@@ -29,6 +34,9 @@ export function whatsappUrl(text: string): string {
 export function ReferralHomeView({ profileId, home, hero }: { profileId: string; home: ReferralHome; hero: HeroInfo }) {
   const { t } = useI18n();
   const sheet = useSecureSheet();
+  const api = useCustomerApi();
+  // "Send a lead" shows only once the server switches it on (contract 7.3b).
+  const config = useQuery({ queryKey: queryKeys.config, queryFn: () => api.config(), staleTime: 10 * 60_000 });
   const [copied, setCopied] = useState(false);
   const stepsDone = Object.values(home.steps).every((s) => s === 'done');
   const shareText = home.shareText || (home.shareLink ? t('refHome.shareText', { link: home.shareLink }) : '');
@@ -68,6 +76,15 @@ export function ReferralHomeView({ profileId, home, hero }: { profileId: string;
             <StepList testID="ref-step" steps={steps} />
             {home.stuckReason ? <Banner tone="warn" message={home.stuckReason} /> : null}
             <Button label={t('jsHome.continue')} loading={sheet.busy} onPress={() => void sheet.open(profileId, 'referral_registration')} testID="ref-home-continue" />
+          </View>
+        </Card>
+      ) : null}
+
+      {config.data?.referralLeads && stepsDone && !home.paused ? (
+        <Card title={t('refHome.leadTitle')} accent="orange" emoji="🤝" testID="ref-home-lead">
+          <View style={styles.gap}>
+            <Text>{t('refHome.leadIntro')}</Text>
+            <Button label={t('refHome.leadButton')} variant="secondary" onPress={() => router.push(routes.referralLead)} testID="ref-home-send-lead" />
           </View>
         </Card>
       ) : null}
