@@ -41,6 +41,7 @@ import {
 } from './field-visit.constants';
 import { dateFromKey, DAY_MS, FieldVisitClock, istDateKey, keyFromDate } from './field-visit-clock';
 import { gpsSuspicions, isShortVisit, noOnboardingPattern, Reading, travelCheck } from './visit-fraud';
+import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { ownerVisitOtpPurpose } from '../../common/otp/bound-otp-purposes';
 import { coversBusiness } from './field-handover.service';
 
@@ -642,7 +643,18 @@ export class FieldVisitService {
       city: business.city,
     });
     await this.verification.advanceToPendingTlCheckIfReady(business.id, staffId);
-    if (visit.durationSeconds === null) await this.leaveShop(staffId);
+    if (visit.durationSeconds === null) {
+      await this.leaveShop(staffId);
+      // 21 Nov: the short-visit check runs when a verification ends with the owner's code.
+      const policy = await this.pricing.current();
+      if (isShortVisit(shopTime.durationSeconds, policy.visitShortMinutes)) {
+        await this.raise('visit_short', visit, { durationSeconds: shopTime.durationSeconds, shortMinutes: policy.visitShortMinutes });
+      }
+    }
+    // 21 Nov: a verification done far from the business's pin goes to the Team Lead (candidates stay hidden until the check).
+    if (visit.geofenceFlag) {
+      await this.raise('gps_mismatch', visit, { reason: 'verification_far_from_pin', businessId: business.id });
+    }
     const after = await this.prisma.business.findUniqueOrThrow({ where: { id: business.id }, select: { verificationStatus: true, accountAgentId: true } });
     return {
       ...this.present(await this.load(id)),
@@ -742,7 +754,18 @@ export class FieldVisitService {
   // --------------------------------------------------------- interview day
 
   /** Interview day: the field agent at the shop marks "candidate arrived", with GPS. */
-  async candidateArrived(staffId: string, interviewId: string, body: { latitude?: unknown; longitude?: unknown; accuracy?: unknown }) {
+  /**
+   * Interview day: the field agent at the shop marks "candidate arrived", with GPS.
+   * 21 Nov: an interview still `offered` (he never replied) is refused here unless the caller
+   * already ran the offer checks (suspended business, current terms) and passes acceptOffer:
+   * then arriving and accepting are one atomic write (no "arrived but not confirmed").
+   */
+  async candidateArrived(
+    staffId: string,
+    interviewId: string,
+    body: { latitude?: unknown; longitude?: unknown; accuracy?: unknown },
+    options: { acceptOffer?: boolean } = {},
+  ) {
     const now = this.clock.now();
     const interview = await this.prisma.interview.findUnique({
       where: { id: interviewId },
@@ -760,6 +783,10 @@ export class FieldVisitService {
       throw new BadRequestException('This interview is not going ahead');
     }
     if (interview.candidateArrivedAt) return this.presentArrival(interview);
+    const accept = interview.status === 'offered';
+    if (accept && !options.acceptOffer) {
+      throw new BadRequestException('He has not replied to the offer yet. Mark him Arrived on the interview day screen: that counts as accepting.');
+    }
     const reading = this.readingFrom(
       { latitude: String(body.latitude ?? ''), longitude: String(body.longitude ?? ''), accuracy: body.accuracy === undefined ? undefined : String(body.accuracy) },
       now,
@@ -773,17 +800,49 @@ export class FieldVisitService {
         throw new BadRequestException(`You are ${distance} m from the shop. Mark the arrival at the shop.`);
       }
     }
-    const updated = await this.prisma.interview.update({
-      where: { id: interviewId },
-      data: {
-        candidateArrivedAt: now,
-        candidateArrivedByStaffId: staffId,
-        candidateArrivedLatitude: reading.latitude,
-        candidateArrivedLongitude: reading.longitude,
-        candidateArrivedAccuracyMeters: reading.accuracyMeters,
-        candidateArrivedDistanceMeters: distance,
-      },
+    await this.prisma.$transaction(async (tx) => {
+      const changed = accept
+        ? await tx.interview.updateMany({
+            where: { id: interviewId, status: 'offered', candidateRespondedAt: null, candidateArrivedAt: null },
+            data: {
+              status: 'confirmed',
+              candidateRespondedAt: now,
+              candidateArrivedAt: now,
+              candidateArrivedByStaffId: staffId,
+              candidateArrivedLatitude: reading.latitude,
+              candidateArrivedLongitude: reading.longitude,
+              candidateArrivedAccuracyMeters: reading.accuracyMeters,
+              candidateArrivedDistanceMeters: distance,
+            },
+          })
+        : await tx.interview.updateMany({
+            where: { id: interviewId, candidateArrivedAt: null, status: { notIn: ['cancelled', 'declined', 'no_reply', 'offered'] } },
+            data: {
+              candidateArrivedAt: now,
+              candidateArrivedByStaffId: staffId,
+              candidateArrivedLatitude: reading.latitude,
+              candidateArrivedLongitude: reading.longitude,
+              candidateArrivedAccuracyMeters: reading.accuracyMeters,
+              candidateArrivedDistanceMeters: distance,
+            },
+          });
+      if (changed.count !== 1) throw new ConflictException('The interview changed meanwhile. Open it again.');
+      if (accept) {
+        await recordStatusChange(tx, {
+          subjectType: 'interview', subjectId: interviewId, fromStatus: 'offered', toStatus: 'confirmed',
+          changedByStaffId: staffId, changedAt: now,
+          reason: 'Candidate turned up at the shop without replying: arriving counts as accepting the offer',
+        });
+      }
     });
+    if (accept) {
+      await this.audit.log({
+        actorId: staffId, action: 'interview.offer_accepted_by_arrival', entityType: 'Interview', entityCode: interview.code,
+        city: interview.business.city, before: { status: 'offered' }, after: { status: 'confirmed', candidateRespondedAt: now.toISOString() },
+        changedFields: ['status', 'candidateRespondedAt'],
+        reason: 'Arrival marked by the attending field agent before the candidate replied',
+      });
+    }
     await this.audit.log({
       actorId: staffId,
       action: 'interview.candidate_arrived',
@@ -794,7 +853,7 @@ export class FieldVisitService {
       reason: 'Candidate arrived for the interview (marked at the shop with GPS)',
       city: interview.business.city,
     });
-    return this.presentArrival(updated);
+    return this.presentArrival(await this.prisma.interview.findUniqueOrThrow({ where: { id: interviewId } }));
   }
 
   async get(staffId: string, id: string) {

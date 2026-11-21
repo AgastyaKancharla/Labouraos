@@ -27,6 +27,15 @@ import { tradeNameKey } from '../trade/trade.service';
 import { ownerVisitOtpPurpose } from '../../common/otp/bound-otp-purposes';
 import { onApprovedLeave } from '../field-visit/field-handover.service';
 
+/**
+ * 21 Nov: a verification visit proven to be at the shop: GPS inside the geofence (geofenceFlag
+ * false), photos from the live camera (photoLive true), a stored selfie (hash, not just a URL)
+ * and no faked-GPS sign. Only then does it unlock candidates before the Team Lead's check.
+ */
+export function isAtShopVerification(visit: { geofenceFlag: boolean; photoLive: boolean | null; selfieHash: string | null; gpsSuspect: boolean }): boolean {
+  return visit.geofenceFlag === false && visit.photoLive === true && Boolean(visit.selfieHash) && !visit.gpsSuspect;
+}
+
 /** The IST calendar day of an instant, "YYYY-MM-DD". */
 function getCalendarDateKey(at: Date): string {
   const p = getCalendarPartsInTimezone(at, 'Asia/Kolkata');
@@ -417,10 +426,14 @@ export class BusinessVerificationService {
       const agreement = await tx.businessAgreement.findFirst({ where: { businessId } });
       if (!agreement) return null;
 
-      // 21 Nov: verified by a field agent at the shop: candidates can be shown straight away.
+      // 21 Nov: verified by a field agent AT THE SHOP (GPS inside the geofence, live camera photos,
+      // a hashed selfie, no faked-GPS sign — the same proof as in-person onboarding): candidates can be
+      // shown straight away. Anything less waits for the Team Lead's check, as before.
+      // A business with no map pin cannot be checked against it: it waits for the Team Lead.
+      const atShop = business.latitude !== null && business.longitude !== null && isAtShopVerification(verificationVisit);
       await tx.business.update({
         where: { id: businessId },
-        data: { verificationStatus: 'pending_tl_check', fieldVerifiedAt: this.clock.now() },
+        data: { verificationStatus: 'pending_tl_check', fieldVerifiedAt: atShop ? this.clock.now() : null },
       });
       await recordStatusChange(tx, {
         subjectType: 'business',
@@ -431,9 +444,23 @@ export class BusinessVerificationService {
         reason: 'Verification visit completed and owner agreement signed',
         changedAt: this.clock.now(),
       });
-      return { business, verificationVisit, assignment };
+      return { business, verificationVisit, assignment, atShop };
     });
     if (!transition) return null;
+    const fieldVerifiedActor = changedByStaffId ?? transition.verificationVisit.staffId;
+    if (transition.atShop && fieldVerifiedActor) {
+      await this.auditService.log({
+        actorId: fieldVerifiedActor,
+        action: 'business.field_verified',
+        entityType: 'business',
+        entityCode: transition.business.code,
+        before: { fieldVerifiedAt: null },
+        after: { fieldVerifiedAt: this.clock.now().toISOString(), verificationVisitId: transition.verificationVisit.id },
+        changedFields: ['fieldVerifiedAt'],
+        reason: 'Verified at the shop by the field agent (GPS, live photos, owner code, signed agreement): candidates can be shown before the Team Lead check',
+        city: transition.business.city,
+      });
+    }
 
     if (transition.business.documentsStatus === 'no_documents') {
       const openFlag = await this.prisma.reviewFlag.findFirst({

@@ -1,4 +1,8 @@
 import { coversBusiness } from '../field-visit/field-handover.service';
+import { LegalDocumentService } from '../legal/legal-document.service';
+import { BUSINESS_SUSPENDED_MESSAGE, isBusinessSuspended } from '../business/business-candidate-access';
+import { ReconsentRequiredException } from '../legal/legal-status';
+import { assertNoOpenBanReview } from '../conduct/permanent-ban.check';
 import { OwnTeam, teamLeadOf } from '../../common/rbac/own-team';
 import {
   BadRequestException,
@@ -126,6 +130,7 @@ export class FieldSellingService {
     private readonly interviews: InterviewService,
     private readonly fieldVisits: FieldVisitService,
     @Inject(TELEPHONY_PROVIDER) private readonly telephony: TelephonyProvider,
+    private readonly legal: LegalDocumentService,
   ) {}
 
   // ---------------------------------------------------------------- access
@@ -243,26 +248,6 @@ export class FieldSellingService {
       select: { id: true },
     });
     return Boolean(visit);
-  }
-
-  /** 21 Nov: the candidate came to the shop without replying: the offer counts as accepted. */
-  private async acceptOfferByArrival(actor: SellingActor, interview: { id: string; code: string; business: { city: string } }, now: Date) {
-    const changed = await this.prisma.interview.updateMany({
-      where: { id: interview.id, status: 'offered', candidateRespondedAt: null },
-      data: { status: 'confirmed', candidateRespondedAt: now },
-    });
-    if (changed.count !== 1) return;
-    await recordStatusChange(this.prisma, {
-      subjectType: 'interview', subjectId: interview.id, fromStatus: 'offered', toStatus: 'confirmed',
-      changedByStaffId: actor.id, changedAt: now,
-      reason: 'Candidate turned up at the shop without replying: arriving counts as accepting the offer',
-    });
-    await this.audit.log({
-      actorId: actor.id, action: 'interview.offer_accepted_by_arrival', entityType: 'Interview', entityCode: interview.code,
-      city: interview.business.city, before: { status: 'offered' }, after: { status: 'confirmed', candidateRespondedAt: now.toISOString() },
-      changedFields: ['status', 'candidateRespondedAt'],
-      reason: 'Arrival marked by the attending field agent before the candidate replied',
-    });
   }
 
   /**
@@ -615,13 +600,18 @@ export class FieldSellingService {
         istDateKey(now) !== istDateKey(interview.slotStartsAt)) {
         throw new BadRequestException('Arrival can be marked only on the interview day, from an hour before');
       }
-      // The field visits module owns "candidate arrived" (GPS at the shop, distance from the pin);
-      // it checks the GPS first, so a refused arrival never accepts the offer.
-      const arrival = await this.fieldVisits.candidateArrived(actor.id, interviewId, {
+      // The field visits module owns "candidate arrived" (GPS at the shop, distance from the pin).
+      // 21 Nov: while the offer is unanswered, arriving counts as accepting — the same checks as a
+      // yes on the offer page (no suspended business, current terms), then one atomic write.
+      if (acceptsByArriving) {
+        if (isBusinessSuspended(interview.business, now)) throw new BadRequestException(BUSINESS_SUSPENDED_MESSAGE);
+        await assertNoOpenBanReview(this.prisma, 'job_seeker', interview.jobSeekerId);
+        const terms = await this.legal.status('job_seeker', interview.jobSeekerId);
+        if (terms.needsReconsent) throw new ReconsentRequiredException(terms);
+      }
+      return this.fieldVisits.candidateArrived(actor.id, interviewId, {
         latitude: body.latitude, longitude: body.longitude, accuracy: body.accuracyM,
-      });
-      if (acceptsByArriving) await this.acceptOfferByArrival(actor, interview, now);
-      return arrival;
+      }, { acceptOffer: acceptsByArriving });
     }
     if (interview.candidateArrivedAt) throw new BadRequestException('He was already marked as arrived');
     if (now.getTime() < interview.slotEndsAt.getTime()) {
