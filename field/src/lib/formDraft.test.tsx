@@ -2,7 +2,7 @@ import { act, fireEvent, renderHook, screen, waitFor } from '@testing-library/re
 import { Pressable, Text, TextInput } from 'react-native';
 import { useAuth } from '@/auth/AuthProvider';
 import { kiran, renderWithApp } from '@/test/render';
-import { getDraft, saveDraft } from '@/screens/_visits/visitDraft';
+import { clearDrafts, getDraft, saveDraft, updateDraft } from '@/screens/_visits/visitDraft';
 import { createMemoryStore } from '@/lib/storage/types';
 import { clearAllDrafts, clearAllFormDrafts, clearFormDraft, draftOwner, draftStorageIdle, readFormDraft, setDraftOwner, setDraftStorage, useFormDraft } from './formDraft';
 
@@ -166,6 +166,42 @@ describe('drafts are kept on the phone (21 Nov)', () => {
     clearAllFormDrafts();
     setDraftOwner(null);
     setDraftOwner('fa-2');
+    await draftStorageIdle();
+    expect(readFormDraft('fa23')).toBeUndefined();
+  });
+});
+
+describe('21 Nov review: the visit in progress and other agents after a restart', () => {
+  it('the visit in progress (shop name typed on the talk step) survives an app reload', async () => {
+    setDraftStorage(createMemoryStore());
+    setDraftOwner('fa-1');
+    saveDraft(visit('v-9'));
+    updateDraft('v-9', { shopName: 'Ganesh Stores', spokeTo: 'owner' });
+    await draftStorageIdle();
+    // The app restarts: memory is empty, the phone still has the visit.
+    clearDrafts();
+    clearAllFormDrafts();
+    setDraftOwner(null);
+    setDraftOwner('fa-1');
+    await draftStorageIdle();
+    expect(getDraft('v-9')).toMatchObject({ shopName: 'Ganesh Stores', spokeTo: 'owner' });
+  });
+
+  it('another agent signing in after a restart (memory no longer knows the last one) drops his stored drafts', async () => {
+    const phone = createMemoryStore();
+    setDraftStorage(phone);
+    setDraftOwner('fa-1');
+    const a = await renderHookValue('fa23');
+    await act(async () => a.set('Kiran draft'));
+    await draftStorageIdle();
+    // Restart: the module forgets who was here (a fresh process), then Anita signs in.
+    clearAllFormDrafts();
+    setDraftOwner(null);
+    setDraftOwner('fa-2');
+    await draftStorageIdle();
+    expect(await phone.getItem('laboura.field.draft.index.fa-1')).toBeNull();
+    setDraftOwner(null);
+    setDraftOwner('fa-1');
     await draftStorageIdle();
     expect(readFormDraft('fa23')).toBeUndefined();
   });

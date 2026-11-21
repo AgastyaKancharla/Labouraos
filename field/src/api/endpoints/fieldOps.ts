@@ -35,6 +35,10 @@ export interface FieldNotificationTarget {
   id: string;
   vacancyId?: string;
   businessId?: string;
+  /** visit_assignment: its purpose, the interview it is for, and whether it is still his to do. */
+  purpose?: string;
+  interviewId?: string;
+  open?: boolean;
 }
 
 export interface FieldNotification {

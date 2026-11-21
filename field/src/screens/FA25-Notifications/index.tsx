@@ -7,7 +7,7 @@ import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import type { FieldNotification, FieldNotificationTarget } from '@/api/endpoints';
 import { formatStampIst } from '@/lib/format';
-import { pageRoutes, routes, sellingRoutes } from '@/navigation/routes';
+import { pageRoutes, routes, sellingRoutes, sellingRoutesFor } from '@/navigation/routes';
 import { AppHeader } from '../_shared/AppHeader';
 
 type Href = string | { pathname: string; params: Record<string, string> };
@@ -17,7 +17,11 @@ export function notificationHref(target: FieldNotificationTarget | null): Href |
   if (!target) return null;
   switch (target.type) {
     case 'visit_assignment':
-      // The visit is on Visits → Planned (verification visits open their steps from there).
+      // 21 Nov review: the visit itself — a verification opens its steps, an interview to attend its day screen.
+      if (target.open && (target.purpose === 'verification' || target.purpose === 'business_signup') && target.businessId) {
+        return { pathname: routes.visitVerify, params: { businessId: target.businessId, assignmentId: target.id } };
+      }
+      if (target.open && target.interviewId) return sellingRoutesFor('/visit').interviewDay(target.interviewId);
       return routes.visits;
     case 'business':
       return pageRoutes.business(target.id);

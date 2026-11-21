@@ -60,8 +60,9 @@ async function complete(live: unknown[]) {
 describe('FA06 Verification visit', () => {
   it('GPS against the pin, live photo + selfie queued, owner OTP and agreement live, then completes', async () => {
     const { queued, live } = await walk({ businessVerificationStatus: 'pending_tl_check' });
-    await fireEvent.press(screen.getByTestId('fa06-agreement'));
+    // 17 Nov rule: the one button sent the owner's code and the agreement link together.
     await waitFor(() => screen.getByText('Link sent'));
+    expect(screen.queryByTestId('fa06-agreement')).toBeNull();
     await complete(live);
     expect(live[0]).toEqual({ url: `https://api.test/field-visits/${queued[0].fields.id}/verify`, body: { ownerOtpRequestId: 'otp-1', ownerOtpCode: '391108' } });
     expect(router.replace).toHaveBeenCalledWith({ pathname: '/visit/done', params: { businessId: 'b-1', visitId: queued[0].fields.id } });
@@ -142,10 +143,9 @@ describe('FA06 fixes of 21 Nov', () => {
         return undefined;
       },
     });
-    await waitFor(() => screen.getByTestId('fa06-agreement'));
-    await fireEvent.press(screen.getByTestId('fa06-agreement'));
+    await waitFor(() => screen.getByTestId('fa06-send-code'));
+    await fireEvent.press(screen.getByTestId('fa06-send-code'));
     await waitFor(() => screen.getByText('Link sent'));
-    expect(screen.queryByTestId('fa06-agreement')).toBeNull();
     signed = true;
     await waitFor(() => screen.getByText('Signed'), { timeout: 15000 });
   }, 30000);

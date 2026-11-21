@@ -50,6 +50,9 @@ describe('FA25 Notifications (the bell, 21 Nov)', () => {
 
   it('every target opens the right Field screen', () => {
     expect(notificationHref({ type: 'visit_assignment', id: 'va-1' })).toBe('/visits');
+    // The visit itself: a verification opens its steps, an interview to attend its day screen.
+    expect(notificationHref({ type: 'visit_assignment', id: 'va-1', purpose: 'business_signup', businessId: 'b-7', open: true })).toEqual({ pathname: '/visit/verify', params: { businessId: 'b-7', assignmentId: 'va-1' } });
+    expect(notificationHref({ type: 'visit_assignment', id: 'va-2', purpose: 'interview_attendance', interviewId: 'iv-3', open: true })).toBe('/visit/interview/iv-3/day');
     expect(notificationHref({ type: 'business', id: 'b-1' })).toBe('/businesses/b-1');
     expect(notificationHref({ type: 'placement', id: 'pl-1' })).toBe('/businesses/placement/pl-1/joining');
     expect(notificationHref({ type: 'revisit', id: 'v-1' })).toEqual({ pathname: '/visit/start', params: { revisitOf: 'v-1' } });

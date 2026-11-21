@@ -140,8 +140,13 @@ export default function VerifyScreen() {
     }
   }
 
-  async function sendAgreement() {
-    setProblem(null);
+  async function sendBoth() {
+    await sendCode();
+    if (!signed && !agreementSent) await sendAgreement(false);
+  }
+
+  async function sendAgreement(resetProblem = true) {
+    if (resetProblem) setProblem(null);
     setBusy('agreement');
     try {
       await queue.live(() => visits.sendAgreementLink(b.id));
@@ -191,7 +196,16 @@ export default function VerifyScreen() {
           <Text variant="muted" testID="fa06-from-pin">
             {fromPin !== null ? t('fa06.fromPin', { meters: fromPin }) : b.latitude === null ? t('fa06.noPin') : location.errorKey ? t(location.errorKey) : t('fa20.gpsFinding')}
           </Text>
-          {!atShop ? <Button label={t('common.retry')} variant="secondary" onPress={() => void read()} /> : null}
+          {!atShop ? (
+            <Button
+              label={t('common.retry')}
+              variant="secondary"
+              onPress={() => {
+                movePin.reset();
+                void read();
+              }}
+            />
+          ) : null}
           {pinMoved !== null ? (
             <Banner tone="ok" message={pinMoved === 'new' ? t('fa06.pinMovedNew') : t('fa06.pinMoved', { meters: pinMoved })} testID="fa06-pin-moved" />
           ) : null}
@@ -204,7 +218,15 @@ export default function VerifyScreen() {
                 <Button label={t('fa06.pinSave')} disabled={pinReason.trim().length < 5} loading={movePin.isPending} onPress={() => movePin.mutate()} testID="fa06-pin-save" />
               </View>
             ) : (
-              <Button label={t('fa06.updatePin')} variant="secondary" onPress={() => setPinOpen(true)} testID="fa06-update-pin" />
+              <Button
+                label={t('fa06.updatePin')}
+                variant="secondary"
+                onPress={() => {
+                  movePin.reset();
+                  setPinOpen(true);
+                }}
+                testID="fa06-update-pin"
+              />
             )
           ) : null}
         </Card>
@@ -220,27 +242,31 @@ export default function VerifyScreen() {
             <Button label={selfieDone ? `✓ ${t('fa06.selfie')}` : t('fa06.selfie')} variant={selfieDone ? 'secondary' : 'primary'} disabled={!boardDone || selfieDone} loading={busy === 'selfie'} onPress={() => setCamera('selfie')} style={styles.flex1} testID="fa06-selfie" />
           </View>
         </Card>
-        <Card stripe accent="gold">
+        {/* 17 Nov rule (21 Nov review): one button sends the owner his code and the agreement link together. */}
+        <Card stripe accent="gold" testID="fa06-owner-step">
           <View style={styles.row}>
             <IconTile icon="phone" accent="gold" size={30} />
-            <Text variant="bodyStrong" style={styles.flex1}>{t('fa06.step3')}</Text>
+            <Text variant="bodyStrong" style={styles.flex1}>{t('fa06.ownerStep')}</Text>
+            {signed ? <StatusChip tone="green" label={t('fa06.signed')} /> : agreementSent ? <StatusChip tone="amber" label={t('fa06.linkSent')} /> : null}
           </View>
+          <Text variant="muted">{t('fa06.agreementText')}</Text>
           {otp ? (
             <>
               <Text variant="muted">{t('fa06.otpSent', { phone: otp.phone })}</Text>
               <CodeInput value={code} onChange={setCode} label={t('fa06.ownerCode')} testID="fa06-code" />
             </>
           ) : null}
-          <Button label={otp ? t('fa06.resend') : t('fa06.sendCode')} variant="secondary" loading={busy === 'otp'} onPress={() => void sendCode()} testID="fa06-send-code" />
-        </Card>
-        <Card stripe accent="green">
-          <View style={styles.row}>
-            <IconTile icon="document" accent="green" size={30} />
-            <Text variant="bodyStrong" style={styles.flex1}>{t('fa06.step4')}</Text>
-            {signed ? <StatusChip tone="green" label={t('fa06.signed')} /> : agreementSent ? <StatusChip tone="amber" label={t('fa06.linkSent')} /> : null}
-          </View>
-          <Text variant="muted">{t('fa06.agreementText')}</Text>
-          {!signed && !agreementSent ? <Button label={t('fa06.sendAgreement')} variant="secondary" loading={busy === 'agreement'} onPress={() => void sendAgreement()} testID="fa06-agreement" /> : null}
+          <Button
+            label={otp ? t('fa06.resend') : t('fa06.sendBoth')}
+            variant="secondary"
+            loading={busy === 'otp' || busy === 'agreement'}
+            onPress={() => void (otp ? sendCode() : sendBoth())}
+            testID="fa06-send-code"
+          />
+          {/* The code went but the agreement SMS did not: send the link again on its own. */}
+          {otp && !signed && !agreementSent ? (
+            <Button label={t('fa06.sendAgreement')} variant="secondary" loading={busy === 'agreement'} onPress={() => void sendAgreement()} testID="fa06-agreement" />
+          ) : null}
         </Card>
         <Text variant="muted">{t('fa06.help')}</Text>
         {problem ? <Banner tone="error" message={problem} testID="fa06-problem" /> : null}

@@ -82,6 +82,14 @@ function unpersist(staffId: string, key: string): void {
 /** Reads the agent's drafts back from the phone into memory (a value typed meanwhile wins). */
 function hydrate(staffId: string): Promise<void> {
   return chain(async () => {
+    // 21 Nov review: another agent signing in on this phone (even after the app restarted, when
+    // memory no longer knows who was here before) never finds the last agent's drafts.
+    const owners = await readList(OWNERS_KEY);
+    for (const other of owners.filter((o) => o !== staffId)) {
+      for (const key of await readList(indexKey(other))) await storage.removeItem(valueKey(other, key));
+      await storage.removeItem(indexKey(other));
+    }
+    if (owners.some((o) => o !== staffId)) await storage.setItem(OWNERS_KEY, JSON.stringify(owners.filter((o) => o === staffId)));
     const index = await readList(indexKey(staffId));
     for (const key of index) {
       const raw = await storage.getItem(valueKey(staffId, key));
@@ -142,6 +150,20 @@ export function draftOwner(): string | null {
 /** Register another in-memory draft store that must be emptied with the form drafts. */
 export function registerDraftStore(clear: () => void): void {
   otherDrafts.add(clear);
+}
+
+/** Writes a draft for the signed-in agent outside a form hook (the visit in progress): memory and the phone. */
+export function writeFormDraft(key: string, value: unknown): void {
+  drafts.set(fullKey(key), value);
+  if (owner) persist(owner, key, value);
+}
+
+/** Called when the agent's drafts have been read back from the phone. */
+export function subscribeDraftsHydrated(listener: () => void): () => void {
+  hydrationListeners.add(listener);
+  return () => {
+    hydrationListeners.delete(listener);
+  };
 }
 
 export function readFormDraft<T>(key: string): T | undefined {

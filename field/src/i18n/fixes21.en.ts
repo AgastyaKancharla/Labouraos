@@ -28,6 +28,8 @@ export const fixes21En = {
   'fa06.pinSave': 'Move the pin here',
   'fa06.pinMoved': 'Pin moved here ({meters} m).',
   'fa06.pinMovedNew': 'Pin saved here.',
+  'fa06.ownerStep': '3. Owner’s code and agreement',
+  'fa06.sendBoth': 'Send the owner his code and the agreement',
 
   // Calling phone (B2)
   'me.callingPhone': 'Your calling phone',
