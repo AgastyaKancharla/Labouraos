@@ -36,6 +36,8 @@ const AGENT_ROLES = ['call_agent', 'field_agent'];
 
 /** On call with no open call record behind it ends after this grace (the end webhook is late or never comes). */
 export const CALL_STATUS_GRACE_MS = 2 * 60 * 1000;
+/** "Resume my day" waits this long after Log out (no Log out / Resume loops). */
+export const RESUME_COOLDOWN_MS = 2 * 60 * 1000;
 /** On call never lasts longer than this, even with a call record still open. */
 export const CALL_STATUS_MAX_MS = 2 * 60 * 60 * 1000;
 
@@ -846,6 +848,10 @@ export class AttendanceService {
     if (day.dayTypeChangedAt) {
       throw codedError(HttpStatus.BAD_REQUEST, 'DAY_CHANGED_BY_SENIOR', 'Ask your Team Lead to reopen your day');
     }
+    // A short cool-down after Log out, so Log out / Resume cannot be looped.
+    if (now.getTime() - day.logoutAt.getTime() < RESUME_COOLDOWN_MS) {
+      throw codedError(HttpStatus.BAD_REQUEST, 'RESUME_TOO_SOON', 'Wait 2 minutes after Log out before resuming your day');
+    }
     await this.reopen(day, staffId, now, { action: 'attendance.day_resumed', actorId: staffId, reason: null });
     const resumed = await this.prisma.attendanceDay.update({
       where: { id: day.id },
@@ -864,12 +870,20 @@ export class AttendanceService {
     const person = dir.get(staffId);
     if (!person || person.isOwnerAccount) return;
     const chain = dir.chainOf(staffId);
+    const title = `${person.name} (${person.code}) resumed their day ${count} times today`;
+    const body = 'They ended the day with Log out and pressed Resume my day again. The time in between is not counted.';
+    // One bell per person per day, updated in place with the count (seen or not).
+    const existing = await this.prisma.notification.updateMany({
+      where: { kind: 'day_resumed_again', subjectType: 'attendance_day', subjectId: dayId },
+      data: { title, body },
+    });
+    if (existing.count > 0) return;
     const drafts = bells.drafts([chain.teamLead ?? chain.manager], {
       kind: 'day_resumed_again',
-      title: `${person.name} (${person.code}) resumed their day ${count} times today`,
-      body: 'They ended the day with Log out and pressed Resume my day again. The time in between is not counted.',
+      title,
+      body,
       subjectType: 'attendance_day',
-      subjectId: `${dayId}:${count}`,
+      subjectId: dayId,
     });
     for (const draft of drafts) await this.notificationService?.open(draft, now);
   }

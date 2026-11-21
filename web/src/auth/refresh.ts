@@ -6,6 +6,33 @@ export type RefreshOutcome = 'renewed' | 'ended' | 'failed';
 
 let inflight: Promise<RefreshOutcome> | null = null;
 
+/** Before signing out on a refused renewal, wait this long for another tab's renewed token (laptop waking with two tabs). */
+export const SHARED_TOKEN_WAIT_MS = 2000;
+
+/** True when the stored refresh token changes from `old` within `waitMs` (another tab shared its renewal). */
+function sharedTokenArrives(old: string, waitMs: number): Promise<boolean> {
+  const changed = () => {
+    const now = sessionStore.get()?.refreshToken;
+    return Boolean(now && now !== old);
+  };
+  if (changed()) return Promise.resolve(true);
+  if (waitMs <= 0) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (value: boolean) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      stop();
+      resolve(value);
+    };
+    const stop = sessionStore.subscribe(() => {
+      if (changed()) finish(true);
+    });
+    const timer = setTimeout(() => finish(changed()), waitMs);
+  });
+}
+
 /**
  * Renews the tab's session with its single-use refresh token (decided 21 Nov:
  * the apps try to renew before signing out on a 401). Works also after the
@@ -40,12 +67,13 @@ export function refreshSession(fetchImpl: typeof fetch = (...args) => fetch(...a
       shareToken();
       return 'renewed';
     }
-    // Another tab renewed first and its new token reached this tab meanwhile.
-    if (sessionStore.get()?.refreshToken && sessionStore.get()!.refreshToken !== current.refreshToken) return 'renewed';
+    // Another tab renewed first and its new token reached (or is about to reach) this tab.
+    if (response.status === 401 && (await sharedTokenArrives(current.refreshToken, SHARED_TOKEN_WAIT_MS))) return 'renewed';
     if (response.status === 401) {
       const given = body.details?.reason ?? body.reason;
       const message = Array.isArray(body.message) ? body.message[0] : body.message;
-      const reason: SignOutReason = given === 'idle' || given === 'max_length' ? given : given ? 'revoked' : reasonFromMessage(message);
+      const reason: SignOutReason =
+        given === 'idle' || given === 'max_length' || given === 'expired' ? given : given ? 'revoked' : reasonFromMessage(message);
       sessionStore.clear(reason, message);
       return 'ended';
     }

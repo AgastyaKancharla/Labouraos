@@ -87,6 +87,8 @@ export const DEVICE_NO_LONGER_APPROVED = 'This device is no longer approved. Ask
 export const FIELD_SESSION_ROLES: readonly string[] = ['field_agent'];
 export const FIELD_SESSION_REFUSED = 'Session not found';
 
+/** A session used for real this recently counts as "live" for the no-code sign-in bell. */
+export const LIVE_SESSION_ACTIVE_MS = 5 * 60 * 1000;
 /** A second tab presenting the refresh token renewed this recently is refused without ending the session. */
 export const REFRESH_REUSE_GRACE_MS = 60 * 1000;
 
@@ -373,9 +375,13 @@ export class AuthService {
       where: { staffId: staff.id, revokedAt: null },
       select: { staffId: true, deviceId: true, createdAt: true, lastActivityAt: true, absoluteExpiresAt: true },
     });
+    // "Live" = still within its rules and used for real in the last 5 minutes
+    // (background polls never count), so closing the browser and signing in
+    // again later rings nobody.
     let endedLive = false;
     for (const session of open) {
-      if ((await this.sessionDay.endFor(session, now)) === null) endedLive = true;
+      const usedRecently = now.getTime() - session.lastActivityAt.getTime() <= LIVE_SESSION_ACTIVE_MS;
+      if (usedRecently && (await this.sessionDay.endFor(session, now)) === null) endedLive = true;
     }
     const ip = metadata?.ip?.trim() || null;
     let newIp = false;
@@ -695,8 +701,8 @@ export class AuthService {
    * not activity, so it never moves the idle clock. The refresh token is
    * single use: each refresh hands out the next one.
    */
-  async refreshFieldSession(input: FieldRefreshInput): Promise<FieldRefreshResult> {
-    return this.refreshSession(input, 'field');
+  async refreshFieldSession(input: FieldRefreshInput, from: { userAgent?: string } = {}): Promise<FieldRefreshResult> {
+    return this.refreshSession(input, 'field', from);
   }
 
   /**
@@ -704,11 +710,11 @@ export class AuthService {
    * 21 Nov): the tab renews a token that ran out (laptop asleep) before it
    * would sign the person out. Office sessions only.
    */
-  async refreshOfficeSession(input: FieldRefreshInput): Promise<FieldRefreshResult> {
-    return this.refreshSession(input, 'office');
+  async refreshOfficeSession(input: FieldRefreshInput, from: { userAgent?: string } = {}): Promise<FieldRefreshResult> {
+    return this.refreshSession(input, 'office', from);
   }
 
-  private async refreshSession(input: FieldRefreshInput, app: StaffApp): Promise<FieldRefreshResult> {
+  private async refreshSession(input: FieldRefreshInput, app: StaffApp, from: { userAgent?: string } = {}): Promise<FieldRefreshResult> {
     const sessionId = typeof input?.sessionId === 'string' ? input.sessionId.trim() : '';
     const refreshToken = typeof input?.refreshToken === 'string' ? input.refreshToken.trim() : '';
     const deviceId = typeof input?.deviceId === 'string' ? input.deviceId.trim() : '';
@@ -726,14 +732,7 @@ export class AuthService {
     // An old refresh token presented again (21 Nov): a second tab that used the
     // previous one within a minute of the renewal is refused softly; any other
     // reuse means the token may be in someone else's hands — the session ends.
-    if (
-      session &&
-      session.tokenHash &&
-      !sameHash(session.tokenHash, presented) &&
-      session.deviceId === deviceId &&
-      sessionApp === app &&
-      !session.revokedAt
-    ) {
+    if (session && session.tokenHash && !sameHash(session.tokenHash, presented) && sessionApp === app && !session.revokedAt) {
       const now = this.clock.now();
       const justRotated =
         session.previousTokenHash &&
@@ -741,15 +740,24 @@ export class AuthService {
         session.tokenRotatedAt &&
         now.getTime() - session.tokenRotatedAt.getTime() <= REFRESH_REUSE_GRACE_MS;
       if (!justRotated && session.previousTokenHash && sameHash(session.previousTokenHash, presented)) {
-        await this.endSession(session.id, 'revoked');
-        await this.prisma.staff.update({ where: { id: session.staffId }, data: { sessionsRevokedAt: now } });
+        // The same phone or browser presenting its own previous token is most
+        // likely a renewal whose answer was lost on a weak network: the session
+        // ends, but today's login code still counts (password only). Anywhere
+        // else, the token may be in someone else's hands: a full revoke.
+        const sameDevice =
+          session.deviceId === deviceId && userAgentFamily(session.userAgent) === userAgentFamily(from.userAgent);
+        await this.endSession(session.id, sameDevice ? 'refresh_reused' : 'revoked');
+        if (!sameDevice) {
+          await this.prisma.staff.update({ where: { id: session.staffId }, data: { sessionsRevokedAt: now } });
+        }
         await this.auditService.log({
           actorId: session.staffId,
           action: 'auth.refresh_token_reused',
           entityType: 'staff_session',
           entityCode: session.id,
-          after: { app, ended: true },
+          after: { app, ended: true, sameDevice, codeAgain: !sameDevice },
         });
+        if (sameDevice) throw refuse('Your sign-in ended. Sign in again with your password.', 'expired');
         throw refuse('Session has been revoked', 'revoked');
       }
       throw refuse(FIELD_SESSION_REFUSED, 'unknown');

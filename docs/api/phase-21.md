@@ -705,3 +705,11 @@ When a call ends for someone who was On visit or Travelling when it started (a f
 - Background polls do not keep the idle clock alive: the office web app sends `X-Laboura-Background: 1` on GET requests made while nobody used the page for a minute (and on the live stream), and those never move `StaffSession.lastActivityAt`. Outside an open attendance day the 1-hour idle sign-out works again. (CEO and Finance unchanged for now.)
 - Two tabs of one session: while the access token works, the web app renews with the bearer `POST /auth/refresh` (the single-use refresh token is used only after it ran out), and a tab that renews shares the new tokens with the other tabs (BroadcastChannel `laboura-session`).
 - Refresh-token reuse: the token renewed less than a minute ago, presented again, is refused without ending the session (a second tab); presented later, it ends the session (`auth.refresh_token_reused`) and the next sign-in needs a login code.
+
+### Last fixes after the re-check (21 Nov)
+
+- `POST /auth/refresh` (bearer renewal) is never activity: it does not move `lastActivityAt`, like the refresh-token routes, so a web tab renewing every 14 minutes still reaches the 1-hour idle sign-out outside an open day.
+- A refresh token presented again from the same device id and the same browser or app family (most likely a renewal answer lost on a weak network) ends the session (`endedReason` `refresh_reused`, refusal reason `expired`) but keeps today's login code: the person signs in again with the password. From another device or family it is a full revoke (a code again).
+- The "signed in again without a code" bell counts the old session as live only if it was used for real (not a background poll) in the last 5 minutes.
+- One `day_resumed_again` bell per person per day, updated in place with the count. Resume waits 2 minutes after Log out (`400 RESUME_TOO_SOON`).
+- The web app waits up to 2 seconds for another tab's renewed token before signing out on a refused renewal.

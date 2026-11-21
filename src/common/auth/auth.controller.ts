@@ -117,8 +117,8 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(AuthThrottlerGuard)
   @Throttle({ default: { limit: 20, ttl: 60000 } })
-  refreshField(@Body() body: FieldRefreshDto) {
-    return this.authService.refreshFieldSession(body);
+  refreshField(@Body() body: FieldRefreshDto, @Req() req: Request) {
+    return this.authService.refreshFieldSession(body, { userAgent: req.headers['user-agent'] });
   }
 
   /**
@@ -133,8 +133,8 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(AuthThrottlerGuard)
   @Throttle({ default: { limit: 20, ttl: 60000 } })
-  refreshOffice(@Body() body: FieldRefreshDto) {
-    return this.authService.refreshOfficeSession(body);
+  refreshOffice(@Body() body: FieldRefreshDto, @Req() req: Request) {
+    return this.authService.refreshOfficeSession(body, { userAgent: req.headers['user-agent'] });
   }
 
   @Post('logout')

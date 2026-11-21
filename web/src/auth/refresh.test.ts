@@ -50,6 +50,16 @@ describe('two tabs and background polls (21 Nov hardening)', () => {
     expect(sessionStore.get()?.refreshToken).toBe('r1');
   });
 
+  it('a refused renewal waits briefly for the other tab\'s token before signing out (laptop waking with two tabs)', async () => {
+    start('r0');
+    const fetchImpl = vi.fn(async () => {
+      setTimeout(() => sessionStore.replaceToken(fakeJwt({ role: 'ceo', code: 'late' }, 15 * 60), 'r2'), 300);
+      return new Response(JSON.stringify({ statusCode: 401, message: 'Session not found', reason: 'unknown' }), { status: 401 });
+    });
+    expect(await refreshSession(fetchImpl as unknown as typeof fetch)).toBe('renewed');
+    expect(sessionStore.get()?.refreshToken).toBe('r2');
+  });
+
   it('GET requests made while nobody uses the page are marked as background', async () => {
     start();
     const api = mockApi({ 'GET /attendance/today': { ok: true } });

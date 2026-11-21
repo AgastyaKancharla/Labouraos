@@ -101,7 +101,10 @@ describe('session keep-alive', () => {
     });
     const reasons: (string | undefined)[] = [];
     const stop = sessionStore.subscribe((_s, reason) => reasons.push(reason));
-    await expect(apiRequest('/attendance/today')).rejects.toMatchObject({ status: 401 });
+    // A refused renewal first waits up to 2 s for another tab's token.
+    const refused = expect(apiRequest('/attendance/today')).rejects.toMatchObject({ status: 401 });
+    await vi.advanceTimersByTimeAsync(2500);
+    await refused;
     stop();
     expect(sessionStore.get()).toBeNull();
     expect(reasons).toEqual(['idle']);

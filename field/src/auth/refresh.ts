@@ -44,8 +44,9 @@ export function refreshKeptSession(api: ApiClient, store: SessionStore, storage:
       if (isApiError(error) && error.status === 401) {
         const body = error.body as { reason?: string; details?: { reason?: string } } | undefined;
         const given = body?.details?.reason ?? body?.reason;
+        // 'expired': a renewal answer was lost on a weak network — sign in again with the password (drafts kept).
         const reason: SignOutReason =
-          given === 'idle' || given === 'max_length' ? given : given ? 'revoked' : reasonFromMessage(error.message);
+          given === 'idle' || given === 'max_length' || given === 'expired' ? given : given ? 'revoked' : reasonFromMessage(error.message);
         await store.clear(reason);
         return 'ended';
       }

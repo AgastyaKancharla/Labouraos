@@ -373,20 +373,35 @@ describe('Attendance fixes (21 Nov): own shifts, idle, closing and reopening day
       const agent = await agentOf(lead, 'RCT');
       const token = tokenFor(agent);
       await post(token, '/attendance/login').expect(201);
-      for (const [out, back] of [['05:00', '05:05'], ['06:00', '06:05']] as const) {
+      for (const [out, back] of [['05:00', '05:05'], ['06:00', '06:05'], ['07:00', '07:05']] as const) {
         at(`2026-11-24T${out}:00.000Z`);
         await post(token, '/attendance/logout').expect(201);
         at(`2026-11-24T${back}:00.000Z`);
         await post(token, '/attendance/resume').expect(201);
       }
       const day = await prisma.attendanceDay.findFirstOrThrow({ where: { staffId: agent.id } });
-      expect(day.resumeCount).toBe(2);
-      expect((await today(token)).body.resumeCount).toBe(2);
+      expect(day.resumeCount).toBe(3);
+      expect((await today(token)).body.resumeCount).toBe(3);
       const month = await http().get('/attendance/month').query({ month: '2026-11', staffId: agent.id }).set('Authorization', `Bearer ${tokenFor(lead)}`).expect(200);
-      expect(month.body.days.find((d: { id: string }) => d.id === day.id).resumeCount).toBe(2);
-      const bells = await prisma.notification.findMany({ where: { kind: 'day_resumed_again', recipientStaffId: lead.id } });
+      expect(month.body.days.find((d: { id: string }) => d.id === day.id).resumeCount).toBe(3);
+      // One bell per person per day, updated in place with the count.
+      const bells = await prisma.notification.findMany({ where: { kind: 'day_resumed_again', recipientStaffId: lead.id, subjectId: day.id } });
       expect(bells).toHaveLength(1);
-      expect(bells[0].title).toContain('resumed their day 2 times');
+      expect(bells[0].title).toContain('resumed their day 3 times');
+    });
+
+    it('Resume waits 2 minutes after Log out', async () => {
+      const agent = await agentOf(lead, 'RCD');
+      const token = tokenFor(agent);
+      await post(token, '/attendance/login').expect(201);
+      at('2026-11-24T05:00:00.000Z');
+      await post(token, '/attendance/logout').expect(201);
+      at('2026-11-24T05:01:00.000Z');
+      const soon = await post(token, '/attendance/resume');
+      expect(soon.status).toBe(400);
+      expect(JSON.stringify(soon.body)).toContain('Wait 2 minutes');
+      at('2026-11-24T05:02:30.000Z');
+      await post(token, '/attendance/resume').expect(201);
     });
 
     it('the Team Lead reopens today\'s closed day with a reason; others and earlier days are refused', async () => {

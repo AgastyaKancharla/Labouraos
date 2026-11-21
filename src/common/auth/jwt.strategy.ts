@@ -18,8 +18,11 @@ import { isFieldHost } from '../../modules/web-app/site-hosts';
 /** Header the web app sets on polls made while nobody is using the page (21 Nov). */
 export const BACKGROUND_HEADER = 'x-laboura-background';
 
-export function isBackgroundRequest(req: { headers?: Record<string, unknown> }): boolean {
-  return req.headers?.[BACKGROUND_HEADER] === '1';
+export function isBackgroundRequest(req: { headers?: Record<string, unknown>; path?: string; originalUrl?: string }): boolean {
+  if (req.headers?.[BACKGROUND_HEADER] === '1') return true;
+  // A token renewal is not activity (the same as the refresh-token routes).
+  const path = (req.path ?? req.originalUrl ?? '').split('?')[0];
+  return path === '/auth/refresh';
 }
 
 /** A token used in the other app (or on the other app's address). */
