@@ -155,7 +155,8 @@ describe('Each app accepts only its own roles', () => {
     expect(asked.body.message).toBe('TOTP 2FA code is required');
     const totpCode = await stableTotpCode((await prisma.staff.findUniqueOrThrow({ where: { id: ceo.id } })).totpSecret!);
     const ok = await request(server()).post('/auth/login').send({ staffCode: ceo.code, password, deviceId: 'ceo-laptop', app: 'office', totpCode }).expect(200);
-    expect(ok.body.refreshToken).toBeUndefined();
+    // Every session on a device gets a refresh token since 21 Nov (the office app keeps it in sessionStorage).
+    expect(typeof ok.body.refreshToken).toBe('string');
     expect((await prisma.staffSession.findUniqueOrThrow({ where: { id: ok.body.sessionId } })).app).toBe('office');
 
     const lead = await makeStaff('team_lead');

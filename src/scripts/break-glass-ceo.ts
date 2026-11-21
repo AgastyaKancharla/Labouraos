@@ -146,7 +146,7 @@ async function main(): Promise<void> {
       [
         '',
         `Temporary password for ${result.name} (${result.code}): ${result.tempPassword}`,
-        `Valid until ${result.tempPasswordExpiresAt.toISOString()} (24 hours). Shown only once.`,
+        `Valid until ${result.tempPasswordExpiresAt.toISOString()} (72 hours). Shown only once.`,
         'Sign in at app.laboura.com/login with the staff code and this temporary password, then set a new password and a new authenticator.',
         'Now remove BREAK_GLASS_SECRET from the service environment in Render.',
         '',

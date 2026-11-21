@@ -9,6 +9,8 @@ import { attendanceKeys, dayPhase, useAttendanceActions, useAttendanceToday, typ
 import { EndDayDialog } from './EndDayDialog';
 import { clockTime } from './format';
 import { IdlePrompt } from './IdlePrompt';
+import { BreakPrompt } from './BreakPrompt';
+import { useAuth } from '../auth/AuthProvider';
 import { isKnownStatus, statusLabelKey, type AttendanceAudience, type AttendanceStatus } from './statuses';
 import './attendance.css';
 import { formatLateMinutes } from '../lib/format/late';
@@ -22,12 +24,19 @@ import { formatLateMinutes } from '../lib/format/late';
  * - The day comes from GET /attendance/today, polled every 30 s and refreshed
  *   at once when the live channel says the status changed (`attendance_status`:
  *   the phone system, the idle detector, the end of the day).
- * - While the day is open, any click, key or mouse movement counts as
- *   activity and sends a heartbeat at most once a minute.
- * - Available with no activity for the idle setting (10 minutes) opens
- *   "Still there?" with one minute to answer; with no answer the server
- *   marks Idle (it counts the same minute), calls stop and the Team Lead's
- *   live board shows it.
+ * - While the day is open and the tab is visible, a presence heartbeat goes
+ *   about once a minute without any input (decided 21 Nov: an open, visible
+ *   console counts as present). Any click, key or mouse movement counts as
+ *   activity and sends an activity heartbeat at most once a minute.
+ * - Available with no call and no click for the "Still there?" setting (30
+ *   minutes; a CEO setting) opens "Still there?" with one minute to answer;
+ *   with no answer the server marks Idle (it counts the same minute), calls
+ *   stop and the Team Lead's live board shows it. A console closed or hidden
+ *   for 10 minutes is Idle too.
+ * - Log out ends the working day and signs out (decided 21 Nov); signing in
+ *   again the same day on this device needs no login code and offers
+ *   "Resume my day".
+ * - After the lunch or break allowance: "Back from lunch?" (BreakPrompt).
  */
 export interface IdlePromptState {
   open: boolean;
@@ -47,6 +56,8 @@ interface AttendanceValue {
   pick: (status: AttendanceStatus) => Promise<void>;
   /** Opens the "End your day?" confirmation. */
   requestEnd: () => void;
+  /** "Resume my day": the day ended with Log out today (today.canResume). */
+  resume: () => Promise<void>;
   stayAvailable: () => void;
   idle: IdlePromptState;
 }
@@ -60,6 +71,8 @@ export function useAttendance(): AttendanceValue | null {
 
 const ACTIVITY_EVENTS = ['pointerdown', 'keydown', 'mousemove', 'wheel', 'touchstart', 'scroll'] as const;
 const HEARTBEAT_EVERY_MS = 60_000;
+/** While the tab is visible it tells the server it is open this often (decided 21 Nov). */
+export const PRESENCE_EVERY_MS = 60_000;
 
 /** Pure idle arithmetic, so it can be tested without timers. */
 export function idleState(input: {
@@ -91,6 +104,7 @@ export function AttendanceProvider({ audience, children }: { audience: Attendanc
   const phase = today ? dayPhase(today) : null;
   const status = today && phase === 'open' && isKnownStatus(today.status) ? today.status : null;
   const [endOpen, setEndOpen] = useState(false);
+  const auth = useAuth();
 
   const lastActivity = useRef(clock().getTime());
   const lastBeat = useRef(0);
@@ -107,8 +121,25 @@ export function AttendanceProvider({ audience, children }: { audience: Attendanc
   const beat = useCallback(() => {
     const now = clock().getTime();
     lastBeat.current = now;
-    heartbeatRef.current.mutate(undefined, { onError: () => undefined });
+    heartbeatRef.current.mutate('activity', { onError: () => undefined });
   }, [clock]);
+
+  // Present while the console is open and visible, even without input (decided 21 Nov).
+  useEffect(() => {
+    const presence = () => {
+      if (phaseRef.current !== 'open' || document.visibilityState !== 'visible') return;
+      heartbeatRef.current.mutate('presence', { onError: () => undefined });
+    };
+    const id = setInterval(presence, PRESENCE_EVERY_MS);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') presence();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, []);
 
   useEffect(() => {
     const onActivity = () => {
@@ -137,7 +168,7 @@ export function AttendanceProvider({ audience, children }: { audience: Attendanc
     statusSince: today?.statusSince ?? null,
     lastActivityMs: lastActivity.current,
     nowMs,
-    idleAfterMinutes: policy?.idleAfterMinutes ?? 10,
+    idleAfterMinutes: policy?.idleAfterMinutes ?? 30,
     idlePromptMinutes: policy?.idlePromptMinutes ?? 1,
   });
 
@@ -186,10 +217,23 @@ export function AttendanceProvider({ audience, children }: { audience: Attendanc
       const next = await actions.end.mutateAsync();
       setEndOpen(false);
       toast.success(t('att.toast.ended', { time: next.logoutAt ? clockTime(next.logoutAt) : '' }));
+      // Log out ends the working day and the sign-in with it (decided 21 Nov).
+      await auth.signOut();
     } catch (error) {
       showError(error);
     }
-  }, [actions.end, t, toast, showError]);
+  }, [actions.end, t, toast, showError, auth]);
+
+  const resume = useCallback(async () => {
+    try {
+      await actions.resume.mutateAsync();
+      lastActivity.current = clock().getTime();
+      lastBeat.current = lastActivity.current;
+      toast.success(t('att.toast.resumed'));
+    } catch (error) {
+      showError(error);
+    }
+  }, [actions.resume, clock, t, toast, showError]);
 
   const stayAvailable = useCallback(() => {
     lastActivity.current = clock().getTime();
@@ -197,7 +241,7 @@ export function AttendanceProvider({ audience, children }: { audience: Attendanc
     beat();
   }, [clock, beat]);
 
-  const busy = actions.start.isPending || actions.end.isPending || actions.setStatus.isPending;
+  const busy = actions.start.isPending || actions.end.isPending || actions.setStatus.isPending || actions.resume.isPending;
   const value = useMemo<AttendanceValue>(
     () => ({
       audience,
@@ -210,16 +254,18 @@ export function AttendanceProvider({ audience, children }: { audience: Attendanc
       start,
       pick,
       requestEnd: () => setEndOpen(true),
+      resume,
       stayAvailable,
       idle: { open: idle.open, secondsLeft: idle.secondsLeft, quietMinutes: idle.quietMinutes },
     }),
-    [audience, today, query.isPending, query.error, phase, status, busy, start, pick, stayAvailable, idle.open, idle.secondsLeft, idle.quietMinutes],
+    [audience, today, query.isPending, query.error, phase, status, busy, start, pick, resume, stayAvailable, idle.open, idle.secondsLeft, idle.quietMinutes],
   );
 
   return (
     <AttendanceContext.Provider value={value}>
       {children}
       <IdlePrompt />
+      <BreakPrompt />
       <EndDayDialog open={endOpen} onClose={() => setEndOpen(false)} onConfirm={() => void end()} busy={actions.end.isPending} />
     </AttendanceContext.Provider>
   );

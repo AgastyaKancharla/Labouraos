@@ -461,7 +461,7 @@ function AddStaff({ options }: { options: TeamResponse['reportsToOptions'] }) {
         </p>
       )}
       <p className="ceo-note">
-        Agents report to a Team Lead (an owner account may report to a CEO), Team Leads to a Manager, Managers to the CEO; someone not signed in yet can already be chosen. Their requests, targets, login codes and reports follow this line automatically. You get their staff code and a temporary password (24 hours, shown once) to give them.
+        Agents report to a Team Lead (an owner account may report to a CEO), Team Leads to a Manager, Managers to the CEO; someone not signed in yet can already be chosen. Their requests, targets, login codes and reports follow this line automatically. You get their staff code and a temporary password (72 hours, shown once) to give them.
       </p>
       <TempPasswordModal result={shown} onClose={() => setShown(null)} />
     </Card>

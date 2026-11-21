@@ -7,6 +7,13 @@ import { isStaffRole, type StaffRole } from './roles';
  */
 export const TOKEN_KEY = 'laboura_token';
 export const STAFF_KEY = 'laboura_staff';
+/**
+ * The single-use refresh token and session id (decided 21 Nov): the tab renews
+ * a token that ran out (laptop asleep) instead of signing out. Also in
+ * sessionStorage, so closing the browser still signs out.
+ */
+export const REFRESH_KEY = 'laboura_refresh';
+export const SESSION_ID_KEY = 'laboura_session_id';
 
 export interface StaffIdentity {
   id: string;
@@ -23,6 +30,9 @@ export interface Session {
   expiresAt: number;
   /** Token only allows authenticator enrolment (management not enrolled yet). */
   totpSetupOnly: boolean;
+  /** Single-use refresh token and the session it renews (absent on older sign-ins). */
+  refreshToken?: string | null;
+  sessionId?: string | null;
 }
 
 export type SignOutReason = 'logout' | 'expired' | 'idle' | 'max_length' | 'revoked' | 'unauthorized';
@@ -103,8 +113,12 @@ class SessionStore {
       // from the token (sessionFromToken).
       const staff = JSON.parse(rawStaff) as StaffIdentity;
       const session = sessionFromToken(token, staff);
-      if (!session || session.expiresAt <= Date.now()) return null;
-      return session;
+      if (!session) return null;
+      const refreshToken = safeGet(REFRESH_KEY);
+      const sessionId = safeGet(SESSION_ID_KEY);
+      // A token that ran out is kept when it can be renewed (decided 21 Nov).
+      if (session.expiresAt <= Date.now() && !(refreshToken && sessionId)) return null;
+      return { ...session, refreshToken, sessionId };
     } catch {
       return null;
     }
@@ -122,14 +136,22 @@ class SessionStore {
     this.session = session;
     safeSet(TOKEN_KEY, session.token);
     safeSet(STAFF_KEY, JSON.stringify(session.staff));
+    safeSet(REFRESH_KEY, session.refreshToken ?? null);
+    safeSet(SESSION_ID_KEY, session.sessionId ?? null);
     this.emit(session);
   }
 
-  /** Swap in a refreshed token for the same person. */
-  replaceToken(token: string): void {
+  /** Swap in a refreshed token (and the next refresh token) for the same person. */
+  replaceToken(token: string, refreshToken?: string): void {
     if (!this.session) return;
     const next = sessionFromToken(token, this.session.staff);
-    if (next) this.set(next);
+    if (next) {
+      this.set({
+        ...next,
+        refreshToken: refreshToken ?? this.session.refreshToken ?? null,
+        sessionId: this.session.sessionId ?? null,
+      });
+    }
   }
 
   clear(reason: SignOutReason, message?: string): void {
@@ -137,6 +159,8 @@ class SessionStore {
     this.session = null;
     safeSet(TOKEN_KEY, null);
     safeSet(STAFF_KEY, null);
+    safeSet(REFRESH_KEY, null);
+    safeSet(SESSION_ID_KEY, null);
     if (had || reason !== 'logout') this.emit(null, reason, message);
   }
 

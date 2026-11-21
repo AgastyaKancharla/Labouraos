@@ -22,6 +22,7 @@ import {
 } from './login-code.crypto';
 import { ReportingScopeService } from '../staff/reporting-scope.service';
 import { StaffPhotoService } from '../staff/staff-photo.service';
+import { SignInBellsService } from './sign-in-bells.service';
 
 export interface LoginCodeActor {
   id: string;
@@ -55,6 +56,8 @@ export class LoginCodeService {
     private readonly reportingScope?: ReportingScopeService,
     @Optional() @Inject(StaffPhotoService)
     private readonly photos?: StaffPhotoService,
+    @Optional() @Inject(SignInBellsService)
+    private readonly bells?: SignInBellsService,
   ) {
     getLoginCodeSecret();
   }
@@ -100,6 +103,8 @@ export class LoginCodeService {
       entityCode: row.id,
       after: { status: 'pending', staffId },
     });
+    // The Team Lead (and the Manager above) get a bell at once (decided 21 Nov).
+    await this.bells?.syncLoginCode(row.id, createdAt);
     return row;
   }
 
@@ -151,6 +156,7 @@ export class LoginCodeService {
       entityCode: request.id,
       after: { status: 'revealed', revealedByStaffId: updated.revealedByStaffId },
     });
+    await this.bells?.syncLoginCode(request.id, now);
     return { ...updated, code: loginCodeFor(request.id) };
   }
 
@@ -225,6 +231,7 @@ export class LoginCodeService {
       entityCode: request.id,
       after: { status: 'used' },
     });
+    await this.bells?.syncLoginCode(request.id, this.clock.now());
     return used;
   }
 
@@ -258,6 +265,7 @@ export class LoginCodeService {
       after: { status: 'refused' },
       reason: trimmed,
     });
+    await this.bells?.syncLoginCode(request.id, this.clock.now());
     return updated;
   }
 

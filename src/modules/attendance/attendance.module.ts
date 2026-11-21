@@ -18,6 +18,9 @@ import { AttendanceClock } from './attendance-clock';
 import { AttendanceController } from './attendance.controller';
 import { AttendanceService } from './attendance.service';
 import { AttendanceDaysService } from './attendance-days.service';
+import { AttendanceShiftsService } from './attendance-shifts.service';
+import { AttendanceActivityInterceptor } from './attendance-activity.interceptor';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 
 @Module({
   imports: [PrismaModule, PricingModule, ReviewFlagModule, ReportingScopeModule, MessageModule, WorkingDaysModule, NotificationModule],
@@ -30,6 +33,8 @@ import { AttendanceDaysService } from './attendance-days.service';
   providers: [
     AttendanceService,
     AttendanceDaysService,
+    AttendanceShiftsService,
+    { provide: APP_INTERCEPTOR, useClass: AttendanceActivityInterceptor },
     AttendanceClock,
     LeaveService,
     AttendanceRequestsService,
@@ -40,6 +45,7 @@ import { AttendanceDaysService } from './attendance-days.service';
   exports: [
     AttendanceService,
     AttendanceDaysService,
+    AttendanceShiftsService,
     AttendanceClock,
     LeaveService,
     AttendanceRequestsService,

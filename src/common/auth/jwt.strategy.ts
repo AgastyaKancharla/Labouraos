@@ -1,5 +1,5 @@
 import { isStaffAccessToken } from './staff-token';
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Optional, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import type { Request } from 'express';
 import { ExtractJwt, Strategy } from 'passport-jwt';
@@ -10,13 +10,20 @@ import { sessionlessTokensAllowed } from './sessionless-tokens';
 import { noteRequestDevice } from '../observability/request-context';
 import { AuthClock } from './auth.service';
 import { PricingService } from '../../modules/pricing/pricing.service';
-import {
-  sessionEndMessage,
-  sessionLifetimeEnd,
-  shouldTouchActivity,
-} from './session-lifetime';
+import { sessionEndMessage, sessionLifetimeEnd, shouldTouchActivity } from './session-lifetime';
+import { SessionDayService } from './session-day.service';
 import { appForRole, isStaffApp, roleAllowedInApp } from './staff-app';
 import { isFieldHost } from '../../modules/web-app/site-hosts';
+
+/** Header the web app sets on polls made while nobody is using the page (21 Nov). */
+export const BACKGROUND_HEADER = 'x-laboura-background';
+
+export function isBackgroundRequest(req: { headers?: Record<string, unknown>; path?: string; originalUrl?: string }): boolean {
+  if (req.headers?.[BACKGROUND_HEADER] === '1') return true;
+  // A token renewal is not activity (the same as the refresh-token routes).
+  const path = (req.path ?? req.originalUrl ?? '').split('?')[0];
+  return path === '/auth/refresh';
+}
 
 /** A token used in the other app (or on the other app's address). */
 export const WRONG_APP_TOKEN = 'This sign-in belongs to the other Laboura app: sign in again here';
@@ -27,6 +34,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private readonly prisma: PrismaService,
     private readonly clock: AuthClock,
     private readonly pricingService: PricingService,
+    @Optional() private readonly sessionDay?: SessionDayService,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -93,8 +101,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       }
 
       const now = this.clock.now();
-      const policy = await this.pricingService.current();
-      const end = sessionLifetimeEnd(session, now, policy.idleLogoutMinutes);
+      // Day-long while the attendance day is open on an approved device (decided 21 Nov).
+      const end = this.sessionDay
+        ? await this.sessionDay.endFor(session, now)
+        : sessionLifetimeEnd(session, now, (await this.pricingService.current()).idleLogoutMinutes);
       if (end) {
         await this.prisma.staffSession.updateMany({
           where: { id: session.id, revokedAt: null },
@@ -105,7 +115,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
       noteRequestDevice({ staffId: payload.sub, sessionId: session.id, deviceId: session.deviceId });
 
-      if (shouldTouchActivity(session.lastActivityAt, now)) {
+      // Background polls (the web app's 30-second refreshes, bells, the live
+      // stream) say so with X-Laboura-Background and never count as activity,
+      // so outside an open attendance day the 1-hour idle rule works (21 Nov).
+      if (!isBackgroundRequest(req) && shouldTouchActivity(session.lastActivityAt, now)) {
         await this.prisma.staffSession.updateMany({
           where: { id: session.id, revokedAt: null },
           data: { lastActivityAt: now },

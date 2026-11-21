@@ -240,7 +240,10 @@ describe('Owner accounts', () => {
       expect((await attendance.todayForSelf(c.ownerCall.id)).logoutAt).toBeTruthy();
       const again = await attendance.login(c.ownerCall.id, {});
       expect(again).toMatchObject({ logoutAt: null, status: 'available' });
-      // Forgotten logout: closed without a flag.
+      // Forgotten logout: the clean-up never closes today's day (decided 21 Nov) …
+      expect(await attendance.closeForgottenDays(c.ownerField.id)).toEqual({ closed: 0 });
+      // … and the next morning closes it without a flag.
+      shared.at = new Date('2026-11-11T00:30:00.000Z');
       await attendance.closeForgottenDays(c.ownerField.id);
       expect(await prisma.attendanceDay.findFirstOrThrow({ where: { staffId: c.ownerField.id } })).toMatchObject({ flagged: false, dayType: 'full' });
     });

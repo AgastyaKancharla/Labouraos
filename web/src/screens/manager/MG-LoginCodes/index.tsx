@@ -19,6 +19,7 @@ import { ActionButton } from '../../ceo/_kit/actions';
 import { roleWord } from '../_kit/kit';
 import { PasswordResetHistory, PendingResetCards, usePendingResets } from '../../shared/staffAccess';
 import { useT } from '../../../i18n/I18nProvider';
+import { NoCodeSignIns } from '../../../auth/NoCodeSignIns';
 
 interface Pending {
   id: string;
@@ -153,6 +154,7 @@ export default function ManagerLoginCodes() {
         <div className="ceo-note">You give codes to agents in your teams when their Team Lead is away, and approve password resets for people below Manager in your teams · Team Leads use their own authenticator · nobody sees their own code</div>
       </div>
       <PasswordResetHistory />
+      <NoCodeSignIns />
     </div>
   );
 }

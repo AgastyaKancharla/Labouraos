@@ -28,7 +28,7 @@ const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x4
  * creating an account gives a temporary password shown once; signing in with
  * it gives no session, only a set-up ticket for that device (selfie, new
  * password twice, authenticator for CEO/Manager/Finance/Team Lead); the
- * temporary password works once, for 24 hours; a password alone never opens a
+ * temporary password works once, for 72 hours; a password alone never opens a
  * session for an authenticator role without an authenticator.
  */
 describe('First login with a temporary password', () => {
@@ -162,7 +162,7 @@ describe('First login with a temporary password', () => {
     expect(messageOf(next.body)).toContain('waiting for approval by your Team Lead');
   });
 
-  it('a temporary password works for 24 hours only; wrong ones lock the account like wrong passwords', async () => {
+  it('a temporary password works for 72 hours only (decided 21 Nov); wrong ones lock the account like wrong passwords', async () => {
     const made = await create('mgr', { name: 'Expiry Agent', role: 'call_agent', reportsToId: staffIds.tl });
     await prisma.staff.update({ where: { id: made.body.staff.id }, data: { tempPasswordExpiresAt: new Date(Date.now() - 1000) } });
     const expired = await login(made.body.staff.code, made.body.tempPassword, `dev-e-${ts}`);
