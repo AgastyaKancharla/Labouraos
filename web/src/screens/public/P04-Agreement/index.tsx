@@ -31,6 +31,8 @@ export default function Agreement() {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  // 22 Nov: after a press of "Send code to sign" with something missing, the missing fields are marked.
+  const [showMissing, setShowMissing] = useState(false);
 
   const ownerName = details.data?.ownerName;
   useEffect(() => {
@@ -61,6 +63,15 @@ export default function Agreement() {
   // Rev 193: one button. The name and the three ticks come first; "Send code to sign" sends the
   // owner's code, and typing it signs in the same step (no separate "Sign agreement" button).
   const ready = name.trim().length >= 2 && agreeTerms && agreeAuthority && agreeRecording;
+  // What is missing, said next to the button (never a silently disabled button).
+  const missingReason = (): string | null => {
+    const parts: string[] = [];
+    if (name.trim().length < 2) parts.push(t('pub.agree.missingName'));
+    const boxes = [agreeTerms, agreeAuthority, agreeRecording].filter((v) => !v).length;
+    if (boxes) parts.push(t('pub.agree.missingBoxes', { count: boxes }));
+    if (!parts.length) return null;
+    return t('pub.agree.missing', { what: parts.join(t('pub.agree.missingAnd')) });
+  };
   const sign = async (typed: string) => {
     if (!ready || !requestId || typed.length !== 6) return;
     setBusy(true);
@@ -105,10 +116,17 @@ export default function Agreement() {
           <div dangerouslySetInnerHTML={{ __html: d.agreementTermsHtml }} />
         </details>
       )}
-      <TextField label={t('pub.agree.name')} value={name} onChange={setName} autoComplete="name" required />
-      <Choice checked={agreeTerms} onChange={setAgreeTerms} title={t('pub.agree.agreeTerms')} />
-      <Choice checked={agreeAuthority} onChange={setAgreeAuthority} title={t('legal.agree.authority')} />
-      <Choice checked={agreeRecording} onChange={setAgreeRecording} title={t('pub.agree.agreeRecording')} />
+      <TextField
+        label={t('pub.agree.name')}
+        value={name}
+        onChange={setName}
+        autoComplete="name"
+        required
+        error={showMissing && name.trim().length < 2 ? t('pub.agree.missingName') : undefined}
+      />
+      <Choice checked={agreeTerms} onChange={setAgreeTerms} title={t('pub.agree.agreeTerms')} missing={showMissing} />
+      <Choice checked={agreeAuthority} onChange={setAgreeAuthority} title={t('legal.agree.authority')} missing={showMissing} />
+      <Choice checked={agreeRecording} onChange={setAgreeRecording} title={t('pub.agree.agreeRecording')} missing={showMissing} />
       <OtpBlock
         maskedPhone={d.maskedPhone}
         send={() => agreementApi.sendOtp(token)}
@@ -119,6 +137,8 @@ export default function Agreement() {
         invalid={Boolean(error)}
         sendLabel={t('pub.agree.sendToSign')}
         sendDisabled={!ready}
+        checkBeforeSend={missingReason}
+        onBlocked={() => setShowMissing(true)}
         hint={ready ? t('pub.agree.codeSigns') : t('pub.agree.fillFirst')}
         onComplete={(typed) => void sign(typed)}
         submitting={busy}
