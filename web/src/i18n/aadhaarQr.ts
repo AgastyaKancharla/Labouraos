@@ -19,6 +19,16 @@ export const aadhaarQrEn = {
   'pub.id.changeNumber': 'Change the ID or number',
   'pub.id.pendingTitle': 'Sent to a Team Lead.',
   'pub.id.pendingBody': 'A Laboura Team Lead will compare the photo of your card with your selfie. Open this link again later to pay — nothing is charged before the check.',
+  // 22 Nov (owner testing): a clear next step after the photo of another ID is sent.
+  'pub.id.nextTitle': 'What happens next',
+  'pub.id.nextBody':
+    "A Laboura Team Lead checks your card against your selfie. When it is approved, open this same link again to pay ₹499 (your Laboura agent can also send you the payment link). Nothing is charged before the check. You can close this page.",
+  'pub.id.nextBodyPartner':
+    'A Laboura Team Lead checks your card against your selfie. When it is approved, open this same link again to add your UPI ID for payouts. You can close this page.',
+  'pub.id.done': 'Done',
+  'pub.id.doneBodyPartner': 'Your ID card is with a Team Lead. You can close this page and open this link again after the check to add your UPI ID.',
+  'pub.id.doneTitle': 'All done for now.',
+  'pub.id.doneBody': 'Your ID card is with a Team Lead. You can close this page and open this link again after the check to pay.',
   'pub.id.pendingOrQr': 'Have your Aadhaar with you? Scan its QR code to continue now.',
   'pub.qr.certMissing': 'This Aadhaar is newer than our check supports. Please use another ID.',
   'pub.id.photoExpired': 'The photo of your ID card expired before a Team Lead could check it. Please take a new photo of the card.',

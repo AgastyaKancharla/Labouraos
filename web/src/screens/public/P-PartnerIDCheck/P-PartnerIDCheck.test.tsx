@@ -70,6 +70,9 @@ describe('P-PartnerIDCheck (step 3, the same Aadhaar QR step)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Next: photo of the card' }));
     await userEvent.click(screen.getByRole('button', { name: 'Take photo of the card' }));
     expect(await screen.findByTestId('id-pending')).toBeInTheDocument();
+    // 22 Nov: the partner's next step is the UPI ID (no ₹499).
+    expect(screen.getByTestId('id-pending-next')).toHaveTextContent(/add your UPI ID/);
+    expect(screen.getByTestId('id-pending-next')).not.toHaveTextContent(/₹499/);
     const sent = api.fetch.mock.calls.find(([url]) => String(url).endsWith(`/referral-registration/${TOKEN}/other-id`));
     const form = sent![1]!.body as FormData;
     expect([form.get('idType'), form.get('idNumber'), form.get('captureSource')]).toEqual(['voter_id', 'ABC1234567', 'live_camera']);

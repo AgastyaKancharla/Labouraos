@@ -287,7 +287,7 @@ export class ReferralRegistrationController {
     const idReason = stopped
       ? 'Under 18: registration stops (only a Manager or the CEO can lift it)'
       : identity?.status === 'pending'
-        ? 'Waiting for the Team Lead to check the ID card photo'
+        ? "Waiting for the Team Lead's ID check"
         : identity?.failureReason ?? (identity?.nameMatches !== true ? 'ID name did not match the referral profile' : identity?.isAdult !== true ? 'Adult status could not be confirmed' : null);
     const steps = {
       terms: { state: terms ? 'done' : 'not_started', time: terms?.grantedAt ?? null },

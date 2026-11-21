@@ -185,7 +185,7 @@ export class ProfileStuckService {
     const idDone = identity?.status === 'verified' && identity.nameMatches === true && identity.isAdult === true;
     if (!idDone) {
       if (identity?.status === 'pending') {
-        return { ...base, step: 'id_check', state: 'in_progress', reason: 'Waiting for the Team Lead to check the ID card photo', waitingForTeamLead: true, actions: [] };
+        return { ...base, step: 'id_check', state: 'in_progress', reason: "Waiting for the Team Lead's ID check", waitingForTeamLead: true, actions: [] };
       }
       if (identity && identity.isAdult === false) {
         return { ...base, step: 'id_check', state: 'stuck', reason: 'Under 18: registration stops (only a Manager or the CEO can lift it)', waitingForTeamLead: false, actions: [] };
