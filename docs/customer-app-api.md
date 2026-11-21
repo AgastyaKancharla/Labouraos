@@ -137,7 +137,8 @@ Response:
   "otpResendSeconds": 30,
   "otpMaxResends": 3,
   "sessionDays": 90,
-  "referralLeads": false
+  "referralLeads": false,
+  "workerLeftReports": false
 }
 ```
 
@@ -147,7 +148,8 @@ the server: the app hides "Continue with Google"; `appleSignIn` likewise for
 `testModeCode`: only when `CUSTOMER_OTP_TEST_MODE=on` on a server marked
 `LABOURA_SETUP=test` with pretend SMS (the server refuses to start with it on
 anywhere else). The staff OTP test mode never turns it on. `referralLeads`:
-the partners' "Send a lead" form (§7.3b) is switched on (`CUSTOMER_REFERRAL_LEADS=on`).
+the partners' "Send a lead" form (§7.3b) is switched on (`CUSTOMER_REFERRAL_LEADS=on`);
+`workerLeftReports`: the businesses' "a worker left" report (§8.2, `CUSTOMER_WORKER_LEFT_REPORTS=on`).
 
 ---
 
@@ -741,9 +743,12 @@ partner again → `200` with that lead. The answer never says whether Laboura
 already knew the number (no oracle, AC-6). `area` must be one of the managed
 areas (`GET /me/form-options`); `personAgreed` must be `true`; not the partner's
 own number. `400 VALIDATION_FAILED` with `field`; `403 REFERRAL_PAUSED`;
-`429 LIMIT_REACHED` above 20 leads a day (from 00:00 IST).
+`403 NOT_ALLOWED` (`reason: registration_unfinished`) until the partner finished
+registering (terms, selfie, ID check, UPI — the same steps the app shows);
+`429 LIMIT_REACHED` above 20 leads a day (from 00:00 IST; counted under a lock per partner).
 
 `GET` → `{ "open": true, "perDay": 20, "leads": [ { "id": "uuid", "firstName": "Manju", "kind": "job_seeker", "stage": "with_team", "sentAt": "…" } ] }`.
+`firstName` is a person's first name, or a business lead's whole name.
 `stage`: `with_team` (new or being called), `registered`, `closed` (not
 interested, already with Laboura, or closed for any other reason — the
 partner is not told which). Never the phone.
@@ -844,15 +849,27 @@ Master Guide, customer app (14 Nov): a business may report a worker leaving in
 the app; claims still go to the Team Lead. **This is a report, not the
 replacement claim.** The claim needs an answered, recorded call with the owner,
 so staff still file it (`POST /placements/:id/claims`, unchanged). The report
-saves when the business told Laboura and makes a "Call me back" request
-(topic `worker_left`, note `PL-…: worker left on <day>`) so the call team gets a
-call task at once (§10; an already open request is used instead of a second one).
+saves when the business told Laboura and makes its own "Call me back" request
+(topic `worker_left`, note `PL-…: worker left on <day>`, for this business
+profile) so the call team gets a call task at once (§10). Only an *open*
+`worker_left` request of the same profile is reused; never an older request of
+the account (an `assigned` one is never closed again, and it may be about
+another profile).
+
+**Switched off until the office software uses the reports:**
+`CUSTOMER_WORKER_LEFT_REPORTS=on` turns it on; `GET /config` says
+`workerLeftReports`; `GET` answers `open`; while off, `POST` answers
+`501 NOT_IMPLEMENTED` and the app hides "Report a worker left". Reason: until the
+office counts the report's time, a claim filed later by staff would be counted
+from the filing, and a report made on day 6 and filed on day 8 would be turned
+down as late for good.
 
 `GET` → the business's paid workers (placement `active`, or `confirmed` = paid but
 not joined yet), a branch profile only its branch's:
 
 ```json
 {
+  "open": true,
   "reasons": { "covered": ["resigned", "absconded_3_days", "…"], "notCovered": ["business_closed", "…"], "neverJoined": ["never_joined"] },
   "reportWithinDays": 7,
   "windowDays": 60,
@@ -870,8 +887,11 @@ not joined yet), a branch profile only its branch's:
 ```
 
 `state`: `can_report`, `reported` (an open report waits for the call team),
-`claim_open` (a claim waits for the Team Lead), `guarantee_over` (past the
-60 days), `not_started` (due to join later). The reasons are the staff form's
+`claim_open` (a claim waits for the Team Lead), `not_again` (an earlier claim
+was turned down and the staff refile rule, `claim-refile.ts`, does not let a
+call agent file it again), `guarantee_over` (more than 7 days after the
+guarantee's last day — staff check the leaving day against the window, then the
+7-day rule), `not_started` (due to join later). The reasons are the staff form's
 closed list (`placement/claim-reasons.ts`): covered and not covered, or only
 `never_joined` for a paid worker who never came (D2). First name only, never a
 phone number or money.
@@ -882,14 +902,16 @@ report when one is already waiting (one open report per worker, also a partial
 unique index). The day must be from the worker's own joining day to today and not
 after the guarantee's last day, as the staff claim checks it. `404 PROFILE_NOT_FOUND`
 for a worker that is not this business's (or this branch's), not paid for, or not
-found; `409 NOT_ALLOWED` with `reason` `claim_open`, `not_started` or `guarantee_over`;
+found; `409 NOT_ALLOWED` with `reason` `claim_open`, `not_again`, `not_started` or `guarantee_over`;
 `400 VALIDATION_FAILED` with `field`. No fresh OTP: it only asks for a call.
+
+Deleting the account keeps the report (`accountId` set to null): it is the record of when the business told Laboura.
 
 **For the office session (not in the customer folders):** show open reports and
 the topic and note of a `worker_left` callback on the call task; when the claim
 is filed from a report, set `CustomerWorkerLeftReport.status = 'claim_filed'`
-and `claimId`; count the report's `createdAt` as the day the business told
-Laboura (7-day rule).
+and `claimId` (or `closed` + `closedAt`); count the report's `createdAt` as the day the
+business told Laboura (7-day rule). Then switch `CUSTOMER_WORKER_LEFT_REPORTS` on.
 
 ## 9. Inbox, push token and settings (Agent C)
 
@@ -1059,9 +1081,11 @@ Events (`kind`, placeholders, category; all `service` unless said):
 { "profileId": "uuid", "topic": "signup", "note": "UPI failed", "preferredFrom": "18:00", "preferredTo": "21:00" }
 ```
 
-`topic`: `signup`, `payment`, `interview`, `refund`, `payout`, `vacancy`, `other`.
+`topic`: `signup`, `payment`, `interview`, `refund`, `payout`, `vacancy`, `other`
+(and `worker_left`, made only by "a worker left", §8.2 — not sent by the app here).
 Times are IST inside 09:00 to 21:00. → `201 { "id": "uuid", "status": "open", "createdAt": "…" }`.
-One open request per account: a second answers `200` with the open one. `note`
+One open request per account (a `worker_left` one does not count): a second answers `200` with the open one.
+*Known gap (21 Nov, office side):* nothing moves a request from `assigned` to `done` when its call task is done, so after one "Call me back" a person can never ask again; asked of the office session. `note`
 is short (200 characters) and must not carry ID numbers. The back office (D)
 turns it into a call task (CallTask kind `callback`, or `signup_help` during a sign-up).
 `GET` lists my last 10 with `status` (`open`, `assigned`, `done`, `cancelled`).
@@ -1188,6 +1212,7 @@ tracker assignee and their team) for app sign-ups.
 | `CUSTOMER_ACCESS_TOKEN_MINUTES` | optional | Access token life, 1 to 60, default 15 |
 | `CUSTOMER_PUSH_PROVIDER_MODE` | render.yaml (web and worker), render.free.yaml | `mock` (default: logs instead of sending) or `real` (Expo's push service) |
 | `EXPO_ACCESS_TOKEN` | render.yaml, `sync: false` (worker copies it) | Optional: only if "enhanced push security" is on in the Expo account |
+| `CUSTOMER_WORKER_LEFT_REPORTS` | optional (Render → Environment) | `on` switches on the businesses' "a worker left" report (§8.2). Off by default until the office software uses the reports |
 | `CUSTOMER_REFERRAL_LEADS` | optional (Render → Environment) | `on` switches on the partners' "Send a lead" form (§7.3b). Off by default until the office software picks leads up |
 
 ---

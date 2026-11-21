@@ -152,8 +152,17 @@ describe('Business Home', () => {
     expect(screen.getByTestId('biz-stat-placements')).toHaveTextContent(/1.*People hired/);
     expect(screen.getByTestId('biz-hero-agreement-green')).toBeTruthy();
     expect(screen.getByTestId('biz-hero-approval-green')).toBeTruthy();
-    // A worker placed: "Report a worker left" opens the worker list (contract 8.2).
-    expect(screen.getByTestId('biz-home-workers')).toHaveTextContent(/Did a worker leave\?/);
+    // A worker placed, but the report is switched off on the server: no card.
+    expect(screen.queryByTestId('biz-home-workers')).toBeNull();
+  });
+
+  it('"Report a worker left" shows when a worker is placed and the server switched it on (contract 8.2)', async () => {
+    const api = fakeApi({
+      home: async () => bizHome({ counts: { interviewsUpcoming: 0, placements: 1, workersPlaced: 1 } }),
+      config: async () => ({ googleSignIn: true, googleWebClientId: null, googleIosClientId: null, appleSignIn: false, otpTestMode: false, workerLeftReports: true }),
+    });
+    await renderWithApp(<Home />, { api, account: account({ profiles: [bizProfile] }), activeProfileId: 'p-biz' });
+    expect(await screen.findByTestId('biz-home-workers')).toHaveTextContent(/Did a worker leave\?/);
   });
 
   it('no worker placed yet: no "Report a worker left"', async () => {

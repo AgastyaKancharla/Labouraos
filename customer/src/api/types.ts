@@ -87,6 +87,8 @@ export interface AppConfig {
   otpTestMode: boolean;
   /** Referral partners' "Send a lead" form is switched on (contract 7.3b). */
   referralLeads?: boolean;
+  /** Businesses' "a worker left" report is switched on (contract 8.2). */
+  workerLeftReports?: boolean;
 }
 
 /** A fresh OTP the person typed, sent inside the request it protects. */
@@ -335,7 +337,7 @@ export interface BusinessHome {
 }
 
 /** "A worker left" (contract 8.2): a report that brings a call from the team, not the claim itself. */
-export type WorkerState = 'can_report' | 'reported' | 'claim_open' | 'guarantee_over' | 'not_started';
+export type WorkerState = 'can_report' | 'reported' | 'claim_open' | 'not_again' | 'guarantee_over' | 'not_started';
 
 export interface PlacedWorker {
   placementId: string;
@@ -343,6 +345,7 @@ export interface PlacedWorker {
   workerFirstName: string | null;
   trade: string;
   joinedOn: string | null;
+  joiningOn: string | null;
   /** Selected and paid, joining day passed, never came (D2): only "never joined" can be picked. */
   neverJoined: boolean;
   guaranteeLastDay: string | null;
@@ -363,6 +366,8 @@ export interface WorkerLeftReport {
 }
 
 export interface WorkersAnswer {
+  /** Switched on by the server (CUSTOMER_WORKER_LEFT_REPORTS). */
+  open: boolean;
   reasons: { covered: string[]; notCovered: string[]; neverJoined: string[] };
   reportWithinDays: number;
   windowDays: number;

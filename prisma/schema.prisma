@@ -3317,15 +3317,16 @@ model CustomerCallbackRequest {
 /// filed from it) and sets status / claimId.
 model CustomerWorkerLeftReport {
   id                String          @id @default(uuid())
-  accountId         String
-  account           CustomerAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  /// Null once the account is deleted: the report stays as the record of when the business told Laboura.
+  accountId         String?
+  account           CustomerAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
   /// CustomerProfile.id of the business profile that reported it.
   profileId         String
   businessId        String
   /// Set when a branch profile reported it (that branch's worker).
   branchId          String?
   placementId       String
-  /// The Indian day the business says the worker left (00:00 IST, as ReplacementClaim.workerLeftOn).
+  /// The Indian day the business says the worker left, as UTC midnight of that date (as ReplacementClaim.workerLeftOn).
   workerLeftOn      DateTime
   /// A key from the claim reasons (placement/claim-reasons.ts).
   reason            String

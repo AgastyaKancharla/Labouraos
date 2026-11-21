@@ -11,6 +11,19 @@ describe('CustomerWorkersService (a worker left, in the app)', () => {
   const NOW = new Date('2026-11-21T06:00:00.000Z'); // 21 Nov, 11:30 IST
   const owner: { id: string; accountId: string; kind: string; role: string; jobSeekerId: null; businessId: string; branchId: string | null; referralId: null } = { id: 'prof-1', accountId: 'acc-1', kind: 'business', role: 'owner', jobSeekerId: null, businessId: 'biz-1', branchId: null, referralId: null };
   const branchManager = { ...owner, id: 'prof-2', role: 'manager', branchId: 'branch-9' };
+  const saved = process.env.CUSTOMER_WORKER_LEFT_REPORTS;
+  beforeEach(() => {
+    process.env.CUSTOMER_WORKER_LEFT_REPORTS = 'on';
+  });
+  afterAll(() => {
+    process.env.CUSTOMER_WORKER_LEFT_REPORTS = saved;
+  });
+  function claim(extra: Record<string, unknown> = {}) {
+    return {
+      code: 'CL-00001', workerLeftOn: new Date('2026-11-05T00:00:00.000Z'), reportedAt: new Date('2026-11-06T06:00:00.000Z'),
+      decision: null, decisionReason: null, rejectionCode: null, decidedByStaffId: null, overruledByStaffId: null, ...extra,
+    };
+  }
 
   function placement(extra: Record<string, unknown> = {}) {
     return {
@@ -65,6 +78,7 @@ describe('CustomerWorkersService (a worker left, in the app)', () => {
     const answer = await service.workers('acc-1', 'prof-1');
     expect(scope.profile).toHaveBeenCalledWith('acc-1', 'prof-1', 'business');
     expect(prisma.placement.findMany.mock.calls[0][0].where).toEqual({ businessId: 'biz-1', status: { in: ['active', 'confirmed'] } });
+    expect(answer.open).toBe(true);
     expect(answer.workers).toEqual([
       expect.objectContaining({
         placementCode: 'PL-00012',
@@ -94,6 +108,8 @@ describe('CustomerWorkersService (a worker left, in the app)', () => {
     const result = await service.reportLeft('acc-1', 'prof-1', 'pl-1', { workerLeftOn: '2026-11-19', reason: 'resigned', note: 'Went back home' });
     expect(result).toEqual({ created: true, body: { reportId: 'rep-1', status: 'open', reportedAt: NOW } });
     expect(prisma.placement.findMany.mock.calls[0][0].where).toEqual({ businessId: 'biz-1', status: { in: ['active', 'confirmed'] }, id: 'pl-1' });
+    // Only its own open "worker left" call for this profile is reused, never another (assigned, or another profile's).
+    expect(tx.customerCallbackRequest.findFirst.mock.calls[0][0].where).toEqual({ accountId: 'acc-1', profileId: 'prof-1', topic: 'worker_left', status: 'open' });
     expect(tx.customerCallbackRequest.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ accountId: 'acc-1', profileId: 'prof-1', topic: 'worker_left', note: 'PL-00012: worker left on 2026-11-19' }) }),
     );
@@ -103,14 +119,22 @@ describe('CustomerWorkersService (a worker left, in the app)', () => {
       businessId: 'biz-1',
       branchId: null,
       placementId: 'pl-1',
-      workerLeftOn: new Date('2026-11-18T18:30:00.000Z'),
+      workerLeftOn: new Date('2026-11-19T00:00:00.000Z'),
       reason: 'resigned',
       note: 'Went back home',
       callbackRequestId: 'cb-1',
     });
   });
 
-  it('uses the "Call me back" already open instead of making a second one', async () => {
+  it('is refused while switched off (the office does not use the reports yet)', async () => {
+    delete process.env.CUSTOMER_WORKER_LEFT_REPORTS;
+    const { service, tx } = setup();
+    await expect(service.reportLeft('acc-1', 'prof-1', 'pl-1', { workerLeftOn: '2026-11-19', reason: 'resigned' })).rejects.toMatchObject({ status: 501 });
+    expect(tx.customerWorkerLeftReport.create).not.toHaveBeenCalled();
+    expect((await service.workers('acc-1', 'prof-1')).open).toBe(false);
+  });
+
+  it('uses its own "worker left" call already open instead of making a second one', async () => {
     const { service, tx } = setup({ openCallback: { id: 'cb-open' } });
     await service.reportLeft('acc-1', 'prof-1', 'pl-1', { workerLeftOn: '2026-11-19', reason: 'resigned' });
     expect(tx.customerCallbackRequest.create).not.toHaveBeenCalled();
@@ -151,11 +175,11 @@ describe('CustomerWorkersService (a worker left, in the app)', () => {
     expect(tx.customerWorkerLeftReport.create).not.toHaveBeenCalled();
   });
 
-  it('after the 60 days, or while a claim waits for the Team Lead, there is nothing to report', async () => {
-    const late = setup({ rows: [placement({ joinedDate: new Date('2026-09-01T00:00:00.000Z') })] });
+  it('after the 60 days and the 7 days to tell us, or while a claim waits for the Team Lead, there is nothing to report', async () => {
+    const late = setup({ rows: [placement({ joinedDate: new Date('2026-09-10T00:00:00.000Z') })] }); // last day 9 Nov, +7 = 16 Nov
     expect((await late.service.workers('acc-1', 'prof-1')).workers[0].state).toBe('guarantee_over');
     await expect(late.service.reportLeft('acc-1', 'prof-1', 'pl-1', { workerLeftOn: '2026-11-19', reason: 'resigned' })).rejects.toMatchObject({ status: 409 });
-    const claimed = setup({ rows: [placement({ replacementClaims: [{ id: 'cl-1', decision: null }] })] });
+    const claimed = setup({ rows: [placement({ replacementClaims: [claim()] })] });
     expect((await claimed.service.workers('acc-1', 'prof-1')).workers[0].state).toBe('claim_open');
     await expect(claimed.service.reportLeft('acc-1', 'prof-1', 'pl-1', { workerLeftOn: '2026-11-19', reason: 'resigned' })).rejects.toMatchObject({ status: 409 });
   });
@@ -172,5 +196,22 @@ describe('CustomerWorkersService (a worker left, in the app)', () => {
   it('a worker due to join later is not reportable yet', async () => {
     const { service } = setup({ rows: [placement({ status: 'confirmed', joinedDate: null, joiningDate: new Date('2026-11-25T00:00:00.000Z') })] });
     expect((await service.workers('acc-1', 'prof-1')).workers[0].state).toBe('not_started');
+  });
+
+  it('a worker who left on the last guarantee day can still be told about within the 7 days, as staff would file it', async () => {
+    // Joined 17 Sep → last day 16 Nov; today 21 Nov is inside 16 Nov + 7 days.
+    const { service, tx } = setup({ rows: [placement({ joinedDate: new Date('2026-09-17T00:00:00.000Z') })] });
+    const row = (await service.workers('acc-1', 'prof-1')).workers[0];
+    expect(row).toMatchObject({ state: 'can_report', guaranteeLastDay: '2026-11-16', leftOnLatest: '2026-11-16' });
+    await service.reportLeft('acc-1', 'prof-1', 'pl-1', { workerLeftOn: '2026-11-16', reason: 'resigned' });
+    expect(tx.customerWorkerLeftReport.create).toHaveBeenCalled();
+    await expect(service.reportLeft('acc-1', 'prof-1', 'pl-1', { workerLeftOn: '2026-11-17', reason: 'resigned' })).rejects.toMatchObject({ response: expect.objectContaining({ field: 'workerLeftOn' }) });
+  });
+
+  it('a claim turned down for good (late, fee unpaid, not covered) cannot be reported again from the app', async () => {
+    const { service, tx } = setup({ rows: [placement({ replacementClaims: [claim({ decision: 'rejected', rejectionCode: 'reported_late' })] })] });
+    expect((await service.workers('acc-1', 'prof-1')).workers[0].state).toBe('not_again');
+    await expect(service.reportLeft('acc-1', 'prof-1', 'pl-1', { workerLeftOn: '2026-11-19', reason: 'resigned' })).rejects.toMatchObject({ status: 409 });
+    expect(tx.customerWorkerLeftReport.create).not.toHaveBeenCalled();
   });
 });

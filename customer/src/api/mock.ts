@@ -150,7 +150,7 @@ export function mockCustomerApi({ latencyMs = 250 }: { latencyMs?: number } = {}
   const existing = (kind: ProfileKind) => account().profiles.find((p) => p.kind === kind);
 
   return {
-    config: () => wait({ googleSignIn: true, googleWebClientId: null, googleIosClientId: null, appleSignIn: true, otpTestMode: true, referralLeads: true }),
+    config: () => wait({ googleSignIn: true, googleWebClientId: null, googleIosClientId: null, appleSignIn: true, otpTestMode: true, referralLeads: true, workerLeftReports: true }),
 
     sendSignInOtp: (phone) =>
       wait(() => {
@@ -316,10 +316,11 @@ export function mockCustomerApi({ latencyMs = 250 }: { latencyMs?: number } = {}
         const reports = state.workerReports[profileId] ?? [];
         const open = reports.some((r) => r.status === 'open');
         const worker: PlacedWorker = {
-          placementId: 'pl-mock-1', placementCode: 'PL-00001', workerFirstName: 'Ravi', trade: 'Cook', joinedOn: joined,
+          placementId: 'pl-mock-1', placementCode: 'PL-00001', workerFirstName: 'Ravi', trade: 'Cook', joinedOn: joined, joiningOn: joined,
           neverJoined: false, guaranteeLastDay: last, leftOnEarliest: joined, leftOnLatest: today, state: open ? 'reported' : 'can_report',
         };
         const answer: WorkersAnswer = {
+          open: true,
           reasons: {
             covered: ['resigned', 'absconded_3_days', 'serious_misconduct', 'repeated_absence', 'skill_gap_15_days', 'misrepresentation', 'medically_unfit_or_relocated'],
             notCovered: ['business_closed', 'role_changed', 'salary_unpaid', 'unsafe_workplace', 'fired_without_reason', 'hired_own_person'],

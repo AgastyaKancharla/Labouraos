@@ -2,7 +2,7 @@
 -- Not the replacement claim: the call team calls the owner and files the claim.
 CREATE TABLE "CustomerWorkerLeftReport" (
     "id" TEXT NOT NULL,
-    "accountId" TEXT NOT NULL,
+    "accountId" TEXT,
     "profileId" TEXT NOT NULL,
     "businessId" TEXT NOT NULL,
     "branchId" TEXT,
@@ -24,5 +24,5 @@ CREATE INDEX "CustomerWorkerLeftReport_status_createdAt_idx" ON "CustomerWorkerL
 CREATE INDEX "CustomerWorkerLeftReport_accountId_idx" ON "CustomerWorkerLeftReport"("accountId");
 -- At most one open report per placement (two taps never make two).
 CREATE UNIQUE INDEX "CustomerWorkerLeftReport_one_open_per_placement" ON "CustomerWorkerLeftReport"("placementId") WHERE "status" = 'open';
-ALTER TABLE "CustomerWorkerLeftReport" ADD CONSTRAINT "CustomerWorkerLeftReport_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "CustomerAccount"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "CustomerWorkerLeftReport" ADD CONSTRAINT "CustomerWorkerLeftReport_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "CustomerAccount"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 ALTER TABLE "CustomerWorkerLeftReport" ENABLE ROW LEVEL SECURITY;

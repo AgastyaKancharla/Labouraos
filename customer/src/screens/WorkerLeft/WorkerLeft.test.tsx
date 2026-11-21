@@ -16,6 +16,7 @@ function worker(over: Partial<PlacedWorker> = {}): PlacedWorker {
     workerFirstName: 'Ravi',
     trade: 'Cook',
     joinedOn: today,
+    joiningOn: today,
     neverJoined: false,
     guaranteeLastDay: '2099-12-31',
     leftOnEarliest: today,
@@ -27,6 +28,7 @@ function worker(over: Partial<PlacedWorker> = {}): PlacedWorker {
 
 function answer(over: Partial<WorkersAnswer> = {}): WorkersAnswer {
   return {
+    open: true,
     reasons: { covered: ['resigned', 'absconded_3_days'], notCovered: ['salary_unpaid'], neverJoined: ['never_joined'] },
     reportWithinDays: 7,
     windowDays: 60,
@@ -89,5 +91,13 @@ describe('A worker left (contract 8.2)', () => {
     await fireEvent.press(screen.getByTestId('workers-row-PL-00012'));
     expect(screen.getByTestId('workers-reason-never_joined')).toBeTruthy();
     expect(screen.queryByTestId('workers-reason-resigned')).toBeNull();
+  });
+
+  it('switched off on the server: no form, says to call us', async () => {
+    const api = fakeApi({ workers: jest.fn(async () => answer({ open: false })) });
+    await renderWithApp(<WorkerLeft />, opts(api));
+    await waitFor(() => screen.getByTestId('workers-closed'));
+    await fireEvent.press(screen.getByTestId('workers-row-PL-00012'));
+    expect(screen.queryByTestId('workers-form')).toBeNull();
   });
 });

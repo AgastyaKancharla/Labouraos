@@ -356,7 +356,7 @@ export function liveCustomerApi(api: ApiClient, options: Options = {}): Customer
 
   return {
     config: async () => {
-      const c = await api.get<{ googleSignIn?: boolean; googleClientIds?: { web?: string | null; ios?: string | null }; appleSignIn?: boolean; otpTestMode?: boolean; referralLeads?: boolean }>('/config', { auth: false });
+      const c = await api.get<{ googleSignIn?: boolean; googleClientIds?: { web?: string | null; ios?: string | null }; appleSignIn?: boolean; otpTestMode?: boolean; referralLeads?: boolean; workerLeftReports?: boolean }>('/config', { auth: false });
       const result: AppConfig = {
         googleSignIn: !!c.googleSignIn,
         googleWebClientId: c.googleClientIds?.web ?? null,
@@ -364,6 +364,7 @@ export function liveCustomerApi(api: ApiClient, options: Options = {}): Customer
         appleSignIn: c.appleSignIn === true,
         otpTestMode: !!c.otpTestMode,
         referralLeads: c.referralLeads === true,
+        workerLeftReports: c.workerLeftReports === true,
       };
       return result;
     },

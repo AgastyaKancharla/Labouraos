@@ -16,8 +16,9 @@ describe('CustomerReferralLeadsService (send a lead)', () => {
     process.env.CUSTOMER_REFERRAL_LEADS = saved;
   });
 
-  function setup(opts: { paused?: boolean; existing?: unknown; today?: number } = {}) {
-    const prisma = {
+  function setup(opts: { paused?: boolean; existing?: unknown; today?: number; unfinished?: boolean } = {}) {
+    const prisma: Record<string, unknown> & { customerReferralLead: Record<string, jest.Mock>; $executeRaw: jest.Mock } = {
+      $executeRaw: jest.fn().mockResolvedValue(1),
       referral: { findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'ref-1', code: 'RF-00042', phone: '+919000000001', pausedAt: opts.paused ? NOW : null }) },
       area: { findFirst: jest.fn(async ({ where }: { where: { name: string } }) => (where.name === 'BTM Layout' ? { name: 'BTM Layout' } : null)) },
       customerReferralLead: {
@@ -31,8 +32,10 @@ describe('CustomerReferralLeadsService (send a lead)', () => {
         create: jest.fn().mockResolvedValue({ id: 'l-new', status: 'new' }),
       },
     };
+    prisma.$transaction = jest.fn(async (run: (tx: unknown) => unknown) => run(prisma));
+    const homes = { referralHome: jest.fn().mockResolvedValue({ steps: { terms: true, selfie: true, idCheck: true, upi: !opts.unfinished } }) };
     const scope = { profile: jest.fn().mockResolvedValue({ id: 'prof-ref', accountId: 'acc-1', kind: 'referral', role: 'self', jobSeekerId: null, businessId: null, branchId: null, referralId: 'ref-1' }) };
-    const service = new CustomerReferralLeadsService(prisma as never, { now: () => NOW } as never, scope as never);
+    const service = new CustomerReferralLeadsService(prisma as never, { now: () => NOW } as never, scope as never, homes as never);
     return { service, prisma, scope };
   }
 
@@ -90,7 +93,7 @@ describe('CustomerReferralLeadsService (send a lead)', () => {
   it.each([
     [{ ...good, kind: 'cousin' }, 'kind'],
     [{ ...good, name: 'M' }, 'name'],
-    [{ ...good, name: 'Manju 98765' }, 'name'],
+    [{ ...good, name: 'Manju 98765' }, 'name'], // a person's name has no digits
     [{ ...good, phone: '12345' }, 'phone'],
     [{ ...good, phone: '9000000001' }, 'phone'], // the partner's own number
     [{ ...good, area: 'Mars' }, 'area'],
@@ -110,6 +113,28 @@ describe('CustomerReferralLeadsService (send a lead)', () => {
     expect(prisma.customerReferralLead.count.mock.calls[0][0].where).toEqual({ referralId: 'ref-1', createdAt: { gte: new Date('2026-11-20T18:30:00.000Z') } });
   });
 
+  it('a shop’s name may have digits', async () => {
+    process.env.CUSTOMER_REFERRAL_LEADS = 'on';
+    const { service, prisma } = setup();
+    await service.send('acc-1', 'prof-ref', { ...good, kind: 'business', name: '24/7 Mart' });
+    expect(prisma.customerReferralLead.create.mock.calls[0][0].data.name).toBe('24/7 Mart');
+  });
+
+  it('only a partner who finished registering can send (checked on the server)', async () => {
+    process.env.CUSTOMER_REFERRAL_LEADS = 'on';
+    const { service, prisma } = setup({ unfinished: true });
+    await expect(service.send('acc-1', 'prof-ref', good)).rejects.toMatchObject({ status: 403, response: expect.objectContaining({ reason: 'registration_unfinished' }) });
+    expect(prisma.customerReferralLead.create).not.toHaveBeenCalled();
+  });
+
+  it('counts the day’s leads under a lock per partner', async () => {
+    process.env.CUSTOMER_REFERRAL_LEADS = 'on';
+    const { service, prisma } = setup();
+    await service.send('acc-1', 'prof-ref', good);
+    expect(prisma.$executeRaw).toHaveBeenCalled();
+    expect(prisma.$executeRaw.mock.calls[0].slice(1)).toEqual(['referral-leads:ref-1']);
+  });
+
   it('a paused partner cannot send', async () => {
     process.env.CUSTOMER_REFERRAL_LEADS = 'on';
     const { service } = setup({ paused: true });
@@ -126,7 +151,7 @@ describe('CustomerReferralLeadsService (send a lead)', () => {
       perDay: REFERRAL_LEADS_PER_DAY,
       leads: [
         { id: 'l-1', firstName: 'Manju', kind: 'job_seeker', stage: 'with_team', sentAt: NOW },
-        { id: 'l-2', firstName: 'Sri', kind: 'business', stage: 'registered', sentAt: NOW },
+        { id: 'l-2', firstName: 'Sri Sai Bakery', kind: 'business', stage: 'registered', sentAt: NOW },
         { id: 'l-3', firstName: 'Kiran', kind: 'job_seeker', stage: 'closed', sentAt: NOW },
       ],
     });

@@ -5,6 +5,7 @@ import { CustomerAuthClock } from '../../common/customer-auth/customer-auth.cloc
 import { CustomerScopeService } from '../../common/customer-auth/customer-scope.service';
 import { CUSTOMER_ERROR_CODES, CustomerApiError } from '../../common/customer-auth/customer-auth.errors';
 import { firstName } from '../customer-account/customer-account.service';
+import { CustomerHomeService } from './customer-home.service';
 import { referralLeadsOpen } from '../../common/customer-auth/customer-app.constants';
 
 export { referralLeadsOpen };
@@ -50,6 +51,7 @@ export class CustomerReferralLeadsService {
     private readonly prisma: PrismaService,
     private readonly clock: CustomerAuthClock,
     private readonly scope: CustomerScopeService,
+    private readonly homes: CustomerHomeService,
   ) {}
 
   private async partner(accountId: string, profileId: string) {
@@ -73,7 +75,8 @@ export class CustomerReferralLeadsService {
     return {
       open: referralLeadsOpen() && !referral.pausedAt,
       perDay: REFERRAL_LEADS_PER_DAY,
-      leads: leads.map((l) => ({ id: l.id, firstName: firstName(l.name), kind: l.kind, stage: stageOf(l.status), sentAt: l.createdAt })),
+      // A business lead shows its name (a shop, not a private person); a person's lead only the first name.
+      leads: leads.map((l) => ({ id: l.id, firstName: l.kind === 'business' ? l.name : firstName(l.name), kind: l.kind, stage: stageOf(l.status), sentAt: l.createdAt })),
     };
   }
 
@@ -87,11 +90,17 @@ export class CustomerReferralLeadsService {
     }
     const { profile, referral } = await this.partner(accountId, profileId);
     if (referral.pausedAt) throw new CustomerApiError(HttpStatus.FORBIDDEN, CUSTOMER_ERROR_CODES.REFERRAL_PAUSED, 'Your referral account is paused');
+    // Only a partner who finished registering (terms, selfie, ID check, UPI), as the app shows it: checked here, not only in the app.
+    const home = await this.homes.referralHome(profile);
+    if (!Object.values(home.steps).every(Boolean)) {
+      throw new CustomerApiError(HttpStatus.FORBIDDEN, CUSTOMER_ERROR_CODES.NOT_ALLOWED, 'Finish your partner registration first', { reason: 'registration_unfinished' });
+    }
 
     const kind = body?.kind;
     if (typeof kind !== 'string' || !(REFERRAL_LEAD_KINDS as readonly string[]).includes(kind)) throw validation('kind must be job_seeker or business', 'kind');
     const name = typeof body?.name === 'string' ? body.name.trim().replace(/\s+/g, ' ') : '';
-    if (name.length < 2 || name.length > 80 || /\d/.test(name)) throw validation('Give the person’s name (2 to 80 letters, no numbers)', 'name');
+    // A person's name has no digits; a shop's may ("24/7 Mart").
+    if (name.length < 2 || name.length > 80 || (kind === 'job_seeker' && /\d/.test(name))) throw validation('Give the name (2 to 80 letters; a person’s name has no numbers)', 'name');
     const phone = indianMobile(body?.phone);
     if (!phone) throw validation('Give a 10-digit Indian mobile number', 'phone');
     if (indianMobile(referral.phone) === phone) throw validation('This is your own number', 'phone');
@@ -109,14 +118,18 @@ export class CustomerReferralLeadsService {
 
     const now = this.clock.now();
     const dayStart = new Date(Math.floor((now.getTime() + IST_OFFSET_MS) / DAY_MS) * DAY_MS - IST_OFFSET_MS);
-    const today = await this.prisma.customerReferralLead.count({ where: { referralId: referral.id, createdAt: { gte: dayStart } } });
-    if (today >= REFERRAL_LEADS_PER_DAY) {
-      throw new CustomerApiError(HttpStatus.TOO_MANY_REQUESTS, CUSTOMER_ERROR_CODES.LIMIT_REACHED, `At most ${REFERRAL_LEADS_PER_DAY} leads a day`);
-    }
     try {
-      const lead = await this.prisma.customerReferralLead.create({
-        data: { accountId, profileId: profile.id, referralId: referral.id, referralCode: referral.code, kind, name, phone, area: known.name, personAgreed: true },
-        select: { id: true, status: true },
+      // Count and save under one lock per partner, so parallel sends cannot pass the daily limit.
+      const lead = await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`referral-leads:${referral.id}`}))`;
+        const today = await tx.customerReferralLead.count({ where: { referralId: referral.id, createdAt: { gte: dayStart } } });
+        if (today >= REFERRAL_LEADS_PER_DAY) {
+          throw new CustomerApiError(HttpStatus.TOO_MANY_REQUESTS, CUSTOMER_ERROR_CODES.LIMIT_REACHED, `At most ${REFERRAL_LEADS_PER_DAY} leads a day`);
+        }
+        return tx.customerReferralLead.create({
+          data: { accountId, profileId: profile.id, referralId: referral.id, referralCode: referral.code, kind, name, phone, area: known.name, personAgreed: true },
+          select: { id: true, status: true },
+        });
       });
       return { created: true, body: { leadId: lead.id, stage: stageOf(lead.status) } };
     } catch (error) {

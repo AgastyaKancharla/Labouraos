@@ -6,7 +6,9 @@ import { CustomerScopeService, ScopedProfile } from '../../common/customer-auth/
 import { CUSTOMER_ERROR_CODES, CustomerApiError } from '../../common/customer-auth/customer-auth.errors';
 import { PricingService } from '../pricing/pricing.service';
 import { ACCEPT_CLAIM_REASONS, REJECT_CLAIM_REASONS } from '../placement/claim-reasons';
-import { addDays, istDayOf, istDayStart } from '../placement/claim-dates';
+import { addDays, istDayOf } from '../placement/claim-dates';
+import { refileRule } from '../placement/claim-refile';
+import { workerLeftReportsOpen } from '../../common/customer-auth/customer-app.constants';
 import { firstName } from '../customer-account/customer-account.service';
 
 type Body = Record<string, unknown>;
@@ -21,7 +23,7 @@ const NOTE_MAX = 200;
 /** How many earlier reports Home shows. */
 const RECENT_REPORTS = 10;
 
-export type WorkerState = 'can_report' | 'reported' | 'claim_open' | 'guarantee_over' | 'not_started';
+export type WorkerState = 'can_report' | 'reported' | 'claim_open' | 'not_again' | 'guarantee_over' | 'not_started';
 
 function validation(message: string, field: string): CustomerApiError {
   return new CustomerApiError(HttpStatus.BAD_REQUEST, CUSTOMER_ERROR_CODES.VALIDATION, message, { field });
@@ -40,7 +42,16 @@ interface PlacementRow {
   rootPlacementId: string | null;
   vacancy: { tradeSkill: string; branchId: string | null };
   jobSeeker: { name: string | null };
-  replacementClaims: { id: string; decision: string | null }[];
+  replacementClaims: {
+    code: string;
+    workerLeftOn: Date;
+    reportedAt: Date;
+    decision: string | null;
+    decisionReason: string | null;
+    rejectionCode: string | null;
+    decidedByStaffId: string | null;
+    overruledByStaffId: string | null;
+  }[];
 }
 
 /**
@@ -78,7 +89,7 @@ export class CustomerWorkersService {
   private async placements(profile: ScopedProfile, extra: Prisma.PlacementWhereInput = {}): Promise<PlacementRow[]> {
     return this.prisma.placement.findMany({
       where: this.placementWhere(profile, extra),
-      orderBy: [{ joinedDate: 'desc' }, { joiningDate: 'desc' }],
+      orderBy: [{ joinedDate: { sort: 'desc', nulls: 'last' } }, { joiningDate: { sort: 'desc', nulls: 'last' } }],
       take: 100,
       select: {
         id: true,
@@ -89,7 +100,12 @@ export class CustomerWorkersService {
         rootPlacementId: true,
         vacancy: { select: { tradeSkill: true, branchId: true } },
         jobSeeker: { select: { name: true } },
-        replacementClaims: { where: { decision: null }, select: { id: true, decision: true }, take: 1 },
+        // Every claim, so both "one waits for the Team Lead" and the staff refile rule (claim-refile.ts) can be checked.
+        replacementClaims: {
+          select: { code: true, workerLeftOn: true, reportedAt: true, decision: true, decisionReason: true, rejectionCode: true, decidedByStaffId: true, overruledByStaffId: true },
+          orderBy: { reportedAt: 'desc' },
+          take: 20,
+        },
       },
     });
   }
@@ -110,7 +126,7 @@ export class CustomerWorkersService {
   }
 
   /** Dates and state for one placement, worked out the way the staff claim checks them. */
-  private async describe(row: PlacementRow, openReports: Set<string>, windowDays: number) {
+  private async describe(row: PlacementRow, openReports: Set<string>, windowDays: number, reportDays: number) {
     const today = istDayOf(this.clock.now())!;
     const neverJoined = row.status === 'confirmed' && !row.joinedDate && Boolean(row.joiningDate) && istDayOf(row.joiningDate!)! <= today;
     const start = await this.guaranteeStart(row);
@@ -119,12 +135,17 @@ export class CustomerWorkersService {
     const earliest = ownStart ? istDayOf(ownStart) : null;
     const lastDay = startDay ? addDays(startDay, windowDays) : null;
     const latest = lastDay && lastDay < today ? lastDay : today;
+    // The call team files the claim as a call agent would; the staff refile rule decides whether it can be filed again.
+    const refile = refileRule(row.replacementClaims, 'call_agent', today, reportDays);
     let state: WorkerState = 'can_report';
     if (openReports.has(row.id)) state = 'reported';
-    else if (row.replacementClaims.length > 0) state = 'claim_open';
+    else if (row.replacementClaims.some((c) => c.decision === null)) state = 'claim_open';
+    else if (!refile.allowed) state = 'not_again';
     else if (row.status !== 'active' && !neverJoined) state = 'not_started';
     else if (!earliest) state = 'not_started';
-    else if (lastDay && today > lastDay && !neverJoined) state = 'guarantee_over';
+    // Staff check the leaving day against the window, then the 7-day rule: a worker who left on the
+    // last guarantee day can still be told about for 7 more days.
+    else if (lastDay && today > addDays(lastDay, reportDays) && !neverJoined) state = 'guarantee_over';
     return { neverJoined, earliest, latest, guaranteeLastDay: lastDay, state };
   }
 
@@ -140,7 +161,7 @@ export class CustomerWorkersService {
     const openIds = new Set(open.map((r) => r.placementId));
     const workers = [];
     for (const row of rows) {
-      const d = await this.describe(row, openIds, policy.replacementWindowDays);
+      const d = await this.describe(row, openIds, policy.replacementWindowDays, policy.claimReportDays);
       workers.push({
         placementId: row.id,
         placementCode: row.code,
@@ -172,6 +193,8 @@ export class CustomerWorkersService {
     });
     const codeOf = new Map(codes.map((p) => [p.id, p]));
     return {
+      /** The report is switched on (CUSTOMER_WORKER_LEFT_REPORTS=on) once the office software uses it. */
+      open: workerLeftReportsOpen(),
       reasons: {
         covered: [...WORKER_LEFT_COVERED_REASONS],
         notCovered: WORKER_LEFT_NOT_COVERED_REASONS,
@@ -201,6 +224,10 @@ export class CustomerWorkersService {
    * topic worker_left, unless one is already open for this account).
    */
   async reportLeft(accountId: string, profileId: string, placementId: string, body: Body) {
+    // Off until the office side shows the report and counts its time for the 7-day rule.
+    if (!workerLeftReportsOpen()) {
+      throw new CustomerApiError(HttpStatus.NOT_IMPLEMENTED, CUSTOMER_ERROR_CODES.NOT_IMPLEMENTED, 'Reporting a worker in the app is not switched on yet');
+    }
     const profile = await this.scope.profile(accountId, profileId, 'business');
     const policy = await this.pricing.current();
     const rows = typeof placementId === 'string' && placementId.length <= 64 ? await this.placements(profile, { id: placementId }) : [];
@@ -213,8 +240,9 @@ export class CustomerWorkersService {
     });
     if (existing) return { created: false, body: { reportId: existing.id, status: existing.status, reportedAt: existing.createdAt } };
 
-    const d = await this.describe(row, new Set(), policy.replacementWindowDays);
+    const d = await this.describe(row, new Set(), policy.replacementWindowDays, policy.claimReportDays);
     if (d.state === 'claim_open') throw notAllowed('Our team is already looking at this worker leaving', 'claim_open');
+    if (d.state === 'not_again') throw notAllowed('Our team already decided about this worker; please call us', 'not_again');
     if (d.state === 'not_started') throw notAllowed('This worker has not started yet', 'not_started');
     if (d.state === 'guarantee_over') throw notAllowed('The free replacement time for this worker is over', 'guarantee_over');
 
@@ -234,8 +262,10 @@ export class CustomerWorkersService {
 
     try {
       const created = await this.prisma.$transaction(async (tx) => {
+        // Its own "Call me back" for this business profile. An older request of the account is never
+        // reused: an "assigned" one is never closed again, and it may be about another profile.
         const openCallback = await tx.customerCallbackRequest.findFirst({
-          where: { accountId, status: { in: ['open', 'assigned'] } },
+          where: { accountId, profileId: profile.id, topic: 'worker_left', status: 'open' },
           select: { id: true },
         });
         const callback = openCallback
@@ -251,7 +281,8 @@ export class CustomerWorkersService {
             businessId: profile.businessId!,
             branchId: row.vacancy.branchId,
             placementId: row.id,
-            workerLeftOn: istDayStart(leftDay),
+            // UTC midnight of the day, as ReplacementClaim.workerLeftOn is stored (new Date('YYYY-MM-DD')).
+            workerLeftOn: new Date(`${leftDay}T00:00:00.000Z`),
             reason,
             note,
             callbackRequestId: callback?.id ?? openCallback?.id ?? null,

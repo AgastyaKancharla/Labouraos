@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCustomerApi } from '@/api/ApiProvider';
 import { errorText } from '@/api/errorText';
+import { isApiError } from '@/api/errors';
 import { queryKeys } from '@/api/queryClient';
 import type { PlacedWorker, WorkerLeftReport, WorkerState } from '@/api/types';
 import { useAuth } from '@/auth/AuthProvider';
@@ -16,6 +17,7 @@ const STATE_TONE: Record<WorkerState, Tone> = {
   can_report: 'green',
   reported: 'amber',
   claim_open: 'cyan',
+  not_again: 'neutral',
   guarantee_over: 'neutral',
   not_started: 'neutral',
 };
@@ -80,7 +82,7 @@ export default function WorkerLeft() {
       await client.invalidateQueries({ queryKey: queryKeys.workers(profileId) });
       await client.invalidateQueries({ queryKey: queryKeys.home(profileId) });
     } catch (e) {
-      setProblem(errorText(t, e));
+      setProblem(isApiError(e) && e.code === 'PROFILE_NOT_FOUND' ? t('workers.notFound') : errorText(t, e));
     } finally {
       setBusy(false);
     }
@@ -127,7 +129,9 @@ export default function WorkerLeft() {
       <Screen>
         {done ? <Banner tone="ok" title={t('workers.doneTitle')} message={t('workers.done')} testID="workers-done" /> : null}
 
-        {picked ? (
+        {!data.open ? <Banner tone="info" message={t('workers.notOpen')} testID="workers-closed" /> : null}
+
+        {picked && data.open ? (
           <Card title={t('workers.formTitle', { name: picked.workerFirstName ?? picked.placementCode })} accent="orange" emoji="📝" testID="workers-form">
             <View style={styles.gap}>
               <Text variant="muted">{t('workers.formIntro', { days: data.reportWithinDays })}</Text>
@@ -172,7 +176,7 @@ export default function WorkerLeft() {
                   .filter(Boolean)
                   .join(' · ')}
                 trailing={<StatusChip label={t(`workers.state.${w.state}` as MessageKey)} tone={STATE_TONE[w.state]} />}
-                onPress={w.state === 'can_report' ? () => pick(w) : undefined}
+                onPress={w.state === 'can_report' && data.open ? () => pick(w) : undefined}
                 last={i === data.workers.length - 1}
                 testID={`workers-row-${w.placementCode}`}
               />

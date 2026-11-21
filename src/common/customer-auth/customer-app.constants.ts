@@ -73,3 +73,12 @@ export type CustomerStepUpPurpose = (typeof CUSTOMER_STEP_UP_PURPOSES)[number];
 export function referralLeadsOpen(): boolean {
   return process.env.CUSTOMER_REFERRAL_LEADS?.trim().toLowerCase() === 'on';
 }
+
+/**
+ * Businesses' "a worker left" report (contract 8.2) is switched on only when
+ * the office software shows the reports and counts their time for the 7-day
+ * rule: CUSTOMER_WORKER_LEFT_REPORTS=on on the server.
+ */
+export function workerLeftReportsOpen(): boolean {
+  return process.env.CUSTOMER_WORKER_LEFT_REPORTS?.trim().toLowerCase() === 'on';
+}

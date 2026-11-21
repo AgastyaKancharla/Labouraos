@@ -1,5 +1,8 @@
 import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
+import { useCustomerApi } from '@/api/ApiProvider';
+import { queryKeys } from '@/api/queryClient';
 import type { BusinessHome, StepState, VacancyStatus } from '@/api/types';
 import { Banner, Button, Card, EmptyState, HeroCard, IconTile, ListRow, StatGrid, StatTile, StatusChip, StepList, Text } from '@/components';
 import { useI18n } from '@/i18n';
@@ -42,6 +45,9 @@ const VACANCY_ACCENT: Record<VacancyStatus, Accent> = {
 export function BusinessHomeView({ profileId, home, hero }: { profileId: string; home: BusinessHome; hero: HeroInfo }) {
   const { t } = useI18n();
   const sheet = useSecureSheet();
+  const api = useCustomerApi();
+  // "Report a worker left" shows only once the server switches it on (contract 8.2).
+  const config = useQuery({ queryKey: queryKeys.config, queryFn: () => api.config(), staleTime: 10 * 60_000 });
   const tr = home.tracker;
   const visitState: StepState = tr.visit === 'done' ? 'done' : tr.visit === 'not_booked' ? 'not_started' : 'in_progress';
   const approvalState: StepState = tr.approval === 'approved' ? 'done' : tr.visit === 'done' ? 'in_progress' : 'not_started';
@@ -147,7 +153,7 @@ export function BusinessHomeView({ profileId, home, hero }: { profileId: string;
         </View>
       </Card>
 
-      {home.counts.workersPlaced > 0 ? (
+      {config.data?.workerLeftReports && home.counts.workersPlaced > 0 ? (
         <Card title={t('bizHome.workersTitle')} accent="gold" emoji="👷" testID="biz-home-workers">
           <View style={styles.gap}>
             <Text>{t('bizHome.workersIntro')}</Text>
