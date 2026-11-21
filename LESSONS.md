@@ -599,3 +599,8 @@ Format:
 **Symptom:** `EditPolicyService` column checks refused an array for a `String[]` column, only on the local WASM-engine client.
 **Cause:** the client generated with `engineType = "client"` ships a compact `Prisma.dmmf` (no `isList` / `isRequired`); the normal client (CI, production) has them.
 **Fix:** when `isList` is missing, the check treats a column as a list when the saved record holds an array. Don't rely on `isRequired` for security decisions.
+
+## A rule that reads `StaffSession.createdAt` ignored the test clock
+**Symptom:** with the AuthClock overridden to a later day, "a login code once a day" never matched the session just opened, and the day-long session cap was worked out from the wrong sign-in time.
+**Cause:** `issueSession` left `createdAt` to the database default `now()` (real time), while every other session time (`lastActivityAt`, `absoluteExpiresAt`) came from the injectable clock.
+**Fix:** write `createdAt: now` from the clock when the session is created; any rule comparing session times must take all of them from the same clock.

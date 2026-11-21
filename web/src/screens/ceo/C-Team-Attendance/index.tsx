@@ -13,6 +13,7 @@ import { useScreenPath } from '../../../portals/PortalContext';
 import { hm, roleLabel, timeOrDash } from '../_kit/format';
 import { AttendanceTabs } from '../_kit/tabs';
 import { formatLateMinutes } from '../../../lib/format/late';
+import { ShiftsPanel } from '../../../attendance/ShiftsPanel';
 
 /** Attendance — design C-Team-Attendance.dc.html. One day shows each person's day; a longer period shows totals. */
 interface Row {
@@ -115,6 +116,7 @@ export default function TeamAttendance() {
           <ButtonLink to={to('C-Team-Salaries')}>Download month for salaries</ButtonLink>
         </div>
       </div>
+      <ShiftsPanel />
     </div>
   );
 }

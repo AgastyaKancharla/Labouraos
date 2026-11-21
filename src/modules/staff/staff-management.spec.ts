@@ -285,7 +285,7 @@ describe('Phase 8 Task 9: Staff account management', () => {
       expect(await bcrypt.compare(goodPassword, row.passwordHash)).toBe(false);
     });
 
-    it('the temporary password ends exactly 24 hours after creation (injectable clock)', async () => {
+    it('the temporary password ends exactly 72 hours after creation (decided 21 Nov; injectable clock)', async () => {
       const at = new Date('2026-01-10T00:00:00.000Z');
       const result = await staffService.createStaff(
         newHire('call_agent', { teamLeadId: teamLead.id }),
@@ -295,6 +295,7 @@ describe('Phase 8 Task 9: Staff account management', () => {
       createdStaffIds.push(result.staff.id);
 
       expect(result.tempPasswordExpiresAt.getTime()).toBe(at.getTime() + TEMP_PASSWORD_TTL_MS);
+      expect(TEMP_PASSWORD_TTL_MS).toBe(72 * 60 * 60 * 1000);
     });
 
     it('normalises the email to lower case', async () => {

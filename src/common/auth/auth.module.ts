@@ -9,6 +9,7 @@ import { StaffSessionController } from './staff-session.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { TotpService } from './totp.service';
+import { SessionDayService } from './session-day.service';
 import { CloudflareAccessVerifier } from './cloudflare-access.verifier';
 import {
   AuthThrottlerGuard,
@@ -59,6 +60,7 @@ import { ReportingScopeModule } from '../../modules/staff/reporting-scope.module
     AuthService,
     AuthClock,
     TotpService,
+    SessionDayService,
     JwtStrategy,
     JwtAuthGuard,
     CloudflareAccessVerifier,
@@ -68,6 +70,7 @@ import { ReportingScopeModule } from '../../modules/staff/reporting-scope.module
     AuthService,
     AuthClock,
     TotpService,
+    SessionDayService,
     JwtModule,
     JwtAuthGuard,
     CloudflareAccessVerifier,

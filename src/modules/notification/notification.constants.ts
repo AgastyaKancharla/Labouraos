@@ -59,6 +59,13 @@ export const NOTIFICATION_KINDS = [
   'behind_pace',
   // Someone's password was reset (rev 174–175): for their boss and the CEO.
   'password_reset',
+  // Sign-in requests waiting for a senior (rev 202, 21 Nov): a login code, a new device.
+  'login_code_request',
+  'device_approval_request',
+  // Signed in again without a code and ended a session still in use, or from a new network (21 Nov).
+  'signed_in_without_code',
+  // "Resume my day" pressed a second time on one day (21 Nov).
+  'day_resumed_again',
   // A Team Lead or Manager assigned a record to this person (rev 196).
   'job_seeker_assigned',
   'referral_assigned',
@@ -71,7 +78,7 @@ export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
  * Kinds that tell someone something rather than ask them to do something.
  * Reading them is the work: marking one as seen clears it.
  */
-export const INFORMATIONAL_KINDS: readonly NotificationKind[] = ['request_decided', 'hit_reversed', 'stuck_work_reminder', 'agent_reminder', 'payslip_ready', 'weekly_report', 'fee_unpaid_reminder', 'new_match_registered', 'password_reset', 'job_seeker_assigned', 'referral_assigned', 'business_assigned', 'whatsapp_link_failed'];
+export const INFORMATIONAL_KINDS: readonly NotificationKind[] = ['request_decided', 'hit_reversed', 'stuck_work_reminder', 'agent_reminder', 'payslip_ready', 'weekly_report', 'fee_unpaid_reminder', 'new_match_registered', 'password_reset', 'signed_in_without_code', 'day_resumed_again', 'job_seeker_assigned', 'referral_assigned', 'business_assigned', 'whatsapp_link_failed'];
 
 /** Kinds that carry rupee amounts. They only ever go to the CEO or Finance. */
 export const MONEY_KINDS: readonly NotificationKind[] = [
@@ -175,6 +182,10 @@ const LINKS: Record<NotificationKind, LinkTable> = {
   new_match_registered: { field_agent: '' },
   behind_pace: { team_lead: 'agents/:id', manager: 'agents/:id', ceo: 'targets' },
   password_reset: { team_lead: 'login-codes', manager: 'login-codes', ceo: 'login-codes' },
+  login_code_request: { team_lead: 'login-codes', manager: 'login-codes', ceo: 'login-codes' },
+  device_approval_request: { team_lead: 'login-codes', manager: 'login-codes', ceo: 'login-codes' },
+  signed_in_without_code: { team_lead: 'login-codes', manager: 'login-codes', ceo: 'login-codes' },
+  day_resumed_again: { team_lead: 'attendance', manager: 'attendance', ceo: 'team/attendance' },
   // Field agents read their bell in Laboura Field (no web link); the others open the record.
   job_seeker_assigned: { call_agent: 'people/:id', team_lead: 'job-seekers/:id', manager: 'job-seekers/:id', field_agent: '' },
   referral_assigned: { call_agent: 'people/:id', team_lead: 'referrals/:id', manager: 'referrals/:id', field_agent: '' },

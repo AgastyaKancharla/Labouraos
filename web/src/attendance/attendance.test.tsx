@@ -36,7 +36,7 @@ describe('attendance statuses and clocks', () => {
     expect(chipText(t, 'office', openToday({ status: 'one_to_one', statusSince: istAt('11:00') }), 'one_to_one', now).text).toBe('One-to-one · 11:00');
   });
 
-  it('asks “Still there?” after 10 quiet minutes while Available, and gives one minute', () => {
+  it('asks “Still there?” after the quiet minutes setting while Available, and gives one minute', () => {
     const base = { status: 'available', statusSince: istAt('11:20'), idleAfterMinutes: 10, idlePromptMinutes: 1 };
     const t0 = new Date(istAt('11:20')).getTime();
     expect(idleState({ ...base, lastActivityMs: t0, nowMs: t0 + 9 * 60_000 }).open).toBe(false);
@@ -111,6 +111,7 @@ describe('header status menu (call agent console)', () => {
     const api = mockApi({
       'GET /attendance/today': openToday(),
       'POST /attendance/logout': openToday({ logoutAt: istAt('18:42'), status: null, statusSince: null, dayType: 'full' }),
+      'POST /auth/logout': { success: true },
     });
     signInAs('call_agent');
     renderScreen(<Blank />, { portal: 'call-agent', path: '/call-agent', now: ATT_NOW });
@@ -124,7 +125,9 @@ describe('header status menu (call agent console)', () => {
     await userEvent.click(screen.getByRole('menuitem', { name: 'End my day' }));
     await userEvent.click(screen.getByRole('button', { name: 'Yes, end my day' }));
     await waitFor(() => expect(api.calls('POST /attendance/logout')).toHaveLength(1));
-    expect(await screen.findByRole('button', { name: 'My status: Day ended. Change it' })).toBeInTheDocument();
+    // Log out ends the working day and the sign-in with it (decided 21 Nov).
+    await waitFor(() => expect(api.calls('POST /auth/logout')).toHaveLength(1));
+    await waitFor(() => expect(sessionStore.get()).toBeNull());
   });
 
   it('turns the break red in the chip and the banner once it runs over', async () => {
@@ -179,5 +182,81 @@ describe('header status menu (call agent console)', () => {
     fireEvent.click(within(prompt).getByRole('button', { name: 'I’m here — stay Available' }));
     await waitFor(() => expect(api.calls('POST /attendance/heartbeat').length).toBeGreaterThanOrEqual(1));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+  });
+});
+
+describe('decided 21 Nov: presence, Back from lunch?, Resume my day, own shifts', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('while the console is open and visible it sends a presence heartbeat about once a minute without any input', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const api = mockApi({
+      'GET /attendance/today': openToday(),
+      'POST /attendance/heartbeat': () => openToday(),
+    });
+    signInAs('call_agent');
+    renderScreen(<Blank />, { portal: 'call-agent', path: '/call-agent', now: ATT_NOW });
+    await screen.findByRole('button', { name: /^My status: Available/ });
+    await act(async () => {
+      vi.advanceTimersByTime(61_000);
+    });
+    await waitFor(() => expect(api.calls('POST /attendance/heartbeat').length).toBeGreaterThan(0));
+    expect(api.calls('POST /attendance/heartbeat')[0]!.body).toEqual({ kind: 'presence' });
+  });
+
+  it('after the break allowance asks “Back from your break?” and one tap makes the person Available', async () => {
+    const api = mockApi({
+      'GET /attendance/today': onBreakToday('11:10'),
+      'POST /attendance/status': ({ body }: { body: { status: string } }) => openToday({ status: body.status, statusSince: istAt('11:30') }),
+    });
+    signInAs('call_agent');
+    renderScreen(<Blank />, { portal: 'call-agent', path: '/call-agent', now: ATT_NOW });
+    const ask = await screen.findByRole('alertdialog', { name: 'Back from your break?' });
+    expect(ask).toHaveTextContent('15-minute allowance is over');
+    await userEvent.click(within(ask).getByRole('button', { name: 'I’m back' }));
+    await waitFor(() => expect(api.calls('POST /attendance/status')).toHaveLength(1));
+    expect(api.calls('POST /attendance/status')[0]!.body).toEqual({ status: 'available' });
+    await waitFor(() => expect(screen.queryByRole('alertdialog', { name: 'Back from your break?' })).toBeNull());
+  });
+
+  it('inside the allowance there is no question; lunch asks “Back from lunch?”', async () => {
+    mockApi({ 'GET /attendance/today': onBreakToday('11:24') });
+    signInAs('call_agent');
+    renderScreen(<Blank />, { portal: 'call-agent', path: '/call-agent', now: ATT_NOW });
+    await screen.findByRole('button', { name: /^My status: Short break/ });
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('a day ended with Log out today offers Resume my day', async () => {
+    const api = mockApi({
+      'GET /attendance/today': openToday({ logoutAt: istAt('11:00'), status: null, statusSince: null, dayType: 'full', closedReason: 'logout', canResume: true }),
+      'POST /attendance/resume': openToday(),
+    });
+    signInAs('call_agent');
+    renderScreen(<Blank />, { portal: 'call-agent', path: '/call-agent', now: ATT_NOW });
+    await userEvent.click(await screen.findByRole('button', { name: 'Resume my day' }));
+    await waitFor(() => expect(api.calls('POST /attendance/resume')).toHaveLength(1));
+    expect(await screen.findByText('Day resumed. The time in between is not counted.')).toBeInTheDocument();
+  });
+
+  it('the Team Lead sees the team\'s shifts and sets an own shift', async () => {
+    const { ShiftsPanel } = await import('./ShiftsPanel');
+    const api = mockApi({
+      'GET /attendance/shifts': {
+        companyShift: { start: '09:30', end: '18:30' },
+        people: [{ staffId: 'a1', code: 'CA-00002', name: 'Kavya', role: 'call_agent', shiftStart: '09:30', shiftEnd: '18:30', own: false }],
+      },
+      'PUT /attendance/shifts/a1': ({ body }: { body: { shiftStart: string; shiftEnd: string } }) => ({ staffId: 'a1', code: 'CA-00002', name: 'Kavya', role: 'call_agent', ...body, own: true }),
+    });
+    signInAs('team_lead');
+    renderScreen(<ShiftsPanel />, { portal: 'team-lead', path: '/team-lead/attendance', now: ATT_NOW });
+    expect(await screen.findByText('Kavya (CA-00002)')).toBeInTheDocument();
+    expect(screen.getByText(/Company shift: 9:30 AM – 6:30 PM/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Change' }));
+    fireEvent.change(screen.getByLabelText('Starts · Kavya'), { target: { value: '12:00' } });
+    fireEvent.change(screen.getByLabelText('Ends · Kavya'), { target: { value: '21:00' } });
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(api.calls('PUT /attendance/shifts/a1')).toHaveLength(1));
+    expect(api.calls('PUT /attendance/shifts/a1')[0]!.body).toEqual({ shiftStart: '12:00', shiftEnd: '21:00' });
   });
 });

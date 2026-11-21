@@ -120,7 +120,8 @@ class LiveChannel {
     this.abort = abort;
     try {
       const response = await fetch('/live/events', {
-        headers: { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' },
+        // The live stream is background: it never keeps the session's idle clock alive.
+        headers: { Authorization: `Bearer ${token}`, Accept: 'text/event-stream', 'X-Laboura-Background': '1' },
         signal: abort.signal,
         credentials: 'same-origin',
       });

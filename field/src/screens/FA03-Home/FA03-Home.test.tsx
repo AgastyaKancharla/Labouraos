@@ -220,6 +220,86 @@ describe('FA03 Today', () => {
     expect(screen.queryByTestId('attendance-status')).toBeNull();
   });
 
+  it('Log out also signs out of Laboura Field (21 Nov: the sign-in lasts until Log out)', async () => {
+    const { store, fetchImpl } = await renderWithApp(<HomeScreen />, {
+      signedInAs: kiran,
+      route: api(loggedIn, (url) => {
+        if (url.endsWith('/attendance/logout')) return { status: 200, body: { ...loggedIn, logoutAt: '2026-11-09T13:00:00Z', canResume: true } };
+        if (url.endsWith('/auth/logout')) return { status: 200, body: { success: true } };
+        return undefined;
+      }),
+    });
+    await waitFor(() => screen.getByTestId('attendance-logout'));
+    await fireEvent.press(screen.getByTestId('attendance-logout'));
+    await fireEvent.press(screen.getByTestId('attendance-logout-confirm'));
+    await waitFor(() => expect(store.get()).toBeNull());
+    expect(fetchImpl.mock.calls.some(([url]) => String(url).endsWith('/auth/logout'))).toBe(true);
+  });
+
+  it('a day ended with Log out today offers Resume my day; it opens the day again (21 Nov)', async () => {
+    let resumed = false;
+    const ended = { ...loggedIn, logoutAt: '2026-11-09T08:00:00Z', closedReason: 'logout', canResume: true };
+    await renderWithApp(<HomeScreen />, {
+      signedInAs: kiran,
+      route: api(ended, (url) => {
+        if (url.endsWith('/attendance/resume')) {
+          resumed = true;
+          return { status: 200, body: { ...loggedIn, status: 'available', canResume: false } };
+        }
+        return undefined;
+      }),
+    });
+    await waitFor(() => screen.getByTestId('attendance-resume'));
+    expect(screen.getByTestId('attendance-ended')).toHaveTextContent(/Resume your day/);
+    await fireEvent.press(screen.getByTestId('attendance-resume'));
+    await waitFor(() => screen.getByTestId('attendance-logged-in'));
+    expect(resumed).toBe(true);
+  });
+
+  it('a day closed by the night clean-up has no Resume button', async () => {
+    await renderWithApp(<HomeScreen />, {
+      signedInAs: kiran,
+      route: api({ ...loggedIn, logoutAt: '2026-11-09T08:00:00Z', closedReason: 'auto_closed_no_logout', canResume: false }),
+    });
+    await waitFor(() => screen.getByTestId('attendance-ended'));
+    expect(screen.queryByTestId('attendance-resume')).toBeNull();
+  });
+
+  it('after the lunch allowance asks "Back from lunch?" and one tap makes him Available (21 Nov)', async () => {
+    const sent: unknown[] = [];
+    const onLunch = {
+      ...loggedIn,
+      status: 'lunch',
+      statusSince: new Date(Date.now() - 35 * 60_000).toISOString(),
+      policy: { lunchMinutes: 30, shortBreakMinutes: 15, idleAfterMinutes: 30 },
+    };
+    await renderWithApp(<HomeScreen />, {
+      signedInAs: kiran,
+      route: api(onLunch, (url, init) => {
+        if (url.endsWith('/attendance/status')) {
+          sent.push(JSON.parse(String(init.body)));
+          return { status: 200, body: { ...onLunch, status: 'available', statusSince: new Date().toISOString() } };
+        }
+        return undefined;
+      }),
+    });
+    await waitFor(() => screen.getByTestId('attendance-back-prompt'));
+    expect(screen.getByTestId('attendance-back-prompt')).toHaveTextContent(/Back from lunch\?.*30-minute allowance/);
+    await fireEvent.press(screen.getByTestId('attendance-back'));
+    await waitFor(() => expect(screen.queryByTestId('attendance-back-prompt')).toBeNull());
+    expect(sent).toEqual([{ status: 'available' }]);
+  });
+
+  it('inside the lunch allowance there is no prompt; the own shift shows before Log in', async () => {
+    await renderWithApp(<HomeScreen />, {
+      signedInAs: kiran,
+      route: api({ ...notLoggedIn, clocks: { ...notLoggedIn.clocks, shiftStart: '12:00', shiftEnd: '21:00' }, ownShift: true }),
+    });
+    await waitFor(() => screen.getByTestId('attendance-not-logged-in'));
+    expect(screen.getByTestId('attendance-not-logged-in')).toHaveTextContent(/Your shift 12:00 PM – 9:00 PM/);
+    expect(screen.queryByTestId('attendance-back-prompt')).toBeNull();
+  });
+
   it('the Log in button says Log in, and a second Log in on an ended day shows the day, not an error', async () => {
     let closed = false;
     await renderWithApp(<HomeScreen />, {
