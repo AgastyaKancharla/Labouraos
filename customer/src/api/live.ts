@@ -25,8 +25,7 @@ import type {
   StepState,
   VacancyStatus,
   VacancySummary,
-  LegalDocumentView,
-} from './types';
+  LegalDocumentView, WorkersAnswer } from './types';
 
 /**
  * The real API: docs/customer-app-api.md (Agent A, merged in PR #140), under
@@ -247,7 +246,7 @@ export function toBusinessHome(w: any): BusinessHome {
       approval: t.approved ? 'approved' : w.verificationStatus === 'paused' ? 'paused' : 'waiting',
     },
     vacancies: [...drafts, ...vacancies],
-    counts: { interviewsUpcoming: w.counts?.interviewsUpcoming ?? 0, placements: w.counts?.placements ?? 0 },
+    counts: { interviewsUpcoming: w.counts?.interviewsUpcoming ?? 0, placements: w.counts?.placements ?? 0, workersPlaced: w.counts?.workersPlaced ?? 0 },
   };
 }
 
@@ -578,6 +577,14 @@ export function liveCustomerApi(api: ApiClient, options: Options = {}): Customer
         belowLegalMinimum: false,
       };
     },
+
+    workers: (profileId) => api.get<WorkersAnswer>(`${profilePath(profileId)}/workers`),
+    reportWorkerLeft: (profileId, placementId, input) =>
+      api.post<{ reportId: string; status: string }>(`${profilePath(profileId)}/workers/${enc(placementId)}/left`, {
+        workerLeftOn: input.workerLeftOn,
+        reason: input.reason,
+        ...(input.note ? { note: input.note } : {}),
+      }),
 
     requestCallback: (r) =>
       api.post<{ id: string }>('/me/callback-requests', {

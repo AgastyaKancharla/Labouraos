@@ -325,9 +325,46 @@ export interface BusinessHome {
     approval: 'waiting' | 'approved' | 'paused';
   };
   vacancies: VacancySummary[];
-  counts: { interviewsUpcoming: number; placements: number };
+  /** workersPlaced: workers whose fee is paid (working now, or due to join) — "Report a worker left" shows above 0. */
+  counts: { interviewsUpcoming: number; placements: number; workersPlaced: number };
   /** D6 (rev 176): suspended by the CEO — no new vacancies, candidates or interviews while it lasts. */
   suspension?: { until: string | null; permanent: boolean; reason: string | null } | null;
+}
+
+/** "A worker left" (contract 8.2): a report that brings a call from the team, not the claim itself. */
+export type WorkerState = 'can_report' | 'reported' | 'claim_open' | 'guarantee_over' | 'not_started';
+
+export interface PlacedWorker {
+  placementId: string;
+  placementCode: string;
+  workerFirstName: string | null;
+  trade: string;
+  joinedOn: string | null;
+  /** Selected and paid, joining day passed, never came (D2): only "never joined" can be picked. */
+  neverJoined: boolean;
+  guaranteeLastDay: string | null;
+  leftOnEarliest: string | null;
+  leftOnLatest: string;
+  state: WorkerState;
+}
+
+export interface WorkerLeftReport {
+  id: string;
+  placementCode: string | null;
+  workerFirstName: string | null;
+  workerLeftOn: string | null;
+  reason: string;
+  status: 'open' | 'claim_filed' | 'closed';
+  claimDecision: 'accepted' | 'rejected' | null;
+  reportedAt: string;
+}
+
+export interface WorkersAnswer {
+  reasons: { covered: string[]; notCovered: string[]; neverJoined: string[] };
+  reportWithinDays: number;
+  windowDays: number;
+  workers: PlacedWorker[];
+  reports: WorkerLeftReport[];
 }
 
 export interface ReferralPerson {

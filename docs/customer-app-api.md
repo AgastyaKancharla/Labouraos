@@ -666,7 +666,7 @@ The answer depends on the profile kind (`kind`).
     { "code": "VC-00078", "trade": "Baker", "headcount": 1, "status": "open", "belowLegalMinimum": false, "interviewsUpcoming": 0, "placements": 0 }
   ],
   "drafts": [ { "id": "uuid", "trade": "Helper", "updatedAt": "…" } ],
-  "counts": { "interviewsUpcoming": 0, "placements": 0 },
+  "counts": { "interviewsUpcoming": 0, "placements": 0, "workersPlaced": 0 },
   "nextAction": "sign_agreement"
 }
 ```
@@ -674,7 +674,9 @@ The answer depends on the profile kind (`kind`).
 A branch manager sees only that branch's vacancies, drafts and counts, and
 `tracker.agreement` only as true/false. **No candidate is listed here in v1**, and
 never a phone number. `nextAction`: `sign_agreement`, `wait_for_visit`,
-`wait_for_approval`, `add_vacancy`, `none`.
+`wait_for_approval`, `add_vacancy`, `none`. `counts.workersPlaced`: workers whose
+fee is paid (working now, or due to join); the app shows "Report a worker left"
+when it is above 0 (§8.2).
 
 ### 7.3 Referral partner
 
@@ -787,6 +789,64 @@ with that name exists), `409 LIMIT_REACHED` (12 shifts), `404 VALIDATION_FAILED`
 `businessShiftId` (one of these shifts); the posted vacancy keeps the shift's label and times even if the shift is later changed or removed.
 
 ---
+
+### 8.2 A worker left (21 Nov)
+
+| Method and path | Auth | Status |
+| --- | --- | --- |
+| `GET /me/profiles/:profileId/workers` | 🔒 | A |
+| `POST /me/profiles/:profileId/workers/:placementId/left` | 🔒 | A |
+
+Master Guide, customer app (14 Nov): a business may report a worker leaving in
+the app; claims still go to the Team Lead. **This is a report, not the
+replacement claim.** The claim needs an answered, recorded call with the owner,
+so staff still file it (`POST /placements/:id/claims`, unchanged). The report
+saves when the business told Laboura and makes a "Call me back" request
+(topic `worker_left`, note `PL-…: worker left on <day>`) so the call team gets a
+call task at once (§10; an already open request is used instead of a second one).
+
+`GET` → the business's paid workers (placement `active`, or `confirmed` = paid but
+not joined yet), a branch profile only its branch's:
+
+```json
+{
+  "reasons": { "covered": ["resigned", "absconded_3_days", "…"], "notCovered": ["business_closed", "…"], "neverJoined": ["never_joined"] },
+  "reportWithinDays": 7,
+  "windowDays": 60,
+  "workers": [
+    { "placementId": "uuid", "placementCode": "PL-00012", "workerFirstName": "Ravi", "trade": "Cook",
+      "joinedOn": "2026-11-01", "joiningOn": "2026-11-01", "neverJoined": false,
+      "guaranteeLastDay": "2026-12-31", "leftOnEarliest": "2026-11-01", "leftOnLatest": "2026-11-21",
+      "state": "can_report" }
+  ],
+  "reports": [
+    { "id": "uuid", "placementCode": "PL-00012", "workerFirstName": "Ravi", "workerLeftOn": "2026-11-19",
+      "reason": "resigned", "status": "open", "claimDecision": null, "reportedAt": "…" }
+  ]
+}
+```
+
+`state`: `can_report`, `reported` (an open report waits for the call team),
+`claim_open` (a claim waits for the Team Lead), `guarantee_over` (past the
+60 days), `not_started` (due to join later). The reasons are the staff form's
+closed list (`placement/claim-reasons.ts`): covered and not covered, or only
+`never_joined` for a paid worker who never came (D2). First name only, never a
+phone number or money.
+
+`POST` body `{ "workerLeftOn": "2026-11-19", "reason": "resigned", "note": "optional, 200 characters, no ID or phone numbers" }`
+→ `201 { "reportId": "uuid", "status": "open", "reportedAt": "…" }`, or `200` with the open
+report when one is already waiting (one open report per worker, also a partial
+unique index). The day must be from the worker's own joining day to today and not
+after the guarantee's last day, as the staff claim checks it. `404 PROFILE_NOT_FOUND`
+for a worker that is not this business's (or this branch's), not paid for, or not
+found; `409 NOT_ALLOWED` with `reason` `claim_open`, `not_started` or `guarantee_over`;
+`400 VALIDATION_FAILED` with `field`. No fresh OTP: it only asks for a call.
+
+**For the office session (not in the customer folders):** show open reports and
+the topic and note of a `worker_left` callback on the call task; when the claim
+is filed from a report, set `CustomerWorkerLeftReport.status = 'claim_filed'`
+and `claimId`; count the report's `createdAt` as the day the business told
+Laboura (7-day rule).
 
 ## 9. Inbox, push token and settings (Agent C)
 
@@ -1036,6 +1096,7 @@ every one with row level security on.
 | `CustomerDeletionRequest` | Delete-my-account requests | A creates; D handles |
 | `CustomerCallbackRequest` | Call me back | A creates; D turns into call tasks |
 | `CustomerVacancyDraft` | Vacancies a business writes before confirming by OTP | A |
+| `CustomerWorkerLeftReport` | "A worker left" reports from businesses (§8.2), migration `20261204100000_customer_worker_left_reports` | A creates; the office session links the claim (`status`, `claimId`) |
 
 Changes to existing tables and values:
 

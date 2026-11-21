@@ -28,4 +28,6 @@ export const queryKeys = {
   /** The business's own shifts (17 Nov). */
   shifts: (profileId: string) => ['shifts', profileId] as const,
   homes: ['home'] as const,
+  /** "A worker left": the business's workers and reports (contract 8.2). */
+  workers: (profileId: string) => ['workers', profileId] as const,
 };

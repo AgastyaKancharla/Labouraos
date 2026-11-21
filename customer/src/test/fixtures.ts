@@ -60,7 +60,7 @@ export const bizHome = (over: Partial<BusinessHome> = {}): BusinessHome => ({
     { id: 'v-1', code: null, trade: 'Cook', roleTitle: null, openings: 2, salaryMinPaise: 1_800_000, salaryMaxPaise: 2_200_000, salaryPeriod: 'monthly', status: 'draft', belowLegalMinimum: true },
     { id: 'v-2', code: 'VC-0007', trade: 'Kitchen helper', roleTitle: null, openings: 1, salaryMinPaise: 2_400_000, salaryMaxPaise: null, salaryPeriod: 'monthly', status: 'waiting_for_visit', belowLegalMinimum: false },
   ],
-  counts: { interviewsUpcoming: 0, placements: 0 },
+  counts: { interviewsUpcoming: 0, placements: 0, workersPlaced: 0 },
   ...over,
 });
 

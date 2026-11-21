@@ -141,7 +141,7 @@ describe('Business Home', () => {
 
   it('visit booked with the agent first name; verified hides the waiting banner; never a phone number', async () => {
     await renderHome(
-      bizHome({ tracker: { phoneVerified: true, agreement: 'signed', visit: 'done', visitAt: '2026-11-16T05:30:00Z', visitAgentFirstName: 'Kiran', approval: 'approved' }, counts: { interviewsUpcoming: 2, placements: 1 } }),
+      bizHome({ tracker: { phoneVerified: true, agreement: 'signed', visit: 'done', visitAt: '2026-11-16T05:30:00Z', visitAgentFirstName: 'Kiran', approval: 'approved' }, counts: { interviewsUpcoming: 2, placements: 1, workersPlaced: 1 } }),
       [bizProfile],
     );
     expect(await screen.findByTestId('biz-step-verified-done')).toBeTruthy();
@@ -152,6 +152,14 @@ describe('Business Home', () => {
     expect(screen.getByTestId('biz-stat-placements')).toHaveTextContent(/1.*People hired/);
     expect(screen.getByTestId('biz-hero-agreement-green')).toBeTruthy();
     expect(screen.getByTestId('biz-hero-approval-green')).toBeTruthy();
+    // A worker placed: "Report a worker left" opens the worker list (contract 8.2).
+    expect(screen.getByTestId('biz-home-workers')).toHaveTextContent(/Did a worker leave\?/);
+  });
+
+  it('no worker placed yet: no "Report a worker left"', async () => {
+    await renderHome(bizHome(), [bizProfile]);
+    expect(await screen.findByTestId('biz-home-hero')).toBeTruthy();
+    expect(screen.queryByTestId('biz-home-workers')).toBeNull();
   });
 
   it('hero chips colour agreement / visit / approval; stat tiles royal / cyan / green', async () => {

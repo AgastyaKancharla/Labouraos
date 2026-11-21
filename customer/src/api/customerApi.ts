@@ -22,8 +22,7 @@ import type {
   StepUpPurpose,
   VacancyDraft,
   VacancySummary,
-  LegalDocumentView,
-} from './types';
+  LegalDocumentView, WorkersAnswer } from './types';
 
 /**
  * Everything the screens can ask the server. Two implementations:
@@ -82,6 +81,10 @@ export interface CustomerApi {
   createVacancy(profileId: string, draft: VacancyDraft): Promise<VacancySummary>;
   /** `otp` null = retry after the minimum-wage tick with the OTP already checked. */
   confirmVacancy(profileId: string, draftId: string, input: { otp: OtpProof | null; ownerToldMinimumWage: boolean }): Promise<VacancySummary>;
+
+  // "A worker left" (contract 8.2): the business tells us; the call team calls and files the claim
+  workers(profileId: string): Promise<WorkersAnswer>;
+  reportWorkerLeft(profileId: string, placementId: string, input: { workerLeftOn: string; reason: string; note: string | null }): Promise<{ reportId: string; status: string }>;
 
   // Help and privacy
   requestCallback(request: CallbackRequest): Promise<{ id: string }>;

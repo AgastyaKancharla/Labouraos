@@ -13,8 +13,7 @@ import type {
   ProfileKind,
   ProfileSummary,
   ReferralHome,
-  VacancySummary,
-} from './types';
+  VacancySummary, PlacedWorker, WorkerLeftReport, WorkersAnswer } from './types';
 
 /**
  * Pretend data (EXPO_PUBLIC_API_MODE=mock): every screen works with no
@@ -39,6 +38,8 @@ interface State {
   homes: Record<string, ProfileHome>;
   /** Profile id → the business's shifts (17 Nov). */
   shifts: Record<string, BusinessShift[]>;
+  /** Profile id → "a worker left" reports (contract 8.2). */
+  workerReports: Record<string, WorkerLeftReport[]>;
   /** Draft id → owner told about the legal minimum. */
   seq: number;
 }
@@ -79,7 +80,7 @@ function checkOtp(otp: OtpProof | { code: string }) {
 }
 
 export function mockCustomerApi({ latencyMs = 250 }: { latencyMs?: number } = {}): CustomerApi {
-  const state: State = { account: null, pendingPhone: null, homes: {}, shifts: {}, seq: 0 };
+  const state: State = { account: null, pendingPhone: null, homes: {}, shifts: {}, workerReports: {}, seq: 0 };
   const wait = <T,>(value: T | (() => T)): Promise<T> =>
     new Promise((resolve, reject) => {
       const run = () => {
@@ -242,7 +243,8 @@ export function mockCustomerApi({ latencyMs = 250 }: { latencyMs?: number } = {}
             status: 'draft',
             belowLegalMinimum: row.salaryMinPaise < (options.trades.find((t) => t.name === row.trade)?.legalMinimumPaise ?? 0),
           })),
-          counts: { interviewsUpcoming: 0, placements: 0 },
+          // One made-up worker, so "Report a worker left" can be tried with pretend data.
+          counts: { interviewsUpcoming: 0, placements: 1, workersPlaced: 1 },
         };
         return { profile: addProfile('business', form.boardName, home, code), existing: false };
       }),
@@ -300,6 +302,46 @@ export function mockCustomerApi({ latencyMs = 250 }: { latencyMs?: number } = {}
         const home = state.homes[profileId];
         if (!home) throw fail(404, 'PROFILE_NOT_FOUND', 'Not found');
         return JSON.parse(JSON.stringify(home)) as ProfileHome;
+      }),
+
+    workers: (profileId) =>
+      wait(() => {
+        const home = state.homes[profileId];
+        if (!home || home.kind !== 'business') throw fail(400, 'PROFILE_KIND_MISMATCH', 'Not a business');
+        const today = new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
+        const joined = new Date(Date.now() + 330 * 60_000 - 10 * 86_400_000).toISOString().slice(0, 10);
+        const last = new Date(Date.now() + 330 * 60_000 + 50 * 86_400_000).toISOString().slice(0, 10);
+        const reports = state.workerReports[profileId] ?? [];
+        const open = reports.some((r) => r.status === 'open');
+        const worker: PlacedWorker = {
+          placementId: 'pl-mock-1', placementCode: 'PL-00001', workerFirstName: 'Ravi', trade: 'Cook', joinedOn: joined,
+          neverJoined: false, guaranteeLastDay: last, leftOnEarliest: joined, leftOnLatest: today, state: open ? 'reported' : 'can_report',
+        };
+        const answer: WorkersAnswer = {
+          reasons: {
+            covered: ['resigned', 'absconded_3_days', 'serious_misconduct', 'repeated_absence', 'skill_gap_15_days', 'misrepresentation', 'medically_unfit_or_relocated'],
+            notCovered: ['business_closed', 'role_changed', 'salary_unpaid', 'unsafe_workplace', 'fired_without_reason', 'hired_own_person'],
+            neverJoined: ['never_joined'],
+          },
+          reportWithinDays: 7,
+          windowDays: 60,
+          workers: [worker],
+          reports: [...reports],
+        };
+        return answer;
+      }),
+    reportWorkerLeft: (profileId, placementId, input) =>
+      wait(() => {
+        if (placementId !== 'pl-mock-1') throw fail(404, 'PROFILE_NOT_FOUND', 'Worker not found');
+        const list = (state.workerReports[profileId] ??= []);
+        const open = list.find((r) => r.status === 'open');
+        if (open) return { reportId: open.id, status: open.status };
+        const report: WorkerLeftReport = {
+          id: `wl-${next()}`, placementCode: 'PL-00001', workerFirstName: 'Ravi', workerLeftOn: input.workerLeftOn,
+          reason: input.reason, status: 'open', claimDecision: null, reportedAt: new Date().toISOString(),
+        };
+        list.unshift(report);
+        return { reportId: report.id, status: report.status };
       }),
 
     shifts: (profileId) => wait(() => [...(state.shifts[profileId] ?? [])]),
