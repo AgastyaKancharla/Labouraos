@@ -137,7 +137,7 @@ describe('FA03 Today', () => {
     expect(screen.getByTestId('job-owner')).toHaveTextContent('Owner: Ramesh');
     expect(screen.getByTestId('job-phone')).toHaveTextContent('Phone ••4321');
     expect(screen.getByTestId('job-last-try')).toHaveTextContent(/owner not there · Come back .*4:30 PM/);
-    const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+    const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
     await fireEvent.press(screen.getByTestId('job-maps'));
     expect(openURL).toHaveBeenLastCalledWith('https://www.google.com/maps/search/?api=1&query=12.91,77.58');
     await fireEvent.press(screen.getByTestId('job-call-owner'));

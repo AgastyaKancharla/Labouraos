@@ -155,6 +155,44 @@ describe('FA07 Register a business', () => {
     expect(screen.getByTestId('step-counter')).toHaveTextContent('Step 4 of 7 · business form');
   });
 
+  it('21 Nov: a shop nearby with a similar name asks "Is this the same shop?" — Record as a revisit, or a different shop (goes to the Team Lead)', async () => {
+    saveDraft({
+      id: 'v-8', startedAt: '2026-11-09T06:00:00Z', latitude: 12.9116, longitude: 77.6101, accuracy: 8, shopName: 'Sri Sai Tiffins', businessId: null,
+      businessName: null, spokeTo: 'owner', contactPhone: '', endedAt: '2026-11-09T06:14:00Z', proofDistance: 6, proofAt: null,
+    });
+    searchParams.current = { visitId: 'v-8' };
+    const posted: Record<string, unknown>[] = [];
+    await renderWithApp(<RegisterBusinessScreen />, {
+      signedInAs: kiran,
+      route: (url, init) => {
+        if (url.endsWith('/screens/call-registration/options')) return { status: 200, body: { city: 'Bengaluru', areas: [{ name: 'BTM Layout 2nd Stage', pincode: '560076', latitude: 12.91, longitude: 77.61 }] } };
+        if (url.endsWith('/trades')) return { status: 200, body: trades };
+        if (url.endsWith('/otp/send')) return { status: 201, body: { success: true, requestId: 'otp-9', resendAvailableAt: new Date(Date.now() + 30000).toISOString() } };
+        if (url.endsWith('/otp/verify')) return { status: 201, body: { verified: true } };
+        if (url.includes('/field-work/similar-shops')) {
+          expect(url).toContain('name=Sri%20Sai%20Tiffins');
+          return { status: 200, body: { matches: [{ id: 'b-7', code: 'BZ-00007', name: 'Sri Sai Tiffin Centre', locality: 'BTM', distanceMeters: 40, mine: false }] } };
+        }
+        if (url.endsWith('/businesses') && init.method === 'POST') {
+          posted.push(JSON.parse(String(init.body)));
+          return { status: 201, body: { id: 'b-new', code: 'BZ-00401', name: 'Sri Sai Tiffins' } };
+        }
+        if (url.endsWith('/agreement-links')) return { status: 201, body: {} };
+        return undefined;
+      },
+    });
+    await fillRequired();
+    await fireEvent.press(screen.getByTestId('fa07-save'));
+    await waitFor(() => screen.getByTestId('fa07-similar'));
+    expect(screen.getByTestId('fa07-similar')).toHaveTextContent(/Is this the same shop\?.*Sri Sai Tiffin Centre \(BZ-00007\) is 40 m from here/);
+    expect(posted).toHaveLength(0);
+    await fireEvent.press(screen.getByTestId('fa07-similar-revisit'));
+    expect(router.replace).toHaveBeenLastCalledWith({ pathname: '/visit/start', params: { businessId: 'b-7', name: 'Sri Sai Tiffin Centre' } });
+    await fireEvent.press(screen.getByTestId('fa07-similar-different'));
+    await fireEvent.press(screen.getByTestId('fa07-save'));
+    await waitFor(() => expect(posted).toHaveLength(1));
+  });
+
   it('what was typed survives going back and opening the form again', async () => {
     saveDraft({
       id: 'v-9', startedAt: '2026-11-09T06:00:00Z', latitude: 12.9116, longitude: 77.6101, accuracy: 8, shopName: 'Sri Sai Stores', businessId: null,
