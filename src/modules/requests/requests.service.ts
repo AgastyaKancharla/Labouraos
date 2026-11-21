@@ -49,6 +49,7 @@ import {
 } from './requests-routing';
 import { RequestBellsService } from './request-bells.service';
 import { FollowUpHandoverService, type HandoverChoice } from '../follow-up/follow-up-handover.service';
+import { WorkHandoverService } from '../follow-up/work-handover.service';
 import { assertPayrollCanCorrect, monthOfDay } from '../finance/payroll-window';
 
 export interface Actor {
@@ -215,6 +216,7 @@ export class RequestsService {
     private readonly targets: TargetService,
     private readonly bells: RequestBellsService,
     private readonly handovers: FollowUpHandoverService,
+    private readonly workHandover: WorkHandoverService,
   ) {}
 
   // ================================================================= reads
@@ -268,7 +270,19 @@ export class RequestsService {
     const history = this.history(view, this.clock.now());
     // T-Req-Sneha: "Calls planned for her that day" and who can take them.
     const followUps = kind === 'leave' ? await this.handovers.plan(id) : null;
-    return { ...view, history, followUps };
+    // 21 Nov fixes: everything open moves with the same choice, not only follow-ups.
+    const openWork = kind === 'leave' ? await this.leaveOpenWork(id) : null;
+    return { ...view, history, followUps: followUps ? { ...followUps, openWork } : null };
+  }
+
+  private async leaveOpenWork(leaveId: string) {
+    const leave = await this.prisma.leaveRequest.findUnique({ where: { id: leaveId } });
+    if (!leave) return null;
+    const from = (leave.approvedFromDate ?? leave.fromDate).toISOString().slice(0, 10);
+    const to = (leave.approvedToDate ?? leave.toDate).toISOString().slice(0, 10);
+    const start = new Date(`${from}T00:00:00+05:30`);
+    const end = new Date(new Date(`${to}T00:00:00+05:30`).getTime() + 24 * 60 * 60 * 1000);
+    return this.workHandover.openWork(leave.staffId, start, end);
   }
 
   // ============================================================== actions
@@ -327,7 +341,13 @@ export class RequestsService {
         reason,
         ...(part ? { fromDate: body.fromDate, toDate: body.toDate } : {}),
       });
-      if (handover) await this.handovers.handOver(actor.id, id, handover, this.clock.now());
+      if (handover) {
+        await this.handovers.handOver(actor.id, id, handover, this.clock.now());
+        // Leave-approval hook (21 Nov fixes): the choice is recorded; every other open call item,
+        // the field items (FieldHandoverService) and WhatsApp conversations move the same way when
+        // the leave starts (WorkHandoverService.sweepLeaves, call-work sweep).
+        await this.workHandover.onLeaveApproved(actor.id, id, handover);
+      }
     } else if (kind === 'device') {
       if (decision === 'approved') await this.devices.approve(id, actor);
       else await this.devices.revoke(id, actor);

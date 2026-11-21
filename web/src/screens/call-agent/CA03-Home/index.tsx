@@ -12,7 +12,10 @@ import { formatDayMonthIST } from '../../../lib/format/date';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { useHome, useResendRegistration, type MetricView, type WorkCategory } from '../_lib/api';
 import { CallNextButton } from '../_lib/CallNextButton';
-import { clock12, durationHM, stuckLabel } from '../_lib/format';
+import { clock12, durationHM, stuckLabel, whenShort } from '../_lib/format';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '../../../lib/api/client';
+import { useNow } from '../../../lib/useNow';
 import { PersonRow } from '../_lib/PersonRow';
 
 /**
@@ -42,8 +45,17 @@ export default function CallAgentHome() {
   const toast = useToast();
   const home = useHome();
   const resend = useResendRegistration();
+  const qc = useQueryClient();
+  const now = useNow(60_000);
+  // "Not a lead": an unknown caller handled without registering (every repeat call from the number goes too).
+  const closeCaller = useMutation({
+    mutationFn: (callbackTaskId: string) => api.post(`/telephony/callbacks/${encodeURIComponent(callbackTaskId)}/complete`),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['call-work'] }),
+  });
   const [filter, setFilter] = useState<(typeof FILTERS)[number]['key']>('all');
   const data = home.data;
+  const newCallers = data?.newCallers ?? [];
+  const stuckCount = data ? data.stuck.filter((s) => !s.waitingForTeamLead).length : 0;
 
   const items = data ? data.work.items.filter((i) => filter === 'all' || i.category === filter) : [];
   const blockedHint = data && !data.canCall
@@ -115,6 +127,39 @@ export default function CallAgentHome() {
           {items.map((item) => (
             <PersonRow key={item.key} item={item} callingHours={data?.callingHours} />
           ))}
+          {newCallers.length > 0 && (filter === 'all' || filter === 'callbacks') && (
+            <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 6 }} data-testid="new-callers">
+              <div className="lbl lb-h-tile">
+                <ToneTile icon="callCenter" tone="cyan" size="sm" />
+                {t('ca.newCallers.title', { count: newCallers.length })}
+              </div>
+              {newCallers.map((c) => (
+                <div className="row" key={c.callbackTaskId}>
+                  <Link to={`${to('CA17b-UnknownCaller')}?task=${encodeURIComponent(c.callbackTaskId)}`} style={{ color: 'var(--ink)', minWidth: 0 }}>
+                    <span className="nm">{t('ca.newCallers.row', { phone: c.maskedPhone })}</span>{' '}
+                    <span className="sub">
+                      {c.count > 1
+                        ? t('ca.newCallers.times', { count: c.count, time: whenShort(c.lastCalledAt, now, t) })
+                        : t('ca.newCallers.when', { time: whenShort(c.firstCalledAt, now, t) })}
+                    </span>
+                  </Link>
+                  <button
+                    type="button"
+                    className="tag tn lb-ca-chip"
+                    disabled={closeCaller.isPending}
+                    onClick={() =>
+                      closeCaller.mutate(c.callbackTaskId, {
+                        onSuccess: () => toast.success(t('ca.newCallers.doneToast')),
+                        onError: (err) => toast.error((err as Error).message),
+                      })
+                    }
+                  >
+                    {t('ca.newCallers.done')}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         <section style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
@@ -162,7 +207,7 @@ export default function CallAgentHome() {
             <div className="card">
               <div className="lbl lb-h-tile" style={{ marginBottom: 4 }}>
                 <ToneTile icon="requests" tone="orange" size="sm" />
-                {t('ca.stuck.title', { count: data?.stuck.length ?? 0 })}
+                {t('ca.stuck.title', { count: stuckCount })}
               </div>
               {data && data.stuck.length === 0 && <p className="sub">{t('ca.stuck.none')}</p>}
               {data?.stuck.map((s) => (
@@ -170,6 +215,10 @@ export default function CallAgentHome() {
                   <Link to={to('CA08c-InProgress', { id: s.code })} style={{ color: 'var(--ink)' }}>
                     {s.name} · {stuckLabel(s.step, s.failures, t)}
                   </Link>
+                  {/* Waiting for the Team Lead's ID check is not stuck: nothing to resend (21 Nov fixes). */}
+                  {s.waitingForTeamLead ? (
+                    <span className="sub">{t('ca.stuck.waitingNote')}</span>
+                  ) : (
                   <button
                     type="button"
                     className={`tag ${s.step === 'payment_failed' ? 'tr' : 'ta'} lb-ca-chip`}
@@ -183,6 +232,7 @@ export default function CallAgentHome() {
                   >
                     {t('ca.stuck.resend')}
                   </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -241,7 +291,7 @@ function doneText(d: { kind: string; name: string; extra: string | null; status:
   }
 }
 
-const OUTCOMES = ['interested', 'accepted_offer', 'rejected_offer', 'callback_requested', 'not_interested', 'working_now', 'other'];
+const OUTCOMES = ['interested', 'accepted_offer', 'rejected_offer', 'callback_requested', 'not_interested', 'working_now', 'wrong_number', 'do_not_call', 'busy', 'switched_off', 'other'];
 const SEEKER_STATUSES = ['lead', 'consented', 'pending_activation', 'active', 'paused', 'deactivated', 'placed', 'closed', 'refunded'];
 
 function doneTag(d: { kind: string; status: string; extra: string | null }, t: ReturnType<typeof useT>): string {

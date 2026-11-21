@@ -65,6 +65,12 @@ export const REVIEW_FLAG_KINDS = [
    * or "not the same person"; meanwhile his ID check and ₹499 wait.
    */
   'possible_banned_person',
+  /** 21 Nov fixes: an automatic retry (or callback) went unanswered 3 times in a row; retries stop and the Team Lead is told. */
+  'calls_unanswered',
+  /** 21 Nov fixes: an agent marked a paid job seeker's number as a wrong number; the Team Lead finds the right one. */
+  'wrong_number_paid',
+  /** 21 Nov fixes: an app sign-up help call task closed without the agent placing a call. */
+  'signup_call_not_attempted',
 ] as const;
 
 export type ReviewFlagKind = (typeof REVIEW_FLAG_KINDS)[number];

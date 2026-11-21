@@ -26,7 +26,10 @@ import { RecordingCopyJob } from './recording-copy.job';
 import { RECORDING_LINK_TTL_SECONDS, RECORDING_STORAGE, RecordingStorage } from './recording-storage';
 import { CALL_ANNOUNCEMENT } from './call-announcement';
 import { CallClock } from './call-clock';
-import { isAgentOutcome, isCallPurpose } from './call-outcomes';
+import { isAgentOutcome, isCallPurpose, NO_ANSWER_OUTCOMES, STOP_OUTCOMES } from './call-outcomes';
+import { ContactBlockKind, callsBlocked, liveKeyOf, phoneHash } from './contact-block';
+import { ReviewFlagService } from '../review-flag/review-flag.service';
+import { mapTeleCmiReport, teleCmiKeyMatches, TELECMI_VENDOR } from '../telephony/telecmi';
 import { isWithinClockWindow } from './call-window';
 import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
@@ -62,6 +65,7 @@ export class CallService {
     private readonly editPolicyService: EditPolicyService,
     private readonly attendance: AttendanceService,
     private readonly followThrough: CallFollowThroughService,
+    private readonly reviewFlags: ReviewFlagService,
   ) {
     this.team = new OwnTeam(prisma);
   }
@@ -155,6 +159,41 @@ export class CallService {
       throw new UnauthorizedException('Invalid call status signature');
     }
     return this.applyStatus(event);
+  }
+
+  /**
+   * TeleCMI call reports (21 Nov fixes, src/modules/telephony/telecmi.ts):
+   * a missed inbound call goes on the missed-call list (handed out by the
+   * software); an outbound or answered call updates its call record through
+   * applyStatus, like any other status webhook. Repeats are no-ops.
+   */
+  async applyTeleCmiReport(key: string | undefined, payload: Record<string, unknown>) {
+    if (!teleCmiKeyMatches(key)) throw new UnauthorizedException('Invalid TeleCMI webhook key');
+    if (!process.env.TELECMI_APP_ID) throw new UnauthorizedException('TeleCMI is not set up here (TELECMI_APP_ID)');
+    const report = mapTeleCmiReport(payload ?? {}, process.env.TELECMI_APP_ID, this.clock.now());
+    if (report.kind === 'ignored') {
+      // The reason only: never the number, the call id or the key (first real reports: see what is dropped).
+      this.logger.warn(`TeleCMI report ignored: ${report.reason}`);
+      if (report.reason === 'another app') throw new UnauthorizedException('Report for another TeleCMI app');
+      return { ignored: report.reason };
+    }
+    if (report.kind === 'missed_inbound') {
+      const result = await this.telephony.handleInboundCall({ callId: report.callId, callerPhone: report.callerPhone, timestamp: report.at });
+      return { callbackTaskId: result.callbackTaskId, duplicate: result.isDuplicate };
+    }
+    // Only one of our own TeleCMI calls is ever changed (never another vendor's, never a new record),
+    // and only forward (applyStatus refuses a step back).
+    const ours = report.callRecordId
+      ? await this.prisma.callRecord.findUnique({ where: { id: report.callRecordId }, select: { provider: true, providerCallId: true } })
+      : await this.prisma.callRecord.findUnique({
+          where: { provider_providerCallId: { provider: report.event.provider, providerCallId: report.event.providerCallId } },
+          select: { provider: true, providerCallId: true },
+        });
+    if (!ours || ours.provider !== TELECMI_VENDOR) {
+      this.logger.warn('TeleCMI report ignored: no matching TeleCMI call');
+      return { ignored: 'no matching TeleCMI call' };
+    }
+    return this.applyStatus({ ...report.event, provider: ours.provider, providerCallId: ours.providerCallId });
   }
 
   /** The only writer of providerStatus, answered, times and duration. */
@@ -299,6 +338,10 @@ export class CallService {
     if (!subject) {
       throw new NotFoundException('The person or business to call was not found');
     }
+    // 21 Nov fixes: "do not call" blocks every call until a Team Lead lifts it.
+    if (await callsBlocked(this.prisma, { subjectType, subjectId: subject.id })) {
+      throw new ForbiddenException('This person asked not to be called (do not call). A Team Lead can lift it.');
+    }
 
     if (subjectType === 'job_seeker' && purpose !== 'consent_explain') {
       const hasCallRecordingConsent = await this.consentService.hasConsent(
@@ -399,6 +442,10 @@ export class CallService {
       metadata: { callRecordId: created.id },
     });
 
+    // A call was really placed: the Team Lead's "app sign-up call not made" flag for him closes,
+    // whatever the call's outcome turns out to be (21 Nov fixes).
+    await this.closeNotAttemptedFlags(subjectType, subject.id, created.code);
+
     if (result.callId && result.callId !== created.providerCallId) {
       await this.prisma.callRecord.update({
         where: { id: created.id },
@@ -433,12 +480,31 @@ export class CallService {
     if (row.staffId !== actor.id) {
       throw new ForbiddenException('Only the person who made the call can record the outcome');
     }
-    if (!row.answered) {
-      throw new BadRequestException('A call that was not answered cannot have an outcome');
-    }
     const agentOutcome = input.agentOutcome ?? '';
     if (!isAgentOutcome(agentOutcome)) {
       throw new BadRequestException('agentOutcome is not one of the allowed outcomes');
+    }
+    const noAnswer = NO_ANSWER_OUTCOMES.includes(agentOutcome);
+    // "Busy" and "switched off" may be told about a call nobody answered, once it has ended.
+    const ended = (FINAL_CALL_STATUSES as readonly string[]).includes(row.providerStatus);
+    if (!row.answered && !(noAnswer && ended)) {
+      throw new BadRequestException(
+        noAnswer ? 'Wait until the call has ended to mark it busy or switched off' : 'A call that was not answered cannot have an outcome',
+      );
+    }
+    if (noAnswer && !row.answered) {
+      // The phone system already treated it as no answer (retry, WhatsApp): only the label is kept.
+      const at = this.clock.now();
+      await this.prisma.callRecord.update({ where: { id: row.id }, data: { agentOutcome, agentOutcomeReason: input.reason?.trim() || null, agentOutcomeAt: at } });
+      await this.auditService.log({
+        actorId: actor.id,
+        action: 'call.outcome_recorded',
+        entityType: 'call_record',
+        entityCode: row.code,
+        after: { agentOutcome },
+        changedFields: ['agentOutcome'],
+      });
+      return { callRecordId: row.id, agentOutcome };
     }
     const reason = typeof input.reason === 'string' && input.reason.trim() ? input.reason.trim() : null;
     const at = this.clock.now();
@@ -467,6 +533,15 @@ export class CallService {
       reason,
       changedFields: ['agentOutcome'],
     });
+    if (row.subjectType && row.subjectId && noAnswer) {
+      // Answered by a network message: treated as no answer (retry rules, 3-try limit).
+      const updated = await this.prisma.callRecord.findUniqueOrThrow({ where: { id: row.id } });
+      await this.followThrough.onAgentNoAnswer(updated);
+      return { callRecordId: row.id, agentOutcome };
+    }
+    if (row.subjectType && row.subjectId && STOP_OUTCOMES.includes(agentOutcome)) {
+      await this.blockContact(actor, row, agentOutcome as ContactBlockKind, at);
+    }
     if (row.subjectType && row.subjectId) {
       // Whatever he said, earlier callbacks and retries for him are done.
       await this.prisma.callTask.updateMany({
@@ -494,6 +569,141 @@ export class CallService {
       }
     }
     return { callRecordId: row.id, agentOutcome, ...(callbackAt ? { callbackAt: callbackAt.toISOString() } : {}) };
+  }
+
+  /**
+   * "Wrong number" / "do not call" (21 Nov fixes): a live block for the person
+   * (no retries, no automatic messages; do not call also no calls), every open
+   * call task and missed call for him closed, and a wrong number on a paid job
+   * seeker goes to the Team Lead.
+   */
+  private async blockContact(actor: CallActor, row: CallRecord, kind: ContactBlockKind, at: Date): Promise<void> {
+    const subject = { subjectType: row.subjectType!, subjectId: row.subjectId! };
+    const loaded = await this.loadSubject(subject.subjectType, subject.subjectId);
+    const liveKey = liveKeyOf(subject, kind);
+    await this.prisma.contactBlock.upsert({
+      where: { liveKey },
+      create: {
+        subjectType: subject.subjectType,
+        subjectId: subject.subjectId,
+        kind,
+        phoneHash: phoneHash(loaded?.phone),
+        callRecordId: row.id,
+        byStaffId: actor.id,
+        liveKey,
+      },
+      update: { phoneHash: phoneHash(loaded?.phone), callRecordId: row.id, byStaffId: actor.id },
+    });
+    // Sign-up help tasks too: nothing more is planned for him.
+    await this.prisma.callTask.updateMany({
+      where: { subjectType: subject.subjectType, subjectId: subject.subjectId, status: 'open' },
+      data: { status: 'cancelled', doneAt: at, doneCallRecordId: row.id },
+    });
+    const digits = loaded?.phone ? loaded.phone.replace(/\D/g, '').slice(-10) : '';
+    if (digits.length === 10) {
+      await this.prisma.callbackTask.updateMany({
+        where: { status: { in: ['pending', 'assigned'] }, phone: { endsWith: digits } },
+        data: { status: 'completed', completedAt: at },
+      });
+    }
+    await this.auditService.log({
+      actorId: actor.id,
+      action: 'call.contact_blocked',
+      entityType: subject.subjectType,
+      entityCode: subject.subjectId,
+      after: { kind, callRecordId: row.id },
+      changedFields: ['contactBlock'],
+      reason: kind === 'do_not_call' ? 'Asked not to be called' : 'Wrong number',
+    });
+    if (kind === 'wrong_number' && subject.subjectType === 'job_seeker') {
+      const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: subject.subjectId }, select: { paymentReceivedAt: true } });
+      if (seeker?.paymentReceivedAt) {
+        const open = await this.prisma.reviewFlag.findFirst({
+          where: { kind: 'wrong_number_paid', subjectType: 'job_seeker', subjectId: subject.subjectId, status: 'open' },
+          select: { id: true },
+        });
+        if (!open) {
+          await this.reviewFlags.raise({
+            kind: 'wrong_number_paid',
+            subjectType: 'job_seeker',
+            subjectId: subject.subjectId,
+            raisedForStaffId: actor.id,
+            details: { callRecordId: row.id, callCode: row.code },
+          });
+        }
+      }
+    }
+  }
+
+  /**
+   * A Team Lead (own team's people), Manager or the CEO lifts a wrong number or
+   * do not call, with a reason (audited).
+   */
+  async liftContactBlock(actor: CallActor, subjectType: string, subjectId: string, kind: string, reason: string | undefined) {
+    if (!['team_lead', 'manager', 'ceo'].includes(actor.role)) {
+      throw new ForbiddenException('Only a Team Lead, Manager or the CEO lifts a wrong number or do not call');
+    }
+    if (kind !== 'wrong_number' && kind !== 'do_not_call') throw new BadRequestException('kind is wrong_number or do_not_call');
+    const why = typeof reason === 'string' ? reason.trim() : '';
+    if (!why) throw new BadRequestException('A reason is needed');
+    const live = await this.prisma.contactBlock.findUnique({ where: { liveKey: liveKeyOf({ subjectType, subjectId }, kind) } });
+    if (!live) throw new NotFoundException('No live block of that kind for this person');
+    if (actor.role === 'team_lead') {
+      // Decided by who looks after the person (assigned, else registering agent; a business's
+      // account agent, else lead creator); only a person nobody looks after falls back to who recorded it.
+      const owners = await this.ownersOf(subjectType, subjectId);
+      const candidates = owners.length ? owners : [live.byStaffId].filter((x): x is string => Boolean(x));
+      let mine = false;
+      for (const owner of candidates) if (await this.team.includes(actor.id, owner)) mine = true;
+      if (!mine) throw new ForbiddenException("A Team Lead lifts a block only for their own team's people");
+    }
+    const lifted = await this.prisma.contactBlock.updateMany({
+      where: { id: live.id, liftedAt: null },
+      data: { liftedAt: this.clock.now(), liftedByStaffId: actor.id, liftReason: why.slice(0, 300), liveKey: null },
+    });
+    if (lifted.count !== 1) throw new NotFoundException('No live block of that kind for this person');
+    await this.auditService.log({
+      actorId: actor.id,
+      action: 'call.contact_block_lifted',
+      entityType: subjectType,
+      entityCode: subjectId,
+      before: { kind },
+      after: { lifted: true },
+      changedFields: ['contactBlock'],
+      reason: why,
+    });
+    return { lifted: true, kind };
+  }
+
+  private async closeNotAttemptedFlags(subjectType: string, subjectId: string, callCode: string): Promise<void> {
+    const open = await this.prisma.reviewFlag.findMany({
+      where: { kind: 'signup_call_not_attempted', subjectType, subjectId, status: 'open' },
+      select: { id: true },
+    });
+    for (const flag of open) {
+      const done = await this.prisma.reviewFlag.updateMany({
+        where: { id: flag.id, status: 'open' },
+        data: { status: 'resolved', resolvedAt: this.clock.now(), resolution: `Call placed (${callCode})` },
+      });
+      if (done.count) await this.reviewFlags.refreshBell(flag.id).catch(() => undefined);
+    }
+  }
+
+  private async ownersOf(subjectType: string, subjectId: string): Promise<string[]> {
+    if (subjectType === 'job_seeker' || subjectType === 'referral') {
+      const row =
+        subjectType === 'job_seeker'
+          ? await this.prisma.jobSeeker.findUnique({ where: { id: subjectId }, select: { assignedStaffId: true, registeredByStaffId: true } })
+          : await this.prisma.referral.findUnique({ where: { id: subjectId }, select: { assignedStaffId: true, registeredByStaffId: true } });
+      const owner = row?.assignedStaffId ?? row?.registeredByStaffId;
+      return owner ? [owner] : [];
+    }
+    if (subjectType === 'business') {
+      const b = await this.prisma.business.findUnique({ where: { id: subjectId }, select: { accountAgentId: true, leadCreatedByStaffId: true } });
+      const owner = b?.accountAgentId ?? b?.leadCreatedByStaffId;
+      return owner ? [owner] : [];
+    }
+    return [];
   }
 
   /** A callback must be in the future and inside the calling hours (IST). */

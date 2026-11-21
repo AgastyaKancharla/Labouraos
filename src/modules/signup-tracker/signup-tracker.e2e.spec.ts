@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import * as request from 'supertest';
 import { AppModule } from '../../app.module';
+import { CustomerTokenService } from '../../common/customer-auth/customer-token.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AttendanceClock } from '../attendance/attendance-clock';
 import { CallWorkClock } from '../screens-call-agent/call-work-clock';
@@ -195,7 +196,8 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
     const t = await makeTracker({ subjectType: 'job_seeker', subjectId: seeker.id, language: 'kn' });
     await tracker.process(t.id, await tracker.context(WED_11));
     const after = await prisma.signupTracker.findUniqueOrThrow({ where: { id: t.id } });
-    expect(after).toMatchObject({ assignedStaffId: kannadaAgent.id, assignmentReason: 'language', callTries: 1 });
+    // 21 Nov fixes: the task is on the list, but it is a try only once the agent places the call.
+    expect(after).toMatchObject({ assignedStaffId: kannadaAgent.id, assignmentReason: 'language', callTries: 0 });
     const task = await prisma.callTask.findFirstOrThrow({ where: { signupTrackerId: t.id } });
     expect(task).toMatchObject({ kind: 'signup_help', staffId: kannadaAgent.id, subjectType: 'job_seeker', subjectId: seeker.id, status: 'open' });
 
@@ -228,10 +230,30 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
     expect([hindiAgent.id, kannadaAgent.id]).toContain(after.assignedStaffId);
   });
 
-  it('respects the contact-me tick: without it no call task, only reminders', async () => {
+  it('without the contact-me tick an OTP-verified sign-up gets exactly one help call (21 Nov fixes); after that try it is closed', async () => {
     const account = await prisma.customerAccount.create({
       data: { phone: phone(), phoneVerifiedAt: WED_11, createdVia: 'phone', contactMeConsent: false },
     });
+    accountIds.push(account.id);
+    const seeker = await makeSeeker('One Call Appsignup');
+    const t = await makeTracker({ subjectType: 'job_seeker', subjectId: seeker.id, contactConsent: false, accountId: account.id });
+    await tracker.process(t.id, await tracker.context(WED_11));
+    const task = await prisma.callTask.findFirstOrThrow({ where: { signupTrackerId: t.id } });
+    expect(task).toMatchObject({ kind: 'signup_help', status: 'open' });
+    // The agent places the call; nobody answers.
+    await prisma.callRecord.create({
+      data: { code: `CR-SU-ONE-${stamp}`, provider: 'mock', providerCallId: `su-one-${stamp}`, providerStatus: 'no_answer', answered: false, staffId: task.staffId, subjectType: 'job_seeker', subjectId: seeker.id, direction: 'outbound', purpose: 'consent_explain', createdAt: new Date(WED_11.getTime() + 60_000) },
+    });
+    const thu = ist('2026-12-03T11:00');
+    clock.at = thu;
+    await tracker.process(t.id, await tracker.context(thu));
+    const after = await prisma.signupTracker.findUniqueOrThrow({ where: { id: t.id } });
+    expect(after).toMatchObject({ callTries: 1, outcome: 'no_response' });
+    expect(await prisma.callTask.count({ where: { signupTrackerId: t.id } })).toBe(1);
+  });
+
+  it('without the tick and without a verified mobile: no call task, only reminders', async () => {
+    const account = await prisma.customerAccount.create({ data: { createdVia: 'google', contactMeConsent: false } });
     accountIds.push(account.id);
     const seeker = await makeSeeker('No Calls Appsignup');
     const t = await makeTracker({ subjectType: 'job_seeker', subjectId: seeker.id, contactConsent: false, accountId: account.id });
@@ -239,6 +261,37 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
     expect(await prisma.callTask.count({ where: { signupTrackerId: t.id } })).toBe(0);
     const after = await prisma.signupTracker.findUniqueOrThrow({ where: { id: t.id } });
     expect(after.nextActionAt!.getTime()).toBeGreaterThan(WED_11.getTime());
+  });
+
+  it('a help task nobody called is not a try: it stays open on the list and the Team Lead is told once (21 Nov fixes)', async () => {
+    const seeker = await makeSeeker('Not Called Appsignup');
+    const t = await makeTracker({ subjectType: 'job_seeker', subjectId: seeker.id });
+    await tracker.process(t.id, await tracker.context(WED_11));
+    const task = await prisma.callTask.findFirstOrThrow({ where: { signupTrackerId: t.id } });
+    for (const at of [ist('2026-12-03T11:00'), ist('2026-12-03T12:00'), ist('2026-12-04T11:00')]) {
+      clock.at = at;
+      await tracker.process(t.id, await tracker.context(at));
+    }
+    expect(await prisma.callTask.findUniqueOrThrow({ where: { id: task.id } })).toMatchObject({ status: 'open' });
+    expect(await prisma.callTask.count({ where: { signupTrackerId: t.id } })).toBe(1);
+    const after = await prisma.signupTracker.findUniqueOrThrow({ where: { id: t.id } });
+    expect(after).toMatchObject({ callTries: 0, outcome: 'open' });
+    const flags = await prisma.reviewFlag.findMany({ where: { kind: 'signup_call_not_attempted', subjectId: seeker.id } });
+    expect(flags).toHaveLength(1);
+    expect(flags[0]).toMatchObject({ raisedForStaffId: task.staffId, status: 'open' });
+  });
+
+  it('giving the contact-me tick later re-plans the sign-up at once and reopens one closed only because nobody could call', async () => {
+    const account = await prisma.customerAccount.create({ data: { createdVia: 'google', contactMeConsent: false } });
+    accountIds.push(account.id);
+    const seeker = await makeSeeker('Late Tick Appsignup');
+    const t = await makeTracker({ subjectType: 'job_seeker', subjectId: seeker.id, contactConsent: false, accountId: account.id });
+    await prisma.signupTracker.update({ where: { id: t.id }, data: { outcome: 'no_response', nextActionAt: ist('2027-01-01T10:00') } });
+    await prisma.customerAccount.update({ where: { id: account.id }, data: { contactMeConsent: true, contactMeConsentAt: WED_11 } });
+    await tracker.onContactConsentChanged(account.id);
+    const after = await prisma.signupTracker.findUniqueOrThrow({ where: { id: t.id } });
+    expect(after).toMatchObject({ outcome: 'open', contactConsent: true });
+    expect(await prisma.callTask.count({ where: { signupTrackerId: t.id, status: 'open' } })).toBe(1);
   });
 
   it('waits for the next working morning, skipping Sunday and a public holiday', async () => {
@@ -257,10 +310,11 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
     const t = await makeTracker({ stage: 'A', accountId: account.id, remindersSent: 0, stoppedAt: ist('2026-12-02T06:00') });
     await tracker.process(t.id, await tracker.context(WED_11));
     const after = await prisma.signupTracker.findUniqueOrThrow({ where: { id: t.id } });
-    // The notification service is not connected yet: the reminders are recorded as due, never as sent.
-    expect(after.remindersSent).toBe(0);
-    expect(await prisma.signupTrackerEvent.count({ where: { trackerId: t.id, kind: 'reminder' } })).toBe(0);
-    expect(await prisma.signupTrackerEvent.count({ where: { trackerId: t.id, kind: 'reminder_due' } })).toBe(2);
+    // 21 Nov fixes: the reminders really go out (inbox + push through the customer notification service).
+    expect(after.remindersSent).toBe(2);
+    expect(await prisma.signupTrackerEvent.count({ where: { trackerId: t.id, kind: 'reminder' } })).toBe(2);
+    expect(await prisma.signupTrackerEvent.count({ where: { trackerId: t.id, kind: 'reminder_due' } })).toBe(0);
+    expect(await prisma.customerInboxMessage.count({ where: { accountId: account.id, kind: 'signup_reminder' } })).toBe(2);
     expect(await prisma.callTask.count({ where: { signupTrackerId: t.id } })).toBe(0);
     // Nobody may call: it waits until the tries window ends (a fixed time), never overdue every 5 minutes.
     expect(after.nextActionAt!.getTime()).toBeGreaterThan(WED_11.getTime());
@@ -383,6 +437,8 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
     // A business is called 4 hours after it stopped (09:45 → 13:45): not yet at 11:00.
     expect(await prisma.callTask.count({ where: { signupTrackerId: t.id } })).toBe(0);
     expect((await prisma.signupTracker.findUniqueOrThrow({ where: { id: t.id } })).nextActionAt).toEqual(ist('2026-12-02T13:45'));
+    // 21 Nov fixes: the suggested field agent's Team Lead gets a bell until a field agent is sent.
+    expect(await prisma.notification.count({ where: { kind: 'signup_visit_request', subjectId: request0.id, recipientStaffId: lead1.id, clearedAt: null } })).toBe(1);
 
     const list = await request(app.getHttpServer()).get('/businesses/visit-assignments').set('Authorization', `Bearer ${token(lead1)}`).expect(200);
     expect(list.body.map((a: { id: string }) => a.id)).toContain(request0.id);
@@ -403,6 +459,8 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
       .set('Authorization', `Bearer ${token(lead1)}`)
       .send({ assignedStaffId: fieldAgent.id })
       .expect(201);
+    await tracker.process(t.id, await tracker.context(WED_11));
+    expect(await prisma.notification.count({ where: { kind: 'signup_visit_request', subjectId: request0.id, clearedAt: null } })).toBe(0);
     const visits = await request(app.getHttpServer()).get('/field-work/visits').set('Authorization', `Bearer ${token(fieldAgent)}`).expect(200);
     const planned = visits.body.planned.find((p: { assignmentId: string }) => p.assignmentId === request0.id);
     expect(planned).toMatchObject({ purpose: 'business_signup', requestedFor: ist('2026-12-03T11:00').toISOString() });
@@ -497,14 +555,47 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
       expect(due).toBe(0);
     });
 
-    it('H3: withdrawing the contact-me tick takes the queued call off the list; the account’s tick wins over the tracker’s copy', async () => {
+    it('H3: withdrawing the contact-me tick in the app (PATCH /me) takes the queued call off the list, drops the "not called" flag and never leaves a help call; a late tick plans it again', async () => {
       const account = await makeAccount();
-      const { t } = await seekerTracker('Consent Appsignup', { accountId: account.id, contactConsent: true });
+      const tokens = app.get(CustomerTokenService);
+      const session = await prisma.customerSession.create({
+        data: { accountId: account.id, refreshTokenHash: tokens.hashRefreshToken(`h3-${stamp}`), signedInWith: 'phone', expiresAt: new Date(Date.now() + 86_400_000) },
+      });
+      const patchMe = (contactMe: boolean) =>
+        request(app.getHttpServer()).patch('/customer-api/v1/me').set('Authorization', `Bearer ${tokens.signAccess(account.id, session.id).accessToken}`).send({ contactMe });
+      await patchMe(true).expect(200);
+      const { seeker, t } = await seekerTracker('Consent Appsignup', { accountId: account.id, contactConsent: true });
       await tracker.process(t.id, await tracker.context(WED_11));
       expect(await prisma.callTask.count({ where: { signupTrackerId: t.id, status: 'open' } })).toBe(1);
-      await prisma.customerAccount.update({ where: { id: account.id }, data: { contactMeConsent: false } });
-      await tracker.onSignupChanged(t.id);
+      const flag = await prisma.reviewFlag.create({ data: { code: `RF-H3-${stamp}`, kind: 'signup_call_not_attempted', subjectType: 'job_seeker', subjectId: seeker.id, status: 'open' } });
+      await patchMe(false).expect(200);
       expect(await prisma.callTask.count({ where: { signupTrackerId: t.id, status: 'open' } })).toBe(0);
+      expect(await prisma.reviewFlag.findUniqueOrThrow({ where: { id: flag.id } })).toMatchObject({ status: 'dismissed' });
+      // Later runs never bring the "one help call" back after a withdrawal.
+      for (const at of [ist('2026-12-03T11:00'), ist('2026-12-04T11:00')]) {
+        clock.at = at;
+        await tracker.process(t.id, await tracker.context(at));
+        expect(await prisma.callTask.count({ where: { signupTrackerId: t.id, status: 'open' } })).toBe(0);
+      }
+      clock.at = WED_11;
+      await patchMe(true).expect(200);
+      expect(await prisma.callTask.count({ where: { signupTrackerId: t.id, status: 'open' } })).toBe(1);
+      await prisma.customerSession.deleteMany({ where: { accountId: account.id } });
+    });
+
+    it('no in-app reminder (nor a monthly nudge) after the contact-me tick is withdrawn', async () => {
+      const account = await prisma.customerAccount.create({
+        data: { phone: phone(), phoneVerifiedAt: WED_11, createdVia: 'phone', contactMeConsent: false, contactMeNoticeVersion: 'contact-me-2026-11-14' },
+      });
+      accountIds.push(account.id);
+      const t = await makeTracker({ stage: 'A', accountId: account.id, remindersSent: 0, contactConsent: false, stoppedAt: ist('2026-12-02T06:00') });
+      await tracker.process(t.id, await tracker.context(WED_11));
+      expect(await prisma.signupTrackerEvent.count({ where: { trackerId: t.id, kind: { in: ['reminder', 'reminder_due'] } } })).toBe(0);
+      expect(await prisma.customerInboxMessage.count({ where: { accountId: account.id, kind: 'signup_reminder' } })).toBe(0);
+      await prisma.signupTracker.update({ where: { id: t.id }, data: { outcome: 'no_response', nextActionAt: WED_11 } });
+      await tracker.process(t.id, await tracker.context(WED_11));
+      expect(await prisma.signupTracker.findUniqueOrThrow({ where: { id: t.id } })).toMatchObject({ nextActionAt: null });
+      expect(await prisma.signupTrackerEvent.count({ where: { trackerId: t.id, kind: { in: ['reengage', 'reengage_due'] } } })).toBe(0);
     });
 
     it('H3: an account that asked to be deleted stops everything, with no re-engagement', async () => {
@@ -522,7 +613,8 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
       const ctx = await tracker.context(WED_11);
       await Promise.all([tracker.process(t.id, ctx), tracker.process(t.id, ctx), tracker.onSignupChanged(t.id)]);
       expect(await prisma.callTask.count({ where: { signupTrackerId: t.id } })).toBe(1);
-      expect((await prisma.signupTracker.findUniqueOrThrow({ where: { id: t.id } })).callTries).toBe(1);
+      // Not a try until the call is placed (21 Nov fixes).
+      expect((await prisma.signupTracker.findUniqueOrThrow({ where: { id: t.id } })).callTries).toBe(0);
     });
 
     it('M2: an unanswered sign-up help call adds no automatic retry on top of the sign-up tries', async () => {
@@ -644,8 +736,21 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
       await request(app.getHttpServer()).post(`/signup-tracker/visit-requests/${va2.id}/assign`).set('Authorization', `Bearer ${token(ceo)}`).send({ assignedStaffId: fieldAgent.id }).expect(201);
     });
 
-    it('a "Call me back" with no registered profile is closed, not left open forever', async () => {
+    it('a "Call me back" with no registered profile becomes a new lead on the missed-call list, tied to the verified mobile (21 Nov fixes)', async () => {
       const account = await makeAccount();
+      const cb = await prisma.customerCallbackRequest.create({ data: { accountId: account.id, topic: 'signup' } });
+      await tracker.onCallbackRequested(cb.id);
+      await tracker.onCallbackRequested(cb.id);
+      expect((await prisma.customerCallbackRequest.findUniqueOrThrow({ where: { id: cb.id } })).status).toBe('assigned');
+      const lead = await prisma.callbackTask.findMany({ where: { callId: `app-callback:${cb.id}` } });
+      expect(lead).toHaveLength(1);
+      expect(lead[0]).toMatchObject({ phone: account.phone, status: 'pending' });
+      await prisma.callbackTask.deleteMany({ where: { callId: `app-callback:${cb.id}` } });
+    });
+
+    it('a "Call me back" with no profile and no verified mobile is closed, not left open forever', async () => {
+      const account = await prisma.customerAccount.create({ data: { createdVia: 'google', contactMeConsent: true } });
+      accountIds.push(account.id);
       const cb = await prisma.customerCallbackRequest.create({ data: { accountId: account.id, topic: 'signup' } });
       await tracker.onCallbackRequested(cb.id);
       expect((await prisma.customerCallbackRequest.findUniqueOrThrow({ where: { id: cb.id } })).status).toBe('cancelled');

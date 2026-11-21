@@ -72,4 +72,6 @@ export const INTERVAL_JOB_MS = {
   customerPush: 60_000,
   /** Customer app: unfinished sign-ups (reminders at 30 min and 4 h, call tasks, closing). */
   signupTracker: 5 * 60 * 1000,
+  /** 21 Nov fixes: missed calls handed out (target: first call back within 30 minutes), their bells, no-shows. */
+  callWorkSweep: 5 * 60 * 1000,
 } as const;

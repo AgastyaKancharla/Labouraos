@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { apiError, mockApi, renderScreen, signInAs } from '../../../test/utils';
-import { homeData, NOW } from '../_lib/fixtures';
+import { homeData, NOW, workItem } from '../_lib/fixtures';
 import Home from './index';
 
 const path = { portal: 'call-agent' as const, path: '/call-agent', now: NOW };
@@ -67,6 +67,39 @@ describe('Call agent Home (CA03)', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Resend →' }));
     await waitFor(() => expect(api.calls('POST /consent/links')).toHaveLength(1));
     expect(api.calls('POST /consent/links')[0]!.body).toEqual({ jobSeekerId: 'js9' });
+  });
+
+  it('21 Nov fixes: missed calls show the day and repeats; new callers stay on the list until handled; a do-not-call person is locked', async () => {
+    const api = mockApi({
+      'GET /call-work/home': homeData({
+        work: {
+          items: [
+            workItem({ key: 'inbound:cb1', kind: 'missed_call', category: 'callbacks', priority: false, daysLeft: null, guaranteeDay: null, guaranteeDays: null, dueAt: '2026-11-10T04:30:00Z', detail: { callbackTaskId: 'cb1', count: 3, lastCalledAt: '2026-11-10T05:30:00Z' } }),
+            workItem({ key: 'follow_up:f1', kind: 'follow_up', category: 'follow_ups', subjectId: 'js5', name: 'Blocked Person', priority: false, daysLeft: null, callable: false, lockedReason: 'do_not_call', detail: { followUpKind: 'not_selected_day_7' } }),
+          ],
+          counts: { all: 2, callbacks: 1, follow_ups: 1, offers: 0, new_leads: 0, priority: 0, app_signups: 0 },
+        },
+        newCallers: [{ callbackTaskId: 'cb9', callbackTaskIds: ['cb9', 'cb10'], count: 2, maskedPhone: '******7788', firstCalledAt: '2026-11-11T04:00:00Z', lastCalledAt: '2026-11-11T05:00:00Z' }],
+        stuck: [
+          { jobSeekerId: 'js9', code: 'JS-00301', name: 'Pooja Nair', maskedPhone: '******6643', trade: 'Delivery', step: 'payment_failed', failures: 2, linkLive: true, since: '2026-11-10T05:00:00Z' },
+          { jobSeekerId: 'js10', code: 'JS-00302', name: 'Waiting Wilson', maskedPhone: '******6644', trade: 'Delivery', step: 'id_team_lead_check', failures: 0, linkLive: true, waitingForTeamLead: true, since: '2026-11-10T05:00:00Z' },
+        ],
+      }),
+      'POST /telephony/callbacks/cb9/complete': { ok: true },
+    });
+    signInAs('call_agent');
+    renderScreen(<Home />, path);
+    expect(await screen.findByText('Called us 3× · last Yesterday 11 AM')).toBeInTheDocument();
+    expect(screen.getByText(/asked not to be called/)).toBeInTheDocument();
+    const callers = screen.getByTestId('new-callers');
+    expect(within(callers).getByText('New callers (1)')).toBeInTheDocument();
+    expect(within(callers).getByRole('link', { name: /New caller \*\*\*\*\*\*7788 — register as…/ })).toHaveAttribute('href', expect.stringContaining('task=cb9'));
+    // Waiting for the Team Lead's ID check: no Resend, not counted as stuck.
+    expect(screen.getByText('Stuck registrations (1)')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Resend →' })).toHaveLength(1);
+    expect(screen.getByText('nothing to do — the Team Lead checks the ID')).toBeInTheDocument();
+    await userEvent.click(within(callers).getByRole('button', { name: 'Not a lead' }));
+    await waitFor(() => expect(api.calls('POST /telephony/callbacks/cb9/complete')).toHaveLength(1));
   });
 
   it('shows the empty list and an error with retry', async () => {

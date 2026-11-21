@@ -1,0 +1,793 @@
+import { INestApplication } from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
+import { JwtService } from '@nestjs/jwt';
+import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
+import * as request from 'supertest';
+import { CallRecord } from '@prisma/client';
+import { AppModule } from '../../app.module';
+import { PrismaService } from '../../common/prisma/prisma.service';
+import { AuditService } from '../../common/audit/audit.service';
+import { CallClock } from '../call/call-clock';
+import { CallService } from '../call/call.service';
+import { CallFollowThroughService, RETRY_UNANSWERED_LIMIT } from '../call/call-follow-through.service';
+import { AttendanceClock } from '../attendance/attendance-clock';
+import { ConsentClock } from '../consent/consent-clock';
+import { PricingService } from '../pricing/pricing.service';
+import { encryptCallRoutingPhone } from '../staff/call-routing-key';
+import { openAvailableDay } from '../../test-support/available-day';
+import { MissedCallAssigner } from '../telephony/missed-call-assigner.service';
+import { InboundCallRouter } from '../telephony/inbound-call-router.service';
+import { FollowUpHandoverService } from '../follow-up/follow-up-handover.service';
+import { WorkHandoverService, FIELD_HANDOVER, WHATSAPP_HANDOVER } from '../follow-up/work-handover.service';
+import { CallWorkClock } from './call-work-clock';
+import { ConsentLinkService } from '../consent/consent-link.service';
+import { phoneHash, liveKeyOf } from '../call/contact-block';
+import { NoPickupEvaluationJob } from '../../jobs/no-pickup-evaluation.job';
+import { SignupTrackerService } from '../signup-tracker/signup-tracker.service';
+
+/**
+ * 21 Nov fixes (Master Guide rev 202, "Call agent and field agent fixes"), call
+ * work and leads: missed calls handed out and grouped, new callers listed, the
+ * Team Lead's missed-call list and bells, inbound routing by fewest open items,
+ * the new call results (wrong number, do not call, busy, switched off), every
+ * retry stopping after 3 tries, Assign reaching the agent's lists, and the leave
+ * and no-show handover of all open call work.
+ */
+
+/** 11:30 IST on Wednesday 11 Nov 2026: inside calling hours, 2 hours after the 09:30 shift start. */
+const NOW = new Date('2026-11-11T06:00:00.000Z');
+const MIN = 60_000;
+const DAY = 24 * 60 * MIN;
+const TELEPHONY_SECRET = 'call_work_fixes_telephony_secret_32chars';
+const ROUTING_KEY = 'call_work_fixes_routing_key_32_characters';
+
+class FrozenClock {
+  at = NOW;
+  now(): Date {
+    return this.at;
+  }
+}
+
+describe('21 Nov fixes: call work and leads', () => {
+  let app: INestApplication;
+  let prisma: PrismaService;
+  let jwt: JwtService;
+  const clock = new FrozenClock();
+  const stamp = Date.now();
+  const digits = (n: number) => `8${String(stamp).slice(-7)}${String(n).padStart(2, '0')}`;
+  const staffIds: string[] = [];
+  const seekerIds: string[] = [];
+  const phones: string[] = [];
+  let seq = 0;
+
+  const token = (s: { id: string; role: string; code: string }) => jwt.sign({ sub: s.id, role: s.role, code: s.code, email: null });
+
+  async function makeStaff(role: string, extra: { teamLeadId?: string; reportsToId?: string; routing?: string } = {}) {
+    const n = staffIds.length;
+    const staff = await prisma.staff.create({
+      data: {
+        code: `CF-${role.slice(0, 3).toUpperCase()}-${stamp}-${n}`,
+        name: `Fix ${role} ${n}`,
+        email: `cf-${role}-${stamp}-${n}@laboura.local`,
+        passwordHash: await bcrypt.hash('Fix-Password-1', 4),
+        role,
+        status: 'active',
+        teamLeadId: extra.teamLeadId ?? null,
+        reportsToId: extra.reportsToId ?? null,
+        callRoutingPhone: extra.routing ? encryptCallRoutingPhone(extra.routing) : null,
+      },
+    });
+    staffIds.push(staff.id);
+    return staff;
+  }
+
+  async function makeSeeker(data: { name: string; registeredByStaffId?: string | null; assignedStaffId?: string | null; paidDaysAgo?: number; status?: string }) {
+    const n = ++seq;
+    const phone = `+91${digits(n)}`;
+    phones.push(phone);
+    const seeker = await prisma.jobSeeker.create({
+      data: {
+        code: `JS-8${String(stamp).slice(-3)}${String(n).padStart(2, '0')}`,
+        name: data.name,
+        phone,
+        minSalary: 1500000,
+        maxSalary: 1800000,
+        preferredCallWindowStart: '09:00',
+        preferredCallWindowEnd: '21:00',
+        status: data.status ?? 'active',
+        registeredByStaffId: data.registeredByStaffId ?? null,
+        assignedStaffId: data.assignedStaffId ?? null,
+        paymentReceivedAt: data.paidDaysAgo !== undefined ? new Date(NOW.getTime() - data.paidDaysAgo * DAY) : null,
+        trades: { create: { trade: 'Electrician', isPrimary: true } },
+      },
+    });
+    seekerIds.push(seeker.id);
+    for (const purpose of ['call_recording', 'job_matching']) {
+      await prisma.consent.create({
+        data: { subjectType: 'job_seeker', subjectId: seeker.id, purpose, noticeVersion: 'fix-21nov', granted: true, language: 'en', method: 'sms_link', grantedAt: new Date(NOW.getTime() - 40 * DAY) },
+      });
+    }
+    return seeker;
+  }
+
+  async function missedCall(phone: string, minutesAgo: number, assignedToStaffId: string | null = null) {
+    if (!phones.includes(phone)) phones.push(phone);
+    return prisma.callbackTask.create({
+      data: {
+        callId: `cf-${stamp}-${++seq}`,
+        phone,
+        status: assignedToStaffId ? 'assigned' : 'pending',
+        assignedToStaffId,
+        createdAt: new Date(NOW.getTime() - minutesAgo * MIN),
+      },
+    });
+  }
+
+  async function callRecord(data: { staffId: string; subjectId: string; answered: boolean; status: string; minutesAgo?: number; purpose?: string }): Promise<CallRecord> {
+    const n = ++seq;
+    const at = new Date(NOW.getTime() - (data.minutesAgo ?? 0) * MIN);
+    return prisma.callRecord.create({
+      data: {
+        code: `CR-CF-${stamp}-${n}`,
+        provider: 'mock',
+        providerCallId: `cf-${stamp}-${n}`,
+        direction: 'outbound',
+        staffId: data.staffId,
+        subjectType: 'job_seeker',
+        subjectId: data.subjectId,
+        purpose: data.purpose ?? 'general',
+        providerStatus: data.status,
+        answered: data.answered,
+        startedAt: at,
+        answeredAt: data.answered ? at : null,
+        endedAt: new Date(at.getTime() + 30_000),
+        createdAt: at,
+      },
+    });
+  }
+
+  let manager: Awaited<ReturnType<typeof makeStaff>>;
+  let lead1: Awaited<ReturnType<typeof makeStaff>>;
+  let lead2: Awaited<ReturnType<typeof makeStaff>>;
+  let agentA: Awaited<ReturnType<typeof makeStaff>>;
+  let agentB: Awaited<ReturnType<typeof makeStaff>>;
+  let agentC: Awaited<ReturnType<typeof makeStaff>>;
+  let agentD: Awaited<ReturnType<typeof makeStaff>>;
+
+  beforeAll(async () => {
+    process.env.TELEPHONY_WEBHOOK_SECRET = TELEPHONY_SECRET;
+    process.env.CALL_ROUTING_KEY = ROUTING_KEY;
+    const moduleRef: TestingModule = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(CallClock)
+      .useValue(clock)
+      .overrideProvider(AttendanceClock)
+      .useValue(clock)
+      .overrideProvider(CallWorkClock)
+      .useValue(clock)
+      .overrideProvider(ConsentClock)
+      .useValue(clock)
+      .compile();
+    app = moduleRef.createNestApplication({ rawBody: true });
+    await app.init();
+    prisma = app.get(PrismaService);
+    jwt = app.get(JwtService);
+
+    manager = await makeStaff('manager');
+    lead1 = await makeStaff('team_lead', { reportsToId: manager.id });
+    lead2 = await makeStaff('team_lead');
+    agentA = await makeStaff('call_agent', { teamLeadId: lead1.id, routing: '+918812300001' });
+    agentB = await makeStaff('call_agent', { teamLeadId: lead1.id, routing: '+918812300002' });
+    agentC = await makeStaff('call_agent', { teamLeadId: lead2.id, routing: '+918812300003' });
+    agentD = await makeStaff('call_agent', { teamLeadId: lead2.id, routing: '+918812300004' });
+    await openAvailableDay(app, agentA.id);
+    await openAvailableDay(app, agentB.id);
+    await openAvailableDay(app, agentD.id);
+  }, 120000);
+
+  afterEach(async () => {
+    clock.at = NOW;
+    // Each test starts with empty lists for its agents.
+    await prisma.callTask.deleteMany({ where: { OR: [{ staffId: { in: staffIds } }, { subjectId: { in: seekerIds } }] } });
+    await prisma.callbackTask.deleteMany({ where: { OR: [{ phone: { in: phones } }, { assignedToStaffId: { in: staffIds } }] } });
+    await prisma.followUpTask.deleteMany({ where: { OR: [{ subjectId: { in: seekerIds } }, { assignedStaffId: { in: staffIds } }] } });
+    await prisma.notification.deleteMany({ where: { recipientStaffId: { in: staffIds } } });
+  });
+
+  afterAll(async () => {
+    if (!prisma) return;
+    await prisma.workHandover.deleteMany({ where: { fromStaffId: { in: staffIds } } });
+    await prisma.workHandoverPlan.deleteMany({ where: { staffId: { in: staffIds } } });
+    await prisma.signupTrackerEvent.deleteMany({ where: { tracker: { assignedStaffId: { in: staffIds } } } });
+    await prisma.signupTracker.deleteMany({ where: { OR: [{ assignedStaffId: { in: staffIds } }, { subjectId: { in: seekerIds } }] } });
+    await prisma.contactBlock.deleteMany({ where: { subjectId: { in: seekerIds } } });
+    await prisma.reviewFlag.deleteMany({ where: { subjectId: { in: seekerIds } } });
+    await prisma.contactAttempt.deleteMany({ where: { jobSeekerId: { in: seekerIds } } });
+    await prisma.jobSeekerHit.deleteMany({ where: { jobSeekerId: { in: seekerIds } } });
+    await prisma.messageLog.deleteMany({ where: { subjectId: { in: seekerIds } } });
+    await prisma.callRecord.deleteMany({ where: { OR: [{ staffId: { in: staffIds } }, { subjectId: { in: seekerIds } }] } });
+    await prisma.publicLink.deleteMany({ where: { subjectId: { in: seekerIds } } });
+    await prisma.consent.deleteMany({ where: { subjectId: { in: seekerIds } } });
+    await prisma.jobSeeker.deleteMany({ where: { id: { in: seekerIds } } });
+    await prisma.auditLog.deleteMany({ where: { actorId: { in: [...staffIds, 'system'] }, createdAt: { gte: new Date(stamp - 60_000) }, action: { startsWith: 'call' } } });
+    await prisma.auditLog.deleteMany({ where: { actorId: { in: staffIds } } });
+    await prisma.auditLog.deleteMany({ where: { action: { in: ['missed_call.handed_out', 'call_work.handed_over'] }, actorId: 'system' } });
+    await prisma.leaveRequest.deleteMany({ where: { staffId: { in: staffIds } } });
+    await prisma.attendanceSegment.deleteMany({ where: { day: { staffId: { in: staffIds } } } });
+    await prisma.attendanceDay.deleteMany({ where: { staffId: { in: staffIds } } });
+    await prisma.staff.updateMany({ where: { id: { in: staffIds } }, data: { teamLeadId: null, reportsToId: null } });
+    await prisma.staff.deleteMany({ where: { id: { in: staffIds } } });
+    await app.close();
+  });
+
+  // ------------------------------------------------------------------ missed calls
+
+  it('hands out missed calls: the same caller to one agent, his own agent if on shift, else the fewest open items; repeats are one row and unknown numbers a "New caller" row', async () => {
+    await onlyOurMissedCalls();
+    const assigner = app.get(MissedCallAssigner);
+    const own = await makeSeeker({ name: 'Own Missedcall', registeredByStaffId: agentA.id });
+    // agentA already has more open work than agentB.
+    for (const minutes of [10, 20, 30]) {
+      await prisma.callTask.create({ data: { staffId: agentA.id, subjectType: 'job_seeker', subjectId: own.id, kind: 'retry', dueAt: new Date(NOW.getTime() + minutes * MIN) } });
+    }
+    const unknown = `+91${digits(90)}`;
+    const first = await missedCall(unknown, 40);
+    const repeat = await missedCall(unknown, 25);
+    const known = await missedCall(own.phone, 30);
+
+    expect(await assigner.assignWaiting(NOW)).toBe(3);
+    const rows = await prisma.callbackTask.findMany({ where: { id: { in: [first.id, repeat.id, known.id] } } });
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    expect(byId.get(first.id)).toMatchObject({ assignedToStaffId: agentB.id, assignmentReason: 'fewest_open', status: 'assigned' });
+    expect(byId.get(repeat.id)).toMatchObject({ assignedToStaffId: agentB.id, assignmentReason: 'same_caller' });
+    expect(byId.get(known.id)).toMatchObject({ assignedToStaffId: agentA.id, assignmentReason: 'own_agent', jobSeekerId: own.id });
+    // A repeat run gives nothing out twice; each run that gives some out leaves one audit row (actor: the system).
+    expect(await assigner.assignWaiting(NOW)).toBe(0);
+    const audit = await prisma.auditLog.findFirst({ where: { action: 'missed_call.handed_out', actorId: 'system' }, orderBy: { createdAt: 'desc' } });
+    expect(JSON.stringify(audit?.after)).toContain(first.id);
+
+    const homeB = await request(app.getHttpServer()).get('/call-work/home').set('Authorization', `Bearer ${token(agentB)}`).expect(200);
+    expect(homeB.body.newCallers).toHaveLength(1);
+    expect(homeB.body.newCallers[0]).toMatchObject({ callbackTaskId: first.id, count: 2, maskedPhone: `******${unknown.slice(-4)}` });
+    expect(JSON.stringify(homeB.body)).not.toContain(unknown);
+
+    const homeA = await request(app.getHttpServer()).get('/call-work/home').set('Authorization', `Bearer ${token(agentA)}`).expect(200);
+    const missed = homeA.body.work.items.find((i: { kind: string }) => i.kind === 'missed_call');
+    expect(missed).toMatchObject({ subjectId: own.id, detail: { callbackTaskId: known.id, count: 1 } });
+  });
+
+  it('ranks missed calls just below callbacks due now and above callbacks due later', async () => {
+    const dueNow = await makeSeeker({ name: 'Due Now Rank' });
+    const dueLater = await makeSeeker({ name: 'Due Later Rank' });
+    const caller = await makeSeeker({ name: 'Caller Rank', registeredByStaffId: agentA.id });
+    await prisma.callTask.create({ data: { staffId: agentA.id, subjectType: 'job_seeker', subjectId: dueNow.id, kind: 'callback', dueAt: new Date(NOW.getTime() - 5 * MIN) } });
+    await prisma.callTask.create({ data: { staffId: agentA.id, subjectType: 'job_seeker', subjectId: dueLater.id, kind: 'callback', dueAt: new Date(NOW.getTime() + 60 * MIN) } });
+    await missedCall(caller.phone, 50, agentA.id);
+    const home = await request(app.getHttpServer()).get('/call-work/home').set('Authorization', `Bearer ${token(agentA)}`).expect(200);
+    const order = home.body.work.items.map((i: { subjectId: string }) => i.subjectId).filter((id: string) => [dueNow.id, dueLater.id, caller.id].includes(id));
+    expect(order).toEqual([dueNow.id, caller.id, dueLater.id]);
+  });
+
+  /** Only this file's missed calls stay open (rows other suites left behind would ring every Team Lead too). */
+  const onlyOurMissedCalls = () =>
+    prisma.callbackTask.updateMany({ where: { status: { in: ['pending', 'assigned'] }, phone: { notIn: phones } }, data: { status: 'completed' } });
+  const openBells = (recipients: string[]) =>
+    prisma.notification.findMany({ where: { kind: 'missed_call_waiting', recipientStaffId: { in: recipients }, clearedAt: null }, select: { recipientStaffId: true, title: true, body: true } });
+
+  it('bells the Team Lead after 15 minutes without a first call back and the Manager after an hour — one bell each with the count — and clears once they are called back', async () => {
+    await onlyOurMissedCalls();
+    const assigner = app.get(MissedCallAssigner);
+    const caller = await makeSeeker({ name: 'Bell Missedcall', registeredByStaffId: agentA.id });
+    const other = await makeSeeker({ name: 'Bell Missedcall Two', registeredByStaffId: agentA.id });
+    const task = await missedCall(caller.phone, 10, agentA.id);
+    await missedCall(other.phone, 10, agentA.id);
+    await assigner.sweep(NOW);
+    expect(await openBells([lead1.id, manager.id])).toEqual([]);
+
+    await assigner.sweep(new Date(NOW.getTime() + 6 * MIN));
+    const first = await openBells([lead1.id, manager.id]);
+    expect(first).toHaveLength(1);
+    expect(first[0]).toMatchObject({ recipientStaffId: lead1.id, title: '2 missed calls waiting for a call back (oldest 16 min)' });
+
+    await assigner.sweep(new Date(NOW.getTime() + 55 * MIN));
+    const later = await openBells([lead1.id, lead2.id, manager.id]);
+    expect(later.map((n) => n.recipientStaffId).sort()).toEqual([lead1.id, manager.id].sort());
+
+    // agentA calls both back (no answer): the missed calls are done, with their first try recorded.
+    for (const person of [caller, other]) {
+      const call = await callRecord({ staffId: agentA.id, subjectId: person.id, answered: false, status: 'no_answer', minutesAgo: -56 });
+      await app.get(CallFollowThroughService).onStatusChanged(null, call);
+      if (person === caller) expect(await prisma.callbackTask.findUniqueOrThrow({ where: { id: task.id } })).toMatchObject({ status: 'completed', firstAttemptAt: call.startedAt });
+    }
+    await assigner.sweep(new Date(NOW.getTime() + 60 * MIN));
+    expect(await openBells([lead1.id, manager.id])).toEqual([]);
+  });
+
+  it('a missed call nobody holds rings every Team Lead; nothing is handed out or rung outside the calling hours', async () => {
+    await onlyOurMissedCalls();
+    const assigner = app.get(MissedCallAssigner);
+    const night = new Date('2026-11-11T17:00:00.000Z'); // 22:30 IST
+    const task = await missedCall(`+91${digits(91)}`, 30);
+    expect(await assigner.sweep(night)).toEqual({ assigned: 0, waiting: 0, bells: 0 });
+    // Inside the hours, with nobody on shift to take it.
+    await prisma.attendanceDay.updateMany({ where: { staffId: { in: [agentA.id, agentB.id, agentD.id] } }, data: { logoutAt: NOW } });
+    try {
+      await assigner.sweep(NOW);
+      expect(await prisma.callbackTask.findUniqueOrThrow({ where: { id: task.id } })).toMatchObject({ assignedToStaffId: null });
+      const leads = await openBells([lead1.id, lead2.id]);
+      expect(leads.map((l) => l.recipientStaffId).sort()).toEqual([lead1.id, lead2.id].sort());
+      expect(leads[0].body).toMatch(/held by nobody/);
+    } finally {
+      await prisma.attendanceDay.updateMany({ where: { staffId: { in: [agentA.id, agentB.id, agentD.id] } }, data: { logoutAt: null } });
+    }
+  });
+
+  it("Team Lead's missed-call list: their team's and nobody's, grouped by number, with agents to give them to; agents may take one only for themselves", async () => {
+    const shared = `+91${digits(92)}`;
+    const free1 = await missedCall(shared, 30);
+    await missedCall(shared, 20);
+    const mine = await missedCall(`+91${digits(93)}`, 15, agentB.id);
+    const theirs = await missedCall(`+91${digits(94)}`, 15, agentC.id);
+
+    const list = await request(app.getHttpServer()).get('/telephony/missed-calls').set('Authorization', `Bearer ${token(lead1)}`).expect(200);
+    const ids = list.body.rows.map((r: { id: string }) => r.id);
+    expect(ids).toEqual(expect.arrayContaining([free1.id, mine.id]));
+    expect(ids).not.toContain(theirs.id);
+    expect(list.body.rows.find((r: { id: string }) => r.id === free1.id)).toMatchObject({ count: 2, holder: null, maskedPhone: `******${shared.slice(-4)}` });
+    expect(JSON.stringify(list.body)).not.toContain(shared);
+    expect(list.body.agents.map((a: { id: string }) => a.id).sort()).toEqual([agentA.id, agentB.id].sort());
+    await request(app.getHttpServer()).get('/telephony/missed-calls').set('Authorization', `Bearer ${token(agentA)}`).expect(403);
+
+    // POST /telephony/callbacks/:id/assign: an agent gives a missed call to a colleague — refused (403)
+    await request(app.getHttpServer()).post(`/telephony/callbacks/${free1.id}/assign`).set('Authorization', `Bearer ${token(agentA)}`).send({ staffId: agentB.id }).expect(403);
+    const taken = await request(app.getHttpServer()).post(`/telephony/callbacks/${free1.id}/assign`).set('Authorization', `Bearer ${token(agentA)}`).send({}).expect(201);
+    expect(taken.body).toMatchObject({ assignedToStaffId: agentA.id, assignmentReason: 'taken' });
+    // The repeat from the same number goes with it.
+    expect(await prisma.callbackTask.count({ where: { phone: shared, assignedToStaffId: agentA.id } })).toBe(2);
+    // The Team Lead gives one to their own agent; another team's stays out of reach.
+    await request(app.getHttpServer()).post(`/telephony/callbacks/${mine.id}/assign`).set('Authorization', `Bearer ${token(lead1)}`).send({ staffId: agentA.id }).expect(201);
+    await request(app.getHttpServer()).post(`/telephony/callbacks/${theirs.id}/assign`).set('Authorization', `Bearer ${token(lead1)}`).send({ staffId: agentA.id }).expect(403);
+  });
+
+  it('inbound calls go to the free agent with the fewest open items, round robin on a tie — never always the first by staff code', async () => {
+    const router = app.get(InboundCallRouter);
+    const someone = await makeSeeker({ name: 'Load Inbound' });
+    // agentD is free too (other team); give both B and D more work than A.
+    for (const staffId of [agentB.id, agentD.id]) {
+      await prisma.callTask.create({ data: { staffId, subjectType: 'job_seeker', subjectId: someone.id, kind: 'retry', dueAt: NOW } });
+    }
+    expect(await router.pickAgent({}, null)).toBe(agentA.id);
+    // Now A has the most; B and D tie: the one rung longest ago (never rung = first).
+    for (let i = 0; i < 3; i += 1) {
+      await prisma.callTask.create({ data: { staffId: agentA.id, subjectType: 'job_seeker', subjectId: someone.id, kind: 'retry', dueAt: NOW } });
+    }
+    await missedCall(`+91${digits(95)}`, 1, agentB.id);
+    await prisma.callTask.create({ data: { staffId: agentD.id, subjectType: 'job_seeker', subjectId: someone.id, kind: 'retry', dueAt: NOW } });
+    // B: 1 task + 1 missed call = 2, D: 2 tasks, A: 3. D was never rung, B was rung a minute ago.
+    expect(await router.pickAgent({}, null)).toBe(agentD.id);
+  });
+
+  it('a second inbound call never rings an agent whose first call is still ringing', async () => {
+    const router = app.get(InboundCallRouter);
+    const one = await missedCall(`+91${digits(85)}`, 0);
+    const two = await missedCall(`+91${digits(86)}`, 0);
+    const first = await router.route(one.id, one.callId, one.phone, {});
+    const second = await router.route(two.id, two.callId, two.phone, {});
+    expect(first.staffId).toBeTruthy();
+    expect(second.staffId).toBeTruthy();
+    expect(second.staffId).not.toBe(first.staffId);
+    // A call the phone system reports ringing makes the agent busy too.
+    const someone = await makeSeeker({ name: 'Ringing Out' });
+    const ringing = await callRecord({ staffId: agentA.id, subjectId: someone.id, answered: false, status: 'ringing' });
+    await prisma.callRecord.update({ where: { id: ringing.id }, data: { createdAt: new Date(), endedAt: null } });
+    for (let i = 0; i < 3; i += 1) expect(await router.pickAgent({}, null, `+91${digits(87 + i)}`)).not.toBe(agentA.id);
+    await prisma.callRecord.update({ where: { id: ringing.id }, data: { providerStatus: 'completed' } });
+  });
+
+  // ------------------------------------------------------------------ call results
+
+  it('busy and switched off count as no answer: a label on an unanswered call, a retry on one a network message picked up', async () => {
+    const calls = app.get(CallService);
+    const person = await makeSeeker({ name: 'Busy Result' });
+    const unanswered = await callRecord({ staffId: agentA.id, subjectId: person.id, answered: false, status: 'no_answer' });
+    await expect(calls.recordOutcome({ id: agentA.id, role: 'call_agent' }, unanswered.id, { agentOutcome: 'busy' })).resolves.toMatchObject({ agentOutcome: 'busy' });
+    await expect(calls.recordOutcome({ id: agentA.id, role: 'call_agent' }, unanswered.id, { agentOutcome: 'interested' })).rejects.toThrow(/not answered/);
+
+    const picked = await callRecord({ staffId: agentA.id, subjectId: person.id, answered: true, status: 'completed', minutesAgo: -1 });
+    await calls.recordOutcome({ id: agentA.id, role: 'call_agent' }, picked.id, { agentOutcome: 'switched_off' });
+    const retry = await prisma.callTask.findFirst({ where: { subjectId: person.id, kind: 'retry', status: 'open' } });
+    expect(retry).toMatchObject({ staffId: agentA.id, sourceCallRecordId: picked.id });
+    // Never a contact attempt or a hit: those come only from the phone system.
+    expect(await prisma.contactAttempt.count({ where: { callRecordId: picked.id } })).toBe(0);
+  });
+
+  it('wrong number: retries and messages stop, the person is locked on the list, and a paid job seeker goes to the Team Lead', async () => {
+    const calls = app.get(CallService);
+    const followThrough = app.get(CallFollowThroughService);
+    const person = await makeSeeker({ name: 'Wrong Number', registeredByStaffId: agentA.id, paidDaysAgo: 5 });
+    await prisma.callTask.create({ data: { staffId: agentA.id, subjectType: 'job_seeker', subjectId: person.id, kind: 'callback', dueAt: NOW } });
+    const call = await callRecord({ staffId: agentA.id, subjectId: person.id, answered: true, status: 'completed' });
+    await calls.recordOutcome({ id: agentA.id, role: 'call_agent' }, call.id, { agentOutcome: 'wrong_number' });
+
+    expect(await prisma.contactBlock.findFirst({ where: { subjectId: person.id, liftedAt: null } })).toMatchObject({ kind: 'wrong_number', byStaffId: agentA.id });
+    expect(await prisma.callTask.count({ where: { subjectId: person.id, status: 'open' } })).toBe(0);
+    expect(await prisma.reviewFlag.findFirst({ where: { kind: 'wrong_number_paid', subjectId: person.id } })).toMatchObject({ raisedForStaffId: agentA.id, status: 'open' });
+
+    // A later unanswered call: no retry, no WhatsApp.
+    const later = await callRecord({ staffId: agentA.id, subjectId: person.id, answered: false, status: 'no_answer', minutesAgo: -5 });
+    await followThrough.onStatusChanged(null, later);
+    expect(await prisma.callTask.count({ where: { subjectId: person.id, kind: 'retry' } })).toBe(0);
+    expect(await prisma.messageLog.count({ where: { subjectId: person.id } })).toBe(0);
+
+    // On his list (a follow-up) he is shown but cannot be dialled.
+    await prisma.followUpTask.create({ data: { code: `FUT-CF-${stamp}`, kind: 'not_selected_day_7', subjectType: 'job_seeker', subjectId: person.id, dueAt: NOW, assignedStaffId: agentA.id } });
+    const home = await request(app.getHttpServer()).get('/call-work/home').set('Authorization', `Bearer ${token(agentA)}`).expect(200);
+    expect(home.body.work.items.find((i: { subjectId: string }) => i.subjectId === person.id)).toMatchObject({ callable: false, lockedReason: 'wrong_number' });
+    // A new number lifts it by itself.
+    await prisma.jobSeeker.update({ where: { id: person.id }, data: { phone: `+91${digits(80)}` } });
+    phones.push(`+91${digits(80)}`);
+    const again = await request(app.getHttpServer()).get('/call-work/home').set('Authorization', `Bearer ${token(agentA)}`).expect(200);
+    expect(again.body.work.items.find((i: { subjectId: string }) => i.subjectId === person.id)?.lockedReason).not.toBe('wrong_number');
+  });
+
+  it('do not call blocks calls until a Team Lead of the team lifts it with a reason (audited)', async () => {
+    const calls = app.get(CallService);
+    const person = await makeSeeker({ name: 'Do Not Call' });
+    const call = await callRecord({ staffId: agentA.id, subjectId: person.id, answered: true, status: 'completed' });
+    await calls.recordOutcome({ id: agentA.id, role: 'call_agent' }, call.id, { agentOutcome: 'do_not_call' });
+    await expect(calls.place({ id: agentA.id, role: 'call_agent' }, { subjectType: 'job_seeker', subjectId: person.id, purpose: 'general' })).rejects.toThrow(/do not call/);
+    const profile = await request(app.getHttpServer()).get(`/call-work/people/${person.code}`).set('Authorization', `Bearer ${token(agentA)}`).expect(200);
+    expect(profile.body).toMatchObject({ contactBlocks: ['do_not_call'], canCallNow: false });
+
+    const lift = (who: { id: string; role: string; code: string }, body: Record<string, string>) =>
+      request(app.getHttpServer()).post('/contact-blocks/lift').set('Authorization', `Bearer ${token(who)}`).send({ subjectType: 'job_seeker', subjectId: person.id, kind: 'do_not_call', ...body });
+    await lift(agentA, { reason: 'x' }).expect(403);
+    await lift(lead2, { reason: 'other team' }).expect(403);
+    await lift(lead1, {}).expect(400);
+    await lift(lead1, { reason: 'He called in and asked us to call again' }).expect(201);
+    expect(await prisma.contactBlock.findFirst({ where: { subjectId: person.id } })).toMatchObject({ liftedByStaffId: lead1.id, liveKey: null });
+    expect(await prisma.auditLog.count({ where: { action: 'call.contact_block_lifted', actorId: lead1.id } })).toBe(1);
+    await expect(calls.place({ id: agentA.id, role: 'call_agent' }, { subjectType: 'job_seeker', subjectId: person.id, purpose: 'general' })).resolves.toHaveProperty('callRecordId');
+  });
+
+  it('a blocked person gets no automatic message from any path: the no-pickup job (no notice, no hit), a link resend, the sign-up tracker', async () => {
+    const calls = app.get(CallService);
+    const blocked = await makeSeeker({ name: 'Blocked Everywhere' });
+    const free = await makeSeeker({ name: 'Free Nopickup', paidDaysAgo: 3 });
+    const call = await callRecord({ staffId: agentA.id, subjectId: blocked.id, answered: true, status: 'completed', minutesAgo: 600 });
+    await calls.recordOutcome({ id: agentA.id, role: 'call_agent' }, call.id, { agentOutcome: 'do_not_call' });
+    // An AM and a PM no-pickup yesterday for both.
+    for (const person of [blocked, free]) {
+      for (const [timeOfDay, at] of [['am', '2026-11-10T04:30:00.000Z'], ['pm', '2026-11-10T11:30:00.000Z']] as const) {
+        await prisma.contactAttempt.create({ data: { jobSeekerId: person.id, channel: 'call', outcome: 'no_pickup', attemptedAt: new Date(at), timeOfDay } });
+      }
+    }
+    const job = app.get(NoPickupEvaluationJob);
+    await job.evaluateNoPickups();
+    await job.evaluateNoPickups();
+    expect(await prisma.messageLog.count({ where: { subjectId: blocked.id, template: 'call_attempt_notice' } })).toBe(0);
+    expect(await prisma.jobSeekerHit.count({ where: { jobSeekerId: blocked.id } })).toBe(0);
+    // Someone not blocked gets the notice once, never again on the next run.
+    expect(await prisma.messageLog.count({ where: { subjectId: free.id, template: 'call_attempt_notice' } })).toBe(1);
+
+    // POST /consent/links (Resend): refused with a clear message.
+    const resend = await request(app.getHttpServer()).post('/consent/links').set('Authorization', `Bearer ${token(agentA)}`).send({ jobSeekerId: blocked.id }).expect(409);
+    expect(resend.body.message).toMatch(/do not call/);
+
+    // The sign-up tracker stops.
+    const tracker = await prisma.signupTracker.create({ data: { profileKind: 'job_seeker', subjectType: 'job_seeker', subjectId: blocked.id, stage: 'B', contactConsent: true } });
+    await app.get(SignupTrackerService).onSignupChanged(tracker.id);
+    expect(await prisma.signupTracker.findUniqueOrThrow({ where: { id: tracker.id } })).toMatchObject({ outcome: 'gave_up' });
+    expect(await prisma.callTask.count({ where: { signupTrackerId: tracker.id, status: 'open' } })).toBe(0);
+    await prisma.jobSeekerHit.deleteMany({ where: { jobSeekerId: { in: [blocked.id, free.id] } } });
+  });
+
+  it("a Team Lead lifts a block for the people their team looks after, whoever recorded it", async () => {
+    const calls = app.get(CallService);
+    const theirs = await makeSeeker({ name: 'Other Team Person', registeredByStaffId: agentC.id });
+    const call = await callRecord({ staffId: agentA.id, subjectId: theirs.id, answered: true, status: 'completed' });
+    await calls.recordOutcome({ id: agentA.id, role: 'call_agent' }, call.id, { agentOutcome: 'do_not_call' });
+    const lift = (who: { id: string; role: string; code: string }) =>
+      request(app.getHttpServer()).post('/contact-blocks/lift').set('Authorization', `Bearer ${token(who)}`).send({ subjectType: 'job_seeker', subjectId: theirs.id, kind: 'do_not_call', reason: 'asked again' });
+    await lift(lead1).expect(403);
+    await lift(lead2).expect(201);
+  });
+
+  it(`every retry stops after ${RETRY_UNANSWERED_LIMIT} unanswered tries in a row and the Team Lead is told once`, async () => {
+    const followThrough = app.get(CallFollowThroughService);
+    const person = await makeSeeker({ name: 'Three Tries' });
+    for (let i = 1; i <= RETRY_UNANSWERED_LIMIT + 1; i += 1) {
+      const call = await callRecord({ staffId: agentA.id, subjectId: person.id, answered: false, status: 'no_answer', minutesAgo: 100 - i * 10 });
+      await followThrough.onStatusChanged(null, call);
+      const open = await prisma.callTask.count({ where: { subjectId: person.id, kind: 'retry', status: 'open' } });
+      expect([i, open]).toEqual([i, i < RETRY_UNANSWERED_LIMIT ? 1 : 0]);
+    }
+    expect(await prisma.reviewFlag.count({ where: { kind: 'calls_unanswered', subjectId: person.id } })).toBe(1);
+    // Once he is reached the count starts again.
+    expect(await followThrough.unansweredInARow('job_seeker', person.id)).toBe(RETRY_UNANSWERED_LIMIT + 1);
+    await callRecord({ staffId: agentA.id, subjectId: person.id, answered: true, status: 'completed', minutesAgo: 1 });
+    expect(await followThrough.unansweredInARow('job_seeker', person.id)).toBe(0);
+  });
+
+  // ------------------------------------------------------------------ Assign reaches the lists
+
+  it("a Team Lead's Assign puts the person on the assigned agent's lists (close to a refund, stuck registrations), not the registering agent's", async () => {
+    const near = await makeSeeker({ name: 'Assigned Near Refund', registeredByStaffId: agentA.id, assignedStaffId: agentB.id, paidDaysAgo: 26 });
+    const stuck = await makeSeeker({ name: 'Assigned Stuck', registeredByStaffId: agentA.id, assignedStaffId: agentB.id, status: 'lead' });
+    await prisma.publicLink.create({
+      data: { tokenHash: crypto.randomBytes(16).toString('hex'), purpose: 'registration', subjectType: 'job_seeker', subjectId: stuck.id, phone: stuck.phone, expiresAt: new Date(NOW.getTime() + DAY) },
+    });
+    const homeB = await request(app.getHttpServer()).get('/call-work/home').set('Authorization', `Bearer ${token(agentB)}`).expect(200);
+    expect(homeB.body.work.items.find((i: { subjectId: string }) => i.subjectId === near.id)).toMatchObject({ kind: 'close_to_refund', priority: true });
+    expect(homeB.body.stuck.map((s: { jobSeekerId: string }) => s.jobSeekerId)).toContain(stuck.id);
+    const homeA = await request(app.getHttpServer()).get('/call-work/home').set('Authorization', `Bearer ${token(agentA)}`).expect(200);
+    expect(homeA.body.work.items.map((i: { subjectId: string }) => i.subjectId)).not.toContain(near.id);
+    expect(homeA.body.stuck.map((s: { jobSeekerId: string }) => s.jobSeekerId)).not.toContain(stuck.id);
+  });
+
+  it('"Waiting for the Team Lead\'s ID check" is not stuck work: listed without Resend, never a call row', async () => {
+    const waiting = await makeSeeker({ name: 'Waiting Idcheck', registeredByStaffId: agentA.id, status: 'consented' });
+    for (const purpose of ['profile_sharing', 'aadhaar_verification', 'job_updates']) {
+      await prisma.consent.create({ data: { subjectType: 'job_seeker', subjectId: waiting.id, purpose, noticeVersion: 'fix-21nov', granted: true, language: 'en', method: 'sms_link', grantedAt: NOW } });
+    }
+    await prisma.jobSeeker.update({ where: { id: waiting.id }, data: { photoStoragePath: `job-seekers/${waiting.id}/selfie.jpg` } });
+    await prisma.identityVerification.create({ data: { jobSeekerId: waiting.id, method: 'other_id', vendor: 'team_lead', status: 'pending' } });
+    await prisma.publicLink.create({
+      data: { tokenHash: crypto.randomBytes(16).toString('hex'), purpose: 'registration', subjectType: 'job_seeker', subjectId: waiting.id, phone: waiting.phone, expiresAt: new Date(NOW.getTime() + DAY) },
+    });
+    const home = await request(app.getHttpServer()).get('/call-work/home').set('Authorization', `Bearer ${token(agentA)}`).expect(200);
+    expect(home.body.stuck.find((s: { jobSeekerId: string }) => s.jobSeekerId === waiting.id)).toMatchObject({ step: 'id_team_lead_check', waitingForTeamLead: true });
+    expect(home.body.work.items.map((i: { subjectId: string }) => i.subjectId)).not.toContain(waiting.id);
+  });
+
+  it('TeleCMI webhook: refused without our key; a missed call lands on the missed-call list once; an outgoing report updates our call', async () => {
+    process.env.TELECMI_WEBHOOK_KEY = 'telecmi_webhook_key_for_tests_32_chars_x';
+    process.env.TELECMI_APP_ID = '1111113';
+    try {
+      const from = digits(98);
+      phones.push(`+91${from}`);
+      const missed = { appid: 1111113, type: 'cdr', direction: 'inbound', cmiuuid: `tc-${stamp}`, status: 'missed', from: Number(from), time: NOW.getTime(), waitedsec: 30 };
+      await request(app.getHttpServer()).post('/telephony/webhook/telecmi?key=wrong').send(missed).expect(401);
+      await request(app.getHttpServer()).post('/telephony/webhook/telecmi').send(missed).expect(401);
+      const url = `/telephony/webhook/telecmi?key=${process.env.TELECMI_WEBHOOK_KEY}`;
+      const first = await request(app.getHttpServer()).post(url).send(missed).expect(201);
+      const again = await request(app.getHttpServer()).post(url).send(missed).expect(201);
+      expect(again.body).toMatchObject({ callbackTaskId: first.body.callbackTaskId, duplicate: true });
+      expect(await prisma.callbackTask.findUniqueOrThrow({ where: { id: first.body.callbackTaskId } })).toMatchObject({ status: 'pending', assignedToStaffId: null });
+
+      const person = await makeSeeker({ name: 'Telecmi Outgoing' });
+      const ours = await callRecord({ staffId: agentA.id, subjectId: person.id, answered: false, status: 'initiated' });
+      await prisma.callRecord.update({ where: { id: ours.id }, data: { provider: 'telecmi' } });
+      const report = { type: 'cdr', appid: 1111113, to: Number(person.phone.slice(-10)), cmiuuid: `tco-${stamp}`, status: 'answered', user: '103_1111113', time: NOW.getTime(), direction: 'outbound', answeredsec: 75, custom: ours.id };
+      await request(app.getHttpServer()).post(url).send(report).expect(201);
+      expect(await prisma.callRecord.findUniqueOrThrow({ where: { id: ours.id } })).toMatchObject({ providerStatus: 'completed', answered: true, durationSec: 75 });
+      // Another app: refused. A call of another vendor, or one we never placed: left alone, no new record.
+      await request(app.getHttpServer()).post(url).send({ ...report, appid: 999 }).expect(401);
+      const mockCall = await callRecord({ staffId: agentA.id, subjectId: person.id, answered: false, status: 'initiated' });
+      expect((await request(app.getHttpServer()).post(url).send({ ...report, custom: mockCall.id }).expect(201)).body).toEqual({ ignored: 'no matching TeleCMI call' });
+      expect(await prisma.callRecord.findUniqueOrThrow({ where: { id: mockCall.id } })).toMatchObject({ providerStatus: 'initiated' });
+      const before = await prisma.callRecord.count();
+      expect((await request(app.getHttpServer()).post(url).send({ ...report, custom: undefined, cmiuuid: `tc-none-${stamp}` }).expect(201)).body).toEqual({ ignored: 'no matching TeleCMI call' });
+      expect(await prisma.callRecord.count()).toBe(before);
+      // A day-old report is refused.
+      expect((await request(app.getHttpServer()).post(url).send({ ...missed, cmiuuid: `tc-old-${stamp}`, time: NOW.getTime() - 25 * 3600_000 }).expect(201)).body).toEqual({ ignored: 'report time out of range' });
+      // Without TELECMI_APP_ID nothing is accepted.
+      delete process.env.TELECMI_APP_ID;
+      await request(app.getHttpServer()).post(url).send(missed).expect(401);
+    } finally {
+      delete process.env.TELECMI_WEBHOOK_KEY;
+      delete process.env.TELECMI_APP_ID;
+    }
+  });
+
+  // ------------------------------------------------------------------ leave and no-show
+
+  const leaveFor = (staffId: string, lead: string, from: string, to: string, approved?: [string, string]) =>
+    prisma.leaveRequest.create({
+      data: {
+        staffId, kind: 'casual', fromDate: new Date(`${from}T00:00:00.000Z`), toDate: new Date(`${to}T00:00:00.000Z`), days: 1, reason: 'family', status: 'approved',
+        routedToRole: 'team_lead', routedToStaffId: lead, routeReason: 'team_lead',
+        approvedFromDate: approved ? new Date(`${approved[0]}T00:00:00.000Z`) : null, approvedToDate: approved ? new Date(`${approved[1]}T00:00:00.000Z`) : null,
+      },
+    });
+  /** 07:00 IST on the leave day: before the teammates' shift starts. */
+  const LEAVE_MORNING = new Date('2026-11-12T01:30:00.000Z');
+
+  it('a leave only records the plan at approval; on the first leave morning everything open moves to the picked teammate (field and WhatsApp too) and people and sign-ups come back after it', async () => {
+    const person = await makeSeeker({ name: 'Leave Stuck', registeredByStaffId: agentA.id, status: 'lead' });
+    const near = await makeSeeker({ name: 'Leave Near', registeredByStaffId: agentA.id, paidDaysAgo: 25 });
+    const tomorrow = new Date(NOW.getTime() + DAY);
+    const task = await prisma.callTask.create({ data: { staffId: agentA.id, subjectType: 'job_seeker', subjectId: near.id, kind: 'callback', dueAt: tomorrow } });
+    const missed = await missedCall(`+91${digits(96)}`, 5, agentA.id);
+    const tracker = await prisma.signupTracker.create({ data: { profileKind: 'job_seeker', subjectType: 'job_seeker', subjectId: person.id, assignedStaffId: agentA.id, assignedAt: NOW, stage: 'B' } });
+    const leave = await leaveFor(agentA.id, lead1.id, '2026-11-12', '2026-11-12');
+    const field = { handOver: jest.fn().mockResolvedValue({ moved: 2 }) };
+    const whatsapp = { handOver: jest.fn().mockResolvedValue({ conversations: 1 }) };
+    const tokens: Record<string, unknown> = { [FIELD_HANDOVER]: field, [WHATSAPP_HANDOVER]: whatsapp };
+    const service = new WorkHandoverService(prisma, app.get(AuditService), app.get(PricingService), app.get(FollowUpHandoverService), { get: (t: string) => tokens[t] ?? null } as never);
+    expect(await service.onLeaveApproved(lead1.id, leave.id, { mode: 'teammate', staffId: agentB.id })).toEqual({ planned: 'teammate' });
+    // Approved the day before: her list today is untouched.
+    expect(await service.sweepLeaves(NOW)).toEqual({ agents: 0, moved: 0 });
+    expect(await prisma.callTask.findUniqueOrThrow({ where: { id: task.id } })).toMatchObject({ staffId: agentA.id });
+    expect(await prisma.callbackTask.findUniqueOrThrow({ where: { id: missed.id } })).toMatchObject({ assignedToStaffId: agentA.id });
+
+    const moved = await service.sweepLeaves(LEAVE_MORNING);
+    expect(moved.moved).toBeGreaterThanOrEqual(5);
+    // Builder C's FieldHandoverService signature: (agent, teammate | 'spread', { reason, actorId, leaveRequestId, until }); once per leave.
+    expect(field.handOver).toHaveBeenCalledWith(agentA.id, agentB.id, { reason: 'leave', actorId: lead1.id, leaveRequestId: leave.id, until: new Date('2026-11-12T06:30:00.000Z') });
+    // Builder D's WhatsAppInboxService.handOver(from, to | null).
+    expect(whatsapp.handOver).toHaveBeenCalledWith(agentA.id, agentB.id);
+    expect(await prisma.callTask.findUniqueOrThrow({ where: { id: task.id } })).toMatchObject({ staffId: agentB.id });
+    expect(await prisma.callbackTask.findUniqueOrThrow({ where: { id: missed.id } })).toMatchObject({ assignedToStaffId: agentB.id, assignmentReason: 'handover' });
+    expect(await prisma.jobSeeker.findUniqueOrThrow({ where: { id: person.id } })).toMatchObject({ assignedStaffId: agentB.id, registeredByStaffId: agentA.id });
+    expect(await prisma.signupTracker.findUniqueOrThrow({ where: { id: tracker.id } })).toMatchObject({ assignedStaffId: agentB.id, assignmentReason: 'handover' });
+    expect(await prisma.auditLog.count({ where: { action: 'call_work.handed_over', actorId: lead1.id } })).toBe(1);
+    // New work during the leave keeps moving; the field handover is not repeated.
+    const later = await prisma.callTask.create({ data: { staffId: agentA.id, subjectType: 'job_seeker', subjectId: near.id, kind: 'retry', dueAt: new Date('2026-11-12T08:00:00.000Z') } });
+    await service.sweepLeaves(new Date('2026-11-12T08:00:00.000Z'));
+    expect(await prisma.callTask.findUniqueOrThrow({ where: { id: later.id } })).toMatchObject({ staffId: agentB.id });
+    expect(field.handOver).toHaveBeenCalledTimes(1);
+
+    // After the leave the people and the sign-up go back; the done call work stays done.
+    expect((await service.returnAfterLeave(new Date('2026-11-12T12:00:00.000Z'))).returned).toBe(0);
+    const back = await service.returnAfterLeave(new Date('2026-11-12T19:00:00.000Z'));
+    expect(back.returned).toBeGreaterThanOrEqual(3);
+    expect(await prisma.jobSeeker.findUniqueOrThrow({ where: { id: person.id } })).toMatchObject({ assignedStaffId: agentA.id });
+    expect(await prisma.signupTracker.findUniqueOrThrow({ where: { id: tracker.id } })).toMatchObject({ assignedStaffId: agentA.id });
+    await prisma.workHandoverPlan.deleteMany({ where: { leaveRequestId: leave.id } });
+    await prisma.leaveRequest.delete({ where: { id: leave.id } });
+  });
+
+  it('"keep" moves nothing on the leave day, and a leave approved a week ahead leaves the list alone until then', async () => {
+    const someone = await makeSeeker({ name: 'Keep Leave' });
+    const task = await prisma.callTask.create({ data: { staffId: agentA.id, subjectType: 'job_seeker', subjectId: someone.id, kind: 'callback', dueAt: new Date(NOW.getTime() + DAY) } });
+    const service = app.get(WorkHandoverService);
+    const keep = await leaveFor(agentA.id, lead1.id, '2026-11-12', '2026-11-12');
+    await service.onLeaveApproved(lead1.id, keep.id, { mode: 'keep' });
+    await service.sweepLeaves(LEAVE_MORNING);
+    expect(await prisma.callTask.findUniqueOrThrow({ where: { id: task.id } })).toMatchObject({ staffId: agentA.id });
+    await prisma.workHandoverPlan.deleteMany({ where: { leaveRequestId: keep.id } });
+    await prisma.leaveRequest.delete({ where: { id: keep.id } });
+
+    const ahead = await leaveFor(agentA.id, lead1.id, '2026-11-18', '2026-11-18');
+    await service.onLeaveApproved(lead1.id, ahead.id, { mode: 'share' });
+    await service.sweepLeaves(NOW);
+    await service.sweepNoShows(NOW);
+    expect(await prisma.callTask.findUniqueOrThrow({ where: { id: task.id } })).toMatchObject({ staffId: agentA.id });
+    await prisma.workHandoverPlan.deleteMany({ where: { leaveRequestId: ahead.id } });
+    await prisma.leaveRequest.delete({ where: { id: ahead.id } });
+  });
+
+  it('a part-approved leave (asked 12–13, approved 13) moves nothing on the 12th while she works, and moves on the 13th', async () => {
+    const someone = await makeSeeker({ name: 'Part Leave' });
+    const task = await prisma.callTask.create({ data: { staffId: agentA.id, subjectType: 'job_seeker', subjectId: someone.id, kind: 'callback', dueAt: new Date('2026-11-13T06:00:00.000Z') } });
+    const leave = await leaveFor(agentA.id, lead1.id, '2026-11-12', '2026-11-13', ['2026-11-13', '2026-11-13']);
+    const service = app.get(WorkHandoverService);
+    await service.onLeaveApproved(lead1.id, leave.id, { mode: 'teammate', staffId: agentB.id });
+    clock.at = new Date('2026-11-12T04:00:00.000Z');
+    await openAvailableDay(app, agentA.id);
+    await service.sweepLeaves(new Date('2026-11-12T06:00:00.000Z'));
+    await service.sweepNoShows(new Date('2026-11-12T06:00:00.000Z'));
+    expect(await prisma.callTask.findUniqueOrThrow({ where: { id: task.id } })).toMatchObject({ staffId: agentA.id });
+    await service.sweepLeaves(new Date('2026-11-13T01:30:00.000Z'));
+    expect(await prisma.callTask.findUniqueOrThrow({ where: { id: task.id } })).toMatchObject({ staffId: agentB.id });
+    await prisma.attendanceSegment.deleteMany({ where: { day: { staffId: agentA.id, date: new Date('2026-11-12T00:00:00.000Z') } } });
+    await prisma.attendanceDay.deleteMany({ where: { staffId: agentA.id, date: new Date('2026-11-12T00:00:00.000Z') } });
+    await prisma.workHandoverPlan.deleteMany({ where: { leaveRequestId: leave.id } });
+    await prisma.leaveRequest.delete({ where: { id: leave.id } });
+  });
+
+  it('"share" spreads the open work across the team by fewest open items', async () => {
+    const extra = await makeStaff('call_agent', { teamLeadId: lead1.id });
+    const someone = await makeSeeker({ name: 'Share Leave' });
+    for (let i = 0; i < 4; i += 1) {
+      await prisma.callTask.create({ data: { staffId: agentA.id, subjectType: 'job_seeker', subjectId: someone.id, kind: 'retry', dueAt: new Date(NOW.getTime() + DAY + i * MIN) } });
+    }
+    // agentB already has two open items; extra has none.
+    for (let i = 0; i < 2; i += 1) {
+      await prisma.callTask.create({ data: { staffId: agentB.id, subjectType: 'job_seeker', subjectId: someone.id, kind: 'retry', dueAt: NOW } });
+    }
+    const leave = await leaveFor(agentA.id, lead1.id, '2026-11-12', '2026-11-12');
+    const service = app.get(WorkHandoverService);
+    await service.onLeaveApproved(lead1.id, leave.id, { mode: 'share' });
+    await service.sweepLeaves(LEAVE_MORNING);
+    // The real FieldHandoverService (FieldVisitModule) is wired in: the field step ran once for this leave.
+    expect(await prisma.workHandover.findFirst({ where: { leaveRequestId: leave.id, recordType: 'field' } })).toMatchObject({ recordId: 'moved' });
+    expect(await prisma.callTask.count({ where: { staffId: extra.id, status: 'open' } })).toBe(3);
+    expect(await prisma.callTask.count({ where: { staffId: agentB.id, status: 'open' } })).toBe(3);
+    await prisma.staff.update({ where: { id: extra.id }, data: { status: 'deactivated' } });
+    await prisma.workHandoverPlan.deleteMany({ where: { leaveRequestId: leave.id } });
+    await prisma.leaveRequest.delete({ where: { id: leave.id } });
+  });
+
+  it('own shifts: an agent whose shift starts at 12:00 is no no-show at 10:30 (or 11:30) and gets no missed calls before it starts', async () => {
+    const late = await makeStaff('call_agent', { teamLeadId: lead2.id });
+    await prisma.staff.update({ where: { id: late.id }, data: { shiftStart: '12:00', shiftEnd: '21:00' } });
+    const someone = await makeSeeker({ name: 'Late Shift Work' });
+    const task = await prisma.callTask.create({ data: { staffId: late.id, subjectType: 'job_seeker', subjectId: someone.id, kind: 'callback', dueAt: NOW } });
+    const service = app.get(WorkHandoverService);
+    await service.sweepNoShows(new Date('2026-11-11T05:00:00.000Z')); // 10:30 IST
+    await service.sweepNoShows(NOW); // 11:30 IST
+    expect(await prisma.callTask.findUniqueOrThrow({ where: { id: task.id } })).toMatchObject({ staffId: late.id });
+    // 13:05 IST, still not logged in: now he is a no-show.
+    await service.sweepNoShows(new Date('2026-11-11T07:35:00.000Z'));
+    expect(await prisma.callTask.findUniqueOrThrow({ where: { id: task.id } })).toMatchObject({ staffId: agentD.id });
+    // Logged in early (11:00) for a 12:00 shift: no missed call handed to him before 12:00.
+    clock.at = new Date('2026-11-11T05:30:00.000Z');
+    await openAvailableDay(app, late.id);
+    await onlyOurMissedCalls();
+    await prisma.attendanceDay.updateMany({ where: { staffId: { in: [agentA.id, agentB.id, agentD.id] } }, data: { logoutAt: NOW } });
+    try {
+      const waiting = await missedCall(`+91${digits(84)}`, 5);
+      await app.get(MissedCallAssigner).assignWaiting(new Date('2026-11-11T05:30:00.000Z'));
+      expect(await prisma.callbackTask.findUniqueOrThrow({ where: { id: waiting.id } })).toMatchObject({ assignedToStaffId: null });
+      await app.get(MissedCallAssigner).assignWaiting(new Date('2026-11-11T06:35:00.000Z')); // 12:05 IST
+      expect(await prisma.callbackTask.findUniqueOrThrow({ where: { id: waiting.id } })).toMatchObject({ assignedToStaffId: late.id });
+    } finally {
+      await prisma.attendanceDay.updateMany({ where: { staffId: { in: [agentA.id, agentB.id, agentD.id] } }, data: { logoutAt: null } });
+      await prisma.staff.update({ where: { id: late.id }, data: { status: 'deactivated' } });
+    }
+  });
+
+  it('a leave approved by a Manager overturning a rejection is handed over; one overturned to rejected mid-leave gives the people back at the next sweep', async () => {
+    const person = await makeSeeker({ name: 'Overturn Stuck', registeredByStaffId: agentA.id, status: 'lead' });
+    const task = await prisma.callTask.create({ data: { staffId: agentA.id, subjectType: 'job_seeker', subjectId: person.id, kind: 'callback', dueAt: new Date(NOW.getTime() + DAY) } });
+    const leave = await leaveFor(agentA.id, lead1.id, '2026-11-12', '2026-11-13');
+    await prisma.leaveRequest.update({ where: { id: leave.id }, data: { overturnedAt: NOW, overturnedByStaffId: manager.id, overturnReason: 'approve it' } });
+    const service = app.get(WorkHandoverService);
+    await service.sweepLeaves(LEAVE_MORNING);
+    expect(await prisma.callTask.findUniqueOrThrow({ where: { id: task.id } })).toMatchObject({ staffId: agentB.id });
+    expect(await prisma.jobSeeker.findUniqueOrThrow({ where: { id: person.id } })).toMatchObject({ assignedStaffId: agentB.id });
+    // Overturned again to rejected on the 12th: he is back with her at the next sweep, not on the 14th.
+    await prisma.leaveRequest.update({ where: { id: leave.id }, data: { status: 'rejected' } });
+    await service.returnAfterLeave(new Date('2026-11-12T06:00:00.000Z'));
+    expect(await prisma.jobSeeker.findUniqueOrThrow({ where: { id: person.id } })).toMatchObject({ assignedStaffId: agentA.id });
+    await prisma.leaveRequest.delete({ where: { id: leave.id } });
+  });
+
+  it('agreement and referral-terms links are refused (409) to a business or partner marked do not call or wrong number', async () => {
+    const links = app.get(ConsentLinkService);
+    const business = await prisma.business.create({ data: { code: `BZ-CF-${stamp}`, name: 'Blocked Shop', phone: `+91${digits(83)}` } });
+    const partner = await prisma.referral.create({ data: { code: `RF-CF-${stamp}`, name: 'Blocked Partner', phone: `+91${digits(82)}` } });
+    try {
+      await prisma.contactBlock.create({ data: { subjectType: 'business', subjectId: business.id, kind: 'do_not_call', phoneHash: phoneHash(business.phone), liveKey: liveKeyOf({ subjectType: 'business', subjectId: business.id }, 'do_not_call') } });
+      await prisma.contactBlock.create({ data: { subjectType: 'referral', subjectId: partner.id, kind: 'wrong_number', phoneHash: phoneHash(partner.phone), liveKey: liveKeyOf({ subjectType: 'referral', subjectId: partner.id }, 'wrong_number') } });
+      await expect(links.createAgreementLink(business.id, agentA.id)).rejects.toMatchObject({ status: 409 });
+      await expect(links.createReferralTermsLink(partner.id, agentA.id)).rejects.toMatchObject({ status: 409 });
+    } finally {
+      await prisma.contactBlock.deleteMany({ where: { subjectId: { in: [business.id, partner.id] } } });
+      await prisma.business.delete({ where: { id: business.id } });
+      await prisma.referral.delete({ where: { id: partner.id } });
+    }
+  });
+
+  it('placing a call closes the Team Lead\'s "app sign-up call not made" flag for that person, whatever the outcome', async () => {
+    const person = await makeSeeker({ name: 'Flag Close' });
+    const flag = await prisma.reviewFlag.create({ data: { code: `RF-NA-${stamp}`, kind: 'signup_call_not_attempted', subjectType: 'job_seeker', subjectId: person.id, status: 'open' } });
+    const caller = await makeStaff('call_agent', { teamLeadId: lead1.id, routing: '+918812300009' });
+    await openAvailableDay(app, caller.id);
+    await app.get(CallService).place({ id: caller.id, role: 'call_agent' }, { subjectType: 'job_seeker', subjectId: person.id, purpose: 'general' });
+    await prisma.staff.update({ where: { id: caller.id }, data: { status: 'deactivated' } });
+    expect(await prisma.reviewFlag.findUniqueOrThrow({ where: { id: flag.id } })).toMatchObject({ status: 'resolved' });
+  });
+
+  it("an agent not logged in an hour after their shift start has today's open call work spread across the teammates on shift", async () => {
+    const someone = await makeSeeker({ name: 'No Show Work' });
+    const task = await prisma.callTask.create({ data: { staffId: agentC.id, subjectType: 'job_seeker', subjectId: someone.id, kind: 'callback', dueAt: NOW } });
+    const later = await prisma.callTask.create({ data: { staffId: agentC.id, subjectType: 'job_seeker', subjectId: someone.id, kind: 'callback', dueAt: new Date(NOW.getTime() + 2 * DAY) } });
+    const missed = await missedCall(`+91${digits(97)}`, 30, agentC.id);
+    const followUp = await prisma.followUpTask.create({ data: { code: `FUT-NS-${stamp}`, kind: 'not_selected_day_7', subjectType: 'job_seeker', subjectId: someone.id, dueAt: NOW, assignedStaffId: agentC.id } });
+    const service = app.get(WorkHandoverService);
+    // 10:15 IST: not yet an hour after 09:30.
+    expect((await service.sweepNoShows(new Date('2026-11-11T04:45:00.000Z'))).moved).toBe(0);
+    await service.sweepNoShows(NOW);
+    expect(await prisma.callTask.findUniqueOrThrow({ where: { id: task.id } })).toMatchObject({ staffId: agentD.id });
+    expect(await prisma.callTask.findUniqueOrThrow({ where: { id: later.id } })).toMatchObject({ staffId: agentC.id });
+    expect(await prisma.callbackTask.findUniqueOrThrow({ where: { id: missed.id } })).toMatchObject({ assignedToStaffId: agentD.id, assignmentReason: 'no_show' });
+    expect(await prisma.followUpTask.findUniqueOrThrow({ where: { id: followUp.id } })).toMatchObject({ assignedStaffId: agentD.id });
+    // Someone logged in keeps their work.
+    const kept = await prisma.callTask.create({ data: { staffId: agentD.id, subjectType: 'job_seeker', subjectId: someone.id, kind: 'callback', dueAt: NOW } });
+    await service.sweepNoShows(NOW);
+    expect(await prisma.callTask.findUniqueOrThrow({ where: { id: kept.id } })).toMatchObject({ staffId: agentD.id });
+  });
+});
