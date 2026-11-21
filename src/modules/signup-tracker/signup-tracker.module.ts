@@ -11,6 +11,9 @@ import { SignupFactsService } from './signup-facts.service';
 import { SignupTrackerService } from './signup-tracker.service';
 import { SignupViewsService } from './signup-views.service';
 import { SignupTrackerController } from './signup-tracker.controller';
+import { SIGNUP_REMINDER_SENDER } from './signup-reminder.port';
+import { CustomerSignupReminderSender } from './signup-reminder.sender';
+import { NotificationModule } from '../notification/notification.module';
 
 /**
  * App sign-ups for the back office: tracker stages and timing, automatic
@@ -31,9 +34,18 @@ import { SignupTrackerController } from './signup-tracker.controller';
     BusinessVerificationModule,
     ReportingScopeModule,
     CustomerNotificationModule,
+    NotificationModule,
   ],
   controllers: [SignupTrackerController],
-  providers: [SignupTrackerClock, SignupFactsService, SignupTrackerService, SignupViewsService],
+  providers: [
+    SignupTrackerClock,
+    SignupFactsService,
+    SignupTrackerService,
+    SignupViewsService,
+    // 21 Nov fixes: the reminders go out through the customer notification service.
+    CustomerSignupReminderSender,
+    { provide: SIGNUP_REMINDER_SENDER, useExisting: CustomerSignupReminderSender },
+  ],
   exports: [SignupTrackerClock, SignupFactsService, SignupTrackerService, SignupViewsService],
 })
 export class SignupTrackerModule {}

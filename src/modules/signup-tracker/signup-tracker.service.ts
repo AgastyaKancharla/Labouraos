@@ -15,7 +15,9 @@ import { PricingService } from '../pricing/pricing.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { BusinessVerificationService } from '../business/business-verification.service';
 import { ReportingScopeService } from '../staff/reporting-scope.service';
-import { OwnTeam } from '../../common/rbac/own-team';
+import { OwnTeam, teamLeadOf } from '../../common/rbac/own-team';
+import { NotificationService } from '../notification/notification.service';
+import { notificationLink } from '../notification/notification.constants';
 import { SignupTrackerClock } from './signup-tracker-clock';
 import { SignupFactsService } from './signup-facts.service';
 import { SignupSettings, signupSettingsFrom } from './signup-settings';
@@ -83,6 +85,7 @@ export class SignupTrackerService {
     private readonly scope: ReportingScopeService,
     private readonly clock: SignupTrackerClock,
     @Optional() @Inject(SIGNUP_REMINDER_SENDER) private readonly reminders?: SignupReminderSender,
+    @Optional() private readonly notifications?: NotificationService,
   ) {}
 
   now(): Date {
@@ -138,6 +141,7 @@ export class SignupTrackerService {
    */
   async sweep(now: Date = this.clock.now()) {
     const ctx = await this.context(now);
+    await this.replanForConsent(ctx);
     const due = await this.prisma.signupTracker.findMany({
       where: {
         OR: [
@@ -190,8 +194,12 @@ export class SignupTrackerService {
     if (!tracker) return null;
     if (tracker.outcome === 'self' || tracker.outcome === 'assisted') return tracker;
     const account = tracker.accountId
-      ? await this.prisma.customerAccount.findUnique({ where: { id: tracker.accountId }, select: { status: true, contactMeConsent: true } })
+      ? await this.prisma.customerAccount.findUnique({ where: { id: tracker.accountId }, select: { status: true, contactMeConsent: true, phoneVerifiedAt: true } })
       : null;
+    // Keep the tracker's copy of the tick, so a change is seen and re-planned (21 Nov fixes).
+    if (account && account.contactMeConsent !== tracker.contactConsent) {
+      tracker = await this.prisma.signupTracker.update({ where: { id: tracker.id }, data: { contactConsent: account.contactMeConsent } });
+    }
     // Deleted, blocked or asked to delete: everything stops and nothing is queued.
     if (account && account.status !== 'active') {
       return this.stop(tracker, ctx, `Account ${account.status}`);
@@ -211,11 +219,17 @@ export class SignupTrackerService {
 
     // The account's own tick is the truth; the tracker's copy only when there is no account.
     const consent = account ? account.contactMeConsent : tracker.contactConsent;
-    const callable = Boolean(tracker.subjectId) && consent;
+    // 21 Nov fixes: an OTP-verified sign-up without the contact-me tick may get exactly one
+    // help call (lawyer to confirm); with the tick, the usual tries.
+    const oneHelpCall = !consent && Boolean(account?.phoneVerifiedAt);
+    const callable = Boolean(tracker.subjectId) && (consent || oneHelpCall);
+    const settings = oneHelpCall ? { ...ctx.settings, maxCallTries: 1 } : ctx.settings;
     if (!callable) await this.cancelSignupTasks(tracker, ctx);
     const subject = await this.subjectInfo(tracker);
     const window = callWindow(ctx.settings, subject.window);
     for (let step = 0; step < 4; step += 1) {
+      // Only placed calls are tries (21 Nov fixes): a task nobody called stays open and is not a try.
+      tracker = await this.syncTries(tracker);
       const lastTask = await this.prisma.callTask.findFirst({
         where: { signupTrackerId: tracker.id, kind: CALL_TASK_KIND_SIGNUP_HELP },
         orderBy: { dueAt: 'desc' },
@@ -232,7 +246,7 @@ export class SignupTrackerService {
           lastCallDueAt: lastTask?.dueAt ?? null,
           personWindow: window,
         },
-        ctx.settings,
+        settings,
         ctx.calendar,
       );
       if (plan.at.getTime() > ctx.now.getTime()) return this.setNext(tracker, plan.at);
@@ -246,7 +260,7 @@ export class SignupTrackerService {
           return this.setNext(tracker, nextCallableAt(ctx.now, ctx.calendar, window));
         }
         const created = await this.createCallTask(tracker, subject, ctx.now, ctx);
-        if (!created) return this.setNext(tracker, new Date(ctx.now.getTime() + NO_AGENT_RETRY_MS));
+        if (!created || created === 'open') return this.setNext(tracker, new Date(ctx.now.getTime() + NO_AGENT_RETRY_MS));
         tracker = created;
       } else {
         return this.closeNoResponse(tracker, ctx, callable ? `${tracker.callTries} call tries` : 'No call allowed; tries window over');
@@ -486,15 +500,16 @@ export class SignupTrackerService {
   async recordOwners(tracker: Pick<SignupTracker, 'subjectType' | 'subjectId'>): Promise<string[]> {
     if (!tracker.subjectType || !tracker.subjectId) return [];
     if (tracker.subjectType === 'job_seeker') {
-      const s = await this.prisma.jobSeeker.findUnique({ where: { id: tracker.subjectId }, select: { registeredByStaffId: true } });
-      return [s?.registeredByStaffId].filter((x): x is string => Boolean(x));
+      // A Team Lead's Assign wins (21 Nov fixes): the assigned agent, else the registering one.
+      const s = await this.prisma.jobSeeker.findUnique({ where: { id: tracker.subjectId }, select: { registeredByStaffId: true, assignedStaffId: true } });
+      return [s?.assignedStaffId ?? s?.registeredByStaffId].filter((x): x is string => Boolean(x));
     }
     if (tracker.subjectType === 'business') {
       const b = await this.prisma.business.findUnique({ where: { id: tracker.subjectId }, select: { leadCreatedByStaffId: true, accountAgentId: true } });
       return [b?.leadCreatedByStaffId, b?.accountAgentId].filter((x): x is string => Boolean(x));
     }
-    const r = await this.prisma.referral.findUnique({ where: { id: tracker.subjectId }, select: { registeredByStaffId: true } });
-    return [r?.registeredByStaffId].filter((x): x is string => Boolean(x));
+    const r = await this.prisma.referral.findUnique({ where: { id: tracker.subjectId }, select: { registeredByStaffId: true, assignedStaffId: true } });
+    return [r?.assignedStaffId ?? r?.registeredByStaffId].filter((x): x is string => Boolean(x));
   }
 
   private async subjectInfo(tracker: SignupTracker): Promise<SubjectInfo> {
@@ -526,7 +541,8 @@ export class SignupTrackerService {
       where: {
         subjectType: tracker.subjectType,
         subjectId: tracker.subjectId,
-        agentOutcome: 'not_interested',
+        // Wrong number and do not call stop the sign-up's calls too (21 Nov fixes).
+        agentOutcome: { in: ['not_interested', 'wrong_number', 'do_not_call'] },
         createdAt: { gte: tracker.createdAt },
       },
       select: { id: true },
@@ -534,13 +550,67 @@ export class SignupTrackerService {
     return Boolean(row);
   }
 
-  /** A sign-up help task due on an earlier day that is still open was a try that did not reach him. */
+  /**
+   * A sign-up help task due on an earlier day that is still open: if the agent
+   * placed a call it was a try that did not reach him (closed); if nobody
+   * called, it is not a try — it stays open on the agent's list and the Team
+   * Lead is told once (21 Nov fixes).
+   */
   private async closeMissedTasks(tracker: SignupTracker, ctx: TrackerRunContext) {
     const todayStart = new Date(istDayStartMs(ctx.now.getTime()));
-    await this.prisma.callTask.updateMany({
+    const stale = await this.prisma.callTask.findMany({
       where: { signupTrackerId: tracker.id, kind: CALL_TASK_KIND_SIGNUP_HELP, status: 'open', dueAt: { lt: todayStart } },
-      data: { status: 'cancelled', doneAt: ctx.now },
+      select: { id: true, staffId: true, createdAt: true },
     });
+    for (const task of stale) {
+      if (await this.taskWasCalled(tracker, task, ctx.now)) {
+        await this.prisma.callTask.updateMany({ where: { id: task.id, status: 'open' }, data: { status: 'cancelled', doneAt: ctx.now } });
+        continue;
+      }
+      const told = await this.prisma.signupTrackerEvent.findFirst({ where: { trackerId: tracker.id, kind: 'not_attempted', note: task.id }, select: { id: true } });
+      if (told) continue;
+      await this.event(tracker.id, 'not_attempted', { staffId: task.staffId, note: task.id, at: ctx.now });
+      if (tracker.subjectType && tracker.subjectId) {
+        await this.reviewFlags
+          .raise({
+            kind: 'signup_call_not_attempted',
+            subjectType: tracker.subjectType,
+            subjectId: tracker.subjectId,
+            raisedForStaffId: task.staffId,
+            details: { signupTrackerId: tracker.id, callTaskId: task.id },
+          })
+          .catch((err: unknown) => this.logger.warn(`Team Lead flag failed for sign-up ${tracker.id}: ${String(err)}`));
+      }
+    }
+  }
+
+  /** The agent of this task placed a call to the person while it was open. */
+  private async taskWasCalled(tracker: SignupTracker, task: { id: string; staffId: string; createdAt: Date }, now: Date): Promise<boolean> {
+    if (!tracker.subjectType || !tracker.subjectId) return false;
+    const done = await this.prisma.callTask.findUnique({ where: { id: task.id }, select: { doneAt: true } });
+    const call = await this.prisma.callRecord.findFirst({
+      where: {
+        staffId: task.staffId,
+        subjectType: tracker.subjectType,
+        subjectId: tracker.subjectId,
+        direction: 'outbound',
+        createdAt: { gte: task.createdAt, lte: done?.doneAt ?? now },
+      },
+      select: { id: true },
+    });
+    return Boolean(call);
+  }
+
+  /** callTries = the help tasks of this stop on which the agent really placed a call. */
+  private async syncTries(tracker: SignupTracker): Promise<SignupTracker> {
+    const tasks = await this.prisma.callTask.findMany({
+      where: { signupTrackerId: tracker.id, kind: CALL_TASK_KIND_SIGNUP_HELP, createdAt: { gte: tracker.stageReachedAt } },
+      select: { id: true, staffId: true, createdAt: true },
+    });
+    let tries = 0;
+    for (const task of tasks) if (await this.taskWasCalled(tracker, task, this.clock.now())) tries += 1;
+    if (tries === tracker.callTries) return tracker;
+    return this.prisma.signupTracker.update({ where: { id: tracker.id }, data: { callTries: tries } });
   }
 
   /** Every open sign-up help task for this sign-up or its person comes off the work lists. */
@@ -619,19 +689,14 @@ export class SignupTrackerService {
     subject: SubjectInfo,
     dueAt: Date,
     ctx: TrackerRunContext,
-  ): Promise<SignupTracker | null> {
+  ): Promise<SignupTracker | 'open' | null> {
     if (!tracker.subjectType || !tracker.subjectId) return null;
     const open = await this.prisma.callTask.findFirst({
       where: { signupTrackerId: tracker.id, kind: CALL_TASK_KIND_SIGNUP_HELP, status: 'open' },
     });
-    if (open) {
-      // Already on someone's list today (e.g. a "Call me back"): that is today's try.
-      await this.prisma.signupTracker.updateMany({
-        where: { id: tracker.id, callTries: tracker.callTries },
-        data: { callTries: { increment: 1 } },
-      });
-      return this.prisma.signupTracker.findUnique({ where: { id: tracker.id } });
-    }
+    // Already on someone's list (e.g. a "Call me back", or a task nobody has called yet): it
+    // becomes a try only when the call is placed (21 Nov fixes).
+    if (open) return 'open';
     // A Team Lead's move sticks: the next try goes to the same agent, and waits for them if they are away.
     let pick: { staffId: string; reason: string } | null = null;
     if (tracker.assignmentReason === 'manual' && tracker.assignedStaffId) {
@@ -647,12 +712,13 @@ export class SignupTrackerService {
       return null;
     }
     const sameAgent = tracker.assignedStaffId === pick.staffId;
-    // Claim the try first, so two runs never put two tasks on the lists.
+    // The run holds the sign-up's advisory lock, so two runs never put two tasks on the lists.
     const claimed = await this.prisma.signupTracker.updateMany({
-      where: { id: tracker.id, callTries: tracker.callTries, outcome: 'open' },
+      where: { id: tracker.id, outcome: 'open' },
       data: {
-        callTries: { increment: 1 },
-        ...(sameAgent ? {} : { assignedStaffId: pick.staffId, assignedAt: ctx.now, assignmentReason: pick.reason }),
+        assignedStaffId: sameAgent ? undefined : pick.staffId,
+        assignedAt: sameAgent ? undefined : ctx.now,
+        assignmentReason: sameAgent ? undefined : pick.reason,
       },
     });
     if (claimed.count !== 1) return this.prisma.signupTracker.findUnique({ where: { id: tracker.id } });
@@ -668,21 +734,64 @@ export class SignupTrackerService {
     });
     const updated = await this.prisma.signupTracker.findUniqueOrThrow({ where: { id: tracker.id } });
     if (!sameAgent) await this.event(tracker.id, tracker.assignedStaffId ? 'reassigned' : 'assigned', { staffId: pick.staffId, note: pick.reason });
-    await this.event(tracker.id, 'call_task', { staffId: pick.staffId, note: `try ${updated.callTries}` });
+    await this.event(tracker.id, 'call_task', { staffId: pick.staffId, note: `try ${updated.callTries + 1}` });
     return updated;
   }
 
   /** Business sign-ups: the visit request Agent A made gets the nearest available field agent suggested. */
   private async suggestVisit(tracker: SignupTracker) {
     const rows = await this.prisma.visitAssignment.findMany({
-      where: { signupTrackerId: tracker.id, purpose: VISIT_PURPOSE_BUSINESS_SIGNUP, status: 'pending' },
-      select: { id: true, suggestedStaffId: true },
+      where: { signupTrackerId: tracker.id, purpose: VISIT_PURPOSE_BUSINESS_SIGNUP },
+      select: { id: true, suggestedStaffId: true, status: true, assignedStaffId: true },
     });
     for (const row of rows) {
+      if (row.status !== 'pending' || row.assignedStaffId) {
+        // Sent (or closed): the Team Lead's bell clears by itself.
+        await this.bellVisitRequest(row.id, []);
+        continue;
+      }
       const staffId = await this.verification.prepareSignupVisit(row.id);
       if (staffId && !row.suggestedStaffId) {
         await this.event(tracker.id, 'visit_request', { staffId, note: 'Field agent suggested; Team Lead confirms' });
       }
+      await this.bellVisitRequest(row.id, await this.visitDeciders(staffId ?? row.suggestedStaffId));
+    }
+  }
+
+  /** Who sends the field agent: the suggested agent's Team Lead, else every active Team Lead. */
+  private async visitDeciders(suggestedStaffId: string | null): Promise<string[]> {
+    if (suggestedStaffId) {
+      const agent = await this.prisma.staff.findUnique({
+        where: { id: suggestedStaffId },
+        select: { role: true, teamLeadId: true, reportsToId: true, reportsTo: { select: { role: true } } },
+      });
+      const lead = agent ? teamLeadOf(agent) : null;
+      if (lead) return [lead];
+    }
+    return (await this.prisma.staff.findMany({ where: { role: 'team_lead', status: 'active' }, select: { id: true } })).map((s) => s.id);
+  }
+
+  /** 21 Nov fixes: a business's app visit request rings the Team Lead until a field agent is sent. */
+  private async bellVisitRequest(assignmentId: string, recipients: string[]) {
+    if (!this.notifications) return;
+    try {
+      await this.notifications.syncSubject(
+        'signup_visit_request',
+        'visit_assignment',
+        assignmentId,
+        recipients.map((id) => ({
+          recipientStaffId: id,
+          kind: 'signup_visit_request' as const,
+          title: 'App sign-up: a business waits for its verification visit',
+          body: 'Send a field agent (a suggestion is ready).',
+          link: notificationLink('team_lead', 'signup_visit_request'),
+          subjectType: 'visit_assignment',
+          subjectId: assignmentId,
+        })),
+        { reason: 'Field agent sent' },
+      );
+    } catch (err) {
+      this.logger.warn(`Visit request bell for ${assignmentId} failed: ${(err as Error).message}`);
     }
   }
 
@@ -715,10 +824,7 @@ export class SignupTrackerService {
       : await this.prisma.customerProfile.findFirst({ where: { accountId: request.accountId, status: 'active' }, orderBy: { updatedAt: 'desc' } });
     const subjectId = profile ? profile.jobSeekerId ?? profile.businessId ?? profile.referralId : null;
     if (!profile || !subjectId || !SUBJECT_TYPES.includes(profile.kind)) {
-      // Nothing an agent can call through the calling system: closed, not left open forever.
-      await this.prisma.customerCallbackRequest.updateMany({ where: { id: request.id, status: 'open' }, data: { status: 'cancelled', doneAt: ctx.now } });
-      this.logger.log(`Call me back ${request.id} closed: no registered profile to call`);
-      return false;
+      return this.newLeadCallback(request, ctx);
     }
     const subjectType = profile.kind;
     const tracker = await this.prisma.signupTracker.findFirst({
@@ -755,6 +861,66 @@ export class SignupTrackerService {
       await this.event(tracker.id, 'call_task', { staffId: pick.staffId, note: 'Call me back' });
     }
     return true;
+  }
+
+  /**
+   * "Call me back" from someone with no profile yet (21 Nov fixes): a new lead
+   * tied to the account's verified mobile. It goes on the missed-call list
+   * (CallbackTask), so the software hands it out like a missed call and the
+   * agent sees a "New caller — register" row (or the person, if the number is
+   * already ours). Without a verified mobile there is nothing to call: closed.
+   */
+  private async newLeadCallback(request: { id: string; accountId: string }, ctx: TrackerRunContext): Promise<boolean> {
+    const account = await this.prisma.customerAccount.findUnique({ where: { id: request.accountId }, select: { phone: true, phoneVerifiedAt: true, status: true } });
+    if (!account?.phone || !account.phoneVerifiedAt || account.status !== 'active') {
+      await this.prisma.customerCallbackRequest.updateMany({ where: { id: request.id, status: 'open' }, data: { status: 'cancelled', doneAt: ctx.now } });
+      this.logger.log(`Call me back ${request.id} closed: no verified mobile to call`);
+      return false;
+    }
+    const claimed = await this.prisma.customerCallbackRequest.updateMany({ where: { id: request.id, status: 'open' }, data: { status: 'assigned' } });
+    if (claimed.count !== 1) return false;
+    try {
+      await this.prisma.callbackTask.create({
+        data: { callId: `app-callback:${request.id}`, phone: account.phone, status: 'pending' },
+      });
+    } catch (err) {
+      if ((err as Prisma.PrismaClientKnownRequestError)?.code !== 'P2002') throw err;
+    }
+    this.logger.log(`Call me back ${request.id}: new lead on the missed-call list`);
+    return true;
+  }
+
+  /**
+   * The contact-me tick changed in the app (21 Nov fixes): the sign-up is
+   * planned again at once. A sign-up closed only because nobody could call it
+   * reopens when the tick is given. The customer app may call this straight
+   * away; the sweep also finds the change by itself.
+   */
+  async onContactConsentChanged(accountId: string): Promise<void> {
+    const ctx = await this.context();
+    for (const id of await this.replanForConsent(ctx, accountId)) await this.process(id, ctx);
+  }
+
+  /** Sign-ups whose copy of the tick differs from the account's: reopened if needed and due now. */
+  private async replanForConsent(ctx: TrackerRunContext, accountId?: string): Promise<string[]> {
+    const rows = await this.prisma.$queryRaw<{ id: string; outcome: string; consent: boolean; tries: number }[]>(Prisma.sql`
+      SELECT t."id", t."outcome", a."contactMeConsent" AS consent, t."callTries" AS tries
+      FROM "SignupTracker" t JOIN "CustomerAccount" a ON a."id" = t."accountId"
+      WHERE t."outcome" IN ('open', 'no_response') AND t."contactConsent" <> a."contactMeConsent"
+      ${accountId ? Prisma.sql`AND t."accountId" = ${accountId}` : Prisma.empty}
+      LIMIT 200`);
+    const ids: string[] = [];
+    for (const row of rows) {
+      // Only a sign-up nobody could call reopens; one closed after its tries stays closed.
+      const reopen = row.consent && row.outcome === 'no_response' && Number(row.tries) === 0;
+      await this.prisma.signupTracker.update({
+        where: { id: row.id },
+        data: { contactConsent: row.consent, nextActionAt: ctx.now, outcome: reopen ? 'open' : undefined },
+      });
+      if (reopen) await this.event(row.id, 'reopened', { note: 'Contact-me tick given', at: ctx.now });
+      ids.push(row.id);
+    }
+    return ids;
   }
 
   // ------------------------------------------------------------ Team Lead / Manager / CEO

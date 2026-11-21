@@ -7,7 +7,9 @@
  * Task 7): anyone within the refund-priority window (default 15 days before
  * their ₹499 refund could fall due) is listed FIRST, fewest days left first.
  * Then, by kind:
- *   1. callback   — he asked to be called back at this time / he called us
+ *   1. callback   — he asked to be called back at this time (due now);
+ *      missed_call — he called us and nobody answered (21 Nov: just below
+ *      callbacks due now, above callbacks due later)
  *   2. refund_check — the check call before a ₹499 refund is released
  *   3. close_to_refund — paid, near day 30, no suitable offer yet
  *   4. offer_reply / interview_today — an offer waiting for his answer, or an
@@ -43,7 +45,8 @@ export type WorkCategory = 'callbacks' | 'follow_ups' | 'offers' | 'new_leads' |
 
 export const KIND_RANK: Record<WorkKind, number> = {
   callback: 1,
-  missed_call: 1,
+  // 21 Nov fixes: missed calls rank just below callbacks that are due now (above ones due later).
+  missed_call: 1.2,
   refund_check: 2,
   close_to_refund: 3,
   offer_reply: 4,
@@ -105,12 +108,18 @@ export interface WorkItem {
   lockedReason: string | null;
 }
 
+/** A callback not yet due ranks after missed calls (it cannot be dialled before its time anyway). */
+function rankOf(item: WorkItem): number {
+  if (item.kind === 'callback' && item.lockedReason === 'due_later') return 1.3;
+  return KIND_RANK[item.kind];
+}
+
 export function compareWorkItems(a: WorkItem, b: WorkItem): number {
   if (a.priority !== b.priority) return a.priority ? -1 : 1;
   if (a.priority && b.priority && a.daysLeft !== b.daysLeft) {
     return (a.daysLeft ?? Number.MAX_SAFE_INTEGER) - (b.daysLeft ?? Number.MAX_SAFE_INTEGER);
   }
-  const rank = KIND_RANK[a.kind] - KIND_RANK[b.kind];
+  const rank = rankOf(a) - rankOf(b);
   if (rank !== 0) return rank;
   const due = a.dueAt.localeCompare(b.dueAt);
   if (due !== 0) return due;

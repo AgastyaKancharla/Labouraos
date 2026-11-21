@@ -22,6 +22,8 @@ import { SignupFactsService } from '../signup-tracker/signup-facts.service';
 import { scriptHintKey } from '../signup-tracker/signup-stage';
 import { CALL_TASK_KIND_SIGNUP_HELP } from '../../common/customer-auth/customer-app.constants';
 import { CallWorkClock, DAY_MS, istDayStart, istMinuteOfDay } from './call-work-clock';
+import { liveBlocks } from '../call/contact-block';
+import { tenDigits } from '../telephony/inbound-call-router.service';
 import {
   countByCategory,
   KIND_CATEGORY,
@@ -280,7 +282,7 @@ export class CallWorkService {
   // ---------------------------------------------------------------- queue
 
   /** Today's work for one call agent, in priority order, one row per person. */
-  async queue(staffId: string): Promise<{ ctx: QueueContext; items: WorkItem[]; stuck: StuckRow[] }> {
+  async queue(staffId: string): Promise<{ ctx: QueueContext; items: WorkItem[]; stuck: StuckRow[]; newCallers: NewCallerRow[] }> {
     const ctx = await this.context();
     type Raw = {
       kind: WorkKind;
@@ -303,7 +305,7 @@ export class CallWorkService {
       this.prisma.callbackTask.findMany({
         where: { assignedToStaffId: staffId, status: 'assigned' },
         orderBy: { createdAt: 'asc' },
-        take: 50,
+        take: 100,
       }),
       this.prisma.followUpTask.findMany({
         where: { assignedStaffId: staffId, status: 'pending', dueAt: { lt: ctx.endOfToday } },
@@ -311,7 +313,8 @@ export class CallWorkService {
       }),
       this.prisma.jobSeeker.findMany({
         where: {
-          registeredByStaffId: staffId,
+          // A Team Lead's Assign reaches the assigned agent (21 Nov fixes): assigned, else the registering agent.
+          OR: [{ assignedStaffId: staffId }, { assignedStaffId: null, registeredByStaffId: staffId }],
           paymentReceivedAt: {
             not: null,
             gt: new Date(ctx.now.getTime() - ctx.guaranteeDays * DAY_MS),
@@ -360,23 +363,45 @@ export class CallWorkService {
         detail: { taskId: t.id },
       });
     }
+    // Missed calls (21 Nov fixes): repeat calls from one number are one row; an unknown
+    // number stays on the list as a "New caller — register" row until handled.
+    const byNumber = new Map<string, typeof callbacks>();
     for (const c of callbacks) {
-      let ref: { type: SubjectType; id: string } | null = c.jobSeekerId ? { type: 'job_seeker', id: c.jobSeekerId } : null;
+      const key = tenDigits(c.phone) || c.id;
+      const list = byNumber.get(key) ?? [];
+      list.push(c);
+      byNumber.set(key, list);
+    }
+    const newCallers: NewCallerRow[] = [];
+    for (const group of byNumber.values()) {
+      const first = group[0];
+      const last = group[group.length - 1];
+      let ref: { type: SubjectType; id: string } | null = first.jobSeekerId ? { type: 'job_seeker', id: first.jobSeekerId } : null;
       if (!ref) {
-        const who = await this.router.identify(c.phone);
+        const who = await this.router.identify(first.phone);
         if (who) ref = { type: who.type, id: who.id };
       }
-      if (!ref) continue;
+      if (!ref) {
+        newCallers.push({
+          callbackTaskId: first.id,
+          callbackTaskIds: group.map((g) => g.id),
+          count: group.length,
+          maskedPhone: maskPhoneLast4(first.phone),
+          firstCalledAt: first.createdAt.toISOString(),
+          lastCalledAt: last.createdAt.toISOString(),
+        });
+        continue;
+      }
       raw.push({
         kind: 'missed_call',
-        key: `inbound:${c.id}`,
+        key: `inbound:${first.id}`,
         type: ref.type,
         id: ref.id,
-        dueAt: c.createdAt,
+        dueAt: first.createdAt,
         purpose: 'general',
         relatedType: null,
         relatedId: null,
-        detail: { callbackTaskId: c.id, calledAt: c.createdAt.toISOString() },
+        detail: { callbackTaskId: first.id, calledAt: first.createdAt.toISOString(), lastCalledAt: last.createdAt.toISOString(), count: group.length },
       });
     }
     const relatedInterviewIds = followUps.filter((f) => f.relatedType === 'interview' && f.relatedId).map((f) => f.relatedId!);
@@ -474,6 +499,8 @@ export class CallWorkService {
 
     const stuck = await this.stuckRegistrations(staffId, ctx);
     for (const s of stuck) {
+      // Waiting for the Team Lead's ID check is not his to chase (21 Nov fixes): no call row.
+      if (s.step === 'id_team_lead_check') continue;
       raw.push({
         kind: 'stuck_registration',
         key: `stuck:${s.jobSeekerId}`,
@@ -489,9 +516,10 @@ export class CallWorkService {
 
     const subjects = await this.loadSubjects(raw.map((r) => ({ type: r.type, id: r.id })));
     const seekers = [...subjects.values()].filter((s) => s.seeker).map((s) => s.seeker!);
-    const [consents, refunds] = await Promise.all([
+    const [consents, refunds, blocks] = await Promise.all([
       this.consentMap(seekers.map((s) => s.id)),
       this.refundInfo(seekers, ctx),
+      liveBlocks(this.prisma, [...subjects.values()].map((x) => ({ subjectType: x.type, subjectId: x.id }))),
     ]);
 
     const items: WorkItem[] = [];
@@ -500,7 +528,13 @@ export class CallWorkService {
       if (!subject) continue;
       const refund = r.type === 'job_seeker' ? refunds.get(r.id) : undefined;
       if (r.kind === 'close_to_refund' && !refund?.priority) continue;
-      const lockedReason = this.lockedReason(subject, r.purpose, consents, ctx, r.dueAt);
+      const blocked = blocks.get(`${r.type}:${r.id}`);
+      // Do not call / wrong number (21 Nov fixes): on the list for the record, never dialled.
+      const lockedReason = blocked?.has('do_not_call')
+        ? 'do_not_call'
+        : blocked?.has('wrong_number')
+          ? 'wrong_number'
+          : this.lockedReason(subject, r.purpose, consents, ctx, r.dueAt);
       items.push({
         key: r.key,
         kind: r.kind,
@@ -527,7 +561,7 @@ export class CallWorkService {
         lockedReason,
       });
     }
-    return { ctx, items: orderWorkItems(items), stuck };
+    return { ctx, items: orderWorkItems(items), stuck, newCallers };
   }
 
   /**
@@ -571,7 +605,12 @@ export class CallWorkService {
   /** Registration link sent, not finished: which step he is stuck on. Newest first. */
   private async stuckRegistrations(staffId: string, ctx: QueueContext): Promise<StuckRow[]> {
     const seekers = await this.prisma.jobSeeker.findMany({
-      where: { registeredByStaffId: staffId, paymentReceivedAt: null, status: { in: STUCK_STATUSES }, anonymisedAt: null },
+      where: {
+        OR: [{ assignedStaffId: staffId }, { assignedStaffId: null, registeredByStaffId: staffId }],
+        paymentReceivedAt: null,
+        status: { in: STUCK_STATUSES },
+        anonymisedAt: null,
+      },
       select: {
         id: true,
         code: true,
@@ -630,6 +669,8 @@ export class CallWorkService {
         step,
         failures,
         linkLive,
+        // Nothing for him to do (no Resend): the Team Lead checks the ID card photo.
+        waitingForTeamLead: step === 'id_team_lead_check',
         since: latest.createdAt.toISOString(),
       };
     });
@@ -639,7 +680,7 @@ export class CallWorkService {
 
   async home(user: JwtPayload) {
     const staffId = user.sub;
-    const { ctx, items, stuck } = await this.queue(staffId);
+    const { ctx, items, stuck, newCallers } = await this.queue(staffId);
     const [numbers, team, today, month, done, me] = await Promise.all([
       this.todaysNumbers([staffId], ctx),
       this.teamAverages(staffId, ctx),
@@ -674,6 +715,7 @@ export class CallWorkService {
       work: { items, counts: countByCategory(items) },
       month,
       stuck,
+      newCallers,
       // Counts only: agents see their own people near a refund, without rupees (Phase 21 Task 7).
       nearRefund: {
         count: items.filter((i) => i.priority).length,
@@ -887,7 +929,17 @@ export class CallWorkService {
     const onList = items.find((i) => i.subjectType === type && i.subjectId === id) ?? null;
     const available = await this.attendance.isAvailable(user.sub);
     const history = await this.history(user.sub, type, id);
-    const base = { onList, history, canCallNow: ctx.inCallingHours && available, attendanceAvailable: available, inCallingHours: ctx.inCallingHours, callingHours: ctx.callingHours };
+    const blocked = (await liveBlocks(this.prisma, [{ subjectType: type, subjectId: id }])).get(`${type}:${id}`);
+    const contactBlocks = blocked ? [...blocked] : [];
+    const base = {
+      onList,
+      history,
+      contactBlocks,
+      canCallNow: ctx.inCallingHours && available && !contactBlocks.includes('do_not_call'),
+      attendanceAvailable: available,
+      inCallingHours: ctx.inCallingHours,
+      callingHours: ctx.callingHours,
+    };
     if (type === 'job_seeker') return { type, ...base, ...(await this.seekerProfile(id, ctx)) };
     if (type === 'business') return { type, ...base, ...(await this.businessProfile(id, user)) };
     return { type, ...base, ...(await this.referralProfile(id)) };
@@ -1367,7 +1419,17 @@ export interface StuckRow {
   step: string;
   failures: number;
   linkLive: boolean;
+  waitingForTeamLead: boolean;
   since: string;
+}
+
+export interface NewCallerRow {
+  callbackTaskId: string;
+  callbackTaskIds: string[];
+  count: number;
+  maskedPhone: string;
+  firstCalledAt: string;
+  lastCalledAt: string;
 }
 
 interface DayNumbers {
