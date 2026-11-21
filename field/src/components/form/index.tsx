@@ -1,9 +1,10 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useI18n } from '@/i18n';
 import { monthName, weekdayName } from '@/lib/format';
 import { colors, fonts, fontSize, radius, touch } from '@/theme';
 import { Text } from '../Text';
+import { dobTextProblem, dobTextToKey, keyToDobText, maskDobDigits } from './dobTyping';
 
 /**
  * Form pieces for the field app, following the guide's "Forms: rules for
@@ -348,11 +349,16 @@ export function addDays(key: string, days: number): string {
 }
 
 /**
- * A calendar picker (never typed). `yearFirst` opens on the year (date of
- * birth); `min`/`max` block dates outside the range (e.g. under 18).
+ * A calendar picker. `yearFirst` opens on the year (date of birth);
+ * `min`/`max` block dates outside the range (e.g. under 18).
+ *
+ * `typed` (date of birth, Master Guide rev 204, 21 Nov): the date is typed as
+ * numbers on the number pad and the dashes are added (DD-MM-YYYY); it must be
+ * a real day inside `min`/`max` (under 18 is still refused); the calendar
+ * stays beside it as an option. The value is the same ISO day as before.
  */
 export function DateField({
-  label, value, onChange, min, max, yearFirst, required, error, hint, testID,
+  label, value, onChange, min, max, yearFirst, typed, required, error, hint, testID,
 }: {
   label: string;
   value: string;
@@ -360,6 +366,7 @@ export function DateField({
   min?: string;
   max?: string;
   yearFirst?: boolean;
+  typed?: boolean;
   required?: boolean;
   error?: string | null;
   hint?: string;
@@ -367,6 +374,37 @@ export function DateField({
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  const [text, setText] = useState(() => keyToDobText(value));
+  const [typedTouched, setTypedTouched] = useState(false);
+  const today = todayKeyIst();
+  /** The day the typed text stands for when it is usable here ('' otherwise). */
+  const usable = (next: string): string => {
+    if (dobTextProblem(next, today) !== null) return '';
+    const key = dobTextToKey(next) ?? '';
+    return key && (!min || key >= min) && (!max || key <= max) ? key : '';
+  };
+  useEffect(() => {
+    if (!typed) return;
+    if (value !== usable(text)) setText(keyToDobText(value));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the value changes
+  }, [value, typed]);
+  const typedProblem = (() => {
+    if (!typed || !text) return null;
+    const problem = dobTextProblem(text, today);
+    if (problem === 'incomplete') return typedTouched ? t('form.dob.incomplete') : null;
+    if (problem === 'not_a_date') return t('form.dob.notADate');
+    if (problem === 'future') return t('form.dob.future');
+    const key = dobTextToKey(text) ?? '';
+    if (max && key > max) return t('form.dob.under18');
+    if (min && key < min) return t('form.dob.tooOld');
+    return null;
+  })();
+  const onTyped = (raw: string) => {
+    const next = maskDobDigits(raw);
+    setText(next);
+    const key = usable(next);
+    if (key !== value) onChange(key);
+  };
   const start = value || (max && (!min || max < todayKeyIst()) ? max : min && min > todayKeyIst() ? min : todayKeyIst());
   const [cursor, setCursor] = useState(start.slice(0, 7));
   const [mode, setMode] = useState<'year' | 'day'>(yearFirst ? 'year' : 'day');
@@ -386,24 +424,54 @@ export function DateField({
     const d = new Date(Date.UTC(y, m - 1 + delta, 1));
     setCursor(d.toISOString().slice(0, 7));
   };
+  const openCalendar = () => {
+    setCursor((value || start).slice(0, 7));
+    setMode(yearFirst && !value ? 'year' : 'day');
+    setOpen(true);
+  };
   return (
     <View style={styles.field}>
       <FieldLabel label={label} required={required} />
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${label}: ${value ? formatDateKey(value) : t('form.pickDate')}`}
-        onPress={() => {
-          setCursor((value || start).slice(0, 7));
-          setMode(yearFirst && !value ? 'year' : 'day');
-          setOpen(true);
-        }}
-        style={[styles.box, styles.row, error ? styles.boxError : null]}
-        testID={testID}
-      >
-        <Text style={[styles.value, !value && styles.placeholder]}>{value ? formatDateKey(value) : t('form.pickDate')}</Text>
-        <Text style={styles.caret}>📅</Text>
-      </Pressable>
-      <Hint error={error} hint={hint} testID={testID} />
+      {typed ? (
+        <View style={styles.row}>
+          <View style={[styles.box, styles.flex, error || typedProblem ? styles.boxError : null]}>
+            <TextInput
+              accessibilityLabel={label}
+              value={text}
+              onChangeText={onTyped}
+              onBlur={() => setTypedTouched(true)}
+              placeholder={t('form.dob.placeholder')}
+              placeholderTextColor={colors.faint}
+              keyboardType="number-pad"
+              inputMode="numeric"
+              maxLength={10}
+              style={styles.input}
+              testID={testID}
+            />
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('form.dob.calendar')}
+            onPress={openCalendar}
+            style={[styles.box, styles.calButton]}
+            testID={testID ? `${testID}-calendar` : undefined}
+          >
+            <Text style={styles.caret}>📅</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${label}: ${value ? formatDateKey(value) : t('form.pickDate')}`}
+          onPress={openCalendar}
+          style={[styles.box, styles.row, error ? styles.boxError : null]}
+          testID={testID}
+        >
+          <Text style={[styles.value, !value && styles.placeholder]}>{value ? formatDateKey(value) : t('form.pickDate')}</Text>
+          <Text style={styles.caret}>📅</Text>
+        </Pressable>
+      )}
+      <Hint error={error ?? typedProblem} hint={hint} testID={testID} />
       <Sheet open={open} onClose={() => setOpen(false)} title={label}>
         {mode === 'year' ? (
           <View style={styles.yearGrid}>
@@ -453,6 +521,7 @@ export function DateField({
                     disabled={!ok}
                     onPress={() => {
                       onChange(key);
+                      if (typed) setText(keyToDobText(key));
                       setOpen(false);
                     }}
                     style={[styles.calCell, styles.calDay, key === value && styles.calDayOn, !ok && styles.disabled]}
@@ -538,6 +607,7 @@ const styles = StyleSheet.create({
   value: { flex: 1, fontFamily: fonts.body400, fontSize: fontSize.input, color: colors.ink },
   placeholder: { color: colors.faint },
   caret: { color: colors.soft, fontSize: 14 },
+  calButton: { minWidth: touch.min, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
   backdrop: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: colors.surface,

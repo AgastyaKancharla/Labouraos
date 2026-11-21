@@ -51,6 +51,21 @@ describe('FA10 Register a job seeker', () => {
     expect(router.push).toHaveBeenCalledWith('/job-seekers/JS-01042');
   });
 
+  it('date of birth is typed as numbers with the dashes added; under 18 and impossible days are refused (21 Nov)', async () => {
+    const { route } = routeTable(base);
+    await renderWithApp(<CaptureSeekerScreen />, { signedInAs: kiran, route });
+    const dob = screen.getByTestId('dob');
+    await fireEvent.changeText(dob, '22092000');
+    expect(screen.getByTestId('dob').props.value).toBe('22-09-2000');
+    expect(screen.queryByTestId('dob-error')).toBeNull();
+    await fireEvent.changeText(screen.getByTestId('dob'), '31-02-2000');
+    expect(screen.getByTestId('dob-error')).toHaveTextContent(/not a real date/);
+    await fireEvent.changeText(screen.getByTestId('dob'), '01012020');
+    expect(screen.getByTestId('dob-error')).toHaveTextContent('Must be 18 or older.');
+    // The calendar is still there as an option.
+    expect(screen.getByTestId('dob-calendar')).toBeTruthy();
+  });
+
   it('maps the form onto POST /job-seekers in paise (the call agent\'s payload)', () => {
     expect(validate(EMPTY_FORM)).toContain('name');
     const body = createBody({ ...EMPTY_FORM, name: ' Kavya Reddy ', mobile: '9845012345', minSalaryPaise: 1300000, trades: [{ trade: 'Housekeeping', other: '', years: '6-10' }] }, 'req-1');

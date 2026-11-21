@@ -1701,3 +1701,23 @@ img.lb-staffphoto {
   .lb-split-stack dt { font-size: 11px; color: var(--text-faint); }
   .lb-split-stack dd { margin: 2px 0 0; font-weight: 600; font-size: 13.5px; }
 }
+
+/* ---------- date of birth typed (21 Nov): DD-MM-YYYY + calendar button ---------- */
+.lb-dob {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.lb-dob > input {
+  flex: 1;
+  min-width: 0;
+  letter-spacing: 0.04em;
+}
+.lb-dob__calendar {
+  flex: 0 0 auto;
+  min-width: 44px;
+  padding: 0 10px;
+}
+.lb-dob__picker {
+  margin-top: 6px;
+}

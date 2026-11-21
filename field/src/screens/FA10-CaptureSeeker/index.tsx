@@ -199,7 +199,7 @@ export default function CaptureSeekerScreen() {
           {!form.whatsappSame ? (
             <MobileField label={t('fa10.whatsapp')} value={form.whatsapp} onChange={(v) => set('whatsapp', v)} error={err('whatsapp')} testID="whatsapp" />
           ) : null}
-          <DateField label={t('fa10.dob')} required yearFirst value={form.dateOfBirth} onChange={(v) => set('dateOfBirth', v)} max={adultMax} min="1940-01-01" error={err('dateOfBirth')} hint={t('fa10.dobHint')} testID="dob" />
+          <DateField label={t('fa10.dob')} required yearFirst typed value={form.dateOfBirth} onChange={(v) => set('dateOfBirth', v)} max={adultMax} min="1940-01-01" error={err('dateOfBirth')} hint={t('fa10.dobTypedHint')} testID="dob" />
           <SelectField label={t('fa10.gender')} required value={form.gender} choices={choice(GENDERS, 'fa10.gender')} onChange={(v) => set('gender', v)} error={err('gender')} testID="gender" />
           <SelectField label={t('fa10.bestTime')} required value={form.bestTime} choices={choice(BEST_TIME, 'fa10.time')} onChange={(v) => set('bestTime', v)} error={err('bestTime')} testID="best-time" />
           <SelectField label={t('fa10.heardFrom')} required value={form.heardFrom} choices={choice(HEARD_FROM, 'fa10.heard')} onChange={(v) => set('heardFrom', v)} error={err('heardFrom')} testID="heard-from" />
