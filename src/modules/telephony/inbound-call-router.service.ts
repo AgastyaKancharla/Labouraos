@@ -5,7 +5,6 @@ import { maskPhoneLast4 } from '../../common/rbac/pii-masking.interceptor';
 import { AttendanceService } from '../attendance/attendance.service';
 import { decryptCallRoutingPhone } from '../staff/call-routing-key';
 import { isIndianMobile, nationalMobileDigits } from '../../common/phone/indian-mobile';
-import { FINAL_CALL_STATUSES } from '../call/call-status';
 import { fewestOpen, openItemCounts } from './call-agent-load';
 
 export type CallerType = 'job_seeker' | 'business' | 'referral';
@@ -123,24 +122,16 @@ export class InboundCallRouter {
   }
 
   /**
-   * Already on a call: a call of theirs the phone system has not finished yet
-   * (started in the last hour), or an inbound call that rang them in the last
-   * minute and has not been picked up or closed. Attendance flips to On call
-   * only when the answer reaches us, so this closes the gap.
+   * Already on a call: a call of theirs that is answered and not ended yet
+   * (started in the last hour). Attendance flips to On call when the answer
+   * reaches us; this also covers a call whose status came in before that.
    */
   private async onACall(staffId: string): Promise<boolean> {
-    const now = Date.now();
-    const [live, ringing] = await Promise.all([
-      this.prisma.callRecord.findFirst({
-        where: { staffId, providerStatus: { notIn: [...FINAL_CALL_STATUSES] }, createdAt: { gte: new Date(now - 60 * 60_000) } },
-        select: { id: true },
-      }),
-      this.prisma.callbackTask.findFirst({
-        where: { assignedToStaffId: staffId, status: 'assigned', assignmentReason: 'inbound_routed', assignedAt: { gte: new Date(now - 60_000) } },
-        select: { id: true },
-      }),
-    ]);
-    return Boolean(live || ringing);
+    const live = await this.prisma.callRecord.findFirst({
+      where: { staffId, providerStatus: 'answered', endedAt: null, createdAt: { gte: new Date(Date.now() - 60 * 60_000) } },
+      select: { id: true },
+    });
+    return Boolean(live);
   }
 
   private async availableCallAgent(staffId: string | null | undefined): Promise<string | null> {

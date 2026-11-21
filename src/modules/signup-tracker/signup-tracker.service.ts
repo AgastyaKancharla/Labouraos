@@ -198,6 +198,8 @@ export class SignupTrackerService {
       : null;
     // Keep the tracker's copy of the tick, so a change is seen and re-planned (21 Nov fixes).
     if (account && account.contactMeConsent !== tracker.contactConsent) {
+      // Taking the tick away is a "do not call me": it also ends the one help call below.
+      if (tracker.contactConsent && !account.contactMeConsent) await this.event(tracker.id, 'contact_withdrawn', { at: ctx.now });
       tracker = await this.prisma.signupTracker.update({ where: { id: tracker.id }, data: { contactConsent: account.contactMeConsent } });
     }
     // Deleted, blocked or asked to delete: everything stops and nothing is queued.
@@ -221,7 +223,8 @@ export class SignupTrackerService {
     const consent = account ? account.contactMeConsent : tracker.contactConsent;
     // 21 Nov fixes: an OTP-verified sign-up without the contact-me tick may get exactly one
     // help call (lawyer to confirm); with the tick, the usual tries.
-    const oneHelpCall = !consent && Boolean(account?.phoneVerifiedAt);
+    const withdrawn = !consent && (await this.prisma.signupTrackerEvent.count({ where: { trackerId: tracker.id, kind: 'contact_withdrawn' } })) > 0;
+    const oneHelpCall = !consent && !withdrawn && Boolean(account?.phoneVerifiedAt);
     const callable = Boolean(tracker.subjectId) && (consent || oneHelpCall);
     const settings = oneHelpCall ? { ...ctx.settings, maxCallTries: 1 } : ctx.settings;
     if (!callable) await this.cancelSignupTasks(tracker, ctx);
@@ -560,7 +563,7 @@ export class SignupTrackerService {
     const todayStart = new Date(istDayStartMs(ctx.now.getTime()));
     const stale = await this.prisma.callTask.findMany({
       where: { signupTrackerId: tracker.id, kind: CALL_TASK_KIND_SIGNUP_HELP, status: 'open', dueAt: { lt: todayStart } },
-      select: { id: true, staffId: true, createdAt: true },
+      select: { id: true, staffId: true, createdAt: true, dueAt: true },
     });
     for (const task of stale) {
       if (await this.taskWasCalled(tracker, task, ctx.now)) {
@@ -585,16 +588,17 @@ export class SignupTrackerService {
   }
 
   /** The agent of this task placed a call to the person while it was open. */
-  private async taskWasCalled(tracker: SignupTracker, task: { id: string; staffId: string; createdAt: Date }, now: Date): Promise<boolean> {
+  private async taskWasCalled(tracker: SignupTracker, task: { id: string; staffId: string; createdAt: Date; dueAt: Date }, now: Date): Promise<boolean> {
     if (!tracker.subjectType || !tracker.subjectId) return false;
     const done = await this.prisma.callTask.findUnique({ where: { id: task.id }, select: { doneAt: true } });
+    const from = task.createdAt.getTime() < task.dueAt.getTime() ? task.createdAt : task.dueAt;
     const call = await this.prisma.callRecord.findFirst({
       where: {
         staffId: task.staffId,
         subjectType: tracker.subjectType,
         subjectId: tracker.subjectId,
         direction: 'outbound',
-        createdAt: { gte: task.createdAt, lte: done?.doneAt ?? now },
+        createdAt: { gte: from, lte: done?.doneAt ?? now },
       },
       select: { id: true },
     });
@@ -604,8 +608,8 @@ export class SignupTrackerService {
   /** callTries = the help tasks of this stop on which the agent really placed a call. */
   private async syncTries(tracker: SignupTracker): Promise<SignupTracker> {
     const tasks = await this.prisma.callTask.findMany({
-      where: { signupTrackerId: tracker.id, kind: CALL_TASK_KIND_SIGNUP_HELP, createdAt: { gte: tracker.stageReachedAt } },
-      select: { id: true, staffId: true, createdAt: true },
+      where: { signupTrackerId: tracker.id, kind: CALL_TASK_KIND_SIGNUP_HELP, dueAt: { gte: tracker.stageReachedAt } },
+      select: { id: true, staffId: true, createdAt: true, dueAt: true },
     });
     let tries = 0;
     for (const task of tasks) if (await this.taskWasCalled(tracker, task, this.clock.now())) tries += 1;
