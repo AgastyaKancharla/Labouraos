@@ -110,6 +110,32 @@ export class AttendanceDaysService {
   }
 
   /**
+   * Reopen a closed day (decided 21 Nov): the person's Team Lead, a Manager
+   * over them or the CEO opens today's ended day again — after a Log out by
+   * mistake, or a day closed by hand — with a reason, audited. The person
+   * carries on as Available from now; the time in between is not counted.
+   * Only today's day: an earlier day is put right with a correction.
+   */
+  async reopenDay(actor: Actor, dayId: string, body: { reason?: string }): Promise<{ reopened: true; dayId: string }> {
+    const reason = String(body?.reason ?? '').trim();
+    if (!reason) throw new BadRequestException('A reason is required to reopen a day');
+    const day = await this.prisma.attendanceDay.findUnique({ where: { id: dayId } });
+    if (!day) throw new NotFoundException('Attendance day not found');
+    if (day.staffId === actor.id) throw new ForbiddenException('You cannot reopen your own day: press Resume my day');
+    if (!(await this.canManage(actor, day.staffId))) {
+      throw new ForbiddenException("Only the person's Team Lead, a Manager over them or the CEO can reopen a day");
+    }
+    const now = this.clock.now();
+    if (day.date.getTime() !== this.attendance.istDate(now).getTime()) {
+      throw new BadRequestException('Only today can be reopened: put an earlier day right with a correction');
+    }
+    if (!day.loginAt) throw new BadRequestException('The person has not logged in today');
+    if (!day.logoutAt) throw new BadRequestException('The day is still open');
+    await this.attendance.reopen(day, day.staffId, now, { action: 'attendance.day_reopened', actorId: actor.id, reason });
+    return { reopened: true, dayId: day.id };
+  }
+
+  /**
    * Who may act on a person's attendance (Change day, corrections): their
    * Team Lead, a Manager over them, or the CEO. Never the person themselves.
    */
