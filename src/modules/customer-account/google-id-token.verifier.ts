@@ -164,9 +164,10 @@ export class GoogleIdTokenVerifier extends OidcIdTokenVerifier {
   }
 
   /**
-   * GOOGLE_NONCE_REQUIRED=on refuses Google sign-ins without a nonce. Off by
-   * default because the customer app does not send one yet (customer/src/api/live.ts);
-   * turn it on once it does.
+   * GOOGLE_NONCE_REQUIRED=on refuses Google sign-ins without a nonce. Keep it
+   * off: the customer app's free Google sign-in library has no nonce option
+   * (docs/customer-app-api.md 3.2), so with it on every app Google sign-in fails.
+   * Apple sign-ins from the app always carry a nonce.
    */
   protected nonceRequired(): boolean {
     return process.env.GOOGLE_NONCE_REQUIRED?.trim().toLowerCase() === 'on';

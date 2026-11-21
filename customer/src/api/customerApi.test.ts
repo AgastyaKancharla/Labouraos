@@ -266,3 +266,15 @@ describe('pretend data (EXPO_PUBLIC_API_MODE=mock)', () => {
     expect(verified.account.profiles).toHaveLength(1);
   });
 });
+
+describe('Sign in with Apple (contract 3.2)', () => {
+  it('sends idToken, the raw nonce and the name, with the device', async () => {
+    const { api, calls } = live({ 'POST /auth/apple': { body: { accessToken: 'new', refreshToken: 'ref', account: wireAccount, linked: [], next: 'verify_phone' } } }, null);
+    await api.signInWithApple({ idToken: 'a.b.c', nonce: 'raw-nonce', name: 'Asha Rao' });
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].url).toMatch(/\/customer-api\/v1\/auth\/apple$/);
+    expect(calls[0].body).toMatchObject({ idToken: 'a.b.c', nonce: 'raw-nonce', name: 'Asha Rao', device: { installationId: 'install-uuid' } });
+    expect(calls[0].body).not.toHaveProperty('identityToken');
+    expect(calls[0].body).not.toHaveProperty('fullName');
+  });
+});

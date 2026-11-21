@@ -229,9 +229,14 @@ no verified mobile yet, `next` is `"add_phone"`.
 
 `nonce` (both Google and Apple): when the app passes a nonce to the sign-in SDK,
 send the same raw nonce here; the token's `nonce` must equal it or its SHA-256
-(hex). Optional today; with `GOOGLE_NONCE_REQUIRED=on` a Google sign-in without
-one is refused. **The app should start sending one** (it does not yet), then the
-setting is turned on.
+(hex). **Apple:** the app sends one on every sign-in (21 Nov): it gives Apple the
+SHA-256 of a fresh random value and sends the raw value here. **Google:** the app
+cannot send one: the free Google sign-in library it uses
+(`@react-native-google-signin/google-signin` 17, "Original" sign-in) has no
+nonce option; only the paid "Universal" module does. So `GOOGLE_NONCE_REQUIRED`
+must stay **off** (with it on, every Google sign-in from the app is refused).
+The session is still tied to one installation (§1.3) and the token's audience,
+issuer and expiry are checked.
 
 ### 3.2b Sign in with Apple (iPhone)
 

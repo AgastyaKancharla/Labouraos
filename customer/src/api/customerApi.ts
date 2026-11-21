@@ -41,7 +41,8 @@ export interface CustomerApi {
   sendSignInOtp(phone: string, resendOf?: string): Promise<OtpSent>;
   verifySignInOtp(input: { phone: string; requestId: string; code: string; contactConsent: boolean }): Promise<AuthResult>;
   signInWithGoogle(idToken: string): Promise<AuthResult>;
-  signInWithApple(input: { identityToken: string; fullName: string | null }): Promise<AuthResult>;
+  /** Field names as the server reads them (contract 3.2): idToken, nonce (raw), name. */
+  signInWithApple(input: { idToken: string; nonce: string; name: string | null }): Promise<AuthResult>;
   signOut(): Promise<void>;
 
   // The signed-in account
