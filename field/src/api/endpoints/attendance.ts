@@ -13,8 +13,16 @@ export interface AttendanceToday {
   breakSeconds: number;
   idleSeconds: number;
   shortfallSeconds: number;
-  /** shiftStart / shiftEnd are "HH:MM" in IST; now is the server time (ISO). */
+  /** The agent's own shift (decided 21 Nov) or the company shift: "HH:MM" in IST; now is the server time (ISO). */
   clocks: { shiftStart: string; shiftEnd: string; now: string };
+  /** True when clocks are the agent's own shift. */
+  ownShift?: boolean;
+  /** Ended with Log out today: "Resume my day" is offered (decided 21 Nov). */
+  canResume?: boolean;
+  /** When the current status started (ISO), null before login and after logout. */
+  statusSince?: string | null;
+  /** Allowances from Settings (lunch, short break, "Still there?"). */
+  policy?: { lunchMinutes: number; shortBreakMinutes: number; idleAfterMinutes: number };
   flagged: boolean;
   closedReason: string | null;
   dayType: string;
@@ -33,5 +41,11 @@ export const attendanceApi = (api: ApiClient) => ({
   login: (body: AttendanceLoginBody) => api.post<AttendanceToday>('/attendance/login', body),
   logout: () => api.post<AttendanceToday>('/attendance/logout'),
   setStatus: (status: string) => api.post<AttendanceToday>('/attendance/status', { status }),
-  heartbeat: () => api.post<unknown>('/attendance/heartbeat'),
+  /**
+   * presence: the app is open in front of the agent (about once a minute);
+   * activity: a tap. The server keeps him present and counts "Still there?" from taps (decided 21 Nov).
+   */
+  heartbeat: (kind: 'presence' | 'activity' = 'activity') => api.post<unknown>('/attendance/heartbeat', { kind }),
+  /** "Resume my day" after a Log out by mistake, the same day. */
+  resume: () => api.post<AttendanceToday>('/attendance/resume'),
 });

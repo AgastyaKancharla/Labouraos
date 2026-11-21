@@ -10,8 +10,9 @@ import { SESSION_STORAGE_KEY, SessionStore, type Session } from './session';
 /**
  * Guide decision: closing Laboura Field does not log the agent out. The
  * 15-minute token may have run out while the app was closed; on open the app
- * restores the session with its refresh token, and the server still ends it
- * after 1 hour idle or 2 hours in total.
+ * restores the session with its refresh token. The server decides when it
+ * ends: the working day while the attendance day is open (21 Nov), otherwise
+ * 1 hour idle or 2 hours in total.
  */
 function Probe() {
   const { status, signOutReason, session } = useAuth();
@@ -90,10 +91,14 @@ describe('Laboura Field: reopening the app restores the session', () => {
     await waitFor(() => expect(screen.getByTestId('auth')).toHaveTextContent('signedOut|max_length|-'));
   });
 
-  it('a limit the phone can already see (2 hours since login) ends it without asking the server', async () => {
-    const { fetchImpl } = await open(() => undefined, { loginAt: T0 - 2 * 60 * 60_000 - 60_000 });
-    await waitFor(() => expect(screen.getByTestId('auth')).toHaveTextContent('signedOut|max_length|-'));
-    expect(fetchImpl).not.toHaveBeenCalled();
+  it('more than 2 hours since login: the phone asks the server, which keeps a day-long session going while the day is open (21 Nov)', async () => {
+    const fresh = fakeToken(T0 + 15 * 60_000);
+    const { fetchImpl } = await open(
+      (url) => (url.endsWith('/auth/field/refresh') ? { status: 200, body: { accessToken: fresh, refreshToken: 'refresh-2', sessionId: 'sess-1' } } : undefined),
+      { loginAt: T0 - 6 * 60 * 60_000, lastActivityAt: T0 - 90 * 60_000 },
+    );
+    await waitFor(() => expect(screen.getByTestId('auth')).toHaveTextContent(`signedIn|-|${fresh}`));
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it('no signal on open: keeps the session and tries again later', async () => {

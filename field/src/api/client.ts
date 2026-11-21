@@ -22,8 +22,14 @@ export interface RequestOptions {
 export interface ApiClientConfig {
   baseUrl: string;
   getToken: () => string | null;
-  /** Called when an authenticated request gets 401: the session is over. */
+  /** Called when an authenticated request gets 401 and the session could not be renewed: the session is over. */
   onUnauthorized: (message: string) => void;
+  /**
+   * Decided 21 Nov: on a 401 the app first tries to renew the session (its
+   * refresh token) and repeats the request once with the new token. 'ended'
+   * means the server ended the session and the sign-out is already done.
+   */
+  refreshSession?: () => Promise<'renewed' | 'ended' | 'failed'>;
   fetchImpl?: typeof fetch;
 }
 
@@ -57,12 +63,14 @@ export function buildUrl(baseUrl: string, path: string, query?: RequestOptions['
 /**
  * The one way screens talk to the Nest API: JSON in and out, the staff JWT
  * attached, errors thrown as ApiError. A 401 on an authenticated request
- * ends the session (onUnauthorized) — screens never handle 401 themselves.
+ * first tries to renew the session (refreshSession) and repeats the request
+ * once; if that is not possible it ends the session (onUnauthorized) —
+ * screens never handle 401 themselves.
  */
 export function createApiClient(config: ApiClientConfig): ApiClient {
   const doFetch = config.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
 
-  async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  async function request<T>(path: string, options: RequestOptions = {}, retried = false): Promise<T> {
     const { method = 'GET', body, form, query, auth = true, timeoutMs = DEFAULT_TIMEOUT_MS } = options;
     const headers: Record<string, string> = { Accept: 'application/json', ...options.headers };
     if (body !== undefined && !form) headers['Content-Type'] = 'application/json';
@@ -103,7 +111,16 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
 
     if (!response.ok) {
       const error = apiErrorFromBody(response.status, parsed);
-      if (response.status === 401 && token) config.onUnauthorized(error.message);
+      if (response.status === 401 && token) {
+        // Renew before signing out (a token that ran out while the phone slept).
+        if (config.refreshSession && !retried) {
+          const outcome = await config.refreshSession().catch(() => 'failed' as const);
+          const next = config.getToken();
+          if (outcome === 'renewed' && next && next !== token) return request<T>(path, options, true);
+          if (outcome === 'ended') throw error;
+        }
+        config.onUnauthorized(error.message);
+      }
       throw error;
     }
     announceTestMode(parsed);

@@ -30,6 +30,13 @@ describe('session limits', () => {
     expect(sessionLimitReached(base, T0 + 15 * 60_000)).toBe('expired');
   });
 
+  it('with a refresh token the phone never ends the session by its own clock: the server decides (day-long sessions, 21 Nov)', () => {
+    const kept = { ...base, refreshToken: 'r1' };
+    expect(sessionLimitReached(kept, T0 + 15 * 60_000)).toBeNull();
+    expect(sessionLimitReached(kept, T0 + IDLE_LIMIT_MS + 1)).toBeNull();
+    expect(sessionLimitReached(kept, T0 + 8 * 3600_000)).toBeNull();
+  });
+
   it('maps server 401 messages to a reason', () => {
     expect(reasonFromMessage('Session ended after being idle')).toBe('idle');
     expect(reasonFromMessage('Session has reached its maximum length')).toBe('max_length');

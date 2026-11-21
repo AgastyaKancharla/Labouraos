@@ -11,7 +11,7 @@ export const fixes17En = {
   'day.loggingIn': 'Getting location…',
   'day.logout': 'Log out',
   'day.logoutTitle': 'Log out for today?',
-  'day.logoutBody': 'Log out ends your working day and saves your logout time. You can log in only once a day.',
+  'day.logoutBody': 'Log out ends your working day, saves your logout time and signs you out of Laboura Field. Logged out by mistake? Sign in again and press Resume my day.',
   'day.loggedIn': 'Logged in at {time}',
   'day.ended': 'Logged in {start} · logged out {end}',
   'day.endedNote': 'Your working day has ended. You can log in again tomorrow.',
