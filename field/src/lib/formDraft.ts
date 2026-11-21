@@ -1,12 +1,18 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { secureStorage, type KeyValueStore } from './storage';
 
 /**
- * What the agent typed on a form, kept in memory while he moves around the
- * app (Laboura Field redesign: "a back arrow on every inner screen that never
+ * What the agent typed on a form, kept while he moves around the app
+ * (Laboura Field redesign: "a back arrow on every inner screen that never
  * loses what was typed"). Going back from a form and opening it again, or
- * leaving a job for later and coming back, finds the same values. Memory
- * only, never written to the phone (the guide: the app keeps nothing on the
- * phone except forms waiting to send); cleared once the form is saved.
+ * leaving a job for later and coming back, finds the same values; cleared
+ * once the form is saved.
+ *
+ * Kept on the phone (Master Guide rev 202, 21 Nov: "drafts are kept on the
+ * phone"): every draft is also written to the phone's storage under the
+ * agent's staff id, so closing the app or a dead battery loses nothing. When
+ * he signs in again the drafts are read back (`setDraftOwner` starts it; an
+ * open form that was not typed in yet picks its draft up when it arrives).
  *
  * Every draft belongs to the signed-in agent (fix list A6, 16 Nov): the key
  * is stored under his staff id, so another agent signing in on the same
@@ -16,6 +22,92 @@ import { useCallback, useState } from 'react';
  * (`clearAllDrafts`).
  */
 const drafts = new Map<string, unknown>();
+
+/** Where drafts are kept on the phone (tests swap in a memory store). */
+let storage: KeyValueStore = secureStorage;
+const STORAGE_PREFIX = 'laboura.field.draft';
+/** The staff ids that have drafts on this phone (so Log out can remove them all). */
+const OWNERS_KEY = `${STORAGE_PREFIX}.owners`;
+/** A draft bigger than this stays in memory only (photos never go in a form draft). */
+const MAX_STORED_CHARS = 100_000;
+/** Phone storage keys allow only letters, digits, ".", "-" and "_" (expo-secure-store). */
+const safe = (part: string) => part.replace(/[^A-Za-z0-9.-]/g, (c) => `_${c.charCodeAt(0).toString(16)}_`);
+const indexKey = (staffId: string) => `${STORAGE_PREFIX}.index.${safe(staffId)}`;
+const valueKey = (staffId: string, key: string) => `${STORAGE_PREFIX}.v.${safe(staffId)}.${safe(key)}`;
+/** Open forms waiting for the drafts read back from the phone. */
+const hydrationListeners = new Set<() => void>();
+/** Writes are chained so the index never loses a key to a race. */
+let writes: Promise<void> = Promise.resolve();
+
+function chain(work: () => Promise<void>): Promise<void> {
+  writes = writes.then(work).catch(() => undefined);
+  return writes;
+}
+
+async function readList(key: string): Promise<string[]> {
+  try {
+    const raw = await storage.getItem(key);
+    const list: unknown = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function persist(staffId: string, key: string, value: unknown): void {
+  void chain(async () => {
+    let text: string;
+    try {
+      text = JSON.stringify(value);
+    } catch {
+      return;
+    }
+    if (text === undefined || text.length > MAX_STORED_CHARS) return;
+    await storage.setItem(valueKey(staffId, key), text);
+    const index = await readList(indexKey(staffId));
+    if (!index.includes(key)) await storage.setItem(indexKey(staffId), JSON.stringify([...index, key]));
+    const owners = await readList(OWNERS_KEY);
+    if (!owners.includes(staffId)) await storage.setItem(OWNERS_KEY, JSON.stringify([...owners, staffId]));
+  });
+}
+
+function unpersist(staffId: string, key: string): void {
+  void chain(async () => {
+    await storage.removeItem(valueKey(staffId, key));
+    const index = await readList(indexKey(staffId));
+    if (index.includes(key)) await storage.setItem(indexKey(staffId), JSON.stringify(index.filter((k) => k !== key)));
+  });
+}
+
+/** Reads the agent's drafts back from the phone into memory (a value typed meanwhile wins). */
+function hydrate(staffId: string): Promise<void> {
+  return chain(async () => {
+    const index = await readList(indexKey(staffId));
+    for (const key of index) {
+      const raw = await storage.getItem(valueKey(staffId, key));
+      if (raw === null) continue;
+      const full = `${staffId}|${key}`;
+      if (drafts.has(full)) continue;
+      try {
+        drafts.set(full, JSON.parse(raw));
+      } catch {
+        /* a broken draft is skipped */
+      }
+    }
+  }).then(() => {
+    for (const l of [...hydrationListeners]) l();
+  });
+}
+
+/** Only for tests: where drafts are kept on the phone. */
+export function setDraftStorage(next: KeyValueStore): void {
+  storage = next;
+}
+
+/** Only for tests: waits until every write and read of the phone's storage is done. */
+export function draftStorageIdle(): Promise<void> {
+  return writes;
+}
 
 /** Other in-memory drafts (the visit in progress) that must go at log out too. */
 const otherDrafts = new Set<() => void>();
@@ -36,7 +128,10 @@ export function setDraftOwner(staffId: string | null): void {
   if (staffId === owner) return;
   if (staffId !== null && lastOwner !== null && staffId !== lastOwner) clearAllDrafts();
   owner = staffId;
-  if (staffId !== null) lastOwner = staffId;
+  if (staffId !== null) {
+    lastOwner = staffId;
+    void hydrate(staffId);
+  }
 }
 
 /** Only for tests and the AuthProvider: whose drafts are being read. */
@@ -55,12 +150,21 @@ export function readFormDraft<T>(key: string): T | undefined {
 
 export function clearFormDraft(key: string): void {
   drafts.delete(fullKey(key));
+  if (owner) unpersist(owner, key);
 }
 
-/** Empties every draft of every agent (log out, or another agent signs in). */
+/** Empties every draft of every agent, in memory and on the phone (log out, or another agent signs in). */
 export function clearAllDrafts(): void {
   drafts.clear();
   for (const clear of otherDrafts) clear();
+  void chain(async () => {
+    const owners = await readList(OWNERS_KEY);
+    for (const staffId of owners) {
+      for (const key of await readList(indexKey(staffId))) await storage.removeItem(valueKey(staffId, key));
+      await storage.removeItem(indexKey(staffId));
+    }
+    await storage.removeItem(OWNERS_KEY);
+  });
 }
 
 /** Only for tests: every form draft gone, nobody signed in. */
@@ -74,21 +178,43 @@ export function clearAllFormDrafts(): void {
  * signed-in agent. Returns [value, set, clear].
  */
 export function useFormDraft<T>(key: string, initial: T | (() => T)) {
+  const touched = useRef(false);
   const [value, setValue] = useState<T>(() => {
     const k = fullKey(key);
-    if (drafts.has(k)) return drafts.get(k) as T;
+    if (drafts.has(k)) {
+      touched.current = true;
+      return drafts.get(k) as T;
+    }
     return typeof initial === 'function' ? (initial as () => T)() : initial;
   });
+  // A draft read back from the phone after the form opened fills it, unless he typed already.
+  useEffect(() => {
+    const onHydrated = () => {
+      if (touched.current) return;
+      const k = fullKey(key);
+      if (drafts.has(k)) {
+        touched.current = true;
+        setValue(drafts.get(k) as T);
+      }
+    };
+    hydrationListeners.add(onHydrated);
+    onHydrated();
+    return () => {
+      hydrationListeners.delete(onHydrated);
+    };
+  }, [key]);
   const set = useCallback(
     (next: T | ((prev: T) => T)) => {
+      touched.current = true;
       setValue((prev) => {
         const v = typeof next === 'function' ? (next as (p: T) => T)(prev) : next;
         drafts.set(fullKey(key), v);
+        if (owner) persist(owner, key, v);
         return v;
       });
     },
     [key],
   );
-  const clear = useCallback(() => drafts.delete(fullKey(key)), [key]);
+  const clear = useCallback(() => clearFormDraft(key), [key]);
   return [value, set, clear] as const;
 }

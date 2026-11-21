@@ -3,7 +3,8 @@ import { Pressable, Text, TextInput } from 'react-native';
 import { useAuth } from '@/auth/AuthProvider';
 import { kiran, renderWithApp } from '@/test/render';
 import { getDraft, saveDraft } from '@/screens/_visits/visitDraft';
-import { clearAllDrafts, clearAllFormDrafts, draftOwner, readFormDraft, setDraftOwner, useFormDraft } from './formDraft';
+import { createMemoryStore } from '@/lib/storage/types';
+import { clearAllDrafts, clearAllFormDrafts, clearFormDraft, draftOwner, draftStorageIdle, readFormDraft, setDraftOwner, setDraftStorage, useFormDraft } from './formDraft';
 
 /**
  * Fix list A6 (16 Nov): drafts used to survive sign-out, and the referral
@@ -90,6 +91,83 @@ describe('form drafts belong to the signed-in agent (A6)', () => {
     await renderWithApp(<Form draftKey="fa23" />, { signedInAs: anita });
     await waitFor(() => expect(screen.getByTestId('owner')).toHaveTextContent('fa-2'));
     expect(screen.getByTestId('field').props.value).toBe('');
+  });
+});
+
+describe('drafts are kept on the phone (21 Nov)', () => {
+  it('survives the app closing: the same agent signing in again gets the draft back, keyed to him', async () => {
+    const phone = createMemoryStore();
+    setDraftStorage(phone);
+    setDraftOwner('fa-1');
+    const form = await renderHookValue('fa07:visit-1');
+    await act(async () => form.set('Sri Sai Tiffins'));
+    await draftStorageIdle();
+    // The app is closed: memory is gone, the phone still has it.
+    clearAllFormDrafts();
+    setDraftOwner(null);
+    expect(readFormDraft('fa07:visit-1')).toBeUndefined();
+    setDraftOwner('fa-1');
+    await draftStorageIdle();
+    expect(readFormDraft('fa07:visit-1')).toBe('Sri Sai Tiffins');
+  });
+
+  it('an open form that was not typed in yet picks up the draft read back from the phone', async () => {
+    const phone = createMemoryStore();
+    setDraftStorage(phone);
+    setDraftOwner('fa-1');
+    const first = await renderHookValue('fa10');
+    await act(async () => first.set('Half a job seeker'));
+    await draftStorageIdle();
+    clearAllFormDrafts();
+    setDraftOwner(null);
+    const { result } = await renderHook(() => useFormDraft('fa10', ''));
+    expect(result.current[0]).toBe('');
+    await act(async () => {
+      setDraftOwner('fa-1');
+      await draftStorageIdle();
+    });
+    await waitFor(() => expect(result.current[0]).toBe('Half a job seeker'));
+  });
+
+  it('a saved form removes its draft from the phone; Log out removes every agent\'s drafts from the phone', async () => {
+    const phone = createMemoryStore();
+    setDraftStorage(phone);
+    setDraftOwner('fa-1');
+    const a = await renderHookValue('fa23');
+    const b = await renderHookValue('fa10');
+    await act(async () => {
+      a.set('one');
+      b.set('two');
+    });
+    clearFormDraft('fa23');
+    await draftStorageIdle();
+    clearAllFormDrafts();
+    setDraftOwner(null);
+    setDraftOwner('fa-1');
+    await draftStorageIdle();
+    expect(readFormDraft('fa23')).toBeUndefined();
+    expect(readFormDraft('fa10')).toBe('two');
+    clearAllDrafts();
+    await draftStorageIdle();
+    clearAllFormDrafts();
+    setDraftOwner(null);
+    setDraftOwner('fa-1');
+    await draftStorageIdle();
+    expect(readFormDraft('fa10')).toBeUndefined();
+  });
+
+  it('another agent on the same phone never reads them', async () => {
+    const phone = createMemoryStore();
+    setDraftStorage(phone);
+    setDraftOwner('fa-1');
+    const a = await renderHookValue('fa23');
+    await act(async () => a.set('Kiran only'));
+    await draftStorageIdle();
+    clearAllFormDrafts();
+    setDraftOwner(null);
+    setDraftOwner('fa-2');
+    await draftStorageIdle();
+    expect(readFormDraft('fa23')).toBeUndefined();
   });
 });
 
