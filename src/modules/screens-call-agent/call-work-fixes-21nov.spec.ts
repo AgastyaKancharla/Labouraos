@@ -555,6 +555,16 @@ describe('21 Nov fixes: call work and leads', () => {
     expect(await prisma.callTask.findUniqueOrThrow({ where: { id: later.id } })).toMatchObject({ staffId: agentC.id });
     expect(await prisma.callbackTask.findUniqueOrThrow({ where: { id: missed.id } })).toMatchObject({ assignedToStaffId: agentD.id, assignmentReason: 'no_show' });
     expect(await prisma.followUpTask.findUniqueOrThrow({ where: { id: followUp.id } })).toMatchObject({ assignedStaffId: agentD.id });
+    // On a full day of leave today: whatever reached her after the approval is spread too, from the shift start.
+    const away = await makeStaff('call_agent', { teamLeadId: lead2.id });
+    const leave = await prisma.leaveRequest.create({
+      data: { staffId: away.id, kind: 'casual', fromDate: new Date('2026-11-11T00:00:00.000Z'), toDate: new Date('2026-11-11T00:00:00.000Z'), days: 1, reason: 'family', status: 'approved', routedToRole: 'team_lead', routedToStaffId: lead2.id, routeReason: 'team_lead' },
+    });
+    const arrived = await prisma.callTask.create({ data: { staffId: away.id, subjectType: 'job_seeker', subjectId: someone.id, kind: 'retry', dueAt: NOW } });
+    await service.sweepNoShows(new Date('2026-11-11T04:15:00.000Z')); // 09:45 IST
+    expect(await prisma.callTask.findUniqueOrThrow({ where: { id: arrived.id } })).toMatchObject({ staffId: agentD.id });
+    expect(await prisma.workHandover.findFirst({ where: { recordId: arrived.id } })).toMatchObject({ reason: 'leave', fromStaffId: away.id });
+    await prisma.leaveRequest.delete({ where: { id: leave.id } });
     // Someone logged in keeps their work.
     const kept = await prisma.callTask.create({ data: { staffId: agentD.id, subjectType: 'job_seeker', subjectId: someone.id, kind: 'callback', dueAt: NOW } });
     await service.sweepNoShows(NOW);

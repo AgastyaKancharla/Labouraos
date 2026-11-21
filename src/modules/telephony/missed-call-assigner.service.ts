@@ -144,7 +144,15 @@ export class MissedCallAssigner {
     let allLeads: string[] | null = null;
     let allManagers: string[] | null = null;
     let waiting = 0;
+    // One bell per caller and holder: repeat calls from one number are one item (21 Nov fixes).
+    const groups = new Map<string, { task: (typeof open)[number]; count: number }>();
     for (const task of open) {
+      const key = `${tenDigits(task.phone) || task.id}|${task.assignedToStaffId ?? ''}`;
+      const group = groups.get(key);
+      if (group) group.count += 1;
+      else groups.set(key, { task, count: 1 });
+    }
+    for (const { task, count } of groups.values()) {
       const since = task.createdAt.getTime() > callingStartsAt.getTime() ? task.createdAt : callingStartsAt;
       const minutes = Math.floor((now.getTime() - since.getTime()) / 60_000);
       if (minutes < MISSED_CALL_TL_BELL_MINUTES) continue;
@@ -168,7 +176,7 @@ export class MissedCallAssigner {
         drafts.push({
           recipientStaffId: r.id,
           kind: 'missed_call_waiting',
-          title: `Missed call waiting ${minutes} min (…${tenDigits(task.phone).slice(-4)})`,
+          title: `Missed call${count > 1 ? ` (${count}×)` : ''} waiting ${minutes} min (…${tenDigits(task.phone).slice(-4)})`,
           body: task.assignedToStaffId ? 'Not called back yet by the agent who holds it.' : 'Nobody holds it yet: give it to an agent.',
           link: notificationLink(r.role, 'missed_call_waiting'),
           subjectType: 'callback_task',

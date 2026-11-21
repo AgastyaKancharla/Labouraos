@@ -316,8 +316,10 @@ export class WorkHandoverService {
 
   /**
    * No-shows (every few minutes, inside the calling hours on a working day):
-   * an agent with no login today an hour after their shift start, not on
-   * leave, has today's open call items spread across the teammates on shift.
+   * an agent with no login today an hour after their shift start has today's
+   * open call items spread across the teammates on shift. An agent on a full
+   * day of approved leave today has whatever reached them since the approval
+   * spread the same way (from the shift start).
    */
   async sweepNoShows(now: Date): Promise<{ agents: number; moved: number }> {
     const policy = await this.pricing.current();
@@ -336,22 +338,29 @@ export class WorkHandoverService {
       this.prisma.attendanceDay.findMany({ where: { staffId: { in: ids }, date }, select: { staffId: true, loginAt: true, logoutAt: true, dayType: true } }),
       this.prisma.leaveRequest.findMany({
         where: { staffId: { in: ids }, status: 'approved', overturnedAt: null, fromDate: { lte: date }, toDate: { gte: date } },
-        select: { staffId: true },
+        select: { staffId: true, half: true },
       }),
     ]);
     const dayOf = new Map(days.map((d) => [d.staffId, d]));
-    const away = new Set(leaves.map((l) => l.staffId));
+    // A half day of leave still works the other half: only a full day away counts.
+    const halves = new Map<string, number>();
+    for (const l of leaves) if (l.half) halves.set(l.staffId, (halves.get(l.staffId) ?? 0) + 1);
+    const away = new Set(leaves.filter((l) => !l.half || (halves.get(l.staffId) ?? 0) >= 2).map((l) => l.staffId));
+    const halfDay = new Set(leaves.filter((l) => l.half && !away.has(l.staffId)).map((l) => l.staffId));
     const working = new Set(days.filter((d) => d.loginAt && !d.logoutAt && d.dayType !== 'leave').map((d) => d.staffId));
     let agentsMoved = 0;
     let moved = 0;
     for (const agent of agents) {
-      if (away.has(agent.id)) continue;
+      if (halfDay.has(agent.id)) continue;
+      // On leave today: anything that reached them after the leave was approved (new retries,
+      // missed calls, tasks due today) is spread the same way, so nothing waits for their return.
+      const onLeave = away.has(agent.id);
       const day = dayOf.get(agent.id);
-      if (day?.loginAt || day?.dayType === 'leave') continue;
+      if (!onLeave && (day?.loginAt || day?.dayType === 'leave')) continue;
       const shift = shiftOf(policy);
       const start = clockMinutes(shift.start) ?? 9 * 60 + 30;
       const end = clockMinutes(shift.end) ?? 18 * 60 + 30;
-      if (minute < start + NO_SHOW_AFTER_MINUTES || minute >= end) continue;
+      if (minute < (onLeave ? start : start + NO_SHOW_AFTER_MINUTES) || minute >= end) continue;
       const lead = teamLeadOf(agent);
       if (!lead) continue;
       const team = await new OwnTeam(this.prisma).memberIds(lead);
@@ -359,7 +368,7 @@ export class WorkHandoverService {
       if (takers.length === 0) continue;
       const result = await this.move({
         fromStaffId: agent.id,
-        reason: 'no_show',
+        reason: onLeave ? 'leave' : 'no_show',
         mode: 'share',
         takers,
         leaveRequestId: null,
@@ -375,7 +384,8 @@ export class WorkHandoverService {
         where: { fromStaffId: agent.id, reason: 'no_show', recordType: 'field', movedAt: { gte: istDayStartUtc(now) } },
         select: { id: true },
       });
-      if (!already) {
+      // Field items of someone on leave moved with the approval itself.
+      if (!already && !onLeave) {
         const field = await this.moveField(agent.id, 'spread', { reason: 'no_show', actorId: null, from: istDayStartUtc(now), to: new Date(istDayStartUtc(now).getTime() + DAY_MS) });
         if (field !== 'not_connected') {
           await this.prisma.workHandover.create({
