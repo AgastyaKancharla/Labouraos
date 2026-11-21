@@ -21,7 +21,7 @@ import { OtpStep } from '../_selling/OtpStep';
 import { JOB_SEEKER_CONSENT_SCRIPT } from '../_selling/scripts';
 import { inShortText } from '@/api/endpoints/legal';
 import {
-  BEST_TIME, createBody, EMPTY_FORM, GENDERS, HEARD_FROM, JOB_TYPES, LICENCES, OTHER_TRADE, profileBody,
+  BEST_TIME, createBody, EMPTY_FORM, GENDERS, hasDriverTrade, HEARD_FROM, JOB_TYPES, LICENCES, OTHER_TRADE, profileBody,
   QUALIFICATIONS, SHIFT_PREFERENCES, SPOKEN_LANGUAGES, tradeName, TRAVEL_KM, validate, YEARS, type FieldError, type JobSeekerForm,
 } from './payload';
 
@@ -344,10 +344,10 @@ export default function CaptureSeekerScreen() {
         <Section n={6} title={t('fa10.s6')}>
           <SelectField label={t('fa10.qualification')} value={form.qualification} choices={choice(QUALIFICATIONS, 'fa10.qual')} onChange={(v) => set('qualification', v)} />
           <Checkbox label={t('fa10.noQualification')} checked={form.noQualification} onChange={(v) => set('noQualification', v)} />
-          <SelectField label={t('fa10.licence')} value={form.licence} choices={choice(LICENCES, 'fa10.licence')} onChange={(v) => set('licence', v)} />
-          <Checkbox label={t('fa10.ownVehicle')} checked={form.ownVehicle} onChange={(v) => set('ownVehicle', v)} />
-          <Checkbox label={t('fa10.police')} checked={form.police} onChange={(v) => set('police', v)} />
-          <Checkbox label={t('fa10.smartphone')} checked={form.smartphone} onChange={(v) => set('smartphone', v)} />
+          {/* 22 Nov: the licence only when a chosen trade is Driver; the "Has" ticks are no longer asked. */}
+          {hasDriverTrade(form) ? (
+            <SelectField label={t('fa10.licence')} value={form.licence} choices={choice(LICENCES, 'fa10.licence')} onChange={(v) => set('licence', v)} />
+          ) : null}
           <ReferredBy form={form} onChange={(referredByQuery, referredBy) => setForm((f) => ({ ...f, referredByQuery, referredBy }))} />
         </Section>
 

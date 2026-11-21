@@ -3,7 +3,7 @@ import { router } from 'expo-router';
 import { kiran, renderWithApp } from '@/test/render';
 import { routeTable } from '@/test/selling-fixtures';
 import CaptureSeekerScreen, { clearSeekerDraft } from '.';
-import { createBody, EMPTY_FORM, validate } from './payload';
+import { createBody, EMPTY_FORM, hasDriverTrade, profileBody, validate, type JobSeekerForm } from './payload';
 
 jest.mock('expo-router', () => require('@/test/expo-router-mock'));
 beforeEach(() => {
@@ -82,6 +82,26 @@ describe('FA10 Register a job seeker', () => {
     await fireEvent.press(screen.getByTestId('pin-finder-use'));
     await waitFor(() => expect(screen.getByTestId('pin')).toHaveTextContent(/Pin set/));
     expect(screen.getByTestId('pincode').props.value).toBe('560078');
+  });
+
+  it('22 Nov: no "Has" ticks; the driving licence is asked only for a Driver trade', async () => {
+    const { route } = routeTable(base);
+    await renderWithApp(<CaptureSeekerScreen />, { signedInAs: kiran, route });
+    expect(screen.queryByText('Own vehicle')).toBeNull();
+    expect(screen.queryByText('Police verification')).toBeNull();
+    expect(screen.queryByText('Smartphone')).toBeNull();
+    expect(screen.queryByText('Driving licence')).toBeNull();
+  });
+
+  it('22 Nov: the licence is sent only for a driver; the ticks never', () => {
+    const housekeeping = { ...EMPTY_FORM, trades: [{ trade: 'Housekeeping', other: '', years: '2' }], licence: 'lmv', ownVehicle: true, police: true, smartphone: true } as JobSeekerForm;
+    expect(hasDriverTrade(housekeeping)).toBe(false);
+    expect(profileBody(housekeeping)).not.toHaveProperty('drivingLicenceType');
+    for (const key of ['ownVehicle', 'policeVerified', 'hasSmartphone']) expect(profileBody(housekeeping)).not.toHaveProperty(key);
+    const driver = { ...housekeeping, trades: [{ trade: 'Housekeeping', other: '', years: '2' }, { trade: 'Driver', other: '', years: '4' }] };
+    expect(hasDriverTrade(driver)).toBe(true);
+    expect(profileBody(driver)).toMatchObject({ drivingLicenceType: 'lmv', reason: 'Filled on the registration form' });
+    for (const key of ['ownVehicle', 'policeVerified', 'hasSmartphone']) expect(profileBody(driver)).not.toHaveProperty(key);
   });
 
   it('maps the form onto POST /job-seekers in paise (the call agent\'s payload)', () => {

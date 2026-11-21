@@ -125,6 +125,14 @@ export function tradeName(row: TradeRow): string {
   return (row.trade === OTHER_TRADE ? row.other : row.trade).trim();
 }
 
+/**
+ * 22 Nov (owner testing): the driving licence is asked only when one of the chosen trades is a
+ * driver ("Driver", or a typed trade such as "Delivery driver").
+ */
+export function hasDriverTrade(form: Pick<JobSeekerForm, 'trades'>): boolean {
+  return form.trades.some((row) => /\bdriver\b/i.test(tradeName(row)));
+}
+
 export type FieldError =
   | 'name' | 'dateOfBirth' | 'gender' | 'bestTime' | 'heardFrom' | 'area' | 'pincode' | 'pin'
   | 'travelKm' | 'trade' | 'years' | 'lookingSince' | 'minSalary' | 'maxSalary' | 'salaryOrder' | 'availableFrom'
@@ -204,10 +212,9 @@ export function profileBody(form: JobSeekerForm): Record<string, unknown> | null
   if (form.lastSalaryPaise) body[form.workingNow === 'yes' ? 'currentSalaryPaise' : 'lastSalaryPaise'] = form.lastSalaryPaise;
   if (form.noQualification) body.educationLevel = 'none';
   else if (form.qualification) body.educationLevel = form.qualification;
-  if (form.licence) body.drivingLicenceType = form.licence;
-  if (form.ownVehicle) body.ownVehicle = true;
-  if (form.police) body.policeVerified = true;
-  if (form.smartphone) body.hasSmartphone = true;
+  // 22 Nov: the licence only for a driver; the "Has" ticks (own vehicle, police verification,
+  // smartphone) are no longer asked, so nothing is sent for them (the columns stay, nullable).
+  if (form.licence && hasDriverTrade(form)) body.drivingLicenceType = form.licence;
   if (Object.keys(body).length === 0) return null;
   return { ...body, reason: 'Filled on the registration form' };
 }
