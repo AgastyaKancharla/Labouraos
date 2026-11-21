@@ -8,13 +8,16 @@ import { isVerificationVisitPurpose, VERIFICATION_VISIT_PURPOSES } from '../busi
 import { REPEAT_BUSINESS_ANSWERS, FOLLOW_UP_ANSWERS, isRepeatBusinessKind } from '../follow-up/follow-up.constants';
 import { NotificationService } from '../notification/notification.service';
 import { PricingService } from '../pricing/pricing.service';
-import { DAY_MS, FieldVisitClock, istDateKey, keyFromDate } from '../field-visit/field-visit-clock';
+import { ReviewFlagService } from '../review-flag/review-flag.service';
+import { DAY_MS, FieldVisitClock, istDateKey, istDayStart, keyFromDate } from '../field-visit/field-visit-clock';
 import { handedTo } from '../field-visit/field-handover.service';
 
 type Actor = { sub: string; role: string };
 
 /** Field notifications look back this far when they catch up (assignments, signed agreements, handovers). */
 const NOTIFY_LOOKBACK_MS = 7 * DAY_MS;
+/** The similar-shop check looks only this close to where the agent was last seen today. */
+export const SIMILAR_SHOP_NEAR_ME_METERS = 1000;
 /** "Update the pin": a reason of at least this many characters. */
 export const PIN_REASON_MIN_LENGTH = 5;
 /** Moving a pin further than this needs the Team Lead, not the agent. */
@@ -74,6 +77,7 @@ export class FieldWorkExtrasService {
     private readonly clock: FieldVisitClock,
     private readonly notifications: NotificationService,
     private readonly pricing: PricingService,
+    private readonly flags: ReviewFlagService,
   ) {}
 
   // --------------------------------------------------- verification job cards
@@ -148,13 +152,14 @@ export class FieldWorkExtrasService {
     if (reason.length < PIN_REASON_MIN_LENGTH) throw new BadRequestException('Say why the pin is wrong');
     const latitude = Number(body?.latitude);
     const longitude = Number(body?.longitude);
-    const accuracy = body?.accuracy === undefined ? null : Number(body.accuracy);
+    // 21 Nov review: the GPS accuracy is required (a reading without it could be anything).
+    const accuracy = body?.accuracy === undefined || body?.accuracy === null || body?.accuracy === '' ? NaN : Number(body.accuracy);
     if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
       throw new BadRequestException('Your GPS location is needed to move the pin');
     }
-    if (accuracy !== null && (!Number.isFinite(accuracy) || accuracy < 0)) throw new BadRequestException('accuracy must be metres');
+    if (!Number.isFinite(accuracy) || accuracy < 0) throw new BadRequestException('The GPS accuracy is needed to move the pin');
     const policy = await this.pricing.current();
-    if (accuracy !== null && accuracy > Math.max(50, policy.visitSameSpotMeters)) {
+    if (accuracy > Math.max(50, policy.visitSameSpotMeters)) {
       throw new BadRequestException('The GPS reading is not precise enough. Step outside and try again.');
     }
     const assignment = await this.prisma.visitAssignment.findUnique({
@@ -165,6 +170,12 @@ export class FieldWorkExtrasService {
     if (assignment.status !== 'assigned' || !isVerificationVisitPurpose(assignment.purpose)) {
       throw new BadRequestException('The pin can be moved only during an open verification visit');
     }
+    // One move per visit: a second move would let the pin walk away from where it was when assigned.
+    const earlier = await this.prisma.auditLog.findFirst({
+      where: { action: 'business.pin_updated_at_visit', entityCode: assignment.business.code, createdAt: { gte: assignment.createdAt } },
+      select: { id: true },
+    });
+    if (earlier) throw new BadRequestException('The pin was already moved on this visit. Ask your Team Lead to check the address.');
     const before = { latitude: assignment.business.latitude, longitude: assignment.business.longitude };
     const moved = before.latitude !== null && before.longitude !== null
       ? Math.round(calculateHaversineDistanceMeters(before.latitude, before.longitude, latitude, longitude))
@@ -183,6 +194,14 @@ export class FieldWorkExtrasService {
       changedFields: ['latitude', 'longitude'],
       reason,
       city: assignment.business.city,
+    });
+    // Every pin move rings the agent's Team Lead (a flag to check, with the reason and the distance).
+    await this.flags.raise({
+      kind: 'gps_mismatch',
+      subjectType: 'business',
+      subjectId: assignment.business.id,
+      raisedForStaffId: actor.sub,
+      details: { reason: 'pin_moved_at_visit', businessCode: assignment.business.code, movedMeters: moved, agentReason: reason, assignmentId, before, after: { latitude, longitude } },
     });
     return { businessId: assignment.business.id, latitude, longitude, movedMeters: moved };
   }
@@ -256,7 +275,11 @@ export class FieldWorkExtrasService {
     const name = (query.name ?? '').trim();
     const lat = Number(query.lat);
     const lng = Number(query.lng);
-    if (name.length < 2 || !Number.isFinite(lat) || !Number.isFinite(lng)) return { matches: [] };
+    // 21 Nov review: at least 4 letters, and only around where the agent himself is today (his
+    // latest visit photo or check-in): never a way to search the map from anywhere.
+    if (normaliseName(name).length < 4 || !Number.isFinite(lat) || !Number.isFinite(lng)) return { matches: [] };
+    const here = await this.latestPositionToday(actor.sub);
+    if (!here || calculateHaversineDistanceMeters(here.latitude, here.longitude, lat, lng) > SIMILAR_SHOP_NEAR_ME_METERS) return { matches: [] };
     const policy = await this.pricing.current();
     const radius = Math.max(50, policy.duplicateBusinessRadiusMeters);
     const box = radius / 111_000;
@@ -283,6 +306,17 @@ export class FieldWorkExtrasService {
     return { matches };
   }
 
+  /** Where the agent was last seen today: his latest visit photo or field check-in (IST day). */
+  private async latestPositionToday(staffId: string): Promise<{ latitude: number; longitude: number } | null> {
+    const since = istDayStart(this.clock.now());
+    const [visit, checkIn] = await Promise.all([
+      this.prisma.businessVisit.findFirst({ where: { staffId, visitedAt: { gte: since } }, orderBy: { visitedAt: 'desc' }, select: { latitude: true, longitude: true, visitedAt: true } }),
+      this.prisma.fieldCheckIn.findFirst({ where: { staffId, checkedInAt: { gte: since } }, orderBy: { checkedInAt: 'desc' }, select: { latitude: true, longitude: true, checkedInAt: true } }),
+    ]);
+    if (visit && (!checkIn || visit.visitedAt >= checkIn.checkedInAt)) return visit;
+    return checkIn;
+  }
+
   // ------------------------------------------------------------ notifications
 
   /**
@@ -296,6 +330,30 @@ export class FieldWorkExtrasService {
     await this.catchUp(actor.sub);
     const list = await this.notifications.list(actor.sub, { status: 'all', limit: query.limit ?? '50' });
     const items = list.items.map((item) => ({ ...item, target: fieldTarget(item as unknown as NotificationRow) }));
+    // A visit assigned opens that very visit (its purpose says which screen); a signed agreement its business.
+    const assignmentIds = items.filter((i) => i.target?.type === 'visit_assignment').map((i) => i.target!.id);
+    if (assignmentIds.length) {
+      const rows = new Map((await this.prisma.visitAssignment.findMany({
+        where: { id: { in: assignmentIds } }, select: { id: true, purpose: true, businessId: true, relatedType: true, relatedId: true, status: true, assignedStaffId: true },
+      })).map((r) => [r.id, r]));
+      for (const item of items) {
+        const row = item.target?.type === 'visit_assignment' ? rows.get(item.target.id) : undefined;
+        if (!row || !item.target) continue;
+        item.target.businessId = row.businessId;
+        item.target.purpose = row.purpose;
+        item.target.open = row.status === 'assigned' && row.assignedStaffId === actor.sub;
+        if (row.relatedType === 'interview' && row.relatedId) item.target.interviewId = row.relatedId;
+      }
+    }
+    const agreementIds = items.filter((i) => i.target?.type === 'agreement').map((i) => i.target!.id);
+    if (agreementIds.length) {
+      const rows = new Map((await this.prisma.businessAgreement.findMany({ where: { id: { in: agreementIds } }, select: { id: true, businessId: true } })).map((r) => [r.id, r.businessId]));
+      for (const item of items) {
+        if (item.target?.type !== 'agreement') continue;
+        const businessId = rows.get(item.target.id);
+        item.target = businessId ? { type: 'business', id: businessId } : null;
+      }
+    }
     // A new match opens the candidates of its vacancy's business.
     const vacancyIds = [...new Set(items.map((i) => i.target?.vacancyId).filter((id): id is string => Boolean(id)))];
     if (vacancyIds.length) {
@@ -345,7 +403,7 @@ export class FieldWorkExtrasService {
         body: null,
         link: null,
         subjectType: 'business_agreement',
-        subjectId: g.business.id,
+        subjectId: g.id,
         once: true,
       }, now);
     }
@@ -367,11 +425,22 @@ export class FieldWorkExtrasService {
 type NotificationRow = { kind: string; subjectType: string; subjectId: string };
 
 /** Where a notification opens in Laboura Field (the app maps it to its own screens). */
-export function fieldTarget(n: NotificationRow): { type: string; id: string; vacancyId?: string; businessId?: string } | null {
+export interface FieldTarget {
+  type: string;
+  id: string;
+  vacancyId?: string;
+  businessId?: string;
+  purpose?: string;
+  interviewId?: string;
+  open?: boolean;
+}
+
+export function fieldTarget(n: NotificationRow): FieldTarget | null {
   switch (n.kind) {
     case 'field_visit_assigned':
       return { type: 'visit_assignment', id: n.subjectId };
     case 'field_agreement_signed':
+      return { type: 'agreement', id: n.subjectId };
     case 'business_assigned':
       return { type: 'business', id: n.subjectId };
     case 'field_work_handed_over':
