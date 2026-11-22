@@ -128,9 +128,11 @@ describe('Web attendance: today view, live status and office staff days', () => 
 
     at(0);
     const loggedIn = await post(token, '/attendance/login').expect(201);
-    expect(loggedIn.body.status).toBe('available');
+    // 22 Nov: a Team Lead's day opens in Start of day; she then picks Active.
+    expect(loggedIn.body.status).toBe('start_of_day');
     expect(loggedIn.body.statusSince).toBe(start.toISOString());
     expect(loggedIn.body.lateMinutes).toBe(0);
+    expect((await post(token, '/attendance/status', { status: 'available' }).expect(201)).body.status).toBe('available');
 
     await work(token, 0, 30);
     at(30);
@@ -154,6 +156,7 @@ describe('Web attendance: today view, live status and office staff days', () => 
     expect(onLunch.body.lunchSeconds).toBe(10 * 60);
     expect(onLunch.body.meetingSeconds).toBe(25 * 60);
     expect(onLunch.body.segments.map((s: { status: string }) => s.status)).toEqual([
+      'start_of_day',
       'available',
       'team_meeting',
       'available',
@@ -161,8 +164,10 @@ describe('Web attendance: today view, live status and office staff days', () => 
       'available',
       'lunch',
     ]);
-    expect(onLunch.body.segments[0]).toMatchObject({ source: 'staff', approved: null, endedAt: new Date(start.getTime() + 30 * 60000).toISOString() });
-    expect(onLunch.body.segments[5].endedAt).toBeNull();
+    expect(onLunch.body.segments[0]).toMatchObject({ source: 'staff', endedAt: start.toISOString() });
+    expect(onLunch.body.startOfDaySeconds).toBe(0);
+    expect(onLunch.body.segments[1]).toMatchObject({ source: 'staff', approved: null, endedAt: new Date(start.getTime() + 30 * 60000).toISOString() });
+    expect(onLunch.body.segments[6].endedAt).toBeNull();
 
     at(270);
     await post(token, '/attendance/status', { status: 'available' }).expect(201);
@@ -187,6 +192,10 @@ describe('Web attendance: today view, live status and office staff days', () => 
     at(5);
     for (const person of [manager, lead, finance, agent]) {
       await post(tokenFor(person), '/attendance/login').expect(201);
+    }
+    // 22 Nov: the Manager, Team Lead and agent start in Start of day and pick Active; Finance starts Available.
+    for (const person of [manager, lead, agent]) {
+      await post(tokenFor(person), '/attendance/status', { status: 'available' }).expect(201);
     }
     // Read the boards a few minutes after login; nobody calls the server again
     // until they log out, so nobody is marked Idle in between.
@@ -247,7 +256,7 @@ describe('Web attendance: today view, live status and office staff days', () => 
     const statuses = seen
       .filter((message) => message.type === 'attendance_status')
       .map((message) => message.data.status);
-    expect(statuses).toEqual(['available', 'short_break', 'available', 'idle', null]);
+    expect(statuses).toEqual(['start_of_day', 'short_break', 'available', 'idle', null]);
     const idle = seen.find((message) => message.data.status === 'idle');
     expect(idle?.data.since).toBe(new Date(start.getTime() + 31 * 60000).toISOString());
     // Only the person's own screens hear about it.

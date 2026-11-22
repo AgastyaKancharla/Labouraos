@@ -185,6 +185,8 @@ describe('Attendance fixes (21 Nov): own shifts, idle, closing and reopening day
       const token = tokenFor(agent);
       at('2026-11-24T04:00:00.000Z');
       await post(token, '/attendance/login').expect(201);
+      // 22 Nov: the day opens in Start of day; he picks Active (available).
+      await post(token, '/attendance/status', { status: 'available' }).expect(201);
       for (const minute of [5, 10, 15, 20, 25, 29]) {
         at(new Date(Date.parse('2026-11-24T04:00:00.000Z') + minute * 60_000).toISOString());
         const beat = await post(token, '/attendance/heartbeat', { kind: 'presence' }).expect(201);
@@ -207,6 +209,11 @@ describe('Attendance fixes (21 Nov): own shifts, idle, closing and reopening day
       const agent = await agentOf(lead, 'IDC');
       const token = tokenFor(agent);
       await post(token, '/attendance/login').expect(201);
+      // Start of day never turns Idle by itself: only Active does.
+      at('2026-11-24T04:20:00.000Z');
+      expect((await today(token)).body.status).toBe('start_of_day');
+      at('2026-11-24T04:00:00.000Z');
+      await post(token, '/attendance/status', { status: 'available' }).expect(201);
       at('2026-11-24T04:10:30.000Z');
       expect((await today(token)).body.status).toBe('available');
       at('2026-11-24T04:11:30.000Z');
@@ -216,6 +223,7 @@ describe('Attendance fixes (21 Nov): own shifts, idle, closing and reopening day
     it('saved work counts as activity: Idle ends and the quiet clock starts again (Field interviews, registrations, selections)', async () => {
       const agent = await make('field_agent', 'FAW', { teamLeadId: lead.id, reportsToId: lead.id });
       await post(tokenFor(agent), '/attendance/login', { latitude: 12.9, longitude: 77.6 }).expect(201);
+      await post(tokenFor(agent), '/attendance/status', { status: 'available' }).expect(201);
       at('2026-11-24T04:12:00.000Z');
       expect((await today(tokenFor(agent))).body.status).toBe('idle');
       await attendance.noteActivity(agent.id);
@@ -315,6 +323,7 @@ describe('Attendance fixes (21 Nov): own shifts, idle, closing and reopening day
       // Before Log in there is nothing to resume.
       expect((await post(token, '/attendance/resume')).status).toBe(400);
       await post(token, '/attendance/login').expect(201);
+      await post(token, '/attendance/status', { status: 'available' }).expect(201);
       at('2026-11-24T06:00:00.000Z');
       const ended = await post(token, '/attendance/logout').expect(201);
       expect(ended.body.canResume).toBe(true);
@@ -325,11 +334,15 @@ describe('Attendance fixes (21 Nov): own shifts, idle, closing and reopening day
 
       at('2026-11-24T06:20:00.000Z');
       const resumed = await post(token, '/attendance/resume').expect(201);
-      expect(resumed.body).toMatchObject({ logoutAt: null, status: 'available', canResume: false, flagged: false, dayType: 'open' });
-      // 2 hours worked before; the 20 minutes in between are not production.
+      // 22 Nov: Resume brings him back to the status picker in Start of day.
+      expect(resumed.body).toMatchObject({ logoutAt: null, status: 'start_of_day', canResume: false, flagged: false, dayType: 'open' });
+      at('2026-11-24T06:25:00.000Z');
+      await post(token, '/attendance/status', { status: 'available' }).expect(201);
+      // 2 hours worked before; the 20 minutes in between and the 5 in Start of day are not production.
       at('2026-11-24T06:30:00.000Z');
       const later = await today(token).expect(200);
-      expect(later.body.productionSeconds).toBe(2 * 3600 + 10 * 60);
+      expect(later.body.productionSeconds).toBe(2 * 3600 + 5 * 60);
+      expect(later.body.startOfDaySeconds).toBe(5 * 60);
       const audit = await prisma.auditLog.findFirst({ where: { actorId: agent.id, action: 'attendance.day_resumed' } });
       expect(audit?.before).toMatchObject({ closedReason: 'logout' });
       // Resuming an open day just shows it.
@@ -417,7 +430,7 @@ describe('Attendance fixes (21 Nov): own shifts, idle, closing and reopening day
       await post(token, `/attendance/days/${day.id}/reopen`, { reason: 'mine' }).expect(403);
       at('2026-11-24T05:10:00.000Z');
       await post(tokenFor(lead), `/attendance/days/${day.id}/reopen`, { reason: 'Logged out by mistake' }).expect(201);
-      expect((await today(token)).body).toMatchObject({ logoutAt: null, status: 'available' });
+      expect((await today(token)).body).toMatchObject({ logoutAt: null, status: 'start_of_day' });
       const audit = await prisma.auditLog.findFirst({ where: { actorId: lead.id, action: 'attendance.day_reopened', entityCode: day.id } });
       expect(audit?.reason).toBe('Logged out by mistake');
       // Still open: nothing to reopen.
