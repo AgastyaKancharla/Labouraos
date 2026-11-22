@@ -89,7 +89,9 @@ const e = encodeURIComponent;
 export const pageRoutes = {
   business: (id: string) => `/businesses/${e(id)}`, // FA08 the one business page
   seekerSaved: (jobSeekerId: string) => `/job-seekers/${e(jobSeekerId)}/saved`, // FA10b
-  seekerProgress: (jobSeekerId: string) => `/job-seekers/${e(jobSeekerId)}`, // FA10c
+  /** FA10e the job seeker's profile (22 Nov evening): what tapping a job seeker opens. */
+  seekerProfile: (jobSeekerId: string, open?: 'scan') => `/job-seekers/${e(jobSeekerId)}${q({ open })}`,
+  seekerProgress: (jobSeekerId: string) => `/job-seekers/${e(jobSeekerId)}/registration`, // FA10c, from the profile's Continue registration
   referralSaved: (referralId: string) => `/job-seekers/referral-partner/${e(referralId)}`, // FA23b
   /** FA05d visit details, inside the tab it was opened from. */
   visitDetails: (visitId: string, base: SellingBase = '/visit') =>

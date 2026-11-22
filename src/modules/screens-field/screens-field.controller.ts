@@ -8,6 +8,7 @@ import { PiiMaskingInterceptor } from '../../common/rbac/pii-masking.interceptor
 import { ScreensFieldService } from './screens-field.service';
 import { FieldRedesignService } from './field-redesign.service';
 import { FieldWorkExtrasService } from './field-work-extras.service';
+import { FieldPeopleService } from './field-people.service';
 
 type Authed = Request & { user: JwtPayload };
 
@@ -25,6 +26,7 @@ export class ScreensFieldController {
     private readonly screens: ScreensFieldService,
     private readonly redesign: FieldRedesignService,
     private readonly extras: FieldWorkExtrasService,
+    private readonly people: FieldPeopleService,
   ) {}
 
   /** Me → "Your calling phone" (21 Nov): set or not, last 4 digits (set it with PUT /staff/:id/call-routing-phone). */
@@ -97,18 +99,18 @@ export class ScreensFieldController {
     return this.redesign.allVisits(req.user, { q, from, to, before, limit });
   }
 
-  /** Businesses tab: my businesses, each with what it needs next. */
+  /** Businesses tab: my businesses, each with what it needs next (Laboura Field lists, 22 Nov: status line, numbers, one button). */
   @Get('businesses')
   @RequireRoles('field_agent')
   myBusinesses(@Req() req: Authed, @Query('q') q?: string) {
-    return this.redesign.myBusinesses(req.user, q);
+    return this.people.businesses(req.user, q);
   }
 
-  /** The one business page (rev 188); another agent's business is view-only. */
+  /** The one business page (rev 188); another agent's business is view-only. With "Where they're stuck" (22 Nov). */
   @Get('businesses/:ref/page')
   @RequireRoles('field_agent')
   businessPage(@Req() req: Authed, @Param('ref') ref: string) {
-    return this.redesign.businessPage(req.user, ref);
+    return this.people.businessPage(req.user, ref);
   }
 
   /** Agreement screen: turns green when the owner signs on his own phone. */
@@ -129,7 +131,14 @@ export class ScreensFieldController {
   @Get('job-seekers')
   @RequireRoles('field_agent')
   myJobSeekers(@Req() req: Authed, @Query('q') q?: string) {
-    return this.redesign.myJobSeekers(req.user, q);
+    return this.people.jobSeekers(req.user, q);
+  }
+
+  /** FA10e (22 Nov): one of my job seekers' profile — photo, trade, where he is stuck, guarantee, interviews, history. */
+  @Get('job-seekers/:ref/page')
+  @RequireRoles('field_agent')
+  jobSeekerPage(@Req() req: Authed, @Param('ref') ref: string) {
+    return this.people.jobSeekerPage(req.user, ref);
   }
 
   @Get('home')

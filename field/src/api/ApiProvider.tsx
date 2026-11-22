@@ -12,6 +12,7 @@ import { searchApi } from './endpoints/search';
 import { staffPhotoApi } from './endpoints/staffPhoto';
 import { legalApi } from './endpoints/legal';
 import { redesignApi } from './endpoints/redesign';
+import { peopleApi } from './endpoints/people';
 import { fieldOpsApi } from './endpoints/fieldOps';
 import { api as appApi } from './index';
 
@@ -47,6 +48,7 @@ export function useEndpoints() {
       legal: legalApi(api),
       redesign: redesignApi(api),
       fieldOps: fieldOpsApi(api),
+      people: peopleApi(api),
     }),
     [api],
   );

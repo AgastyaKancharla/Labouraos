@@ -1,1 +1,1 @@
-export { default } from '@/screens/FA10c-SeekerProgress';
+export { default } from '@/screens/FA10e-SeekerProfile';

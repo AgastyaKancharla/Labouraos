@@ -10,5 +10,7 @@ import { ProfileStuckService } from './profile-stuck.service';
   imports: [JobSeekerModule, ScreensManagerModule, ScreensTeamLeadModule],
   controllers: [ProfileStuckController],
   providers: [ProfileStuckService],
+  // Laboura Field lists (22 Nov) use the same steps for the field agent's own job seekers.
+  exports: [ProfileStuckService],
 })
 export class ProfileStuckModule {}

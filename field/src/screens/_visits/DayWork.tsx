@@ -63,7 +63,7 @@ export function dayItemHref(item: DayItem): string | null {
     case 'business':
       return item.type === 'candidates_shown' && tg.vacancyId ? sellingRoutes.matches(tg.id, tg.vacancyId) : pageRoutes.business(tg.id);
     case 'job_seeker':
-      return pageRoutes.seekerProgress(tg.id);
+      return pageRoutes.seekerProfile(tg.id);
     case 'referral':
       return pageRoutes.referralSaved(tg.id);
     case 'vacancy':

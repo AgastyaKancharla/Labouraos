@@ -92,6 +92,15 @@ export class ProfileStuckService {
   }
 
   /**
+   * "Where they're stuck" for one job seeker, with no viewer scope: for callers that
+   * have already scoped the record to the viewer (Laboura Field lists and profile,
+   * 22 Nov: the field agent's own job seekers only).
+   */
+  async forJobSeeker(id: string): Promise<StuckView> {
+    return this.jobSeeker({ id });
+  }
+
+  /**
    * "Stuck registrations" (22 Nov, owner testing): every stuck job seeker, business and referral
    * partner the viewer answers for, worked out with the same steps as the profile box — job seekers
    * stuck at payment, waiting for the Team Lead's ID check (no resend) or with the link not finished;

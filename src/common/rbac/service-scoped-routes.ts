@@ -458,6 +458,11 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
     test: 'modules/screens-field/field-redesign.spec.ts',
     proof: '// POST /field-work/businesses/:ref/agreement-link: another field agent is refused (403)',
   },
+  'ScreensFieldController.jobSeekerPage': {
+    reason: "Only the field agent's own job seekers (registered by him or assigned to him, peopleOwnedBy); anyone else's is 404; other roles 403.",
+    test: 'modules/screens-field/field-people.spec.ts',
+    proof: '// GET /field-work/job-seekers/:ref/page: another field agent gets 404',
+  },
   'ScreensFieldController.business': {
     reason: 'City-wide read (role table): field agents see every business on the map (guide); full details only for their own; other roles 403.',
     test: 'common/auth/app-roles.spec.ts',

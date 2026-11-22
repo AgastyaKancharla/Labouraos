@@ -72,6 +72,8 @@ export const queryKeys = {
   businessPage: (ref: string) => ['field-work', 'business-page', ref] as const,
   agreement: (ref: string) => ['field-work', 'agreement', ref] as const,
   myJobSeekers: (q: string) => ['field-work', 'my-job-seekers', q] as const,
+  /** FA10e one job seeker's profile (22 Nov evening). */
+  seekerPage: (ref: string) => ['field-work', 'seeker-page', ref] as const,
   referral: (id: string) => ['referrals', id] as const,
   referralStatus: (id: string) => ['referrals', id, 'status'] as const,
   // 21 Nov fixes (verification job cards, calling phone, bell, follow-ups, similar shops)

@@ -57,6 +57,30 @@ describe('FA08 the one business page', () => {
     expect(router.push).toHaveBeenCalledWith('/businesses/call-owner?businessId=b-1');
   });
 
+  it('22 Nov evening: "Where it\'s stuck" — the business\'s status in plain words and its one button; Waiting; All done', async () => {
+    const { route } = routeTable({
+      '/field-work/businesses/b-1/page': businessPage({ row: { status: 'no_vacancy', action: 'add_vacancy', vacancyId: null, waiting: false, done: false, group: 'needs_action' } }),
+    });
+    const first = await renderWithApp(<BusinessScreen />, { signedInAs: kiran, route });
+    await waitFor(() => screen.getByTestId('fa08-stuck'));
+    expect(screen.getByTestId('fa08-stuck')).toHaveTextContent(/Where it’s stuck.*No vacancy yet.*Add vacancy/);
+    await fireEvent.press(screen.getByTestId('fa08-action-b-1'));
+    expect(router.push).toHaveBeenCalledWith('/businesses/vacancy/new?businessId=b-1');
+    first.unmount();
+
+    const waiting = routeTable({ '/field-work/businesses/b-1/page': businessPage({ row: { status: 'waiting_tl', action: null, vacancyId: null, waiting: true, done: false, group: 'waiting_tl' } }) });
+    const second = await renderWithApp(<BusinessScreen />, { signedInAs: kiran, route: waiting.route });
+    await waitFor(() => screen.getByTestId('fa08-stuck'));
+    expect(screen.getByTestId('fa08-stuck')).toHaveTextContent(/Waiting for the Team Lead’s check.*Waiting/);
+    expect(screen.queryByTestId('fa08-action-b-1')).toBeNull();
+    second.unmount();
+
+    const done = routeTable({ '/field-work/businesses/b-1/page': businessPage({ row: { status: 'all_good', action: null, vacancyId: null, waiting: false, done: true, group: 'done' } }) });
+    await renderWithApp(<BusinessScreen />, { signedInAs: kiran, route: done.route });
+    await waitFor(() => screen.getByTestId('fa08-all-done'));
+    expect(screen.getByTestId('fa08-all-done')).toHaveTextContent(/All done/);
+  });
+
   it('a draft below the legal minimum needs the "owner told" tick before it can go', async () => {
     const page = businessPage({ vacancies: [businessPage().vacancies[0]] });
     page.vacancies[0].nextStep = { kind: 'send_to_owner', missing: [], needsMinimumWageTick: true, legalMinimumPaise: 1600000 };

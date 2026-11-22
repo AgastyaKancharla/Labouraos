@@ -1,7 +1,7 @@
-import { router, Tabs } from 'expo-router';
+import { Tabs } from 'expo-router';
 import { TabBar, type TabItem } from '@/components';
 import { useI18n } from '@/i18n';
-import { TAB_ROOTS, type TabName } from '@/navigation/routes';
+import type { TabName } from '@/navigation/routes';
 
 /**
  * Today · Visits · Businesses · Job seekers · Me (Laboura Field redesign,
@@ -10,8 +10,9 @@ import { TAB_ROOTS, type TabName } from '@/navigation/routes';
  * visible on every screen.
  *
  * Tapping a tab always returns to its main page: a tab left for another one
- * is reset to its main page (`popToTopOnBlur`), and tapping the tab you are
- * on closes everything opened inside it.
+ * is reset to its main page (`popToTopOnBlur`), and tapping any tab — the one
+ * you are on or another — resets its stack to its main page (`showMain`), even
+ * when a page was opened there from another tab with nothing underneath.
  */
 export default function TabsLayout() {
   const { t } = useI18n();
@@ -31,20 +32,14 @@ export default function TabsLayout() {
           items={items}
           activeName={state.routes[state.index]?.name ?? '(today)'}
           onSelect={(name) => {
-            const focused = state.routes[state.index]?.name === name;
             const route = state.routes.find((r) => r.name === name);
-            // 22 Nov (owner's field test): the Businesses tab opened the last business page (a page
-            // pushed from another tab, with nothing to dismiss). The tab's main page is always shown.
-            const toMain = () => route && descriptors[route.key]?.navigation.navigate(route.name, { screen: 'index' });
-            if (focused) {
-              // Already here: back to the tab's main page.
-              if (router.canDismiss()) router.dismissTo(TAB_ROOTS[name as TabName]);
-              else toMain();
-              return;
-            }
             if (!route) return;
-            navigateToTab(route.key);
-            if ((((route as { state?: { index?: number } }).state)?.index ?? 0) > 0) toMain();
+            // 22 Nov evening (owner's phone): the Businesses tab still opened one business. A business
+            // page opened from another tab (Today, Visits, the bell, search) builds the Businesses
+            // stack with that page ALONE, no list underneath: nothing to pop or dismiss, so the
+            // tab showed the business. The tab's stack is now reset to its main page on every tap.
+            showMain(descriptors[route.key]?.navigation, route, TAB_MAIN[name as TabName]);
+            if (state.routes[state.index]?.name !== name) navigateToTab(route.key);
           }}
         />
       )}
@@ -54,4 +49,37 @@ export default function TabsLayout() {
       ))}
     </Tabs>
   );
+}
+
+/** Each tab's main page: the route name inside its stack. */
+export const TAB_MAIN: Record<TabName, string> = {
+  '(today)': 'index',
+  '(visits)': 'visits/index',
+  businesses: 'index',
+  'job-seekers': 'index',
+  me: 'index',
+};
+
+type NestedState = { key?: string; stale?: boolean; index?: number; routes?: { name: string }[] } & Record<string, unknown>;
+type TabRoute = { key: string; name: string; state?: NestedState };
+type Dispatcher = { dispatch: (action: { type: 'RESET'; payload: NestedState; target?: string }) => void; navigate: (name: string, params?: object) => void };
+
+/**
+ * Resets a tab's own stack to its main page, unless it already shows only that page.
+ * A stack that was never opened starts on its main page anyway; one opened from another
+ * tab may hold just the pushed page (no anchor underneath), so it is reset, not popped.
+ */
+export function showMain(navigation: unknown, route: TabRoute, main: string) {
+  const nested = route.state;
+  if (!nested?.routes?.length) return;
+  if (nested.routes.length === 1 && nested.routes[0]?.name === main) return;
+  const nav = navigation as Dispatcher | undefined;
+  if (!nav) return;
+  if (nested.key && nested.stale !== true) {
+    // React Navigation's reset, sent to the tab's own stack (by its key). Expo Router only takes a
+    // complete state: the stack's own, with just the main page (its key is minted by the router).
+    nav.dispatch({ type: 'RESET', payload: { ...nested, index: 0, routes: [{ name: main }] }, target: nested.key });
+  } else {
+    nav.navigate(route.name, { screen: main });
+  }
 }

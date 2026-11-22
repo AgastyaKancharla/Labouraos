@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Image, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
@@ -24,14 +24,16 @@ interface Props {
   onBack?: () => void;
   /** The bell (21 Nov): unread count and where it opens. */
   bell?: { count: number; onPress: () => void };
+  /** The agent's status chip, just left of the bell (22 Nov evening). */
+  status?: ReactNode;
 }
 
 /**
  * The blue header on every screen (`.hdr`): the back arrow (inner screens),
- * logo, title and subtitle and the avatar that opens
- * "Log out". Followed by the swoosh stripe.
+ * logo, title and subtitle, the status chip and the bell (a tab's main page)
+ * and the avatar that opens "Log out". Followed by the swoosh stripe.
  */
-export function TopBar({ title, subtitle, personName, onLogout, onBack, bell }: Props) {
+export function TopBar({ title, subtitle, personName, onLogout, onBack, bell, status }: Props) {
   const insets = useSafeAreaInsets();
   const { t } = useI18n();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -76,7 +78,8 @@ export function TopBar({ title, subtitle, personName, onLogout, onBack, bell }: 
             ) : null}
           </View>
         </View>
-        <View style={styles.right}>
+        <View style={styles.right} testID="header-right">
+          {status}
           {bell ? (
             <Pressable
               accessibilityRole="button"
@@ -151,7 +154,8 @@ const styles = StyleSheet.create({
   titles: { flex: 1, minWidth: 0 },
   title: { fontFamily: fonts.display700, fontSize: 15, color: colors.white },
   subtitle: { fontFamily: fonts.body500, fontSize: 11, color: colors.navAccent },
-  right: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  // Shrinks before it pushes: the status chip cuts its words, the title keeps at least its start.
+  right: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1, minWidth: 0 },
   avatar: {
     width: 36,
     height: 36,

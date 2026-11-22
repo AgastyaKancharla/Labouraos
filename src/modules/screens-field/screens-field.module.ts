@@ -13,10 +13,13 @@ import { VacancyModule } from '../vacancy/vacancy.module';
 import { NotificationModule } from '../notification/notification.module';
 import { ReviewFlagModule } from '../review-flag/review-flag.module';
 import { FieldWorkExtrasService } from './field-work-extras.service';
+import { FieldPeopleService } from './field-people.service';
+import { JobSeekerModule } from '../job-seeker/job-seeker.module';
+import { ProfileStuckModule } from '../profile-stuck/profile-stuck.module';
 
 @Module({
-  imports: [PrismaModule, PricingModule, FieldVisitModule, AuditModule, AttendanceModule, ConsentModule, TargetModule, VacancyModule, NotificationModule, ReviewFlagModule],
+  imports: [PrismaModule, PricingModule, FieldVisitModule, AuditModule, AttendanceModule, ConsentModule, TargetModule, VacancyModule, NotificationModule, ReviewFlagModule, JobSeekerModule, ProfileStuckModule],
   controllers: [ScreensFieldController],
-  providers: [ScreensFieldService, FieldRedesignService, FieldWorkExtrasService],
+  providers: [ScreensFieldService, FieldRedesignService, FieldWorkExtrasService, FieldPeopleService],
 })
 export class ScreensFieldModule {}

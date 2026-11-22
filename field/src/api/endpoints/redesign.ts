@@ -1,4 +1,5 @@
 import type { ApiClient } from '../client';
+import type { BusinessRowState, GuaranteeDay, SeekerRowState } from './people';
 import type { AttendanceToday } from './attendance';
 import type { Visit } from './visits';
 
@@ -262,6 +263,14 @@ export interface MyBusinessRow {
   /** 22 Nov: interviews at the shop today, and whether he is its account agent. */
   interviewsToday?: number;
   isAccountAgent?: boolean;
+  /** Laboura Field lists (22 Nov evening): type, numbers, last visit and the row's one status and button. */
+  businessType?: string | null;
+  businessTypeOther?: string | null;
+  candidatesShown?: number;
+  lastVisitAt?: string | null;
+  revisitOverdue?: boolean;
+  canAct?: boolean;
+  row?: BusinessRowState;
 }
 
 export type VacancyNextStep =
@@ -363,6 +372,8 @@ export interface BusinessPage {
   /** Visits and vacancy events, newest first (17 Nov). Older servers send only `visits`. */
   history?: HistoryEntry[];
   actions: { recordVisit: boolean; callOwner: boolean; addVacancy: boolean; resendAgreement: boolean; showCandidates: boolean };
+  /** "Where they're stuck" (22 Nov evening): the same status and one button as the business's row. */
+  row?: BusinessRowState;
 }
 
 /** GET /field-work/businesses/:ref/agreement (polled every ~10 s on the agreement step). */
@@ -398,6 +409,15 @@ export interface MyJobSeekerRow {
     interviews: number;
     placed: boolean;
   };
+  /** Laboura Field lists (22 Nov evening): selfie, trade · area · experience, guarantee day, hits and the row's status and button. */
+  photoUrl?: string | null;
+  trade?: string | null;
+  yearsExperience?: number | null;
+  locality?: string | null;
+  hits?: number;
+  guarantee?: GuaranteeDay | null;
+  nextInterviewAt?: string | null;
+  row?: SeekerRowState;
 }
 
 export interface SubmittedVacancy {
