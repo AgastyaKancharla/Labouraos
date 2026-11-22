@@ -21,6 +21,8 @@ import { formatDateKey } from '../_visits/format';
 import { useAttendanceToday } from './useHome';
 import { DayControls } from '../_attendance/DayControls';
 import { needsTarget } from './needsTarget';
+import { groupNeeds, type NeedsGroup } from './groupNeeds';
+import { Pressable } from 'react-native';
 import { VerificationJobCard } from '../_visits/VerificationJobCard';
 
 export { STATUS_CHOICES } from '../_attendance/DayControls';
@@ -98,7 +100,8 @@ export default function TodayScreen() {
           />
         ) : null}
 
-        <DayControls />
+        {/* 22 Nov (rev 207): no Logged in · late · Log out card here; the status is under the bell, Log out in Me. */}
+        <DayControls compact />
 
         <SearchBar onPress={() => router.push(routes.search)} />
 
@@ -157,22 +160,24 @@ export default function TodayScreen() {
           ) : null}
           {today.isPending ? <LoadingState compact /> : null}
           {today.data && today.data.needsYou.length === 0 && queue.summary.total === 0 ? <EmptyState compact emoji="✅" message={t('today.nothing')} /> : null}
-          {(today.data?.needsYou ?? []).map((item, i, all) => (
-            <NeedsRow key={item.id} item={item} last={i === all.length - 1} />
-          ))}
+          {groupNeeds(today.data?.needsYou ?? []).map((group, i, all) =>
+            group.items.length === 1 ? (
+              <NeedsRow key={group.key} item={group.items[0]} last={i === all.length - 1} />
+            ) : (
+              <NeedsGroupRow key={group.key} group={group} last={i === all.length - 1} />
+            ),
+          )}
         </Card>
       </Screen>
     </View>
   );
 }
 
-/** One item of Needs you now: what it is (in the agent's language), when, and where it opens. */
-function NeedsRow({ item, last }: { item: NeedsItem; last: boolean }) {
-  const { t, tn } = useI18n();
-  // 21 Nov (M12): a verification visit shows as its job card (address, owner, Call owner, Open in Maps, Verify).
-  if (item.kind === 'verification_visit' && item.job) return <VerificationJobCard job={item.job} testID={`needs-${item.id}`} />;
-  const look = NEEDS_LOOK[item.kind] ?? { icon: 'bell', accent: 'navy' };
-  const href = needsTarget(item);
+type T = ReturnType<typeof useI18n>['t'];
+type TN = ReturnType<typeof useI18n>['tn'];
+
+/** What an item of Needs you now is, in words ("Ready to show candidates · Waiter × 2"). */
+function needsWhat(item: NeedsItem, t: T, tn: TN): string {
   const vacancy = item.vacancy ? (item.vacancy.headcount > 1 ? `${item.vacancy.trade} × ${item.vacancy.headcount}` : item.vacancy.trade) : null;
   const what =
     item.kind === 'interview_today' && item.interview
@@ -198,22 +203,36 @@ function NeedsRow({ item, last }: { item: NeedsItem; last: boolean }) {
                       item.coverFor ? t('needs.coverFor', { name: item.coverFor }) : null,
                     ].filter(Boolean).join(' · ')
                   : t(`needs.${item.kind}` as MessageKey, { vacancy: '' });
+  return what;
+}
+
+function dueText(item: Pick<NeedsItem, 'due' | 'kind' | 'revisitOn'>, t: T): string | null {
+  return item.due === 'overdue'
+    ? t('needs.overdue')
+    : item.due === 'today'
+      ? t('date.today')
+      : item.due === 'tomorrow'
+        ? t('date.tomorrow')
+        : item.kind === 'revisit_due' && item.revisitOn
+          ? formatDateKey(item.revisitOn)
+          : null;
+}
+
+/** One item of Needs you now: what it is (in the agent's language), when, and where it opens. */
+function NeedsRow({ item, last }: { item: NeedsItem; last: boolean }) {
+  const { t, tn } = useI18n();
+  // 21 Nov (M12): a verification visit shows as its job card (address, owner, Call owner, Open in Maps, Verify).
+  if (item.kind === 'verification_visit' && item.job) return <VerificationJobCard job={item.job} testID={`needs-${item.id}`} />;
+  const look = NEEDS_LOOK[item.kind] ?? { icon: 'bell', accent: 'navy' };
+  const href = needsTarget(item);
+  const what = needsWhat(item, t, tn);
   // A vacancy's trade is already in the sentence ("Waiting for the owner's code · Cook"): never twice (A8).
   const extra =
     (item.vacancy && item.subtitle?.trim().toLowerCase() === item.vacancy.trade.trim().toLowerCase()) ||
     (item.kind === 'followup_task' && item.subtitle === item.kindLabel)
       ? null
       : item.subtitle;
-  const dueLabel =
-    item.due === 'overdue'
-      ? t('needs.overdue')
-      : item.due === 'today'
-        ? t('date.today')
-        : item.due === 'tomorrow'
-          ? t('date.tomorrow')
-          : item.kind === 'revisit_due' && item.revisitOn
-            ? formatDateKey(item.revisitOn)
-            : null;
+  const dueLabel = dueText(item, t);
   return (
     <ListRow
       title={item.title}
@@ -227,7 +246,55 @@ function NeedsRow({ item, last }: { item: NeedsItem; last: boolean }) {
   );
 }
 
+/**
+ * One business with several open items (22 Nov, owner's field test: never the
+ * same shop three times): the name, then each item on its own line under it —
+ * each line opens that exact step; the row itself opens the business page
+ * (a shop not registered yet: its most urgent item).
+ */
+function NeedsGroupRow({ group, last }: { group: NeedsGroup; last: boolean }) {
+  const { t, tn } = useI18n();
+  const first = group.items[0];
+  const look = NEEDS_LOOK[first.kind] ?? { icon: 'bell', accent: 'navy' };
+  const open = group.businessId ? pageRoutes.business(group.businessId) : needsTarget(first);
+  const due = group.due ? dueText({ due: group.due, kind: first.kind, revisitOn: null }, t) : null;
+  return (
+    <View testID={`needs-group-${group.key}`}>
+      <ListRow
+        title={group.title}
+        subtitle={group.items.map((i) => needsWhat(i, t, tn) + (i.due === 'overdue' && group.items.length > 1 ? ` (${t('needs.overdue').toLowerCase()})` : '')).join(' · ')}
+        leading={<IconTile icon={look.icon} accent={look.accent} size={34} />}
+        trailing={due ? <StatusChip tone={group.due === 'overdue' ? 'tomato' : group.due === 'today' ? 'amber' : 'neutral'} label={due} /> : <Icon name="chevron-right" size={16} />}
+        onPress={open ? () => router.push(open as never) : undefined}
+        last
+        testID={`needs-group-${group.key}-open`}
+      />
+      <View style={[styles.subItems, last ? null : styles.groupDivider]}>
+        {group.items.map((item) => {
+          const href = needsTarget(item);
+          return (
+            <Pressable
+              key={item.id}
+              accessibilityRole="button"
+              accessibilityLabel={`${group.title}: ${needsWhat(item, t, tn)}`}
+              onPress={href ? () => router.push(href as never) : undefined}
+              style={styles.subItem}
+              testID={`needs-${item.id}`}
+            >
+              <Text variant="small" style={styles.flex1}>{`• ${needsWhat(item, t, tn)}`}</Text>
+              <Icon name="chevron-right" size={14} />
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  subItems: { paddingLeft: 46, paddingBottom: 6 },
+  groupDivider: { borderBottomWidth: 1, borderBottomColor: colors.border },
+  subItem: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44 },
   flex: { flex: 1, backgroundColor: colors.bg },
   flex1: { flex: 1 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

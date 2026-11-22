@@ -85,7 +85,7 @@ describe('FA07 Register a business', () => {
     expect(screen.getByLabelText('Shop / building number *').props.value).toBe('12');
     expect(screen.getByLabelText('Street *').props.value).toBe('24th Main Road, JP Nagar 6th Phase');
     expect(screen.getByTestId('fa07-pincode').props.value).toBe('560078');
-    expect(screen.getByText(/Pin: 12.91160, 77.61010/)).toBeTruthy();
+    expect(screen.getByTestId('fa07-pin-place-coords')).toHaveTextContent('12.91160, 77.61010');
     await waitFor(() => expect(screen.getByTestId('fa07-area')).toHaveTextContent(/JP Nagar/));
 
     // Pasted again (another shop, in Mysuru): everything the lookup knows is replaced; the city follows.
@@ -102,6 +102,58 @@ describe('FA07 Register a business', () => {
     // Editable afterwards.
     await fireEvent.changeText(screen.getByTestId('fa07-city'), 'Mysore');
     expect(screen.getByTestId('fa07-city').props.value).toBe('Mysore');
+  });
+
+  it('22 Nov (rev 207–208): "Use where I am" is the first address control: GPS pin, address filled from the server (street, area, PIN code, city — never the shop number), map preview with the address in words', async () => {
+    searchParams.current = {};
+    const asked: unknown[] = [];
+    await renderWithApp(<RegisterBusinessScreen />, {
+      signedInAs: kiran,
+      route: (url, init) => {
+        if (url.endsWith('/screens/call-registration/options')) return { status: 200, body: { city: 'Bengaluru', areas: [{ name: 'JP Nagar 8th Phase', pincode: '560076', latitude: 12.8901, longitude: 77.5902 }, { name: 'Koramangala', pincode: '560034', latitude: 12.9116, longitude: 77.6389 }] } };
+        if (url.endsWith('/trades')) return { status: 200, body: trades };
+        if (url.endsWith('/maps-link/where')) {
+          asked.push(JSON.parse(String(init.body)));
+          return { status: 200, body: { latitude: 12.9116, longitude: 77.6389, area: 'Koramangala 4th Block, Koramangala', address: { shopNumber: '77', street: '80 Feet Road, Koramangala 4th Block', area: 'Koramangala', city: 'Bengaluru', state: 'Karnataka', pincode: '560034', displayName: '80 Feet Road, Koramangala 4th Block, Bengaluru 560034', locality: 'Koramangala 4th Block, Koramangala' } } };
+        }
+        return undefined;
+      },
+    });
+    await waitFor(() => screen.getByTestId('fa07-where'));
+    expect(screen.getByTestId('fa07-where')).toHaveTextContent(/Use where I am/);
+    await fireEvent.changeText(screen.getByLabelText('Shop / building number *'), 'Shop 3, 1st floor');
+    await fireEvent.press(screen.getByTestId('fa07-where'));
+    await waitFor(() => screen.getByTestId('fa07-where-preview'));
+    expect(asked[0]).toEqual({ latitude: 12.9116, longitude: 77.6389 });
+    expect(screen.getByTestId('fa07-where-map')).toBeTruthy();
+    expect(screen.getByTestId('fa07-where-words')).toHaveTextContent('80 Feet Road, Koramangala 4th Block, Bengaluru 560034');
+    expect(screen.getByLabelText('Street *').props.value).toBe('80 Feet Road, Koramangala 4th Block');
+    expect(screen.getByTestId('fa07-pincode').props.value).toBe('560034');
+    expect(screen.getByTestId('fa07-city').props.value).toBe('Bengaluru');
+    await waitFor(() => expect(screen.getByTestId('fa07-area')).toHaveTextContent(/Koramangala/));
+    // The agent's own shop number stays: he adds it, the map never guesses it.
+    expect(screen.getByLabelText('Shop / building number *').props.value).toBe('Shop 3, 1st floor');
+    expect(screen.getByTestId('fa07-maps-note')).toHaveTextContent(/Filled from where you are: street, area, PIN code, city/);
+    // The pin line shows the area in words, coordinates only small underneath.
+    await waitFor(() => expect(screen.getByTestId('fa07-pin-place')).toHaveTextContent('Koramangala 4th Block, Koramangala'));
+  });
+
+  it('22 Nov: "Use where I am" without signal still sets the pin and says the address fills when online', async () => {
+    searchParams.current = {};
+    await renderWithApp(<RegisterBusinessScreen />, {
+      signedInAs: kiran,
+      route: (url) => {
+        if (url.endsWith('/screens/call-registration/options')) return { status: 200, body: { city: 'Bengaluru', areas: [] } };
+        if (url.endsWith('/trades')) return { status: 200, body: trades };
+        if (url.endsWith('/maps-link/where')) throw networkError();
+        return undefined;
+      },
+    });
+    await waitFor(() => screen.getByTestId('fa07-where'));
+    await fireEvent.press(screen.getByTestId('fa07-where'));
+    await waitFor(() => screen.getByTestId('fa07-where-preview'));
+    expect(screen.getByTestId('fa07-maps-note')).toHaveTextContent(/fills in when you have signal/);
+    await waitFor(() => expect(screen.getByTestId('fa07-pin-place')).toHaveTextContent(/area shown when online/));
   });
 
   it('starts from the visit (board name, map pin), checks the mobile by OTP, warns below the minimum wage, and registers from the visit', async () => {

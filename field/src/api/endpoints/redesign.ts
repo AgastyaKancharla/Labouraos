@@ -153,6 +153,14 @@ export interface LocatedPin extends ResolvedMapsLink {
   matched: string | null;
 }
 
+/** POST /maps-link/where (22 Nov): a GPS fix in words ("Kothnur, JP Nagar 8th Phase") and the address there. */
+export interface WhereAmI {
+  latitude: number;
+  longitude: number;
+  area: string | null;
+  address: (ResolvedMapsLink['address'] & { locality?: string | null }) | null;
+}
+
 /** POST /maps-link/resolve (17 Nov): the pin from a Google Maps link and its address from OpenStreetMap. */
 export interface ResolvedMapsLink {
   latitude: number;
@@ -428,6 +436,7 @@ export const redesignApi = (api: ApiClient) => ({
   removeShift: (businessId: string, shiftId: string) => api.delete<{ removed: true }>(`/businesses/${enc(businessId)}/shifts/${enc(shiftId)}`),
   resolveMapsLink: (url: string) => api.post<ResolvedMapsLink>('/maps-link/resolve', { url }),
   locatePin: (text: string) => api.post<LocatedPin>('/maps-link/locate', { text }),
+  whereIs: (latitude: number, longitude: number) => api.post<WhereAmI>('/maps-link/where', { latitude, longitude }),
   changeResult: (id: string, body: ChangeResultBody) => api.post<VisitDetails>(`/field-visits/${enc(id)}/change-result`, body),
   myBusinesses: (q?: string) => api.get<{ query: string; results: MyBusinessRow[] }>('/field-work/businesses', { query: { q: q || undefined } }),
   businessPage: (ref: string) => api.get<BusinessPage>(`/field-work/businesses/${enc(ref)}/page`),

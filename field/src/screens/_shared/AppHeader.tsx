@@ -7,6 +7,7 @@ import { TopBar } from '@/components';
 import { useAuth } from '@/auth/AuthProvider';
 import { goBack, useTabRoot, type ParentNavigation } from '@/navigation/useFlow';
 import { OfflineNotices } from './OfflineNotices';
+import { HeaderStatus } from '../_attendance/DayControls';
 
 interface Props {
   title: string;
@@ -25,7 +26,8 @@ export const BELL_POLL_MS = 60_000;
 /**
  * The signed-in header: back arrow on every inner screen, title, subtitle,
  * language switcher and the avatar with Log out. A tab's main page also
- * shows the bell with the unread count (21 Nov), opening Notifications.
+ * shows the bell with the unread count (21 Nov), opening Notifications,
+ * and under it the agent's status (22 Nov), tap to change.
  */
 export function AppHeader({ title, subtitle, root = false, backTo, onBack }: Props) {
   const { session, logout } = useAuth();
@@ -48,6 +50,8 @@ export function AppHeader({ title, subtitle, root = false, backTo, onBack }: Pro
       onBack={root ? undefined : (onBack ?? (() => goBack(backTo ?? tab.root, navigation)))}
       bell={root && session ? { count: bell.data?.unseenCount ?? 0, onPress: () => router.push(routes.notifications) } : undefined}
     />
+    {/* 22 Nov (rev 207): the status under the bell on every tab's main page; tap to change it. */}
+    {root && session?.staff.role === 'field_agent' ? <HeaderStatus /> : null}
     <OfflineNotices />
     </>
   );
