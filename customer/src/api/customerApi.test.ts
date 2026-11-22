@@ -265,6 +265,16 @@ describe('pretend data (EXPO_PUBLIC_API_MODE=mock)', () => {
     await waitFor(async () => expect(await api.home(profile.id)).toMatchObject({ steps: { consent: 'done', selfie: 'done', idCheck: 'done' }, payment: { status: 'confirming' } }));
   });
 
+  it('the pretend agreement shows the business you registered, not a made-up one', async () => {
+    const api = mockCustomerApi({ latencyMs: 0 });
+    const sent = await api.sendSignInOtp('9876543210');
+    await api.verifySignInOtp({ phone: '9876543210', requestId: sent.requestId, code: MOCK_OTP, contactConsent: true });
+    const step = await api.sendStepUp('register');
+    const { profile } = await api.registerBusiness({ boardName: 'Zoom Foods', contactName: 'Agastya', staffNeeded: [] } as never, { requestId: step.requestId, code: MOCK_OTP });
+    const details = await mockStepsApi(0).agreementDetails(mockLinkToken(profile.id));
+    expect(details).toMatchObject({ businessName: 'Zoom Foods', ownerName: 'Agastya' });
+  });
+
   it('remembers everything across closing and opening the app (pretend builds keep a file)', async () => {
     let file: string | null = null;
     const persist = { load: async () => file, save: (json: string) => void (file = json) };

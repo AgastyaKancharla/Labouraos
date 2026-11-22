@@ -1,4 +1,4 @@
-import { onMockProgress } from '@/verify/mockSteps';
+import { onMockProfileLookup, onMockProgress } from '@/verify/mockSteps';
 import type { MockPersist } from './mockPersist';
 import { ApiError } from './errors';
 import { announceTestMode } from './testMode';
@@ -44,6 +44,8 @@ interface State {
   workerReports: Record<string, WorkerLeftReport[]>;
   /** Partner profile id → leads sent (contract 7.3b). */
   leads: Record<string, (ReferralLead & { phone: string })[]>;
+  /** Business profile id → the contact's name from sign-up (the pretend agreement fills it in). */
+  ownerNames?: Record<string, string>;
   /** Draft id → owner told about the legal minimum. */
   seq: number;
 }
@@ -139,6 +141,14 @@ export function mockCustomerApi({ latencyMs = 250, persist }: { latencyMs?: numb
     const p = account().profiles.find((x) => x.id === profileId);
     if (p) p.stage = stage;
   };
+
+  // The pretend steps ask whose link it is: the business name and the person who registered it.
+  onMockProfileLookup((profileId) => {
+    const home = state.homes[profileId];
+    if (!home) return null;
+    const name = home.kind === 'business' ? home.name : (state.account?.profiles.find((p) => p.id === profileId)?.displayName ?? '');
+    return { name, ownerName: state.ownerNames?.[profileId] ?? null };
+  });
 
   // A step finished on the pretend link endpoints: show it on Home, as the real server does.
   onMockProgress((profileId, event) => {
@@ -280,6 +290,7 @@ export function mockCustomerApi({ latencyMs = 250, persist }: { latencyMs?: numb
       wait(() => {
         checkOtp(otp);
         const code = `BZ-${3000 + next()}`;
+        const contactName = form.contactName?.trim() || null;
         const home: BusinessHome = {
           kind: 'business',
           code,
@@ -300,7 +311,9 @@ export function mockCustomerApi({ latencyMs = 250, persist }: { latencyMs?: numb
           // One made-up worker, so "Report a worker left" can be tried with pretend data.
           counts: { interviewsUpcoming: 0, placements: 1, workersPlaced: 1 },
         };
-        return { profile: addProfile('business', form.boardName, home, code), existing: false };
+        const added = addProfile('business', form.boardName, home, code);
+        if (contactName) state.ownerNames = { ...state.ownerNames, [added.id]: contactName };
+        return { profile: added, existing: false };
       }),
     registerReferralPartner: (form, otp) =>
       wait(() => {
