@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useMutationState, useQueryClient } from '@tanstack/react-query';
 import { useI18n } from '@/i18n';
 import { Banner, Button, ErrorState, Icon, IconTile, LoadingState, StatusChip, Text, type IconName } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
@@ -10,7 +10,7 @@ import { errorCode, type AttendanceToday } from '@/api/endpoints';
 import { LOCATION_ERROR_KEYS } from '@/device/location/useLocation';
 import { formatShiftTime, formatTimeIst } from '@/lib/format';
 import { attendanceErrorText, isPickableStatus, PICKABLE_STATUSES, statusLabel, type PickableStatus } from '@/lib/status';
-import { type Accent, colors, radius, touch } from '@/theme';
+import { type Accent, colors, fonts, radius, tones, touch } from '@/theme';
 import { ChoiceList } from '../_visits/ChoiceList';
 import { isLocationError, useAttendanceLogin, useAttendanceToday } from '../FA03-Home/useHome';
 
@@ -177,6 +177,9 @@ function useBreakMinutes(status: string | null, since: string | null | undefined
   return Math.max(0, Math.floor((nowMs - Date.parse(since)) / 60_000));
 }
 
+/** The status change, so the header's error line can read it (22 Nov evening). */
+const STATUS_MUTATION_KEY = ['attendance', 'set-status'] as const;
+
 /** Changing the status: saved on the server, then Today, Visits and the month read again. */
 function useStatusChange() {
   const { attendance } = useEndpoints();
@@ -189,6 +192,7 @@ function useStatusChange() {
   /** The day was not open after all (another screen, the night job): show it as it is. */
   const reread = () => void client.invalidateQueries({ queryKey: queryKeys.attendanceToday });
   const change = useMutation<AttendanceToday, Error, string>({
+    mutationKey: STATUS_MUTATION_KEY,
     mutationFn: (status) => attendance.setStatus(status),
     onSuccess: after,
     onError: (error) => (isDayStateError(error) ? reread() : undefined),
@@ -220,10 +224,12 @@ function StatusSheet({ open, onClose, status, onPick }: { open: boolean; onClose
 }
 
 /**
- * The small status button in the header, under the bell (Master Guide rev
- * 207, 22 Nov): the current status (Travelling, On visit, Active, Start of
- * day…); tap to change it. Only while the day is open. Log out is in Me;
- * the login time and lateness are on My attendance.
+ * The small status button IN the header, just left of the bell (Master Guide,
+ * "Laboura Field lists, decided 22 Nov evening"; was under the bell, rev 207):
+ * the current status (Travelling, On visit, Active, Start of day…) as a small
+ * chip; tap it to open the status picker. Only while the day is open. It
+ * shrinks and cuts long words with "…" so the header never scrolls sideways
+ * at 360 px. A failed change shows under the header (HeaderStatusError).
  */
 export function HeaderStatus({ testID = 'header-status' }: { testID?: string }) {
   const { t } = useI18n();
@@ -233,25 +239,41 @@ export function HeaderStatus({ testID = 'header-status' }: { testID?: string }) 
   const day = attendance.data;
   if (!day || dayState(day) !== 'open') return null;
   const status = day.status;
-  const error = change.error && !isDayStateError(change.error) ? attendanceErrorText(change.error, 'today.statusFailed', t) : null;
+  const label = status ? statusLabel(status, t) : t('today.pickStatus');
+  const tone = tones[status === 'start_of_day' ? 'navy' : 'green'];
   return (
-    <View style={styles.headerStatus}>
+    <>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${t('today.changeStatus')}: ${status ? statusLabel(status, t) : t('today.pickStatus')}`}
+        accessibilityLabel={`${t('today.changeStatus')}: ${label}`}
         onPress={() => setPicking(true)}
         style={styles.headerTap}
+        hitSlop={4}
         testID={testID}
       >
-        <StatusChip label={status ? statusLabel(status, t) : t('today.pickStatus')} tone={status === 'start_of_day' ? 'navy' : 'green'} dot />
-        <Icon name="chevron-right" size={12} color={colors.greenText} />
+        <View style={[styles.headerChip, { backgroundColor: tone.bg }]} testID={`${testID}-chip`}>
+          <View style={[styles.headerDot, { backgroundColor: tone.dot }]} />
+          <Text style={[styles.headerChipText, { color: tone.fg }]} numberOfLines={1}>
+            {label}
+          </Text>
+        </View>
       </Pressable>
-      {error ? (
-        <Text variant="tiny" color={colors.tomato} testID={`${testID}-error`}>
-          {error}
-        </Text>
-      ) : null}
       <StatusSheet open={picking} onClose={() => setPicking(false)} status={status} onPick={(s) => change.mutate(s)} />
+    </>
+  );
+}
+
+/** Why the last status change failed, under the header (the chip itself is in the header). */
+export function HeaderStatusError({ testID = 'header-status-error' }: { testID?: string }) {
+  const { t } = useI18n();
+  const latest = useMutationState({ filters: { mutationKey: STATUS_MUTATION_KEY }, select: (m) => ({ status: m.state.status, error: m.state.error }) });
+  const last = latest[latest.length - 1];
+  if (!last || last.status !== 'error' || !last.error || isDayStateError(last.error)) return null;
+  return (
+    <View style={styles.headerError}>
+      <Text variant="tiny" color={colors.tomato} testID={testID}>
+        {attendanceErrorText(last.error, 'today.statusFailed', t)}
+      </Text>
     </View>
   );
 }
@@ -402,8 +424,12 @@ const styles = StyleSheet.create({
   flex1: { flex: 1 },
   bar: { gap: 10, padding: 12, borderRadius: radius.card, backgroundColor: colors.green100, borderLeftWidth: 4, borderLeftColor: colors.green },
   barTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  headerStatus: { alignItems: 'flex-end', paddingHorizontal: 12, gap: 2 },
-  headerTap: { flexDirection: 'row', alignItems: 'center', gap: 2, minHeight: touch.min, minWidth: touch.min },
+  // In the blue header: a 48 px tap area whose extra height does not grow the header.
+  headerTap: { flexShrink: 1, minWidth: touch.min, minHeight: touch.min, marginVertical: -6, justifyContent: 'center', alignItems: 'flex-end' },
+  headerChip: { flexDirection: 'row', alignItems: 'center', gap: 5, maxWidth: 112, paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.pill },
+  headerDot: { width: 7, height: 7, borderRadius: 4 },
+  headerChipText: { fontFamily: fonts.body700, fontSize: 11, flexShrink: 1 },
+  headerError: { alignItems: 'flex-end', paddingHorizontal: 16, paddingTop: 4 },
   statusTap: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: touch.min, paddingLeft: 6 },
   backdrop: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },
   sheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.card, borderTopRightRadius: radius.card, padding: 16, paddingBottom: 32, gap: 12 },
