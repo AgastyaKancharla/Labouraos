@@ -467,7 +467,7 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
         <Card style={styles.gapCard} stripe accent={SECTION_ACCENTS[2]}>
           <Section n={3} title={t('fa07.s3')} />
           <Button
-            label={busy === 'where' ? t('addr.finding') : t('addr.fillFromWhereIAm')}
+            label={busy === 'where' ? t('addr.finding') : t('addr.useWhereIAm')}
             icon={<Text color={colors.white}>📍</Text>}
             loading={busy === 'where'}
             onPress={() => void fillFromWhereIAm()}
