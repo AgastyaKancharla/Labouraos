@@ -3,12 +3,11 @@ import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useI18n } from '@/i18n';
-import { Button, Card, EmptyState, ErrorState, IconTile, ListRow, LoadingState, Screen, StatusChip, Text, TileMap } from '@/components';
+import { Button, Card, EmptyState, ErrorState, IconTile, ListRow, LoadingState, PlaceLine, Screen, StatusChip, Text, TileMap } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import type { ShopPoint } from '@/api/endpoints';
 import { useLocation } from '@/device/location/useLocation';
-import { formatCoordinates } from '@/device/location/location';
 import { pageRoutes } from '@/navigation/routes';
 import { colors, shadow } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
@@ -58,9 +57,11 @@ export default function MapScreen() {
         <Card compact>
           <View style={styles.row}>
             <IconTile icon="location" accent={fix ? 'royal' : 'navy'} size={32} />
-            <Text variant="bodyStrong" style={styles.flex1} testID="fa13-me">
-              {fix ? `${t('fa13.youAreHere')} · ${formatCoordinates(fix)}` : location.errorKey ? t(location.errorKey) : t('fa20.gpsFinding')}
-            </Text>
+            <View style={styles.flex1} testID="fa13-me">
+              <Text variant="bodyStrong">{fix ? t('fa13.youAreHere') : location.errorKey ? t(location.errorKey) : t('fa20.gpsFinding')}</Text>
+              {/* 22 Nov (rev 207): the area in words, never raw latitude and longitude. */}
+              {fix ? <PlaceLine latitude={fix.latitude} longitude={fix.longitude} testID="fa13-place" /> : null}
+            </View>
             {fix ? <StatusChip tone={fix.level === 'good' ? 'green' : 'amber'} label={t('fa13.accuracy', { meters: Math.round(fix.accuracy) })} /> : null}
           </View>
           {location.errorKey ? <Button label={t('common.retry')} variant="secondary" onPress={() => void read()} /> : null}

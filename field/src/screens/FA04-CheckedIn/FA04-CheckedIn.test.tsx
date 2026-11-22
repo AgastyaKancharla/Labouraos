@@ -30,7 +30,7 @@ describe('FA04 My day', () => {
     expect(screen.getByTestId('fa04-day-logged-in')).toHaveTextContent(/Logged in at 9:12 AM.*on time/);
     expect(screen.getByTestId('fa04-day-logout')).toHaveTextContent('Log out');
     expect(screen.getByTestId('fa04-production')).toHaveTextContent('0h 12m of 8h');
-    await waitFor(() => expect(screen.getByTestId('fa04-location')).toHaveTextContent(/12.91160, 77.63890.*±12 m.*Only now, at visits and at calls/));
+    await waitFor(() => expect(screen.getByTestId('fa04-location')).toHaveTextContent(/area shown when online.*±12 m.*Only now, at visits and at calls/));
     await fireEvent.press(screen.getByTestId('fa04-day-status'));
     // On visit / Travelling are set by the server, never offered (A2).
     expect(screen.queryByTestId('status-choice-on_visit')).toBeNull();

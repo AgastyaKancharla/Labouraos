@@ -169,4 +169,27 @@ describe('Field shop visit simplified (22 Nov)', () => {
     const board = await http().get('/team-lead/visits').set(authOf(lead)).expect(200);
     expect(board.body.closedRevisits).toEqual(expect.arrayContaining([expect.objectContaining({ id: newer.id, shop: 'Reddy mess', reason: 'other', note: 'Owner moved to Hosur' })]));
   });
+
+  it('Businesses tab: his businesses (account agent, or onboarded by him) with interviews today; Visits rows carry the business', async () => {
+    clock.at = START;
+    const code = `BZ-FS${String(stamp).slice(-6)}`;
+    const business = await prisma.business.create({
+      data: { code, name: 'Nandini sweets', phone: `+9196${String(stamp).slice(-8)}`, latitude: SHOP.latitude, longitude: SHOP.longitude, accountAgentId: other.id, verificationStatus: 'pending_tl_check', leadChannel: 'field_visit' },
+    });
+    try {
+      const before = await http().get('/field-work/businesses').set(authOf(agent)).expect(200);
+      expect(before.body.results.map((r: { id: string }) => r.id)).not.toContain(business.id);
+      // He onboarded it on a visit (another agent is its account agent): it is on his list too.
+      await prisma.businessVisit.create({ data: { staffId: agent.id, businessId: business.id, outcome: 'onboarded', outcomeRecordedAt: START, latitude: SHOP.latitude, longitude: SHOP.longitude, visitedAt: new Date(START.getTime() - 60_000) } });
+      const after = await http().get('/field-work/businesses').set(authOf(agent)).expect(200);
+      const row = after.body.results.find((r: { id: string }) => r.id === business.id);
+      expect(row).toMatchObject({ name: 'Nandini sweets', interviewsToday: 0, isAccountAgent: false });
+      const day = await http().get('/field-work/day').set(authOf(agent)).expect(200);
+      const visit = day.body.items.find((i: { type: string; title: string }) => i.type === 'visit' && i.title === 'Nandini sweets');
+      expect(visit.target).toMatchObject({ type: 'visit', businessId: business.id });
+    } finally {
+      await prisma.businessVisit.deleteMany({ where: { businessId: business.id } });
+      await prisma.business.delete({ where: { id: business.id } });
+    }
+  });
 });

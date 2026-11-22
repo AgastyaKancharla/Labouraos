@@ -30,7 +30,7 @@ describe('FA13 Shops near me', () => {
         return undefined;
       },
     });
-    await waitFor(() => expect(screen.getByTestId('fa13-me')).toHaveTextContent(/You are here · 12.91160, 77.63890/));
+    await waitFor(() => expect(screen.getByTestId('fa13-me')).toHaveTextContent(/You are here.*area shown when online/));
     expect(screen.getByText('accuracy 12 m')).toBeTruthy();
     expect(urls.find((u) => u.includes('/field-work/map'))).toMatch(/lat=12.9116&lng=77.6389/);
     await waitFor(() => screen.getByTestId('fa13-shop-v-2'));
@@ -96,5 +96,20 @@ describe('FA13 Shops near me', () => {
     await fireEvent(screen.getByTestId('fa13-map'), 'layout', { nativeEvent: { layout: { width: 358, height: 380, x: 0, y: 0 } } });
     await fireEvent.press(screen.getByTestId('marker-v-4'));
     expect(router.push).toHaveBeenLastCalledWith('/visit/details/v-4');
+  });
+
+  it('22 Nov (rev 208): an unregistered shop with a revisit due is a "Revisit due" pin; it starts the visit with its note and can be closed', async () => {
+    const reddy = { ...shop('v-7', 'Reddy mess', 'revisit_due', 300, null), revisitClosable: true, note: 'currently he does not have the staff requirements', lastVisitAt: '2026-11-20T06:00:00.000Z' };
+    await renderWithApp(<MapScreen />, {
+      signedInAs: kiran,
+      route: (url) => (url.includes('/field-work/map') ? { status: 200, body: { me: { latitude: 12.9116, longitude: 77.6389 }, radiusMeters: 3000, duplicateRadiusMeters: 50, shops: [reddy], revisitsDue: [reddy] } } : undefined),
+    });
+    await waitFor(() => screen.getByTestId('fa13-shop-v-7'));
+    expect(screen.getByTestId('fa13-close-v-7')).toHaveTextContent('Close this revisit');
+    await fireEvent.press(screen.getByTestId('fa13-shop-v-7'));
+    expect(router.push).toHaveBeenCalledWith({
+      pathname: '/visit/start',
+      params: { revisitOf: 'v-7', name: 'Reddy mess', lastNote: 'currently he does not have the staff requirements', lastAt: '2026-11-20T06:00:00.000Z' },
+    });
   });
 });

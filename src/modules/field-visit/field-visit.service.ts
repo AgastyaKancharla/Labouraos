@@ -113,7 +113,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
 
 type VisitWithBusiness = BusinessVisit & {
-  business: { id: string; code: string; name: string; latitude: number | null; longitude: number | null } | null;
+  business: { id: string; code: string; name: string; latitude: number | null; longitude: number | null; additionalContactName?: string | null; contactRole?: string | null } | null;
 };
 
 /**
@@ -980,7 +980,7 @@ export class FieldVisitService {
   private load(id: string): Promise<VisitWithBusiness> {
     return this.prisma.businessVisit.findUniqueOrThrow({
       where: { id },
-      include: { business: { select: { id: true, code: true, name: true, latitude: true, longitude: true } } },
+      include: { business: { select: { id: true, code: true, name: true, latitude: true, longitude: true, additionalContactName: true, contactRole: true } } },
     });
   }
 
@@ -1005,6 +1005,10 @@ export class FieldVisitService {
       geofenceFlag: visit.geofenceFlag,
       spokeTo: visit.spokeTo,
       contactPhone: visit.contactPhone,
+      // 22 Nov (rev 207): an onboarded visit asks no "whom did you speak to"; the registered contact stands in.
+      registeredContact: !visit.spokeTo && visit.business
+        ? { name: visit.business.additionalContactName ?? null, role: visit.business.contactRole ?? null }
+        : null,
       outcome: visit.outcome,
       outcomeReason: visit.outcomeReason,
       revisitOn: keyFromDate(visit.revisitOn),

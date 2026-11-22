@@ -5,7 +5,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { useAfterSave } from '@/api/refresh';
-import { Banner, Button, Card, Emoji, PinFinder, Screen, Text, TextField } from '@/components';
+import { Banner, Button, Card, Emoji, PinFinder, PlaceLine, Screen, Text, TextField } from '@/components';
 import { addDays, Checkbox, ChipPicker, DateField, MobileField, MoneyField, SelectField, todayKeyIst } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useLocation } from '@/device/location/useLocation';
@@ -232,6 +232,10 @@ export default function CaptureSeekerScreen() {
             <Text style={styles.pinText} testID="pin">
               {form.place.latitude !== null ? t('fa10.pinSet') : t('fa10.pinMissing')}
             </Text>
+            {/* 22 Nov (rev 207): the pin's area in words. */}
+            {form.place.latitude !== null && form.place.longitude !== null ? (
+              <PlaceLine latitude={form.place.latitude} longitude={form.place.longitude} variant="muted" testID="pin-place" />
+            ) : null}
             <Button
               label={t('fa10.pinHere')}
               variant="secondary"
