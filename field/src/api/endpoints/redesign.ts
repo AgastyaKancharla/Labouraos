@@ -59,6 +59,9 @@ export interface NeedsItem {
   /** 21 Nov: the come-back time ("HH:mm") and, for a revisit handed over on leave, whose it was. */
   revisitTime?: string | null;
   coverFor?: string | null;
+  /** revisit_due (22 Nov): the last visit's note and when it was, shown when the revisit starts. */
+  note?: string | null;
+  lastVisitAt?: string | null;
   /** verification_visit (21 Nov): the job card. */
   job?: import('./fieldOps').VerificationJob;
   /** followup_task (21 Nov): "Repeat business — day 30". */

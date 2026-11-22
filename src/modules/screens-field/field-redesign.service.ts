@@ -495,6 +495,9 @@ export class FieldRedesignService {
         revisitOn: r.revisitOn,
         revisitTime: r.revisitTime,
         coverFor: r.coverFor,
+        // 22 Nov: shown at the top when the revisit starts ("Last visit Fri 20 Nov: …").
+        note: r.note,
+        lastVisitAt: r.lastVisitAt,
       });
     }
 
@@ -605,7 +608,7 @@ export class FieldRedesignService {
       items.push({
         type: 'visit', id: `visit:${v.id}`, at: (v.startedAt ?? v.visitedAt).toISOString(),
         title: v.business?.name ?? v.shopName ?? '', subtitle: v.business?.locality ?? null,
-        status: v.outcome ?? 'unfinished', target: { type: 'visit', id: v.id }, countsAsOnboarded: countedVisits.has(v.id),
+        status: v.outcome ?? 'unfinished', target: { type: 'visit', id: v.id, businessId: v.businessId }, countsAsOnboarded: countedVisits.has(v.id),
       });
     }
     for (const b of businesses) {
@@ -1373,7 +1376,7 @@ export class FieldRedesignService {
       take: 200,
     });
     const openVerification = await this.extras.openVerificationVisitIds(rows);
-    const result: Array<{ visitId: string; businessId: string | null; name: string; locality: string | null; revisitOn: string | null; revisitTime: string | null; coverFor: string | null }> = [];
+    const result: Array<{ visitId: string; businessId: string | null; name: string; locality: string | null; revisitOn: string | null; revisitTime: string | null; coverFor: string | null; note: string | null; lastVisitAt: string }> = [];
     // One row per shop (22 Nov): the business, or the same board name close by (two separate visits).
     const kept: Array<{ businessId: string | null; shopName: string | null; latitude: number; longitude: number }> = [];
     for (const v of rows) {
@@ -1392,6 +1395,8 @@ export class FieldRedesignService {
         revisitOn: keyFromDate(v.revisitOn),
         revisitTime: v.revisitTime,
         coverFor: v.staffId !== staffId ? v.staffId : null,
+        note: v.note,
+        lastVisitAt: v.visitedAt.toISOString(),
       });
     }
     const coverIds = [...new Set(result.map((r) => r.coverFor).filter((id): id is string => Boolean(id)))];

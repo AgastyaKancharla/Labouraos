@@ -50,6 +50,8 @@ export const visitPaths = {
   start: '/field-visits',
   outcome: (id: string) => `/field-visits/${encodeURIComponent(id)}/outcome`,
   proof: (id: string) => `/field-visits/${encodeURIComponent(id)}/proof`,
+  /** 22 Nov (rev 208): "Close this revisit" with a reason. */
+  closeRevisit: (id: string) => `/field-visits/${encodeURIComponent(id)}/close-revisit`,
 };
 
 export const visitsApi = (api: ApiClient) => ({

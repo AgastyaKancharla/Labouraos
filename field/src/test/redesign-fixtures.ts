@@ -137,7 +137,7 @@ export const dayView = (date = '2026-11-16', over: Partial<DayView> = {}): DayVi
   isToday: date === '2026-11-16',
   counts: { visit: 2, business_registered: 1, job_seeker_registered: 1, referral_registered: 0, candidates_shown: 0, interview_booked: 0, interview_attended: 0 },
   items: [
-    { type: 'visit', id: 'visit:v-1', at: '2026-11-16T05:02:00.000Z', title: 'Sri Sai Bakery', subtitle: 'JP Nagar', status: 'onboarded', target: { type: 'visit', id: 'v-1' } },
+    { type: 'visit', id: 'visit:v-1', at: '2026-11-16T05:02:00.000Z', title: 'Sri Sai Bakery', subtitle: 'JP Nagar', status: 'onboarded', target: { type: 'visit', id: 'v-1', businessId: 'b-1' } },
     { type: 'business_registered', id: 'business:b-1', at: '2026-11-16T05:20:00.000Z', title: 'Sri Sai Bakery', subtitle: 'JP Nagar', status: 'lead', target: { type: 'business', id: 'b-1' } },
     { type: 'visit', id: 'visit:v-3', at: '2026-11-16T04:00:00.000Z', title: 'Sagar Stores', subtitle: null, status: 'unfinished', target: { type: 'visit', id: 'v-3' } },
     { type: 'job_seeker_registered', id: 'js:js-1', at: '2026-11-16T03:00:00.000Z', title: 'Kavya R', subtitle: null, status: 'lead', target: { type: 'job_seeker', id: 'js-1' } },

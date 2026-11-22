@@ -4,15 +4,14 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useI18n } from '@/i18n';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Banner, Button, Card, Icon, IconTile, Screen, StatusChip, Text } from '@/components';
+import { Banner, Button, Card, Icon, IconTile, PlaceLine, Screen, StatusChip, Text } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { isApiError } from '@/api/errors';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useLocation } from '@/device/location/useLocation';
-import { formatCoordinates } from '@/device/location/location';
 import type { CapturedPhoto } from '@/device/camera';
-import { formatStampIst } from '@/lib/format';
+import { formatDayIst, formatStampIst } from '@/lib/format';
 import { newId } from '@/lib/uuid';
 import { routes } from '@/navigation/routes';
 import { colors, heroGradient, radius } from '@/theme';
@@ -24,6 +23,7 @@ import { photoRequest } from '../_visits/photo';
 import { saveDraft } from '../_visits/visitDraft';
 import { visitPaths, type ShopPoint } from '@/api/endpoints';
 import { statusKey } from '../_visits/labels';
+import { PhotoPreview } from '../_visits/PhotoPreview';
 
 /**
  * FA20 — Visit a shop, step 1 (outside, before going in). GPS is read, the
@@ -35,13 +35,15 @@ import { statusKey } from '../_visits/labels';
  */
 export default function VisitStartScreen() {
   const { t } = useI18n();
-  const params = useLocalSearchParams<{ businessId?: string; revisitOf?: string; name?: string }>();
+  const params = useLocalSearchParams<{ businessId?: string; revisitOf?: string; name?: string; lastNote?: string; lastAt?: string }>();
   const { fieldWork } = useEndpoints();
   const queue = useOfflineQueue();
   const client = useQueryClient();
   const location = useLocation();
   const { read } = location;
   const [cameraOpen, setCameraOpen] = useState(false);
+  // 22 Nov (rev 207): the board photo is shown back (Retake / Continue) before the visit starts.
+  const [taken, setTaken] = useState<CapturedPhoto | null>(null);
   const [sameShop, setSameShop] = useState<ShopPoint | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -88,6 +90,7 @@ export default function VisitStartScreen() {
         proofAt: null,
       });
       void client.invalidateQueries({ queryKey: ['field-work'] });
+      setTaken(null);
       router.replace({ pathname: routes.visitTalk, params: { id } });
     } catch (e) {
       setError(isApiError(e) ? e.message : t('common.error'));
@@ -101,15 +104,34 @@ export default function VisitStartScreen() {
       <AppHeader title={t('fa20.title')} />
       <Screen>
         <StepHeader step={1} revisit={Boolean(params.businessId ?? sameShop?.businessId)} />
+        {/* 22 Nov: a revisit starts at step 1 (fresh photo and GPS) with the last visit's note on top. */}
+        {params.lastAt ? (
+          <Banner
+            tone="info"
+            message={params.lastNote ? t('revisit.last', { date: formatDayIst(params.lastAt), note: params.lastNote }) : t('revisit.lastNoNote', { date: formatDayIst(params.lastAt) })}
+            testID="fa20-last-visit"
+          />
+        ) : null}
         <Card title={t('fa20.photoTitle')} icon="camera" accent="royal">
           <View style={styles.gps} testID="fa20-gps">
             <IconTile icon="location" accent={fix ? 'green' : 'navy'} size={30} />
-            <Text variant="small" style={styles.flex1}>
-              {fix ? `${t('fa20.gpsFound')} · ${formatCoordinates(fix)}` : location.errorKey ? t(location.errorKey) : t('fa20.gpsFinding')}
-            </Text>
+            <View style={styles.flex1}>
+              {fix ? (
+                <>
+                  <Text variant="small">{t('fa20.gpsFound')}</Text>
+                  {/* 22 Nov (rev 207): the area in words, never raw latitude and longitude. */}
+                  <PlaceLine latitude={fix.latitude} longitude={fix.longitude} variant="bodyStrong" testID="fa20-place" />
+                </>
+              ) : (
+                <Text variant="small">{location.errorKey ? t(location.errorKey) : t('fa20.gpsFinding')}</Text>
+              )}
+            </View>
             {fix ? <StatusChip tone={fix.level === 'good' ? 'green' : 'amber'} label={t('device.location.accuracy', { meters: Math.round(fix.accuracy) })} /> : null}
           </View>
           {location.errorKey ? <Button label={t('common.retry')} variant="secondary" onPress={() => void read()} /> : null}
+          {taken ? (
+            <PhotoPreview photo={taken} busy={busy} onRetake={() => setCameraOpen(true)} onContinue={() => void onPhoto(taken)} testID="fa20-preview" />
+          ) : (
           <LinearGradient colors={heroGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.photoBox}>
             <IconTile icon="camera" accent="cyan" size={60} />
             <Text variant="h2" align="center" color={colors.white}>
@@ -120,10 +142,11 @@ export default function VisitStartScreen() {
             </Text>
             {fix ? (
               <Text variant="tiny" align="center" color={colors.navSoft}>
-                {`${formatCoordinates(fix)} · ${formatStampIst(openedAt)}`}
+                {formatStampIst(openedAt)}
               </Text>
             ) : null}
           </LinearGradient>
+          )}
           {params.name ? <Text variant="small">{t('fa20.visiting', { name: params.name })}</Text> : null}
         </Card>
 
@@ -153,15 +176,17 @@ export default function VisitStartScreen() {
           />
         ) : null}
         {error ? <Banner tone="error" message={error} testID="fa20-error" /> : null}
-        <Button
-          label={t('fa20.takePhoto')}
-          icon={<Icon name="camera" color={colors.white} />}
-          loading={busy}
-          onPress={() => setCameraOpen(true)}
-          testID="fa20-take-photo"
-        />
+        {taken ? null : (
+          <Button
+            label={t('fa20.takePhoto')}
+            icon={<Icon name="camera" color={colors.white} />}
+            loading={busy}
+            onPress={() => setCameraOpen(true)}
+            testID="fa20-take-photo"
+          />
+        )}
       </Screen>
-      <CameraSheet open={cameraOpen} facing="back" label={params.name} onCapture={(p) => void onPhoto(p)} onClose={() => setCameraOpen(false)} />
+      <CameraSheet open={cameraOpen} facing="back" label={params.name} onCapture={(p) => setTaken(p)} onClose={() => setCameraOpen(false)} />
     </View>
   );
 }

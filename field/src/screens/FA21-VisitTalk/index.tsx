@@ -13,21 +13,19 @@ import { useFormDraft } from '@/lib/formDraft';
 import { pageRoutes, routes } from '@/navigation/routes';
 import { colors, fonts } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
-import { ChipChoices } from '../_visits/ChoiceList';
 import { StepHeader } from '../_visits/StepHeader';
 import { formatTimer } from '../_visits/format';
 import { useVisit } from '../_visits/useVisit';
 import { saveDraft, type VisitDraft } from '../_visits/visitDraft';
 
-const MOBILE = /^[6-9]\d{9}$/;
-
 /**
  * FA21 — Visit a shop, step 2 (inside, talking). The visit timer runs from
- * the board photo. The agent notes the shop name and who he spoke to (and
- * optionally their mobile, for the Team Lead to check), then picks how it
- * went. "Interested — onboard now" closes the timer and leads to the proof
- * selfie (FA22); the other three open the outcome form (FA06c) for the date
- * or reason. Very short visits are flagged to the Team Lead by the server.
+ * the board photo. The agent notes the shop name, then picks how it went
+ * (22 Nov, rev 207: only these two). "Interested — onboard now" closes the
+ * timer and leads to the proof selfie (FA22) — the contact person, role and
+ * mobile are asked once, in registration (FA07); the other three open the
+ * outcome form (FA06c), which asks whom he spoke to and the optional shop
+ * phone, and the date or reason. Very short visits are flagged to the Team Lead by the server.
  * A visit that already has a result (an old link, or back from a later step)
  * opens its visit details instead: no timer and no result buttons again
  * (fix list A5).
@@ -51,13 +49,9 @@ function Talk({ visit }: { visit: VisitDraft }) {
   // What was typed survives going back to this step (redesign: the back arrow never loses it).
   const [fields, setFields] = useFormDraft(`fa21:${visit.id}`, () => ({
     shopName: visit.businessName ?? visit.shopName ?? '',
-    spokeTo: (visit.spokeTo || null) as string | null,
-    mobile: visit.contactPhone ?? '',
   }));
-  const { shopName, spokeTo, mobile } = fields;
+  const { shopName } = fields;
   const setShopName = (v: string) => setFields((f) => ({ ...f, shopName: v }));
-  const setSpokeTo = (v: string | null) => setFields((f) => ({ ...f, spokeTo: v }));
-  const setMobile = (v: string) => setFields((f) => ({ ...f, mobile: v }));
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -67,20 +61,9 @@ function Talk({ visit }: { visit: VisitDraft }) {
   }, []);
 
   const startedAt = new Date(visit.startedAt).getTime();
-  const spokeChoices = [
-    { value: 'owner', label: t('spoke.owner') },
-    { value: 'manager', label: t('spoke.manager') },
-    { value: 'staff', label: t('spoke.staff') },
-    { value: 'no_one', label: t('spoke.no_one') },
-  ];
-
   function valid(): boolean {
-    if (!shopName.trim() || !spokeTo) {
-      setProblem(t('fa21.needNameAndPerson'));
-      return false;
-    }
-    if (mobile && !MOBILE.test(mobile)) {
-      setProblem(t('fa21.mobileInvalid'));
+    if (!shopName.trim()) {
+      setProblem(t('fa21.needName'));
       return false;
     }
     setProblem(null);
@@ -89,7 +72,7 @@ function Talk({ visit }: { visit: VisitDraft }) {
 
   function keep(endedAt: string) {
     // 21 Nov: written whole (from the server's copy after a reload), so the next step always has it.
-    saveDraft({ ...visit, shopName: shopName.trim(), spokeTo: spokeTo ?? '', contactPhone: mobile, endedAt });
+    saveDraft({ ...visit, shopName: shopName.trim(), endedAt });
   }
 
   async function onboardNow() {
@@ -100,7 +83,7 @@ function Talk({ visit }: { visit: VisitDraft }) {
       await queue.submit(`${t('fa21.queueLabel')} · ${shopName.trim()}`, {
         method: 'POST',
         path: visitPaths.outcome(visit.id),
-        json: { outcome: 'onboard_now', shopName: shopName.trim(), spokeTo, ...(mobile ? { contactPhone: mobile } : {}), endedAt },
+        json: { outcome: 'onboard_now', shopName: shopName.trim(), endedAt },
       });
       keep(endedAt);
       void client.invalidateQueries({ queryKey: ['field-work'] });
@@ -142,19 +125,6 @@ function Talk({ visit }: { visit: VisitDraft }) {
               editable={!visit.businessId}
               testID="fa21-shop-name"
             />
-            <Text variant="small" style={styles.bold}>
-              {t('fa21.spokeTo')}
-            </Text>
-            <ChipChoices choices={spokeChoices} value={spokeTo} onChange={setSpokeTo} testID="fa21-spoke" />
-            <TextField
-              label={t('fa21.mobile')}
-              placeholder={t('fa21.mobilePlaceholder')}
-              value={mobile}
-              onChangeText={(v) => setMobile(v.replace(/\D/g, '').slice(0, 10))}
-              keyboardType="number-pad"
-              maxLength={10}
-              testID="fa21-mobile"
-            />
           </View>
         </Card>
         {problem ? <Banner tone="error" message={problem} testID="fa21-problem" /> : null}
@@ -175,5 +145,4 @@ const styles = StyleSheet.create({
   started: { fontFamily: fonts.body500, fontSize: 13, color: colors.onBlueSoft, flexShrink: 1 },
   timer: { fontFamily: fonts.display800, fontSize: 30, color: colors.white, fontVariant: ['tabular-nums'] },
   form: { gap: 12 },
-  bold: { fontFamily: fonts.body700, color: colors.soft, fontSize: 12 },
 });

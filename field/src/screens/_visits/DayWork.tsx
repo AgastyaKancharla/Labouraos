@@ -1,7 +1,8 @@
-import { StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { Button, EmptyState, ErrorState, IconTile, ListRow, LoadingState, StatusChip, Text, type IconName } from '@/components';
+import { Button, EmptyState, ErrorState, Icon, IconTile, ListRow, LoadingState, StatusChip, Text, type IconName } from '@/components';
 import { addDays, DateField, todayKeyIst } from '@/components/form';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
@@ -9,7 +10,7 @@ import type { DayItem, DayItemType, DayView } from '@/api/endpoints';
 import { useI18n, type MessageKey } from '@/i18n';
 import { formatTimeIst } from '@/lib/format';
 import { pageRoutes, routes, sellingRoutes } from '@/navigation/routes';
-import { type Accent } from '@/theme';
+import { type Accent, colors } from '@/theme';
 import { ChipChoices } from './ChoiceList';
 import { outcomeKey } from './labels';
 
@@ -133,11 +134,16 @@ export function DayWork({ date, kind, limit, onMore, testID = 'day-work' }: {
   if (q.isPending) return <LoadingState compact />;
   if (q.isError) return <ErrorState compact error={q.error} onRetry={() => void q.refetch()} />;
   const items = q.data.items.filter((i) => matchesKind(i, kind));
-  const shown = limit ? items.slice(0, limit) : items;
+  // 22 Nov (rev 207): one row per business or job seeker; tapping a business opens its day's timeline.
+  // A list filtered on one kind (a Today number) stays one row per item.
+  const groups = kind ? items.map((i) => ({ key: i.id, title: i.title, subtitle: i.subtitle, items: [i] })) : groupDayItems(items);
+  const shown = limit ? groups.slice(0, limit) : groups;
   return (
     <View testID={testID}>
       {items.length === 0 ? <EmptyState compact emoji="👟" message={q.data.isToday ? t('work.emptyToday') : t('work.empty')} /> : null}
-      {shown.map((item, i) => {
+      {shown.map((group, i) => {
+        if (group.items.length > 1) return <DayGroupRow key={group.key} group={group} last={i === shown.length - 1} />;
+        const item = group.items[0];
         const href = dayItemHref(item);
         const status = statusText(item, t);
         const look = TYPE_LOOK[item.type];
@@ -154,8 +160,107 @@ export function DayWork({ date, kind, limit, onMore, testID = 'day-work' }: {
           />
         );
       })}
-      {limit && items.length > limit && onMore ? (
-        <Button label={t('work.seeAll', { count: items.length })} variant="secondary" onPress={onMore} testID={`${testID}-more`} />
+      {limit && groups.length > limit && onMore ? (
+        <Button label={t('work.seeAll', { count: groups.length })} variant="secondary" onPress={onMore} testID={`${testID}-more`} />
+      ) : null}
+    </View>
+  );
+}
+
+/** One business (or shop, or person) in Today's work with everything done there that day (22 Nov). */
+export interface DayGroup {
+  key: string;
+  title: string;
+  subtitle: string | null;
+  /** Newest first, as the server sends them. */
+  items: DayItem[];
+}
+
+const shopKey = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+
+/** The business (or shop, or person) a row of Today's work is about. */
+export function dayGroupKey(item: DayItem): string {
+  const tg = item.target;
+  if (tg.type === 'business') return `b:${tg.id}`;
+  if (tg.businessId) return `b:${tg.businessId}`;
+  if (tg.type === 'visit') return `shop:${shopKey(item.title)}`;
+  return `${tg.type}:${tg.id}`;
+}
+
+/**
+ * My visits (Master Guide rev 207, owner's field test 22 Nov, screenshot
+ * 7f9884ca): one row per business or job seeker — "Nandini sweets" once, not
+ * a visit row and an onboarded row. A group sits where its newest item was.
+ */
+export function groupDayItems(items: DayItem[]): DayGroup[] {
+  const groups: DayGroup[] = [];
+  const byKey = new Map<string, DayGroup>();
+  for (const item of items) {
+    const key = dayGroupKey(item);
+    let group = byKey.get(key);
+    if (!group) {
+      group = { key, title: item.title, subtitle: null, items: [] };
+      byKey.set(key, group);
+      groups.push(group);
+    }
+    group.items.push(item);
+    if (!group.subtitle && item.subtitle && item.type !== 'candidates_shown' && !item.type.startsWith('interview')) group.subtitle = item.subtitle;
+  }
+  return groups;
+}
+
+/** The group's state badge: Onboarded when anything onboarded it that day, else its newest row's state. */
+function groupState(group: DayGroup, t: (key: MessageKey, params?: Record<string, string | number>) => string): { label: string; tone: 'green' | 'amber' | 'blue' | 'neutral' } | null {
+  if (group.items.some((i) => i.countsAsOnboarded || (i.type === 'visit' && i.status === 'onboarded') || i.type === 'business_registered')) {
+    return { label: t('outcome.onboarded'), tone: 'green' };
+  }
+  for (const item of group.items) {
+    const text = statusText(item, t);
+    if (text) return { label: text, tone: item.status === 'unfinished' ? 'amber' : item.status === 'already_onboarded' ? 'blue' : 'neutral' };
+  }
+  return null;
+}
+
+function DayGroupRow({ group, last }: { group: DayGroup; last: boolean }) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const newest = group.items[0];
+  const look = TYPE_LOOK[newest.type];
+  const state = groupState(group, t);
+  const timeline = [...group.items].reverse();
+  return (
+    <View testID={`work-group-${group.key}`}>
+      <ListRow
+        title={group.title}
+        subtitle={[t('work.steps', { count: group.items.length }), formatTimeIst(newest.at), group.subtitle].filter(Boolean).join(' · ')}
+        leading={<IconTile icon={look.icon} accent={look.accent} size={34} />}
+        trailing={state ? <StatusChip tone={state.tone} label={state.label} /> : <Icon name="chevron-right" size={16} />}
+        onPress={() => setOpen((o) => !o)}
+        last={last && !open}
+        testID={`work-group-${group.key}-toggle`}
+      />
+      {open ? (
+        <View style={[styles.timeline, last ? null : styles.divider]} testID={`work-group-${group.key}-timeline`}>
+          {timeline.map((item) => {
+            const href = dayItemHref(item);
+            const status = item.type === 'visit' ? statusText(item, t) : null;
+            return (
+              <Pressable
+                key={item.id}
+                accessibilityRole="button"
+                onPress={href ? () => router.push(href) : undefined}
+                style={styles.step}
+                testID={`work-${item.id}`}
+              >
+                <View style={styles.dot} />
+                <Text variant="small" style={styles.flex1}>
+                  {[t(`work.step.${item.type}` as MessageKey), formatTimeIst(item.at), status].filter(Boolean).join(' · ')}
+                </Text>
+                {href ? <Icon name="chevron-right" size={14} /> : null}
+              </Pressable>
+            );
+          })}
+        </View>
       ) : null}
     </View>
   );
@@ -186,4 +291,9 @@ export function DayHeading({ date }: { date: string }) {
 
 const styles = StyleSheet.create({
   switcher: { gap: 8, marginBottom: 6 },
+  flex1: { flex: 1 },
+  timeline: { paddingLeft: 46, paddingBottom: 6 },
+  divider: { borderBottomWidth: 1, borderBottomColor: colors.border },
+  step: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44 },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.blue },
 });

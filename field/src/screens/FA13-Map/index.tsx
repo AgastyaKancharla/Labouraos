@@ -14,6 +14,8 @@ import { colors, shadow } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { formatDistance } from '../_visits/format';
 import { STATUS_COLORS, statusKey } from '../_visits/labels';
+import { CloseRevisitButton } from '../_visits/CloseRevisit';
+import { revisitStart } from '../_visits/revisitStart';
 
 /**
  * FA13 — Shops near me, inside the Visits tab (redesign, 16 Nov; the Map tab
@@ -72,7 +74,8 @@ export default function MapScreen() {
               latitude: s.latitude,
               longitude: s.longitude,
               color: STATUS_COLORS[s.status] ?? colors.soft,
-              label: s.name,
+              // 22 Nov (rev 208): an unregistered shop with a revisit due is its own pin, labelled.
+              label: s.status === 'revisit_due' ? `${t('revisit.dueLabel')} · ${s.name}` : s.name,
               onPress: shopTarget(s) ? () => open(s) : undefined,
             }))}
             attribution={t('fa13.attribution')}
@@ -96,8 +99,8 @@ export default function MapScreen() {
             <EmptyState compact emoji="🗺️" message={t('fa13.noShops')} />
           ) : (
             near.map((s, i) => (
+              <View key={s.id}>
               <ListRow
-                key={s.id}
                 title={s.name}
                 subtitle={[t(statusKey(s.status)), formatDistance(s.distanceMeters)].join(' · ')}
                 leading={<View style={[styles.pin, { backgroundColor: STATUS_COLORS[s.status] ?? colors.soft }]} />}
@@ -109,9 +112,11 @@ export default function MapScreen() {
                   )
                 }
                 onPress={shopTarget(s) ? () => open(s) : undefined}
-                last={i === near.length - 1}
+                last={i === near.length - 1 || Boolean(s.revisitClosable && s.visitId)}
                 testID={`fa13-shop-${s.id}`}
               />
+              {s.revisitClosable && s.visitId ? <CloseRevisitButton visitId={s.visitId} name={s.name} testID={`fa13-close-${s.id}`} /> : null}
+              </View>
             ))
           )}
         </Card>
@@ -132,9 +137,7 @@ const isOwnRevisitDue = (s: ShopPoint) => s.status === 'revisit_due' && s.canAct
  * - another agent's unregistered shop: nothing.
  */
 export function shopTarget(s: ShopPoint): string | { pathname: string; params: Record<string, string> } | null {
-  if (isOwnRevisitDue(s)) {
-    return { pathname: routes.visitStart, params: s.businessId ? { businessId: s.businessId, name: s.name } : { revisitOf: s.visitId ?? '', name: s.name } };
-  }
+  if (isOwnRevisitDue(s)) return revisitStart({ businessId: s.businessId, visitId: s.visitId, name: s.name, note: s.note, lastVisitAt: s.lastVisitAt });
   if (s.businessId) return pageRoutes.business(s.businessId);
   if (s.visitId && s.canAct !== false) return pageRoutes.visitDetails(s.visitId);
   return null;
