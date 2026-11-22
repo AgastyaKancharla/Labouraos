@@ -19,6 +19,8 @@ jest.mock('expo-router', () => require('@/test/expo-router-mock'));
 const row = (id: string, name: string, linkSentAt: string | null = null) => ({
   id, code: `JS-${id}`, name, phoneLast4: '2345', status: 'active', registeredAt: '2026-11-16T06:00:00Z', stage: linkSentAt ? 'link_sent' : 'registered',
   steps: { linkSentAt, consentGivenAt: null, paidAt: null, idCheckedAt: null, idCheckPending: false, interviews: 0, placed: false },
+  // Laboura Field lists (22 Nov evening): the row's plain status line comes from the server.
+  row: { status: linkSentAt ? 'link_not_finished' : 'link_not_sent', action: 'registration_link', vacancyId: null, waiting: false, done: false, group: 'needs_action' },
 });
 
 const filled: JobSeekerForm = {
@@ -100,9 +102,9 @@ describe('a save in the redesign refreshes the lists that show it (A1)', () => {
       { signedInAs: kiran, route },
     );
     await waitFor(() => screen.getByTestId('fa10d-seeker-js-uuid'));
-    expect(screen.getByTestId('fa10d-seeker-js-uuid')).not.toHaveTextContent(/Link sent ✓/);
+    expect(screen.getByTestId('fa10d-seeker-js-uuid-status')).toHaveTextContent('Registration link not sent');
     await waitFor(() => screen.getByTestId('send-link'));
     await fireEvent.press(screen.getByTestId('send-link'));
-    await waitFor(() => expect(screen.getByTestId('fa10d-seeker-js-uuid')).toHaveTextContent(/Link sent ✓/));
+    await waitFor(() => expect(screen.getByTestId('fa10d-seeker-js-uuid-status')).toHaveTextContent('Link not finished'));
   });
 });
