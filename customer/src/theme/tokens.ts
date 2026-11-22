@@ -102,11 +102,13 @@ export const space = {
   xxl: 28,
 } as const;
 
+/** Version 2 (22 Nov 2026): softer, larger corners everywhere. */
 export const radius = {
   sm: 8,
-  md: 10,
-  lg: 12,
-  card: 16,
+  md: 14,
+  lg: 16,
+  card: 22,
+  sheet: 28,
   pill: 999,
 } as const;
 
@@ -115,29 +117,25 @@ export const touch = {
   min: 52,
 } as const;
 
+/**
+ * Version 2 (22 Nov 2026): layered shadows (React Native `boxShadow`, new
+ * architecture), so cards float and buttons look raised like a key: a light
+ * top edge, a darker bottom edge, a close shadow and a soft glow.
+ */
 export const shadow = {
-  card: {
-    shadowColor: colors.ink,
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
-  },
-  /** `--shadow-hero`: the soft navy shadow under the hero card. */
-  hero: {
-    shadowColor: colors.navy,
-    shadowOpacity: 0.22,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6,
-  },
+  card: { boxShadow: '0 0 0 1px rgba(3,43,115,0.05), 0 2px 4px rgba(3,43,115,0.05), 0 16px 32px -18px rgba(3,43,115,0.32)' },
+  /** The hero card and the ID card: a deep navy shadow. */
+  hero: { boxShadow: '0 2px 4px rgba(3,43,115,0.25), 0 26px 44px -22px rgba(3,43,115,0.85)' },
   primary: {
-    shadowColor: colors.blue,
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
+    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.28), inset 0 -3px 0 rgba(0,25,90,0.35), 0 2px 3px rgba(3,43,115,0.25), 0 10px 20px -6px rgba(0,85,192,0.45)',
   },
+  secondary: { boxShadow: 'inset 0 -2px 0 #E3E9F4, 0 2px 4px rgba(3,43,115,0.06), 0 10px 20px -12px rgba(3,43,115,0.30)' },
+  /** White button on the navy welcome screen. */
+  light: { boxShadow: 'inset 0 -3px 0 #D8E1F1, 0 2px 3px rgba(0,0,0,0.20), 0 16px 30px -12px rgba(0,0,0,0.60)' },
+  /** The round centre button in the bottom bar. */
+  fab: { boxShadow: '0 0 0 5px #FFFFFF, inset 0 -3px 0 rgba(0,25,90,0.35), 0 14px 26px -8px rgba(0,85,192,0.70)' },
+  /** The bottom bar, lifted off the page. */
+  bar: { boxShadow: '0 -1px 0 rgba(3,43,115,0.06), 0 -10px 30px -18px rgba(3,43,115,0.40)' },
 } as const;
 
 /** Status chip tones (`.tag` classes in the designs). */

@@ -66,10 +66,11 @@ export default function RolePicker() {
               accessibilityLabel={`${t(role.title)}. ${t(role.body)}`}
               disabled={already || busy !== null}
               onPress={() => void pick(role.kind, role.href)}
-              style={({ pressed }) => [styles.card, { borderLeftColor: a.raw }, pressed && { backgroundColor: a.bg }, already && styles.off]}
+              style={({ pressed }) => [styles.card, pressed && styles.pressed, already && styles.off]}
               testID={`role-${role.kind}`}
             >
-              <View style={[styles.picture, { backgroundColor: a.bg, borderColor: a.raw }]} testID={`role-${role.kind}-picture-${role.accent}`}>
+              <View style={[styles.picture, { backgroundColor: a.bg }]} testID={`role-${role.kind}-picture-${role.accent}`}>
+                <View style={[styles.blob, { backgroundColor: a.raw }]} />
                 <Text style={styles.emoji} accessibilityElementsHidden importantForAccessibility="no">
                   {role.emoji}
                 </Text>
@@ -79,7 +80,11 @@ export default function RolePicker() {
                 <Text variant="muted">{t(role.body)}</Text>
                 {already ? <StatusChip label={t('role.alreadyAdded')} tone="green" icon="check" /> : null}
               </View>
-              {already ? null : <Icon name="chevron-right" size={22} color={a.fg} />}
+              {already ? null : (
+                <View style={[styles.go, { backgroundColor: a.bg }]}>
+                  <Icon name="chevron-right" size={20} color={a.fg} />
+                </View>
+              )}
             </Pressable>
           );
         })}
@@ -93,19 +98,19 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    padding: 16,
-    minHeight: 112,
+    gap: 16,
+    padding: 14,
+    minHeight: 120,
     borderRadius: radius.card,
-    borderWidth: 1,
-    borderLeftWidth: 6,
-    borderColor: colors.border,
     backgroundColor: colors.surface,
     ...shadow.card,
   },
+  pressed: { transform: [{ scale: 0.98 }], opacity: 0.92 },
   off: { opacity: 0.6 },
-  picture: { width: 68, height: 68, borderRadius: 34, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-  emoji: { fontSize: 36, lineHeight: 44 },
+  picture: { width: 84, alignSelf: 'stretch', minHeight: 92, borderRadius: 18, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  blob: { position: 'absolute', right: -22, bottom: -22, width: 64, height: 64, borderRadius: 32, opacity: 0.25 },
+  emoji: { fontSize: 40, lineHeight: 48 },
+  go: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   text: { flex: 1, gap: 4 },
-  title: { fontFamily: fonts.display700, fontSize: 20, color: colors.navy },
+  title: { fontFamily: fonts.display800, fontSize: 19, color: colors.navy },
 });

@@ -5,7 +5,7 @@ export type IconName =
   | 'search' | 'camera' | 'plus' | 'chevron-right' | 'wifi-off' | 'location'
   | 'bell' | 'menu' | 'back' | 'check' | 'share' | 'copy' | 'phone' | 'user' | 'lock'
   | 'doc' | 'id-card' | 'rupee' | 'briefcase' | 'calendar' | 'clock' | 'refund' | 'users'
-  | 'store' | 'link' | 'help' | 'globe' | 'info' | 'shield' | 'chat' | 'trash' | 'star';
+  | 'store' | 'link' | 'help' | 'globe' | 'info' | 'shield' | 'chat' | 'trash' | 'star' | 'home';
 
 interface Props {
   name: IconName;
@@ -36,6 +36,12 @@ export function Icon({ name, size = 16, color = colors.soft }: Props) {
         </>
       ) : null}
       {name === 'plus' ? <Path d="M12 5v14M5 12h14" {...common} /> : null}
+      {name === 'home' ? (
+        <>
+          <Path d="m3 10 9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" {...common} />
+          <Path d="M9 22V13h6v9" {...common} />
+        </>
+      ) : null}
       {name === 'chevron-right' ? <Path d="m9 6 6 6-6 6" {...common} /> : null}
       {name === 'wifi-off' ? (
         <>

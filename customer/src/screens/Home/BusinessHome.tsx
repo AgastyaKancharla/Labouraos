@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -41,7 +42,7 @@ const VACANCY_ACCENT: Record<VacancyStatus, Accent> = {
  * interviews and placements as counts. No candidate details at all in this
  * first version — and never a candidate's phone number (no-bypass).
  */
-export function BusinessHomeView({ profileId, home, hero }: { profileId: string; home: BusinessHome; hero: HeroInfo }) {
+export function BusinessHomeView({ profileId, home, hero, belowHero }: { profileId: string; home: BusinessHome; hero: HeroInfo; belowHero?: ReactNode }) {
   const { t } = useI18n();
   const api = useCustomerApi();
   // "Report a worker left" shows only once the server switches it on (contract 8.2).
@@ -87,6 +88,7 @@ export function BusinessHomeView({ profileId, home, hero }: { profileId: string;
           ))}
         </View>
       </HeroCard>
+      {belowHero}
 
       <StatGrid>
         <StatTile label={t('bizHome.vacanciesTitle')} value={home.vacancies.length} accent="royal" icon="briefcase" testID="biz-stat-vacancies" />
