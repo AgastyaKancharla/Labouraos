@@ -22,6 +22,7 @@ import { LEGAL_DOCUMENT_VERSIONS } from '../legal/legal-documents';
 import { FieldAgentMetricsService } from '../target/field-agent-metrics.service';
 import { VacancyConfirmationService } from '../vacancy/vacancy-confirmation.service';
 import { REVISIT_OUTCOMES } from '../field-visit/field-visit.constants';
+import { sameShop } from '../field-visit/revisit-shops';
 import { DAY_MS, FieldVisitClock, istDateKey, istDayStart, keyFromDate } from '../field-visit/field-visit-clock';
 import { visitNextStep } from '../field-visit/field-visit.service';
 import { handedAwayIds, handedTo, sweepHandovers } from '../field-visit/field-handover.service';
@@ -494,6 +495,9 @@ export class FieldRedesignService {
         revisitOn: r.revisitOn,
         revisitTime: r.revisitTime,
         coverFor: r.coverFor,
+        // 22 Nov: shown at the top when the revisit starts ("Last visit Fri 20 Nov: …").
+        note: r.note,
+        lastVisitAt: r.lastVisitAt,
       });
     }
 
@@ -604,7 +608,7 @@ export class FieldRedesignService {
       items.push({
         type: 'visit', id: `visit:${v.id}`, at: (v.startedAt ?? v.visitedAt).toISOString(),
         title: v.business?.name ?? v.shopName ?? '', subtitle: v.business?.locality ?? null,
-        status: v.outcome ?? 'unfinished', target: { type: 'visit', id: v.id }, countsAsOnboarded: countedVisits.has(v.id),
+        status: v.outcome ?? 'unfinished', target: { type: 'visit', id: v.id, businessId: v.businessId }, countsAsOnboarded: countedVisits.has(v.id),
       });
     }
     for (const b of businesses) {
@@ -757,7 +761,12 @@ export class FieldRedesignService {
   async myBusinesses(actor: Actor, q?: string) {
     const now = this.clock.now();
     const query = (q ?? '').trim();
-    const filters: Prisma.BusinessWhereInput[] = [this.myBusinessesWhere(actor.sub), { anonymisedAt: null }];
+    // 22 Nov (rev 208): the Businesses tab lists his businesses — account agent (or his lead), or
+    // onboarded by him on a visit.
+    const filters: Prisma.BusinessWhereInput[] = [
+      { OR: [this.myBusinessesWhere(actor.sub), { visits: { some: { staffId: actor.sub, outcome: 'onboarded' } } }] },
+      { anonymisedAt: null },
+    ];
     if (query) {
       filters.push({
         OR: [
@@ -782,11 +791,21 @@ export class FieldRedesignService {
       },
     });
     const ids = rows.map((b) => b.id);
-    const [agreements, shown, outside] = await Promise.all([
+    const dayStart = istDayStart(now);
+    const [agreements, shown, outside, interviews] = await Promise.all([
       this.agreementInfos(ids, now),
       this.shownByVacancy(rows.flatMap((b) => b.vacancies.filter((v) => v.status === 'open').map((v) => v.id))),
       this.outsideAreaBusinesses(rows),
+      // 22 Nov: "Interviews today" on the row.
+      ids.length
+        ? this.prisma.interview.groupBy({
+            by: ['businessId'],
+            where: { businessId: { in: ids }, slotStartsAt: { gte: dayStart, lt: new Date(dayStart.getTime() + DAY_MS) }, status: { in: ['offered', 'confirmed'] } },
+            _count: { _all: true },
+          })
+        : Promise.resolve([] as Array<{ businessId: string; _count: { _all: number } }>),
     ]);
+    const interviewsToday = new Map(interviews.map((r) => [r.businessId, r._count._all]));
     return {
       query,
       results: rows.map((b) => {
@@ -800,6 +819,8 @@ export class FieldRedesignService {
           agreementSigned: agreement.state === 'signed',
           openVacancies: b.vacancies.filter((v) => v.status === 'open').reduce((sum, v) => sum + v.headcount, 0),
           nextStep: this.businessNextStep(b, agreement, shown, outside.has(b.id), now),
+          interviewsToday: interviewsToday.get(b.id) ?? 0,
+          isAccountAgent: b.accountAgentId === actor.sub,
         };
       }),
     };
@@ -1364,18 +1385,20 @@ export class FieldRedesignService {
         OR: [{ staffId }, { id: { in: handedIn.map((h) => h.recordId) } }],
         outcome: { in: [...REVISIT_OUTCOMES] },
         revisitOn: { lte: new Date(`${byKey}T00:00:00.000Z`) },
+        // 22 Nov (rev 208): a closed revisit never comes back.
+        revisitClosedAt: null,
       },
       orderBy: { visitedAt: 'desc' },
       include: { business: { select: { id: true, name: true, locality: true } } },
       take: 200,
     });
     const openVerification = await this.extras.openVerificationVisitIds(rows);
-    const result: Array<{ visitId: string; businessId: string | null; name: string; locality: string | null; revisitOn: string | null; revisitTime: string | null; coverFor: string | null }> = [];
-    const seen = new Set<string>();
+    const result: Array<{ visitId: string; businessId: string | null; name: string; locality: string | null; revisitOn: string | null; revisitTime: string | null; coverFor: string | null; note: string | null; lastVisitAt: string }> = [];
+    // One row per shop (22 Nov): the business, or the same board name close by (two separate visits).
+    const kept: Array<{ businessId: string | null; shopName: string | null; latitude: number; longitude: number }> = [];
     for (const v of rows) {
-      const shopKey = v.businessId ?? v.id;
-      if (seen.has(shopKey)) continue;
-      seen.add(shopKey);
+      if (kept.some((k) => sameShop(k, v))) continue;
+      kept.push(v);
       if (away.has(v.id) || openVerification.has(v.id) || FIELD_REVISIT_EXCLUDE.has(v.purpose ?? '')) continue;
       const later = v.businessId
         ? await this.prisma.businessVisit.findFirst({ where: { businessId: v.businessId, visitedAt: { gt: v.visitedAt } }, select: { id: true } })
@@ -1389,6 +1412,8 @@ export class FieldRedesignService {
         revisitOn: keyFromDate(v.revisitOn),
         revisitTime: v.revisitTime,
         coverFor: v.staffId !== staffId ? v.staffId : null,
+        note: v.note,
+        lastVisitAt: v.visitedAt.toISOString(),
       });
     }
     const coverIds = [...new Set(result.map((r) => r.coverFor).filter((id): id is string => Boolean(id)))];

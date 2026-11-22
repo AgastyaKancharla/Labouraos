@@ -7,7 +7,7 @@ import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { PiiMaskingInterceptor } from '../../common/rbac/pii-masking.interceptor';
 import { MAX_PHOTO_BYTES } from './field-visit.constants';
-import { ChangeResultBody, FieldVisitService, OutcomeBody, PhotoFields, UploadedPhoto } from './field-visit.service';
+import { ChangeResultBody, CloseRevisitBody, FieldVisitService, OutcomeBody, PhotoFields, UploadedPhoto } from './field-visit.service';
 
 type Authed = Request & { user: JwtPayload };
 const photoUpload = FileInterceptor('photo', { limits: { fileSize: MAX_PHOTO_BYTES, files: 1 } });
@@ -50,6 +50,17 @@ export class FieldVisitController {
   @RequireRoles('field_agent')
   changeResult(@Req() req: Authed, @Param('id') id: string, @Body() body: ChangeResultBody) {
     return this.visits.changeResult(req.user.sub, id, body ?? {});
+  }
+
+  /**
+   * "Close this revisit" (rev 208, 22 Nov): no more revisits of this shop, with a reason
+   * (not interested, shop closed, wrong or duplicate shop, other in words). Nothing is deleted;
+   * audited; the Team Lead sees it in Visit proof.
+   */
+  @Post(':id/close-revisit')
+  @RequireRoles('field_agent')
+  closeRevisit(@Req() req: Authed, @Param('id') id: string, @Body() body: CloseRevisitBody) {
+    return this.visits.closeRevisit(req.user.sub, id, body ?? {});
   }
 
   /** FA22 / FA06: selfie with the shop board and the second GPS check. */

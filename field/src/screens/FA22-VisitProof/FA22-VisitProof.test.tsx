@@ -30,10 +30,15 @@ describe('FA22 Visit a shop · proof', () => {
     setFakeStamp({ latitude: 12.91165 });
     await fireEvent.press(screen.getByTestId('fa22-take-selfie'));
     await fireEvent.press(screen.getByTestId('fake-camera-front'));
+    // 22 Nov (rev 207): the selfie is shown back first — thumbnail, area, "same spot" — nothing sent yet.
+    await waitFor(() => screen.getByTestId('fa22-preview'));
+    expect(sent).toHaveLength(0);
+    expect(screen.getByTestId('fa22-preview-thumb')).toBeTruthy();
+    expect(screen.getByTestId('fa22-preview-spot')).toHaveTextContent(/Same spot · 6 m/);
+    expect(screen.getByTestId('fa22-distance')).toHaveTextContent(/Same spot · 6 m/);
+    await fireEvent.press(screen.getByTestId('fa22-preview-continue'));
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toMatchObject({ path: '/field-visits/p-1/proof', files: [{ field: 'photo', name: 'selfie.jpg' }] });
-    expect(screen.getByTestId('fa22-distance')).toHaveTextContent(/Same spot · 6 m/);
-    await fireEvent.press(screen.getByTestId('fa22-continue'));
     expect(router.push).toHaveBeenCalledWith({ pathname: '/visit/business', params: { visitId: 'p-1' } });
     expect(screen.getByTestId('step-counter')).toHaveTextContent('Step 3 of 7 · selfie with the board');
   });
@@ -47,7 +52,9 @@ describe('FA22 Visit a shop · proof', () => {
     await waitFor(() => screen.getByTestId('fa22-problem'));
     expect(screen.getByTestId('fa22-problem')).toHaveTextContent(/Go back to the shop/);
     expect(send).not.toHaveBeenCalled();
-    expect(screen.getByTestId('fa22-continue').props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByTestId('fa22-preview-continue').props.accessibilityState.disabled).toBe(true);
+    await fireEvent.press(screen.getByTestId('fa22-preview-continue'));
+    expect(send).not.toHaveBeenCalled();
   });
 
   it('a revisit of a shop already in Laboura skips the business form and opens its visit details for the next step', async () => {
@@ -61,14 +68,14 @@ describe('FA22 Visit a shop · proof', () => {
     setFakeStamp({ latitude: 12.91165 });
     await fireEvent.press(screen.getByTestId('fa22-take-selfie'));
     await fireEvent.press(screen.getByTestId('fake-camera-front'));
-    await waitFor(() => expect(screen.getByTestId('fa22-continue').props.accessibilityState.disabled).toBe(false));
+    await waitFor(() => expect(screen.getByTestId('fa22-preview-continue').props.accessibilityState.disabled).toBe(false));
     // Revisit wording and its own four steps, never "register the business" or "of 7" (A8).
     expect(screen.getByTestId('step-counter')).toHaveTextContent('Step 3 of 4 · selfie with the board');
-    expect(screen.getByTestId('fa22-continue')).toHaveTextContent('Continue to save the visit');
+    expect(screen.getByTestId('fa22-preview-continue')).toHaveTextContent('Continue to save the visit');
     expect(screen.queryByText(/register the business/)).toBeNull();
     expect(screen.getByText(/already in Laboura, so it is not registered again/)).toBeTruthy();
-    await fireEvent.press(screen.getByTestId('fa22-continue'));
-    expect(router.push).toHaveBeenCalledWith('/visit/details/p-2');
+    await fireEvent.press(screen.getByTestId('fa22-preview-continue'));
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith('/visit/details/p-2'));
   });
 
   it('the revisit wording is in Kannada too', async () => {

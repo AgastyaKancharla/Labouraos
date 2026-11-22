@@ -24,7 +24,11 @@ import {
   WhatsAppField,
   type MobileState,
 } from '../_registration/kit';
-import { BUSINESS_TYPES, HEARD_FROM, INDIVIDUAL_ROLES } from '../_registration/options';
+import { HEARD_FROM, INDIVIDUAL_ROLES } from '../_registration/options';
+import { BUSINESS_TYPE_GROUPS } from '../_registration/businessTypes';
+
+/** 22 Nov (rev 207): a partner's business type uses the same grouped list as the business form. */
+const PARTNER_TYPE_OPTIONS = BUSINESS_TYPE_GROUPS.flatMap((g) => g.types.map((ty) => ({ value: ty.value, label: `${g.label} · ${ty.label}` })));
 import { referralScript } from '../_registration/scripts';
 import { useDraft } from '../_registration/useDraft';
 import { initialMobileState, useServerDraftSync } from '../_registration/serverDraft';
@@ -173,7 +177,7 @@ export default function RegisterReferral() {
                   <span className="sub">{t('reg.ref.orType')}</span>
                 </div>
                 <TextField label={t('reg.ref.businessName')} required value={form.partnerBusinessName} onChange={(v) => set('partnerBusinessName', v)} error={err('business')} />
-                <SelectField label={t('reg.biz.type')} required value={form.partnerBusinessType} onChange={(v) => set('partnerBusinessType', v)} options={choiceOptions(t, BUSINESS_TYPES)} error={err('business')} />
+                <SelectField label={t('reg.biz.type')} required value={form.partnerBusinessType} onChange={(v) => set('partnerBusinessType', v)} options={PARTNER_TYPE_OPTIONS} error={err('business')} />
               </>
             )}
           </div>

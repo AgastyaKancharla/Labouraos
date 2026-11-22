@@ -17,7 +17,11 @@ import { pageRoutes } from '@/navigation/routes';
 import { colors } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { Script } from '../_selling';
-import { referralBody, referralErrors, EMPTY_REFERRAL, HEARD_FROM, INDIVIDUAL_ROLES, PARTNER_BUSINESS_TYPES, type ReferralForm } from './payload';
+import { referralBody, referralErrors, EMPTY_REFERRAL, HEARD_FROM, INDIVIDUAL_ROLES, type ReferralForm } from './payload';
+import { BUSINESS_TYPE_GROUPS } from '@/lib/businessTypes';
+
+/** 22 Nov (rev 207): a partner's business type uses the same grouped list as the business form. */
+const PARTNER_TYPE_CHOICES = BUSINESS_TYPE_GROUPS.flatMap((g) => g.types.map((ty) => ({ value: ty.value, label: ty.label, group: g.label })));
 
 const MOBILE = /^[6-9]\d{9}$/;
 
@@ -168,7 +172,7 @@ export default function RegisterReferralScreen() {
           ) : (
             <>
               <TextField label={t('fa23.businessName')} value={form.partnerBusinessName} onChangeText={(v) => set({ partnerBusinessName: v })} error={err('business')} testID="fa23-business-name" />
-              <SelectField label={t('fa07.businessType')} value={form.partnerBusinessType} choices={choice(PARTNER_BUSINESS_TYPES, 'btype')} onChange={(v) => set({ partnerBusinessType: v })} error={err('business')} testID="fa23-business-type" />
+              <SelectField label={t('fa07.businessType')} value={form.partnerBusinessType} choices={PARTNER_TYPE_CHOICES} onChange={(v) => set({ partnerBusinessType: v })} error={err('business')} testID="fa23-business-type" />
             </>
           )}
         </Card>

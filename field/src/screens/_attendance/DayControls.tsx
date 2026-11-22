@@ -56,7 +56,7 @@ export function dayState(day: Pick<AttendanceToday, 'loginAt' | 'logoutAt'> | un
  * that is not open; if the server says the day is not open (another screen
  * logged out, the night job closed it), the day is simply shown again.
  */
-export function DayControls({ testID = 'attendance' }: { testID?: string }) {
+export function DayControls({ testID = 'attendance', compact = false }: { testID?: string; compact?: boolean }) {
   const { t } = useI18n();
   const attendance = useAttendanceToday();
   const login = useAttendanceLogin();
@@ -120,7 +120,7 @@ export function DayControls({ testID = 'attendance' }: { testID?: string }) {
     return <EndedDay day={day} testID={testID} />;
   }
 
-  return <OpenDay day={day} testID={testID} />;
+  return <OpenDay day={day} testID={testID} compact={compact} />;
 }
 
 /**
@@ -177,14 +177,10 @@ function useBreakMinutes(status: string | null, since: string | null | undefined
   return Math.max(0, Math.floor((nowMs - Date.parse(since)) / 60_000));
 }
 
-/** Logged in at …, on time or late, the status chip (tap to change) and Log out. */
-function OpenDay({ day, testID }: { day: AttendanceToday; testID: string }) {
-  const { t } = useI18n();
+/** Changing the status: saved on the server, then Today, Visits and the month read again. */
+function useStatusChange() {
   const { attendance } = useEndpoints();
-  const auth = useAuth();
   const client = useQueryClient();
-  const [picking, setPicking] = useState(false);
-  const [ending, setEnding] = useState(false);
   const after = (data: AttendanceToday) => {
     client.setQueryData(queryKeys.attendanceToday, data);
     void client.invalidateQueries({ queryKey: ['field-work'] });
@@ -197,6 +193,82 @@ function OpenDay({ day, testID }: { day: AttendanceToday; testID: string }) {
     onSuccess: after,
     onError: (error) => (isDayStateError(error) ? reread() : undefined),
   });
+  return { change, after, reread };
+}
+
+/** The status picker: the seven a person may pick; an automatic status is explained first. */
+function StatusSheet({ open, onClose, status, onPick }: { open: boolean; onClose: () => void; status: string | null; onPick: (s: string) => void }) {
+  const { t } = useI18n();
+  return (
+    <Sheet open={open} onClose={onClose} title={t('today.changeStatus')}>
+      {status && !isPickableStatus(status) ? (
+        <Text variant="muted" testID="status-automatic">
+          {status === 'start_of_day' ? t('today.statusSignIn') : t('today.statusAutomatic', { status: statusLabel(status, t) })}
+        </Text>
+      ) : null}
+      <ChoiceList
+        choices={STATUS_CHOICES.map((s) => ({ value: s, label: statusLabel(s, t), ...STATUS_ICON[s] }))}
+        value={isPickableStatus(status) ? status : null}
+        onChange={(s) => {
+          onClose();
+          if (s !== status) onPick(s);
+        }}
+        testID="status-choice"
+      />
+    </Sheet>
+  );
+}
+
+/**
+ * The small status button in the header, under the bell (Master Guide rev
+ * 207, 22 Nov): the current status (Travelling, On visit, Active, Start of
+ * day…); tap to change it. Only while the day is open. Log out is in Me;
+ * the login time and lateness are on My attendance.
+ */
+export function HeaderStatus({ testID = 'header-status' }: { testID?: string }) {
+  const { t } = useI18n();
+  const attendance = useAttendanceToday();
+  const { change } = useStatusChange();
+  const [picking, setPicking] = useState(false);
+  const day = attendance.data;
+  if (!day || dayState(day) !== 'open') return null;
+  const status = day.status;
+  const error = change.error && !isDayStateError(change.error) ? attendanceErrorText(change.error, 'today.statusFailed', t) : null;
+  return (
+    <View style={styles.headerStatus}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${t('today.changeStatus')}: ${status ? statusLabel(status, t) : t('today.pickStatus')}`}
+        onPress={() => setPicking(true)}
+        style={styles.headerTap}
+        testID={testID}
+      >
+        <StatusChip label={status ? statusLabel(status, t) : t('today.pickStatus')} tone={status === 'start_of_day' ? 'navy' : 'green'} dot />
+        <Icon name="chevron-right" size={12} color={colors.greenText} />
+      </Pressable>
+      {error ? (
+        <Text variant="tiny" color={colors.tomato} testID={`${testID}-error`}>
+          {error}
+        </Text>
+      ) : null}
+      <StatusSheet open={picking} onClose={() => setPicking(false)} status={status} onPick={(s) => change.mutate(s)} />
+    </View>
+  );
+}
+
+/**
+ * Logged in at …, on time or late, the status chip (tap to change) and Log out.
+ * `compact` (Today, 22 Nov): only what needs the agent now — Start work,
+ * Save my location, Back from lunch — since the status is in the header,
+ * Log out in Me and the login time and lateness on My attendance.
+ */
+function OpenDay({ day, testID, compact = false }: { day: AttendanceToday; testID: string; compact?: boolean }) {
+  const { t } = useI18n();
+  const { attendance } = useEndpoints();
+  const auth = useAuth();
+  const [picking, setPicking] = useState(false);
+  const [ending, setEnding] = useState(false);
+  const { change, after, reread } = useStatusChange();
   const end = useMutation<AttendanceToday, Error>({
     mutationFn: () => attendance.logout(),
     onSuccess: (d) => {
@@ -229,8 +301,10 @@ function OpenDay({ day, testID }: { day: AttendanceToday; testID: string }) {
   const breakOver = allowance !== undefined && breakMinutes >= allowance;
   const changeError = change.error && !isDayStateError(change.error) ? attendanceErrorText(change.error, 'today.statusFailed', t) : null;
   const endError = end.error && !isDayStateError(end.error) ? attendanceErrorText(end.error, 'day.logoutFailed', t) : null;
+  if (compact && status !== 'start_of_day' && !needsLocation && !breakOver && !changeError) return null;
   return (
-    <View style={styles.bar} testID={`${testID}-logged-in`}>
+    <View style={compact ? styles.gap : styles.bar} testID={compact ? `${testID}-prompts` : `${testID}-logged-in`}>
+      {compact ? null : (
       <View style={styles.barTop}>
         <IconTile icon="clock" accent="green" size={34} />
         <View style={styles.flex1}>
@@ -250,6 +324,7 @@ function OpenDay({ day, testID }: { day: AttendanceToday; testID: string }) {
           <Icon name="chevron-right" size={14} color={colors.greenText} />
         </Pressable>
       </View>
+      )}
       {status === 'start_of_day' ? (
         <View style={styles.gap} testID={`${testID}-start-of-day`}>
           <Banner tone="warn" icon="clock" title={t('day.startOfDayTitle', { time: day.statusSince ? formatTimeIst(day.statusSince) : '' })} message={t('day.startOfDayBody')} />
@@ -293,25 +368,12 @@ function OpenDay({ day, testID }: { day: AttendanceToday; testID: string }) {
           />
         </View>
       ) : null}
-      <Button label={t('day.logout')} variant="secondary" icon={<Icon name="clock" color={colors.tomato} />} onPress={() => setEnding(true)} testID={`${testID}-logout`} />
+      {compact ? null : (
+        <Button label={t('day.logout')} variant="secondary" icon={<Icon name="clock" color={colors.tomato} />} onPress={() => setEnding(true)} testID={`${testID}-logout`} />
+      )}
       {changeError || endError ? <Banner tone="error" message={(changeError ?? endError)!} testID={`${testID}-error`} /> : null}
 
-      <Sheet open={picking} onClose={() => setPicking(false)} title={t('today.changeStatus')}>
-        {status && !isPickableStatus(status) ? (
-          <Text variant="muted" testID="status-automatic">
-            {status === 'start_of_day' ? t('today.statusSignIn') : t('today.statusAutomatic', { status: statusLabel(status, t) })}
-          </Text>
-        ) : null}
-        <ChoiceList
-          choices={STATUS_CHOICES.map((s) => ({ value: s, label: statusLabel(s, t), ...STATUS_ICON[s] }))}
-          value={isPickableStatus(status) ? status : null}
-          onChange={(s) => {
-            setPicking(false);
-            if (s !== status) change.mutate(s);
-          }}
-          testID="status-choice"
-        />
-      </Sheet>
+      <StatusSheet open={picking} onClose={() => setPicking(false)} status={status} onPick={(s) => change.mutate(s)} />
       <Sheet open={ending} onClose={() => setEnding(false)} title={t('day.logoutTitle')}>
         <Text variant="muted">{t('day.logoutBody')}</Text>
         <Button label={t('day.logout')} variant="danger" loading={end.isPending} onPress={() => end.mutate()} testID={`${testID}-logout-confirm`} />
@@ -340,6 +402,8 @@ const styles = StyleSheet.create({
   flex1: { flex: 1 },
   bar: { gap: 10, padding: 12, borderRadius: radius.card, backgroundColor: colors.green100, borderLeftWidth: 4, borderLeftColor: colors.green },
   barTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerStatus: { alignItems: 'flex-end', paddingHorizontal: 12, gap: 2 },
+  headerTap: { flexDirection: 'row', alignItems: 'center', gap: 2, minHeight: touch.min, minWidth: touch.min },
   statusTap: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: touch.min, paddingLeft: 6 },
   backdrop: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },
   sheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.card, borderTopRightRadius: radius.card, padding: 16, paddingBottom: 32, gap: 12 },

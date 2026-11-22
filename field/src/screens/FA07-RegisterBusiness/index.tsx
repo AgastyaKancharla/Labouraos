@@ -3,12 +3,12 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useI18n, type MessageKey } from '@/i18n';
-import { Banner, Button, Card, CodeInput, Emoji, LoadingState, PinFinder, Screen, StatusChip, Text, TextField } from '@/components';
+import { Banner, Button, Card, CodeInput, Emoji, LoadingState, PinFinder, PlaceLine, Screen, StatusChip, Text, TextField, TileMap } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
 import { readOtpSend, duplicateMessage } from '@/lib/otp-send';
 import { queryKeys } from '@/api/queryClient';
 import { isApiError } from '@/api/errors';
-import { type ResolvedMapsLink, type SimilarShop, type Trade } from '@/api/endpoints';
+import { type ResolvedMapsLink, type SimilarShop, type Trade, type WhereAmI } from '@/api/endpoints';
 import { isNeedsSignalError, useOfflineQueue } from '@/device/offline-queue';
 import { readLocation } from '@/device/location/location';
 import { locationProvider } from '@/device/location/provider';
@@ -18,6 +18,7 @@ import { routes } from '@/navigation/routes';
 import { useFormDraft } from '@/lib/formDraft';
 import { inShortText } from '@/api/endpoints/legal';
 import { type Accent, accents, colors, fonts, radius, touch } from '@/theme';
+import { BUSINESS_TYPE_GROUPS, businessTypeLabel } from '@/lib/businessTypes';
 import { AppHeader } from '../_shared/AppHeader';
 import { SelectField } from '../_visits/SelectField';
 import { DatePicker } from '../_visits/DatePicker';
@@ -28,10 +29,8 @@ import { businessBody, DEFAULT_CITY, formErrors, type FormState, type MobileStat
 
 const ROLES = ['owner', 'manager', 'hr', 'supervisor', 'other'] as const;
 const HEARD = ['toll_free_missed_call', 'ad', 'referral_partner', 'field_visit', 'social_media', 'whatsapp', 'walk_in', 'other'] as const;
-const BTYPES = [
-  'restaurant_hotel', 'bakery', 'retail_shop', 'supermarket', 'apartment_society', 'household', 'office',
-  'factory', 'warehouse', 'hospital_clinic', 'construction', 'security_agency', 'salon', 'other',
-] as const;
+/** 22 Nov (rev 207): the full grouped list, the same as the consoles and the server. */
+const BTYPE_CHOICES = BUSINESS_TYPE_GROUPS.flatMap((g) => g.types.map((ty) => ({ value: ty.value, label: ty.label, group: g.label })));
 const EMPLOYEES = ['1-5', '6-20', '21-50', '51-200', '200+'] as const;
 const RUNNING = ['under_1', '1_3', '3_10', '10_plus'] as const;
 const HIRING = ['rarely', 'every_few_months', 'every_month', 'every_week'] as const;
@@ -90,7 +89,7 @@ export default function RegisterBusinessScreen() {
 
 function RegisterForm({ visitId, visit }: { visitId: string | null; visit: VisitDraft | null }) {
   const { t } = useI18n();
-  const { registration, visits, legal, fieldOps } = useEndpoints();
+  const { registration, visits, legal, fieldOps, redesign } = useEndpoints();
   const queue = useOfflineQueue();
   const client = useQueryClient();
   const options = useQuery({ queryKey: queryKeys.registrationOptions, queryFn: () => registration.options(), staleTime: 3_600_000 });
@@ -237,14 +236,15 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
   // 21 Nov (rev 204): the same box also takes a typed address or coordinates (PinFinder), and the pin is
   // confirmed on the map ("Is this the right place?") before anything is filled.
   const [mapsNote, setMapsNote] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
-  function fillFromPin(found: ResolvedMapsLink) {
+  function fillFromPin(found: ResolvedMapsLink, opts: { shopNumber?: boolean } = {}) {
+    const withShopNumber = opts.shopNumber !== false;
     const a = found.address;
     const lookupArea = a?.area?.trim().toLowerCase() ?? '';
     const listedArea = lookupArea
       ? areaList.find((x) => x.name.toLowerCase() === lookupArea) ?? areaList.find((x) => x.name.toLowerCase().includes(lookupArea) || lookupArea.includes(x.name.toLowerCase()))
       : undefined;
     const filled: string[] = [];
-    if (a?.shopNumber) filled.push(t('fa07.mapsField.shopNumber'));
+    if (a?.shopNumber && withShopNumber) filled.push(t('fa07.mapsField.shopNumber'));
     if (a?.street) filled.push(t('fa07.mapsField.street'));
     if (listedArea) filled.push(t('fa07.mapsField.area'));
     if (a?.pincode) filled.push(t('fa07.mapsField.pincode'));
@@ -254,7 +254,7 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
     setForm((f) => ({
       ...f,
       pin: { latitude: found.latitude, longitude: found.longitude },
-      shopNumber: a?.shopNumber ?? f.shopNumber,
+      shopNumber: withShopNumber ? a?.shopNumber ?? f.shopNumber : f.shopNumber,
       street: a?.street ?? f.street,
       area: listedArea ? listedArea.name : '',
       pincode: a?.pincode ?? (listedArea?.pincode || ''),
@@ -264,15 +264,47 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
       tone: 'ok',
       text: a && filled.length ? t('fa07.mapsLinkFilledFields', { fields: filled.join(', ') }) : t('fa07.mapsLinkPinOnly'),
     });
+    return filled;
   }
 
-  async function movePin() {
-    setBusy('pin');
+  // 22 Nov (rev 207–208, owner's field test): "Use where I am" is the first control of the address:
+  // the GPS pin, the address there from the server's reverse lookup filled in (street, area, PIN code,
+  // city) for the agent to correct, and a small map with the pin and the address in words to check it.
+  // The shop number, floor or street he adds himself. Without signal the pin is still set.
+  const [where, setWhere] = useState<{ latitude: number; longitude: number; accuracy: number | null; words: string | null; state: 'filled' | 'pin_only' | 'offline' } | null>(null);
+  async function fillFromWhereIAm() {
+    setProblem(null);
+    setBusy('where');
     try {
-      const fix = await readLocation(locationProvider);
-      set({ pin: { latitude: fix.latitude, longitude: fix.longitude } });
-    } catch {
-      setProblem(t('device.location.unavailable'));
+      let fix;
+      try {
+        fix = await readLocation(locationProvider);
+      } catch {
+        setProblem(t('device.location.unavailable'));
+        return;
+      }
+      const point = { latitude: fix.latitude, longitude: fix.longitude };
+      let found: WhereAmI | null = null;
+      let offline = false;
+      try {
+        found = await queue.live(() => redesign.whereIs(point.latitude, point.longitude));
+      } catch {
+        offline = true;
+      }
+      if (found?.address) {
+        const filled = fillFromPin({ ...point, placeName: null, address: found.address, shortLink: false }, { shopNumber: false });
+        setMapsNote({ tone: 'ok', text: filled.length ? t('addr.filled', { fields: filled.join(', ') }) : t('addr.pinOnly') });
+      } else {
+        setAutoArea(null);
+        set({ pin: point });
+        setMapsNote({ tone: offline ? 'error' : 'ok', text: offline ? t('addr.offline') : t('addr.pinOnly') });
+      }
+      setWhere({
+        ...point,
+        accuracy: Number.isFinite(fix.accuracy) ? fix.accuracy : null,
+        words: found?.address?.displayName ?? found?.area ?? null,
+        state: found?.address ? 'filled' : offline ? 'offline' : 'pin_only',
+      });
     } finally {
       setBusy(null);
     }
@@ -414,9 +446,37 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
           {household ? (
             <TextField label={t('fa07.familyName')} value={form.familyName} onChangeText={(v) => set({ familyName: v })} error={err('familyName') ? t('fa07.required') : null} />
           ) : (
-            <TextField label={t('fa07.legalName')} value={form.legalName} onChangeText={(v) => set({ legalName: v })} />
+            <>
+              {/* 22 Nov (rev 207): "Same as the shop name" fills the legal name and keeps it read-only. */}
+              <Toggle label={t('fa07.legalSame')} value={Boolean(form.legalSameAsShop)} onChange={(v) => set({ legalSameAsShop: v })} testID="fa07-legal-same" />
+              <TextField
+                label={t('fa07.legalName')}
+                value={form.legalSameAsShop ? form.boardName : form.legalName}
+                editable={!form.legalSameAsShop}
+                onChangeText={(v) => set({ legalName: v })}
+                testID="fa07-legal-name"
+              />
+            </>
           )}
-          <SelectField label={t('fa07.businessType')} value={form.businessType} choices={choice(BTYPES, 'btype')} onChange={(v) => set({ businessType: v })} error={err('businessType')} testID="fa07-type" />
+          <SelectField
+            label={t('fa07.businessType')}
+            value={form.businessType}
+            choices={BTYPE_CHOICES.some((c) => c.value === form.businessType) || !form.businessType ? BTYPE_CHOICES : [...BTYPE_CHOICES, { value: form.businessType, label: businessTypeLabel(form.businessType), group: undefined }]}
+            onChange={(v) => set({ businessType: v })}
+            error={err('businessType')}
+            searchable
+            testID="fa07-type"
+          />
+          {form.businessType === 'other' ? (
+            <TextField
+              label={t('fa07.typeOther')}
+              value={form.businessTypeOther ?? ''}
+              maxLength={80}
+              onChangeText={(v) => set({ businessTypeOther: v })}
+              error={err('businessTypeOther') ? t('fa07.typeOtherRequired') : null}
+              testID="fa07-type-other"
+            />
+          ) : null}
           <SelectField label={t('fa07.employees')} value={form.employees} choices={EMPLOYEES.map((v) => ({ value: v, label: v.replace('-', '–') }))} onChange={(v) => set({ employees: v })} error={err('employees')} testID="fa07-employees" />
           <SelectField label={t('fa07.running')} value={form.running} choices={choice(RUNNING, 'running')} onChange={(v) => set({ running: v })} />
           <SelectField label={t('fa07.hiring')} value={form.hiring} choices={choice(HIRING, 'hiring')} onChange={(v) => set({ hiring: v })} />
@@ -433,7 +493,32 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
 
         <Card style={styles.gapCard} stripe accent={SECTION_ACCENTS[2]}>
           <Section n={3} title={t('fa07.s3')} />
-          <PinFinder label={t('fa07.pinFinder')} hint={t('fa07.mapsLinkHint')} onConfirm={(found) => fillFromPin(found)} testID="fa07-maps" />
+          <Button
+            label={busy === 'where' ? t('addr.finding') : t('addr.useWhereIAm')}
+            icon={<Text color={colors.white}>📍</Text>}
+            loading={busy === 'where'}
+            onPress={() => void fillFromWhereIAm()}
+            testID="fa07-where"
+          />
+          {where ? (
+            <View style={styles.block} testID="fa07-where-preview">
+              <TileMap
+                center={where}
+                markers={[{ key: 'pin', latitude: where.latitude, longitude: where.longitude, color: colors.tomato, label: '📍' }]}
+                attribution={t('fa13.attribution')}
+                height={170}
+                zoom={17}
+                testID="fa07-where-map"
+              />
+              <Text variant="bodyStrong">{t('addr.checkMap')}</Text>
+              {where.words ? (
+                <Text variant="small" testID="fa07-where-words">{where.words}</Text>
+              ) : (
+                <PlaceLine latitude={where.latitude} longitude={where.longitude} accuracy={where.accuracy} testID="fa07-where-words" />
+              )}
+            </View>
+          ) : null}
+          <PinFinder label={t('addr.orType')} hint={t('fa07.mapsLinkHint')} onConfirm={(found) => void fillFromPin(found)} testID="fa07-maps" />
           {mapsNote ? (
             <Text variant="small" color={mapsNote.tone === 'ok' ? colors.greenText : colors.tomato} testID="fa07-maps-note">
               {mapsNote.text}
@@ -464,10 +549,16 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
           <TextField label={t('fa07.pincode')} value={form.pincode} keyboardType="number-pad" maxLength={6} onChangeText={(v) => set({ pincode: v.replace(/\D/g, '') })} error={err('pincode') ? t('fa07.pincodeInvalid') : null} testID="fa07-pincode" />
           <TextField label={t('fa07.cityLabel')} value={form.city ?? DEFAULT_CITY} onChangeText={(v) => set({ city: v })} hint={t('fa07.cityHint')} maxLength={60} testID="fa07-city" />
           <View style={styles.inline}>
-            <Text variant="small" style={styles.flex1}>
-              {form.pin ? `📍 ${t('fa07.pinSet')} · ${t('fa07.mapsPin', { lat: form.pin.latitude.toFixed(5), lng: form.pin.longitude.toFixed(5) })}` : t('fa07.pinMissing')}
-            </Text>
-            <Button label={t('fa07.pinChange')} variant="secondary" loading={busy === 'pin'} onPress={() => void movePin()} />
+            <View style={styles.flex1} testID="fa07-pin-line">
+              {form.pin ? (
+                <>
+                  <Text variant="small">{`📍 ${t('fa07.pinSet')}`}</Text>
+                  <PlaceLine latitude={form.pin.latitude} longitude={form.pin.longitude} variant="muted" coordinates testID="fa07-pin-place" />
+                </>
+              ) : (
+                <Text variant="small">{t('fa07.pinMissing')}</Text>
+              )}
+            </View>
           </View>
           <Text variant="muted">{t('fa07.branchesHint')}</Text>
           {form.branches.map((br, i) => (
@@ -606,9 +697,9 @@ function Section({ n, title }: { n: number; title: string }) {
   );
 }
 
-function Toggle({ label, value, onChange, error }: { label: string; value: boolean; onChange: (v: boolean) => void; error?: boolean }) {
+function Toggle({ label, value, onChange, error, testID }: { label: string; value: boolean; onChange: (v: boolean) => void; error?: boolean; testID?: string }) {
   return (
-    <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: value }} accessibilityLabel={label} onPress={() => onChange(!value)} style={styles.toggle}>
+    <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: value }} accessibilityLabel={label} onPress={() => onChange(!value)} style={styles.toggle} testID={testID}>
       <View style={[styles.box, value && styles.boxOn, error && styles.boxError]}>{value ? <Text style={styles.tick}>✓</Text> : null}</View>
       <Text variant="small" style={styles.flex1}>
         {label}

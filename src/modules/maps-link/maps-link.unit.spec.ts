@@ -1,5 +1,5 @@
-import { addressFromNominatim, extractPin, isAllowedMapsUrl, isPrivateAddress, looksLikeLink, parseCoordinates, parseMapsUrl, placeNameOf, withScheme } from './maps-link';
-import { BENGALURU_VIEWBOX, MapsFetch, MapsLinkService, MAX_REDIRECTS, NOMINATIM_GAP_MS, TIMEOUT_MS, USER_AGENT } from './maps-link.service';
+import { addressFromNominatim, addressQueries, googlePlaceIdOf, placeFromGoogle, splitShareText, withoutHouseNumber, extractPin, isAllowedMapsUrl, isPrivateAddress, looksLikeLink, parseCoordinates, parseMapsUrl, placeNameOf, withScheme } from './maps-link';
+import { BENGALURU_VIEWBOX, GOOGLE_PLACES_SEARCH_URL, MapsFetch, MapsLinkService, MAX_REDIRECTS, NOMINATIM_GAP_MS, TIMEOUT_MS, USER_AGENT, WHERE_PER_MINUTE } from './maps-link.service';
 
 const u = (s: string) => new URL(s);
 
@@ -71,6 +71,7 @@ describe('Google Maps link (17 Nov): allowlist and the pin', () => {
     })).toEqual({
       shopNumber: '12', street: '9th Cross Road, JP Nagar 6th Phase', area: 'JP Nagar', city: 'Bengaluru', state: 'Karnataka', pincode: '560078',
       displayName: '12, 9th Cross Road, JP Nagar 6th Phase, Bengaluru, Karnataka, 560078, India',
+      locality: 'JP Nagar 6th Phase, JP Nagar',
     });
     expect(addressFromNominatim({ error: 'Unable to geocode' })).toBeNull();
   });
@@ -322,5 +323,152 @@ describe('Set the map pin (21 Nov, rev 204): address, any Google Maps link, or c
     const off = fakeFetch({ 'https://maps.app.goo.gl/Evil': { status: 302, location: 'https://attacker.example/x?q=12.9,77.6' } });
     await expect(new TestMaps(off.fetch, publicDns).locate('ca-1', 'https://maps.app.goo.gl/Evil')).rejects.toMatchObject({ response: { code: 'MAPS_LINK_NO_LOCATION' } });
     expect(off.calls).toHaveLength(1);
+  });
+});
+
+describe('Business address from the field test (22 Nov)', () => {
+  const SEARCH = 'https://nominatim.openstreetmap.org/search';
+  const banashankari = [{ lat: '12.9255', lon: '77.5468', display_name: '45th Cross, Banashankari, Bengaluru', address: { road: '45th Cross', suburb: 'Banashankari', city: 'Bengaluru', postcode: '560070' } }];
+  const kalena = [{ lat: '12.8890', lon: '77.5970', display_name: 'Kalena Agrahara, Bengaluru', address: { suburb: 'Kalena Agrahara', city: 'Bengaluru', postcode: '560076' } }];
+  afterEach(() => {
+    delete process.env.GOOGLE_PLACES_API_KEY;
+  });
+
+  it('drops house numbers but never ordinals', () => {
+    expect(withoutHouseNumber('1273 45th Cross')).toBe('45th Cross');
+    expect(withoutHouseNumber('64/44 BK Circle')).toBe('BK Circle');
+    expect(withoutHouseNumber('#12-A, MG Road'.split(',')[0])).toBe('');
+    expect(withoutHouseNumber('No. 5 Temple Street')).toBe('Temple Street');
+    expect(withoutHouseNumber('Shop no 3 Main Road')).toBe('Main Road');
+    expect(withoutHouseNumber('8th phase')).toBe('8th phase');
+    expect(withoutHouseNumber('45th Cross')).toBe('45th Cross');
+  });
+
+  it('tries shorter and shorter queries, the locality and Bengaluru last', () => {
+    expect(addressQueries('1273 45th Cross, Banashankari')).toEqual([
+      '1273 45th Cross, Banashankari', '45th Cross, Banashankari, Bengaluru', 'Banashankari, Bengaluru',
+    ]);
+    expect(addressQueries('64/44 BK Circle, Kottanur, Surabhi Nagar, 8th phase, Kalani Agrahara, Bengaluru')).toEqual([
+      '64/44 BK Circle, Kottanur, Surabhi Nagar, 8th phase, Kalani Agrahara, Bengaluru',
+      'BK Circle, Kottanur, Surabhi Nagar, 8th phase, Kalani Agrahara, Bengaluru',
+      'Kottanur, Surabhi Nagar, 8th phase, Kalani Agrahara, Bengaluru',
+      'Surabhi Nagar, 8th phase, Kalani Agrahara, Bengaluru',
+      '8th phase, Kalani Agrahara, Bengaluru',
+    ]);
+    expect(addressQueries('12 MG Road, Bangalore 560001')).toEqual(['12 MG Road, Bangalore 560001', 'MG Road, Bengaluru']);
+    expect(addressQueries('   ')).toEqual([]);
+  });
+
+  it('splits Google Maps share text into the link and the address', () => {
+    expect(splitShareText('Sri Sai Bakery, 24th Main, JP Nagar https://maps.app.goo.gl/AbC123')).toEqual({ link: 'https://maps.app.goo.gl/AbC123', rest: 'Sri Sai Bakery, 24th Main, JP Nagar' });
+    expect(splitShareText('Reddy Mess\nmaps.app.goo.gl/XyZ')).toEqual({ link: 'maps.app.goo.gl/XyZ', rest: 'Reddy Mess' });
+    expect(splitShareText('Just an address')).toEqual({ link: null, rest: 'Just an address' });
+  });
+
+  it('"1273 45th Cross, Banashankari" is found once the house number is dropped', async () => {
+    const calls: string[] = [];
+    const fetch: MapsFetch = async (url) => {
+      calls.push(url);
+      const q = decodeURIComponent(new URL(url).searchParams.get('q') ?? '');
+      return { status: 200, headers: { get: () => null }, json: async () => (q === '45th Cross, Banashankari, Bengaluru' ? banashankari : []) };
+    };
+    const out = await new TestMaps(fetch, publicDns).locate('fa-1', '1273 45th Cross, Banashankari');
+    expect(out).toMatchObject({ source: 'address', latitude: 12.9255, address: { pincode: '560070', area: 'Banashankari' } });
+    expect(calls).toHaveLength(3);
+    expect(calls[2]).toContain(`viewbox=${BENGALURU_VIEWBOX}&bounded=1`);
+  });
+
+  it('the long Kottanur address finds its locality', async () => {
+    const fetch: MapsFetch = async (url) => {
+      const q = decodeURIComponent(new URL(url).searchParams.get('q') ?? '');
+      return { status: 200, headers: { get: () => null }, json: async () => (q.startsWith('8th phase, Kalani Agrahara') ? kalena : []) };
+    };
+    const out = await new TestMaps(fetch, publicDns).locate('fa-1', '64/44 BK Circle, Kottanur, Surabhi Nagar, 8th phase, Kalani Agrahara, Bengaluru');
+    expect(out).toMatchObject({ source: 'address', latitude: 12.889, address: { pincode: '560076' } });
+  });
+
+  it('pasted share text whose link cannot be opened is looked up by the address in it', async () => {
+    const fetch: MapsFetch = async (url) => {
+      if (url.startsWith('https://maps.app.goo.gl/')) throw new Error('blocked');
+      const q = decodeURIComponent(new URL(url).searchParams.get('q') ?? '');
+      return { status: 200, headers: { get: () => null }, json: async () => (q.includes('Banashankari') ? banashankari : []) };
+    };
+    const out = await new TestMaps(fetch, publicDns).locate('fa-1', 'Andhra Ruchulu, 45th Cross, Banashankari https://maps.app.goo.gl/AbC123');
+    expect(out).toMatchObject({ source: 'address', latitude: 12.9255 });
+  });
+
+  it('"where am I": the area in words for a GPS fix, with its own per-agent limit', async () => {
+    const { fetch, calls } = fakeFetch({
+      [NOM]: { status: 200, json: { display_name: 'Kothnur, JP Nagar 8th Phase, Bengaluru', address: { road: '24th Main', neighbourhood: 'Kothnur', suburb: 'JP Nagar 8th Phase', city: 'Bengaluru', postcode: '560076' } } },
+    });
+    const maps = new TestMaps(fetch, publicDns);
+    const out = await maps.where('fa-1', 12.8901, 77.5902);
+    expect(out).toMatchObject({ area: 'Kothnur, JP Nagar 8th Phase', address: { street: '24th Main, Kothnur', pincode: '560076', city: 'Bengaluru' } });
+    await expect(maps.where('fa-1', 'x', 77.59)).rejects.toMatchObject({ response: { code: 'MAPS_POINT_INVALID' }, status: 400 });
+    await expect(maps.where('fa-1', 0, 0)).rejects.toMatchObject({ status: 400 });
+    // Cached: the same spot is never looked up twice.
+    await maps.where('fa-1', 12.8901, 77.5902);
+    expect(calls).toHaveLength(1);
+    for (let i = 2; i < WHERE_PER_MINUTE; i += 1) await maps.where('fa-1', 12.8901, 77.5902);
+    await expect(maps.where('fa-1', 12.8901, 77.5902)).rejects.toMatchObject({ status: 429 });
+    // Links and addresses keep their own limit.
+    await expect(maps.where('fa-2', 12.8901, 77.5902)).resolves.toBeTruthy();
+  });
+
+  it('with GOOGLE_PLACES_API_KEY, a typed address uses Google Places server-side (key in a header only)', async () => {
+    process.env.GOOGLE_PLACES_API_KEY = 'test-key-not-real';
+    const calls: Array<{ url: string; init: Parameters<MapsFetch>[1] }> = [];
+    const fetch: MapsFetch = async (url, init) => {
+      calls.push({ url, init });
+      return {
+        status: 200, headers: { get: () => null }, json: async () => ({
+          places: [{
+            id: 'ChIJabc', formattedAddress: '1273, 45th Cross Rd, Bendre Nagar, Banashankari, Bengaluru, Karnataka 560070, India',
+            location: { latitude: 12.9251, longitude: 77.5466 },
+            addressComponents: [
+              { longText: '1273', types: ['street_number'] }, { longText: '45th Cross Road', types: ['route'] },
+              { longText: 'Bendre Nagar', types: ['sublocality_level_2', 'sublocality'] }, { longText: 'Banashankari', types: ['sublocality_level_1', 'sublocality'] },
+              { longText: 'Bengaluru', types: ['locality'] }, { longText: 'Karnataka', types: ['administrative_area_level_1'] }, { longText: '560070', types: ['postal_code'] },
+            ],
+          }],
+        }),
+      };
+    };
+    const out = await new TestMaps(fetch, publicDns).locate('ca-1', '1273 45th Cross, BENDRANAGA');
+    expect(out).toMatchObject({ latitude: 12.9251, address: { shopNumber: '1273', street: '45th Cross Road, Bendre Nagar', area: 'Banashankari', city: 'Bengaluru', pincode: '560070', locality: 'Bendre Nagar, Banashankari' } });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe(GOOGLE_PLACES_SEARCH_URL);
+    expect(calls[0].url).not.toContain('test-key');
+    expect(calls[0].init).toMatchObject({ method: 'POST', headers: { 'X-Goog-Api-Key': 'test-key-not-real' } });
+    expect(JSON.parse(calls[0].init.body ?? '{}')).toMatchObject({ textQuery: '1273 45th Cross, BENDRANAGA', regionCode: 'IN' });
+  });
+
+  it('Google failing falls back to OpenStreetMap; no key means Google is never called', async () => {
+    process.env.GOOGLE_PLACES_API_KEY = 'test-key-not-real';
+    const urls: string[] = [];
+    const fetch: MapsFetch = async (url) => {
+      urls.push(url);
+      if (url.startsWith('https://places.googleapis.com')) return { status: 403, headers: { get: () => null }, json: async () => ({}) };
+      return { status: 200, headers: { get: () => null }, json: async () => banashankari };
+    };
+    const out = await new TestMaps(fetch, publicDns).locate('ca-1', '45th Cross, Banashankari');
+    expect(out).toMatchObject({ latitude: 12.9255 });
+    expect(urls[0]).toBe(GOOGLE_PLACES_SEARCH_URL);
+    expect(urls[1]).toContain(SEARCH);
+    delete process.env.GOOGLE_PLACES_API_KEY;
+    const plain: string[] = [];
+    await new TestMaps(async (url) => {
+      plain.push(url);
+      return { status: 200, headers: { get: () => null }, json: async () => banashankari };
+    }, publicDns).locate('ca-1', '45th Cross, Banashankari');
+    expect(plain.every((u) => u.startsWith(SEARCH))).toBe(true);
+  });
+
+  it('reads Google place answers and place ids in links', () => {
+    expect(placeFromGoogle({ location: { latitude: 51.5, longitude: -0.1 } })).toBeNull();
+    expect(placeFromGoogle(null)).toBeNull();
+    expect(googlePlaceIdOf(new URL('https://www.google.com/maps/search/?api=1&query=Cafe&query_place_id=ChIJN1t_tDeuEmsRUsoyG83frY4'))).toBe('ChIJN1t_tDeuEmsRUsoyG83frY4');
+    expect(googlePlaceIdOf(new URL('https://maps.google.com/?q=place_id:ChIJN1t_tDeuEmsRUsoyG83frY4'))).toBe('ChIJN1t_tDeuEmsRUsoyG83frY4');
+    expect(googlePlaceIdOf(new URL('https://maps.google.com/?q=Cafe'))).toBeNull();
   });
 });

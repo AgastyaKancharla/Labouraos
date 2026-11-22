@@ -15,7 +15,7 @@ import { pageRoutes, routes } from '@/navigation/routes';
 import { finishLater } from '@/navigation/useFlow';
 import { type Accent, colors } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
-import { ChoiceList } from '../_visits/ChoiceList';
+import { ChipChoices, ChoiceList } from '../_visits/ChoiceList';
 import { DatePicker } from '../_visits/DatePicker';
 import { forgetDraft, useDraft } from '../_visits/visitDraft';
 
@@ -29,6 +29,9 @@ export const OUTCOME_LOOK: Record<PickedOutcome, { icon: IconName; accent: Accen
   owner_not_there: { icon: 'clock', accent: 'gold' },
 };
 export const REASONS = ['hires_family_friends', 'fee_too_high', 'no_staff_needed', 'other_agency', 'other'] as const;
+/** 22 Nov (rev 207): asked here — only when the shop is not onboarded now. */
+export const SPOKE_TO = ['owner', 'manager', 'staff', 'no_one'] as const;
+const MOBILE = /^[6-9]\d{9}$/;
 
 /**
  * FA06c — How did the visit go? For a visit that did not end in onboarding:
@@ -90,6 +93,8 @@ function OutcomeForm({ visit, initial }: {
     revisitTime: '' as string,
     reason: null as string | null,
     note: '',
+    spokeTo: (visit.spokeTo || null) as string | null,
+    mobile: visit.contactPhone ?? '',
   }));
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
   const [problem, setProblem] = useState<string | null>(null);
@@ -101,6 +106,8 @@ function OutcomeForm({ visit, initial }: {
   const [busy, setBusy] = useState(false);
   const [openedAt] = useState(() => Date.now());
   const { outcome, revisitOn, reason, note } = form;
+  const spokeTo = form.spokeTo ?? null;
+  const mobile = form.mobile ?? '';
   const revisitTime = form.revisitTime ?? '';
   const needsDate = outcome === 'interested_later' || outcome === 'owner_not_there';
 
@@ -108,6 +115,8 @@ function OutcomeForm({ visit, initial }: {
     if (!outcome) return setProblem(t('fa06c.pickOutcome'));
     if (needsDate && !revisitOn) return setProblem(t('fa06c.pickDate'));
     if (outcome === 'not_interested' && !reason) return setProblem(t('fa06c.pickReason'));
+    if (!spokeTo) return setProblem(t('fa06c.pickSpokeTo'));
+    if (mobile && !MOBILE.test(mobile)) return setProblem(t('fa21.mobileInvalid'));
     setProblem(null);
     setBusy(true);
     try {
@@ -117,8 +126,8 @@ function OutcomeForm({ visit, initial }: {
         json: {
           outcome,
           ...(visit.hasBusiness || !visit.shopName ? {} : { shopName: visit.shopName }),
-          ...(visit.spokeTo ? { spokeTo: visit.spokeTo } : {}),
-          ...(visit.contactPhone ? { contactPhone: visit.contactPhone } : {}),
+          spokeTo,
+          ...(mobile ? { contactPhone: mobile } : {}),
           ...(needsDate ? { revisitOn } : {}),
           ...(needsDate && revisitTime ? { revisitTime } : {}),
           ...(outcome === 'not_interested' ? { reason } : {}),
@@ -164,6 +173,22 @@ function OutcomeForm({ visit, initial }: {
             value={outcome}
             onChange={(o) => set({ outcome: o })}
             testID="fa06c-outcome"
+          />
+        </Card>
+        {/* 22 Nov (rev 207): whom he spoke to and the optional shop phone, only for a shop not onboarded now. */}
+        <Card stripe accent="gold" testID="fa06c-contact">
+          <Text variant="small" style={styles.label}>
+            {t('fa21.spokeTo')}
+          </Text>
+          <ChipChoices choices={SPOKE_TO.map((v) => ({ value: v, label: t(`spoke.${v}` as const) }))} value={spokeTo} onChange={(v) => set({ spokeTo: v })} testID="fa06c-spoke" />
+          <TextField
+            label={t('fa21.mobile')}
+            placeholder={t('fa21.mobilePlaceholder')}
+            value={mobile}
+            onChangeText={(v) => set({ mobile: v.replace(/\D/g, '').slice(0, 10) })}
+            keyboardType="number-pad"
+            maxLength={10}
+            testID="fa06c-mobile"
           />
         </Card>
         {needsDate ? (

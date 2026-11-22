@@ -15,6 +15,7 @@ import { appSignupsEn } from './appSignups';
 import { callAgentEn } from '../screens/call-agent/_lib/i18n.en';
 import { fixes17En } from './fixes17';
 import { reg21NovEn } from './reg21nov';
+import { visit22En } from './visit22';
 import { whatsappEn } from './whatsapp';
 export const en = {
   "app.name": "Laboura",
@@ -630,6 +631,7 @@ export const en = {
   ...whatsappEn,
   ...fixes17En,
   ...reg21NovEn,
+  ...visit22En,
   ...payslipEn,
   ...attendanceEn,
   ...workerLeftEn,
@@ -637,5 +639,5 @@ export const en = {
 
 export type MessageKey = keyof typeof en;
 /** Keys added on 17 Nov (fixes17.ts): English only, so Kannada and Hindi have no copy (English shows). */
-export type EnglishOnlyKey = keyof typeof fixes17En | keyof typeof reg21NovEn;
+export type EnglishOnlyKey = keyof typeof fixes17En | keyof typeof reg21NovEn | keyof typeof visit22En;
 export type Messages = Record<Exclude<MessageKey, EnglishOnlyKey>, string> & Partial<Record<EnglishOnlyKey, string>>;

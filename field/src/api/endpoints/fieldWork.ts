@@ -105,6 +105,10 @@ export interface ShopPoint {
   /** Redesign: the agent may act on it (his own business, or his own visit to an unregistered shop); else view-only. */
   canAct?: boolean;
   distanceMeters?: number;
+  /** 22 Nov (rev 208): his own revisit due here: "Close this revisit" is offered. */
+  revisitClosable?: boolean;
+  /** The last visit's note, for a revisit due. */
+  note?: string | null;
 }
 
 /** GET /field-work/map */

@@ -1,3 +1,4 @@
+import { BUSINESS_TYPE_GROUPS, BUSINESS_TYPE_OTHER_MAX, PICKABLE_BUSINESS_TYPES } from '../business/business-types';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { legalMinimumByZone, legalMinimumFor, minimumWageTable } from '../trade/minimum-wage';
 import { LegalDocumentService } from '../legal/legal-document.service';
@@ -11,7 +12,6 @@ import { CUSTOMER_BUSINESS_ROLES, CUSTOMER_LANGUAGES } from '../../common/custom
 import { PricingService } from '../pricing/pricing.service';
 import { JOB_TYPES, REGISTRATION_WINDOWS, SHIFT_PREFERENCES } from '../job-seeker/job-seeker.validator';
 import {
-  BUSINESS_TYPES,
   EMPLOYEE_COUNT_BANDS,
   HIRING_FREQUENCIES,
   YEARS_RUNNING_BANDS,
@@ -121,7 +121,11 @@ export class CustomerOptionsService {
       },
       business: {
         // Households stay hidden in the app until the guide decides (C24).
-        businessTypes: BUSINESS_TYPES.filter((type) => type !== 'household'),
+        // 22 Nov (rev 207): the full grouped list; older values stay valid but are not offered.
+        businessTypes: PICKABLE_BUSINESS_TYPES.filter((type) => type !== 'household'),
+        businessTypeGroups: BUSINESS_TYPE_GROUPS.map((g) => ({ ...g, types: g.types.filter((type) => type.value !== 'household') })),
+        /** "Other (type it)": send businessTypeOther with it. */
+        businessTypeOtherMax: BUSINESS_TYPE_OTHER_MAX,
         contactRoles: CUSTOMER_BUSINESS_ROLES,
         employeeCountBands: EMPLOYEE_COUNT_BANDS,
         yearsRunningBands: YEARS_RUNNING_BANDS,

@@ -15,6 +15,8 @@ import { colors } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { formatDateKey } from '../_visits/format';
 import { DaySwitcher, DayWork, useDayWork } from '../_visits/DayWork';
+import { CloseRevisitButton } from '../_visits/CloseRevisit';
+import { revisitStart } from '../_visits/revisitStart';
 
 /** Interviews to attend open the interview-day screen inside the Visits tab. */
 const inVisits = sellingRoutesFor('/visit');
@@ -114,8 +116,8 @@ export default function VisitsScreen() {
             <Card title={t('fa05.revisits')} icon="store" accent="gold" testID="fa05-revisits">
               {q.data.revisitsDue.length === 0 ? <EmptyState compact emoji="🏪" message={t('fa05.noRevisits')} /> : null}
               {q.data.revisitsDue.map((r, i) => (
+                <View key={r.visitId}>
                 <ListRow
-                  key={r.visitId}
                   title={r.name}
                   leading={<IconTile icon={r.when === 'overdue' ? 'alert' : 'clock'} accent={r.when === 'overdue' ? 'red' : 'gold'} size={34} />}
                   subtitle={
@@ -131,15 +133,14 @@ export default function VisitsScreen() {
                       label={r.when === 'overdue' && r.revisitOn ? t('fa05.overdueSince', { date: formatDateKey(r.revisitOn) }) : t('fa05.comeBackToday')}
                     />
                   }
-                  onPress={() =>
-                    router.push({
-                      pathname: routes.visitStart,
-                      params: r.businessId ? { businessId: r.businessId, name: r.name } : { revisitOf: r.visitId, name: r.name },
-                    })
-                  }
-                  last={i === q.data.revisitsDue.length - 1}
+                  onPress={() => router.push(revisitStart(r))}
+                  last
                   testID={`fa05-revisit-${r.visitId}`}
                 />
+                {/* 22 Nov (rev 208): close a revisit with a reason (kept, audited, the Team Lead sees it). */}
+                {r.covering ? null : <CloseRevisitButton visitId={r.visitId} name={r.name} testID={`fa05-revisit-close-${r.visitId}`} />}
+                {i === q.data.revisitsDue.length - 1 ? null : <View style={styles.divider} />}
+                </View>
               ))}
             </Card>
           </>
@@ -156,4 +157,5 @@ export default function VisitsScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
+  divider: { height: 1, backgroundColor: colors.border },
 });

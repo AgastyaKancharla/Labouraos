@@ -1,6 +1,8 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { router } from '@/test/expo-router-mock';
 import { kiran, renderWithApp } from '@/test/render';
+import { OfflineQueue } from '@/device/offline-queue/queue';
+import { createMemoryQueueStore } from '@/device/offline-queue/types';
 import { dayView } from '@/test/redesign-fixtures';
 import { todayKeyIst, addDays } from '@/components/form';
 import VisitsScreen from '.';
@@ -49,7 +51,8 @@ describe('FA05 Visits', () => {
     await fireEvent.press(screen.getByTestId('fa05-planned-a-1'));
     expect(router.push).toHaveBeenCalledWith({ pathname: '/visit/verify', params: { businessId: 'b-1', assignmentId: 'a-1' } });
     await fireEvent.press(screen.getByTestId('fa05-revisit-v-9'));
-    expect(router.push).toHaveBeenCalledWith({ pathname: '/visit/start', params: { revisitOf: 'v-9', name: 'Lakshmi Tiffins' } });
+    // 22 Nov: the revisit starts at step 1 with the name and the last visit's note.
+    expect(router.push).toHaveBeenCalledWith({ pathname: '/visit/start', params: { revisitOf: 'v-9', name: 'Lakshmi Tiffins', lastNote: 'after Deepavali we’ll need 2 cooks' } });
     await fireEvent.press(screen.getByTestId('fa05-visit-shop'));
     expect(router.push).toHaveBeenCalledWith('/visit/start');
     await fireEvent.press(screen.getByTestId('fa05-near-me'));
@@ -61,11 +64,18 @@ describe('FA05 Visits', () => {
   it('Today’s work: every visit with its result and what was registered; Yesterday switches the day; rows open their page', async () => {
     days.length = 0;
     await renderWithApp(<VisitsScreen />, { signedInAs: kiran, route });
-    await waitFor(() => screen.getByTestId('work-visit:v-1'));
+    // 22 Nov (rev 207, screenshot 7f9884ca): one row per business; tapping it opens its day's timeline.
+    await waitFor(() => screen.getByTestId('work-group-b:b-1-toggle'));
     expect(days).toEqual([todayKeyIst()]);
-    expect(screen.getByTestId('work-visit:v-1')).toHaveTextContent(/Sri Sai Bakery.*Visit.*Onboarded/);
+    expect(screen.getAllByText('Sri Sai Bakery')).toHaveLength(1);
+    expect(screen.getByTestId('work-group-b:b-1-toggle')).toHaveTextContent(/Sri Sai Bakery.*2 steps.*JP Nagar.*Onboarded/);
+    expect(screen.queryByTestId('work-visit:v-1')).toBeNull();
+    await fireEvent.press(screen.getByTestId('work-group-b:b-1-toggle'));
+    expect(screen.getByTestId('work-visit:v-1')).toHaveTextContent(/Visited · .* · Onboarded/);
+    expect(screen.getByTestId('work-business:b-1')).toHaveTextContent(/Onboarded \(business registered\)/);
+    await fireEvent.press(screen.getByTestId('work-visit:v-1'));
+    expect(router.push).toHaveBeenCalledWith('/visit/details/v-1');
     expect(screen.getByTestId('work-visit:v-3')).toHaveTextContent(/Sagar Stores.*Not finished/);
-    expect(screen.getByTestId('work-business:b-1')).toHaveTextContent(/Business onboarded/);
     await fireEvent.press(screen.getByTestId('work-visit:v-3'));
     expect(router.push).toHaveBeenCalledWith('/visit/details/v-3');
     await fireEvent.press(screen.getByTestId('work-js:js-1'));
@@ -100,5 +110,22 @@ describe('FA05 Visits', () => {
     expect(screen.getByTestId('fa05-planned-a-9')).toHaveTextContent(/Sri Sai Bakery.*Owner picked.*11:00 AM.*Jayanagar.*App sign-up visit/);
     await fireEvent.press(screen.getByTestId('fa05-planned-a-9'));
     expect(router.push).toHaveBeenCalledWith({ pathname: '/visit/verify', params: { businessId: 'b-9', assignmentId: 'a-9' } });
+  });
+
+  it('22 Nov (rev 208): "Close this revisit" with a reason; Other needs words; sent through the queue', async () => {
+    const sent: { path: string; json: Record<string, unknown> }[] = [];
+    const queue = new OfflineQueue({ store: createMemoryQueueStore(), send: async (item) => void sent.push(item.request as never) });
+    await renderWithApp(<VisitsScreen />, { signedInAs: kiran, queue, route: (url) => (url.endsWith('/field-work/visits') ? { status: 200, body: visits } : undefined) });
+    await waitFor(() => screen.getByTestId('fa05-revisit-close-v-9'));
+    await fireEvent.press(screen.getByTestId('fa05-revisit-close-v-9'));
+    await fireEvent.press(screen.getByTestId('fa05-revisit-close-v-9-confirm'));
+    expect(screen.getByTestId('fa05-revisit-close-v-9-problem')).toHaveTextContent('Pick why the revisit is closed.');
+    await fireEvent.press(screen.getByTestId('fa05-revisit-close-v-9-reason-other'));
+    await fireEvent.press(screen.getByTestId('fa05-revisit-close-v-9-confirm'));
+    expect(screen.getByTestId('fa05-revisit-close-v-9-problem')).toHaveTextContent(/few words/);
+    await fireEvent.changeText(screen.getByTestId('fa05-revisit-close-v-9-note'), 'Owner moved to Hosur');
+    await fireEvent.press(screen.getByTestId('fa05-revisit-close-v-9-confirm'));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({ path: '/field-visits/v-9/close-revisit', json: { reason: 'other', note: 'Owner moved to Hosur' } });
   });
 });

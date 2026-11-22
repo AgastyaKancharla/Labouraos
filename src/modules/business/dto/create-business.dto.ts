@@ -55,6 +55,8 @@ export class CreateBusinessDto {
   otpRequestId?: string;
   gstNumber?: string;
   businessType?: string;
+  /** 22 Nov: "Other (type it)" — required from staff when businessType is other. */
+  businessTypeOther?: string;
   employeeCount?: number;
   staffNeeded?: string[];
   staffNeededRows?: BusinessStaffNeedDto[];

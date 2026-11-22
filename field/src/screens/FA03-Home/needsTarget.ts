@@ -1,5 +1,6 @@
 import type { NeedsItem } from '@/api/endpoints';
 import { pageRoutes, routes, sellingRoutes, sellingRoutesFor } from '@/navigation/routes';
+import { revisitStart } from '../_visits/revisitStart';
 
 /** Steps of a visit, inside the Visits tab. */
 const visitFlow = sellingRoutesFor('/visit');
@@ -50,10 +51,7 @@ export function needsTarget(item: NeedsItem): Href | null {
     case 'joining_due':
       return sellingRoutes.joining(tg.id);
     case 'revisit_due':
-      return {
-        pathname: routes.visitStart,
-        params: tg.businessId ? { businessId: tg.businessId, name: item.title } : { revisitOf: tg.id, name: item.title },
-      };
+      return revisitStart({ businessId: tg.businessId ?? null, visitId: tg.id, name: item.title, note: item.note, lastVisitAt: item.lastVisitAt });
     case 'followup_task':
       // 21 Nov (M4): the follow-up screen: call, what they said, Done.
       return pageRoutes.followUp(tg.id);

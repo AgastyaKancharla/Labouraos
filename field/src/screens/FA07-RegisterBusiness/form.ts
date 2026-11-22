@@ -39,8 +39,12 @@ export interface FormState {
   heardFrom: string;
   boardName: string;
   legalName: string;
+  /** 22 Nov (rev 207): "Same as the shop name" — the legal name follows the board name, read-only. Older drafts have none. */
+  legalSameAsShop?: boolean;
   familyName: string;
   businessType: string;
+  /** 22 Nov (rev 208): "Other (type it)" — required when the type is other. Older drafts have none. */
+  businessTypeOther?: string;
   employees: string;
   running: string;
   hiring: string;
@@ -92,6 +96,7 @@ export function formErrors(form: FormState, findTrade: (row: StaffRow) => Trade 
   if (!form.boardName.trim()) e.push('boardName');
   if (household && !form.familyName.trim()) e.push('familyName');
   if (!form.businessType) e.push('businessType');
+  if (form.businessType === 'other' && !(form.businessTypeOther ?? '').trim()) e.push('businessTypeOther');
   if (!form.employees) e.push('employees');
   if (!form.shopNumber.trim()) e.push('shopNumber');
   if (!form.street.trim()) e.push('street');
@@ -122,7 +127,13 @@ export function businessBody(form: FormState, visitId: string | null): Record<st
   const rows = form.staff.filter((r) => staffTrade(r));
   return {
     name: form.boardName.trim(),
-    ...(household ? { familyName: form.familyName.trim() } : form.legalName.trim() ? { legalName: form.legalName.trim() } : {}),
+    ...(household
+      ? { familyName: form.familyName.trim() }
+      : form.legalSameAsShop && form.boardName.trim()
+        ? { legalName: form.boardName.trim() }
+        : form.legalName.trim()
+          ? { legalName: form.legalName.trim() }
+          : {}),
     contactPersonName: form.contactName.trim(),
     contactPersonRole: form.contactRole,
     phone: form.mobile.number,
@@ -131,6 +142,7 @@ export function businessBody(form: FormState, visitId: string | null): Record<st
     ...(form.billingEmail.trim() ? { billingEmail: form.billingEmail.trim() } : {}),
     heardFrom: form.heardFrom,
     businessType: form.businessType,
+    ...(form.businessType === 'other' ? { businessTypeOther: (form.businessTypeOther ?? '').trim() } : {}),
     employeeCountBand: form.employees,
     ...(form.running ? { yearsInOperationBand: form.running } : {}),
     ...(form.hiring ? { hiringFrequency: form.hiring } : {}),

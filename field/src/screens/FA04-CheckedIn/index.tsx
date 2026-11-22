@@ -1,9 +1,8 @@
 import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useI18n } from '@/i18n';
-import { Button, Card, HeroCard, IconTile, ListRow, ProgressBar, Screen, Text } from '@/components';
+import { Button, Card, HeroCard, IconTile, ListRow, PlaceLine, ProgressBar, Screen, Text } from '@/components';
 import { useAuth } from '@/auth/AuthProvider';
-import { formatCoordinates } from '@/device/location/location';
 import { routes } from '@/navigation/routes';
 import { colors, fonts } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
@@ -64,7 +63,7 @@ export default function CheckedInScreen() {
           </>
         ) : null}
         <Card testID="fa04-location">
-          <ListRow title={t('fa04.location')} leading={<IconTile icon="location" accent="cyan" size={34} />} trailing={<Text variant="bodyStrong">{checkIn ? formatCoordinates(checkIn) : t('common.placeholderValue')}</Text>} />
+          <ListRow title={t('fa04.location')} leading={<IconTile icon="location" accent="cyan" size={34} />} trailing={checkIn ? <PlaceLine latitude={checkIn.latitude} longitude={checkIn.longitude} variant="bodyStrong" testID="fa04-place" /> : <Text variant="bodyStrong">{t('common.placeholderValue')}</Text>} />
           <ListRow
             title={t('fa04.accuracy')}
             leading={<IconTile icon="target" accent="green" size={34} />}

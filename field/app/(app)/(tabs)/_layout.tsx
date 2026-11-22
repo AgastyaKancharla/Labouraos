@@ -26,19 +26,25 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{ headerShown: false, popToTopOnBlur: true }}
       backBehavior="history"
-      tabBar={({ state, navigateToTab }) => (
+      tabBar={({ state, descriptors, navigateToTab }) => (
         <TabBar
           items={items}
           activeName={state.routes[state.index]?.name ?? '(today)'}
           onSelect={(name) => {
             const focused = state.routes[state.index]?.name === name;
+            const route = state.routes.find((r) => r.name === name);
+            // 22 Nov (owner's field test): the Businesses tab opened the last business page (a page
+            // pushed from another tab, with nothing to dismiss). The tab's main page is always shown.
+            const toMain = () => route && descriptors[route.key]?.navigation.navigate(route.name, { screen: 'index' });
             if (focused) {
               // Already here: back to the tab's main page.
               if (router.canDismiss()) router.dismissTo(TAB_ROOTS[name as TabName]);
+              else toMain();
               return;
             }
-            const route = state.routes.find((r) => r.name === name);
-            if (route) navigateToTab(route.key);
+            if (!route) return;
+            navigateToTab(route.key);
+            if ((((route as { state?: { index?: number } }).state)?.index ?? 0) > 0) toMain();
           }}
         />
       )}

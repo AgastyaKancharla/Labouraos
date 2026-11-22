@@ -19,14 +19,17 @@ function draft(id: string) {
 beforeEach(() => jest.clearAllMocks());
 
 describe('FA21 Visit a shop · talking', () => {
-  it('runs the visit timer and needs the shop name and who he spoke to', async () => {
+  it('runs the visit timer and needs the shop name (22 Nov: only the name and the outcome here)', async () => {
     draft('t-1');
     searchParams.current = { id: 't-1' };
     await renderWithApp(<VisitTalkScreen />, { signedInAs: kiran });
     expect(screen.getByTestId('fa21-timer')).toHaveTextContent(/^06:0\d$/);
     await fireEvent.press(screen.getByTestId('fa21-not-interested'));
-    expect(screen.getByTestId('fa21-problem')).toHaveTextContent(/shop name and who you spoke to/);
+    expect(screen.getByTestId('fa21-problem')).toHaveTextContent(/Type the shop name first/);
     expect(router.push).not.toHaveBeenCalled();
+    // 22 Nov (rev 207): "whom did you speak to" and the shop phone are not on this step.
+    expect(screen.queryByTestId('fa21-spoke')).toBeNull();
+    expect(screen.queryByTestId('fa21-mobile')).toBeNull();
   });
 
   it('"Interested — onboard now" closes the timer through the queue and opens the proof step', async () => {
@@ -36,15 +39,16 @@ describe('FA21 Visit a shop · talking', () => {
     const queue = new OfflineQueue({ store: createMemoryQueueStore(), send: async (item) => void sent.push(item.request) });
     await renderWithApp(<VisitTalkScreen />, { signedInAs: kiran, queue });
     await fireEvent.changeText(screen.getByTestId('fa21-shop-name'), 'Sri Krishna Hotel');
-    await fireEvent.press(screen.getByTestId('fa21-spoke-owner'));
-    await fireEvent.changeText(screen.getByTestId('fa21-mobile'), '99000 54321');
     await fireEvent.press(screen.getByTestId('fa21-onboard'));
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toMatchObject({
       method: 'POST',
       path: '/field-visits/t-2/outcome',
-      json: { outcome: 'onboard_now', shopName: 'Sri Krishna Hotel', spokeTo: 'owner', contactPhone: '9900054321' },
+      json: { outcome: 'onboard_now', shopName: 'Sri Krishna Hotel' },
     });
+    // Onboard now: no spokeTo or shop phone; registration asks the contact person once.
+    expect((sent[0] as { json: Record<string, unknown> }).json).not.toHaveProperty('spokeTo');
+    expect((sent[0] as { json: Record<string, unknown> }).json).not.toHaveProperty('contactPhone');
     expect(router.push).toHaveBeenCalledWith({ pathname: '/visit/proof', params: { id: 't-2' } });
     expect(getDraft('t-2')?.endedAt).not.toBeNull();
   });

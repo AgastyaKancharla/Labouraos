@@ -43,7 +43,8 @@ import { dateFromKey, DAY_MS, FieldVisitClock, istDateKey, keyFromDate } from '.
 import { gpsSuspicions, isShortVisit, noOnboardingPattern, Reading, travelCheck } from './visit-fraud';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { ownerVisitOtpPurpose } from '../../common/otp/bound-otp-purposes';
-import { coversPiece, coversPieceAt } from './field-handover.service';
+import { coversPiece, coversPieceAt, handedTo } from './field-handover.service';
+import { REVISIT_CLOSE_NOTE_MAX, REVISIT_CLOSE_NOTE_MIN, REVISIT_CLOSE_REASONS, sameShop } from './revisit-shops';
 
 export interface UploadedPhoto {
   buffer: Buffer;
@@ -65,6 +66,12 @@ export interface OutcomeBody {
   revisitTime?: string;
   note?: string;
   endedAt?: string;
+}
+
+/** POST /field-visits/:id/close-revisit (rev 208, 22 Nov). */
+export interface CloseRevisitBody {
+  reason?: string;
+  note?: string;
 }
 
 export interface ChangeResultBody {
@@ -106,7 +113,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
 
 type VisitWithBusiness = BusinessVisit & {
-  business: { id: string; code: string; name: string; latitude: number | null; longitude: number | null } | null;
+  business: { id: string; code: string; name: string; latitude: number | null; longitude: number | null; additionalContactName?: string | null; contactRole?: string | null } | null;
 };
 
 /**
@@ -337,6 +344,12 @@ export class FieldVisitService {
         revisitTime = time;
       }
     }
+    // 22 Nov (rev 207): "Whom did you speak to" is asked only when the shop is not onboarded now, so
+    // the Team Lead can check the visit and the revisit has a contact. Onboarding asks the contact
+    // person once, in the registration step (the registered contact stands in for it).
+    if (!onboardNow && choice !== 'onboarded' && choice !== ALREADY_ONBOARDED && !spokeTo && !visit.spokeTo) {
+      throw codedError(HttpStatus.BAD_REQUEST, 'SPOKE_TO_REQUIRED', 'Say whom you spoke to: owner, manager, staff or no one');
+    }
     const note = body.note?.trim() ? body.note.trim().slice(0, 1000) : null;
 
     const startedAt = visit.startedAt ?? visit.visitedAt;
@@ -385,6 +398,75 @@ export class FieldVisitService {
       await this.verification.advanceToPendingTlCheckIfReady(visit.businessId, staffId);
     }
     return this.present(await this.load(id));
+  }
+
+  // ------------------------------------------------------- close a revisit
+
+  /**
+   * "Close this revisit" (Master Guide rev 208, 22 Nov): the agent stops the
+   * revisits of a shop with a reason — not interested, shop closed, wrong or
+   * duplicate shop, or other (in words). Every open revisit of the same shop
+   * (the business, or the same board name close by) is closed with it, so it
+   * never comes back as a second row. Nothing is deleted; audited; the Team
+   * Lead sees closed revisits in Visit proof. Closing again is a harmless repeat.
+   */
+  async closeRevisit(staffId: string, id: string, body: CloseRevisitBody) {
+    const now = this.clock.now();
+    const visit = await this.load(id).catch(() => null);
+    const mine = visit && (visit.staffId === staffId || (await handedTo(this.prisma, staffId, 'revisit', now)).some((h) => h.recordId === id));
+    if (!visit || !mine) throw new NotFoundException('Visit not found');
+    if (visit.revisitClosedAt) return this.presentClosed(visit);
+    if (!REVISIT_OUTCOMES.includes(visit.outcome ?? '')) {
+      throw codedError(HttpStatus.CONFLICT, 'VISIT_NOT_A_REVISIT', 'This visit has no revisit to close');
+    }
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+    if (!(REVISIT_CLOSE_REASONS as readonly string[]).includes(reason)) {
+      throw codedError(HttpStatus.BAD_REQUEST, 'REVISIT_CLOSE_REASON_REQUIRED', 'Pick why: not interested, shop closed, wrong or duplicate shop, or other');
+    }
+    const note = typeof body.note === 'string' ? body.note.trim().slice(0, REVISIT_CLOSE_NOTE_MAX) : '';
+    if (reason === 'other' && note.length < REVISIT_CLOSE_NOTE_MIN) {
+      throw codedError(HttpStatus.BAD_REQUEST, 'REVISIT_CLOSE_NOTE_REQUIRED', 'Say in a few words why the revisit is closed');
+    }
+    // The other open revisits of the same shop by the same agent close with it (one row per shop).
+    const owner = visit.staffId ?? staffId;
+    const open = await this.prisma.businessVisit.findMany({
+      where: {
+        staffId: owner,
+        outcome: { in: [...REVISIT_OUTCOMES] },
+        revisitClosedAt: null,
+        ...(visit.businessId ? { businessId: visit.businessId } : { businessId: null }),
+      },
+      select: { id: true, businessId: true, shopName: true, latitude: true, longitude: true },
+      take: 200,
+    });
+    const ids = [visit.id, ...open.filter((v) => v.id !== visit.id && sameShop(v, visit)).map((v) => v.id)];
+    await this.prisma.businessVisit.updateMany({
+      where: { id: { in: ids }, revisitClosedAt: null },
+      data: { revisitClosedAt: now, revisitClosedReason: reason, revisitClosedNote: note || null, revisitClosedByStaffId: staffId },
+    });
+    await this.audit.log({
+      actorId: staffId,
+      action: 'field_visit.revisit_closed',
+      entityType: 'business_visit',
+      entityCode: visit.id,
+      before: { revisitOn: keyFromDate(visit.revisitOn), revisitClosedAt: null },
+      after: { revisitClosedAt: now.toISOString(), reason, note: note || null, closedVisitIds: ids },
+      changedFields: ['revisitClosedAt', 'revisitClosedReason', 'revisitClosedNote'],
+      reason: `Revisit closed: ${reason}${note ? ` — ${note}` : ''}`,
+    });
+    return this.presentClosed(await this.load(id), ids.length);
+  }
+
+  private presentClosed(visit: VisitWithBusiness, closedCount = 1) {
+    return {
+      ...this.present(visit),
+      revisitClosed: {
+        at: visit.revisitClosedAt?.toISOString() ?? null,
+        reason: visit.revisitClosedReason,
+        note: visit.revisitClosedNote,
+        visitsClosed: closedCount,
+      },
+    };
   }
 
   // ------------------------------------------------------- change result
@@ -898,7 +980,7 @@ export class FieldVisitService {
   private load(id: string): Promise<VisitWithBusiness> {
     return this.prisma.businessVisit.findUniqueOrThrow({
       where: { id },
-      include: { business: { select: { id: true, code: true, name: true, latitude: true, longitude: true } } },
+      include: { business: { select: { id: true, code: true, name: true, latitude: true, longitude: true, additionalContactName: true, contactRole: true } } },
     });
   }
 
@@ -923,6 +1005,10 @@ export class FieldVisitService {
       geofenceFlag: visit.geofenceFlag,
       spokeTo: visit.spokeTo,
       contactPhone: visit.contactPhone,
+      // 22 Nov (rev 207): an onboarded visit asks no "whom did you speak to"; the registered contact stands in.
+      registeredContact: !visit.spokeTo && visit.business
+        ? { name: visit.business.additionalContactName ?? null, role: visit.business.contactRole ?? null }
+        : null,
       outcome: visit.outcome,
       outcomeReason: visit.outcomeReason,
       revisitOn: keyFromDate(visit.revisitOn),

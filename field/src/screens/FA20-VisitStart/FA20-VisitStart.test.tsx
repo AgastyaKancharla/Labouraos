@@ -40,12 +40,15 @@ describe('FA20 Visit a shop · photo', () => {
       queue,
       route: (url) => (url.includes('/field-work/map') ? { status: 200, body: nearby } : undefined),
     });
-    await waitFor(() => expect(screen.getByTestId('fa20-gps')).toHaveTextContent(/GPS found you · 12.91160, 77.63890/));
+    // 22 Nov (rev 207): the area in words (offline here: the accuracy and "area shown when online"), never coordinates.
+    await waitFor(() => expect(screen.getByTestId('fa20-gps')).toHaveTextContent(/GPS found you.*area shown when online/));
+    expect(screen.getByTestId('fa20-gps')).not.toHaveTextContent(/12.91160/);
     await waitFor(() => screen.getByTestId('fa20-nearby'));
     expect(screen.getByTestId('fa20-nearby')).toHaveTextContent(/Nearby already in Laboura: Lakshmi Tiffins \(40 m, Revisit due\)/);
     await fireEvent.press(screen.getByTestId('fa20-same-shop'));
     await fireEvent.press(screen.getByTestId('fa20-take-photo'));
     await fireEvent.press(screen.getByTestId('fake-camera-back'));
+    await fireEvent.press(screen.getByTestId('fa20-preview-continue'));
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0].path).toBe('/field-visits');
     expect(sent[0].fields).toMatchObject({ source: 'live_camera', latitude: '12.9116', longitude: '77.6101', accuracy: '8', revisitOfVisitId: 'v-0' });
@@ -60,6 +63,7 @@ describe('FA20 Visit a shop · photo', () => {
     await renderWithApp(<VisitStartScreen />, { signedInAs: kiran, queue });
     await fireEvent.press(screen.getByTestId('fa20-take-photo'));
     await fireEvent.press(screen.getByTestId('fake-camera-back'));
+    await fireEvent.press(screen.getByTestId('fa20-preview-continue'));
     await waitFor(() => expect(router.replace).toHaveBeenCalled());
     expect(queue.list()).toHaveLength(1);
   });
@@ -77,6 +81,7 @@ describe('FA20 Visit a shop · photo', () => {
     });
     await fireEvent.press(screen.getByTestId('fa20-take-photo'));
     await fireEvent.press(screen.getByTestId('fake-camera-back'));
+    await fireEvent.press(screen.getByTestId('fa20-preview-continue'));
     await waitFor(() => screen.getByTestId('fa20-error'));
     expect(screen.getByTestId('fa20-error')).toHaveTextContent(/already used/);
     expect(router.replace).not.toHaveBeenCalled();
@@ -88,5 +93,36 @@ describe('FA20 Visit a shop · photo', () => {
     await waitFor(() => screen.getByTestId('fa20-nearby'));
     expect(screen.queryByTestId('fa20-same-shop')).toBeNull();
     expect(screen.getByTestId('fa20-not-yours')).toHaveTextContent('Another agent’s shop: view only.');
+  });
+
+  it('22 Nov (rev 207): the board photo is shown back (tap to enlarge) with the area in words; Retake takes it again, Continue sends it', async () => {
+    const sent: unknown[] = [];
+    const queue = new OfflineQueue({ store: createMemoryQueueStore(), send: async (item) => void sent.push(item.request) });
+    await renderWithApp(<VisitStartScreen />, {
+      signedInAs: kiran,
+      queue,
+      route: (url) => (url.endsWith('/maps-link/where') ? { status: 200, body: { latitude: 12.9116, longitude: 77.6101, area: 'Kothnur, JP Nagar 8th Phase', address: null } } : undefined),
+    });
+    await waitFor(() => expect(screen.getByTestId('fa20-place')).toHaveTextContent('Kothnur, JP Nagar 8th Phase'));
+    expect(screen.getByTestId('fa20-gps')).not.toHaveTextContent(/12\.91/);
+    await fireEvent.press(screen.getByTestId('fa20-take-photo'));
+    await fireEvent.press(screen.getByTestId('fake-camera-back'));
+    await waitFor(() => screen.getByTestId('fa20-preview'));
+    expect(sent).toHaveLength(0);
+    await waitFor(() => expect(screen.getByTestId('fa20-preview-place')).toHaveTextContent('Kothnur, JP Nagar 8th Phase · ±8 m'));
+    await fireEvent.press(screen.getByTestId('fa20-preview-thumb'));
+    expect(screen.getByTestId('fa20-preview-large')).toBeTruthy();
+    await fireEvent.press(screen.getByTestId('fa20-preview-retake'));
+    await fireEvent.press(screen.getByTestId('fake-camera-back'));
+    await fireEvent.press(screen.getByTestId('fa20-preview-continue'));
+    await waitFor(() => expect(sent).toHaveLength(1));
+  });
+
+  it('22 Nov: a revisit starts at step 1 with the shop name and the last visit\'s note on top', async () => {
+    searchParams.current = { revisitOf: 'v-9', name: 'Reddy mess', lastNote: 'currently he does not have the staff requirements', lastAt: '2026-11-20T06:00:00.000Z' };
+    await renderWithApp(<VisitStartScreen />, { signedInAs: kiran });
+    expect(screen.getByTestId('fa20-last-visit')).toHaveTextContent('Last visit Fri 20 Nov: “currently he does not have the staff requirements”');
+    expect(screen.getByText(/Reddy mess/)).toBeTruthy();
+    expect(screen.getByTestId('fa20-take-photo')).toBeTruthy();
   });
 });

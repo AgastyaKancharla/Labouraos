@@ -59,6 +59,9 @@ export interface NeedsItem {
   /** 21 Nov: the come-back time ("HH:mm") and, for a revisit handed over on leave, whose it was. */
   revisitTime?: string | null;
   coverFor?: string | null;
+  /** revisit_due (22 Nov): the last visit's note and when it was, shown when the revisit starts. */
+  note?: string | null;
+  lastVisitAt?: string | null;
   /** verification_visit (21 Nov): the job card. */
   job?: import('./fieldOps').VerificationJob;
   /** followup_task (21 Nov): "Repeat business — day 30". */
@@ -151,6 +154,14 @@ export interface LocatedPin extends ResolvedMapsLink {
   source: 'coordinates' | 'link' | 'address';
   /** The address line it matched, shown under "Is this the right place?". */
   matched: string | null;
+}
+
+/** POST /maps-link/where (22 Nov): a GPS fix in words ("Kothnur, JP Nagar 8th Phase") and the address there. */
+export interface WhereAmI {
+  latitude: number;
+  longitude: number;
+  area: string | null;
+  address: (ResolvedMapsLink['address'] & { locality?: string | null }) | null;
 }
 
 /** POST /maps-link/resolve (17 Nov): the pin from a Google Maps link and its address from OpenStreetMap. */
@@ -248,6 +259,9 @@ export interface MyBusinessRow {
   agreementSigned: boolean;
   openVacancies: number;
   nextStep: BusinessNextStep;
+  /** 22 Nov: interviews at the shop today, and whether he is its account agent. */
+  interviewsToday?: number;
+  isAccountAgent?: boolean;
 }
 
 export type VacancyNextStep =
@@ -428,6 +442,7 @@ export const redesignApi = (api: ApiClient) => ({
   removeShift: (businessId: string, shiftId: string) => api.delete<{ removed: true }>(`/businesses/${enc(businessId)}/shifts/${enc(shiftId)}`),
   resolveMapsLink: (url: string) => api.post<ResolvedMapsLink>('/maps-link/resolve', { url }),
   locatePin: (text: string) => api.post<LocatedPin>('/maps-link/locate', { text }),
+  whereIs: (latitude: number, longitude: number) => api.post<WhereAmI>('/maps-link/where', { latitude, longitude }),
   changeResult: (id: string, body: ChangeResultBody) => api.post<VisitDetails>(`/field-visits/${enc(id)}/change-result`, body),
   myBusinesses: (q?: string) => api.get<{ query: string; results: MyBusinessRow[] }>('/field-work/businesses', { query: { q: q || undefined } }),
   businessPage: (ref: string) => api.get<BusinessPage>(`/field-work/businesses/${enc(ref)}/page`),

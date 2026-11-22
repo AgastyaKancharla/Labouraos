@@ -33,4 +33,16 @@ export class MapsLinkController {
   locate(@Req() req: Authed, @Body() body: { text?: unknown }) {
     return this.maps.locate(req.user.sub, body?.text);
   }
+
+  /**
+   * "Use where I am" on the business address step and the area in words for
+   * every GPS fix in Laboura Field (22 Nov): the address at a GPS spot
+   * (OpenStreetMap reverse lookup, cached, rate-limited per agent).
+   */
+  @Post('where')
+  @HttpCode(200)
+  @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
+  where(@Req() req: Authed, @Body() body: { latitude?: unknown; longitude?: unknown }) {
+    return this.maps.where(req.user.sub, body?.latitude, body?.longitude);
+  }
 }

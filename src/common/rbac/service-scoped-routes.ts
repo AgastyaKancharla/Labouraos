@@ -428,6 +428,11 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
     test: 'modules/field-visit/field-visit-redesign.spec.ts',
     proof: '// POST /field-visits/:id/change-result: another field agent is refused (404)',
   },
+  'FieldVisitController.closeRevisit': {
+    reason: 'Only the field agent whose revisit it is (his visit, or one handed over to him on a teammate\'s leave); anyone else gets 404. Nothing is deleted.',
+    test: 'modules/field-visit/field-visit-simple-22nov.spec.ts',
+    proof: '// POST /field-visits/:id/close-revisit: another field agent is refused (404)',
+  },
   'FieldVisitController.arrived': {
     reason: 'Only the field agent attending that interview marks the candidate arrived.',
     test: 'modules/field-visit/field-visits.spec.ts',

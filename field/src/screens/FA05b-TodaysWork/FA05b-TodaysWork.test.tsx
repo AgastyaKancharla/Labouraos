@@ -24,6 +24,8 @@ describe('FA05b Today’s work', () => {
     expect(asked).toEqual(['2026-11-15']);
     expect(screen.queryByTestId('work-visit:v-1')).toBeNull();
     await fireEvent.press(screen.getByTestId('work-kind-all'));
+    // All: one row per business (22 Nov); its timeline holds the visit.
+    await fireEvent.press(screen.getByTestId('work-group-b:b-1-toggle'));
     expect(screen.getByTestId('work-visit:v-1')).toBeTruthy();
     await fireEvent.press(screen.getByTestId('work-kind-visit'));
     expect(screen.queryByTestId('work-business:b-1')).toBeNull();

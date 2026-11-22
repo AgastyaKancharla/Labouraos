@@ -8,6 +8,7 @@ export { Icon, type IconName } from './Icon';
 export { IconTile } from './IconTile';
 export { ListRow } from './ListRow';
 export { PinFinder } from './PinFinder';
+export { PlaceLine, placeText, useAreaName } from './PlaceLine';
 export { ProgressBar } from './ProgressBar';
 export { Screen } from './Screen';
 export { SearchBar } from './SearchBar';

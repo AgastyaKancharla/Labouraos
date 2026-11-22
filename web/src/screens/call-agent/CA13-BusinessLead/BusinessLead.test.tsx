@@ -243,4 +243,57 @@ describe('Register a new business (CA13)', () => {
     expect(noDocs).toMatchObject({ noDocuments: true });
     expect(noDocs).not.toHaveProperty('gstNumber');
   });
+
+  it('22 Nov (rev 207–208): grouped business types with a search, Other needs the type in words, and "Same as the shop name"', async () => {
+    const user = userEvent.setup();
+    const api = mockApi(routes({ 'POST /businesses': { id: 'biz-9', code: 'BZ-00319' }, 'POST /businesses/biz-9/agreement-links': { success: true } }));
+    signInAs('call_agent');
+    sessionStorage.setItem('laboura.draft.business.staff-ca', JSON.stringify({ ...form, staff: [], businessType: '' }));
+    renderScreen(<RegisterBusiness />, { portal: 'call-agent', path: '/call-agent/register/business' });
+    await verify(user);
+    const select = screen.getByLabelText(/Type of business/) as HTMLSelectElement;
+    const groups = Array.from(select.querySelectorAll('optgroup')).map((g) => g.label);
+    expect(groups[0]).toBe('Food & hospitality');
+    expect(groups).toContain('Agriculture');
+    await user.type(screen.getByLabelText('Search business types'), 'tea');
+    expect(select.querySelectorAll('option[value="tea_coffee_stall"]')).toHaveLength(1);
+    expect(select.querySelector('option[value="dairy"]')).toBeNull();
+    await user.clear(screen.getByLabelText('Search business types'));
+    await user.selectOptions(select, 'other');
+    await user.click(screen.getByRole('button', { name: 'Save business' }));
+    expect(api.calls('POST /businesses')).toHaveLength(0);
+    expect(screen.getByText('Type what kind of business it is.')).toBeInTheDocument();
+    await user.type(screen.getByLabelText(/What kind of business/), 'Flower shop');
+    await user.click(screen.getByLabelText('Same as the shop name'));
+    expect((screen.getByLabelText(/Legal name/) as HTMLInputElement).value).toBe('Annapoorna Mess');
+    expect((screen.getByLabelText(/Legal name/) as HTMLInputElement).readOnly).toBe(true);
+    await user.click(screen.getByRole('button', { name: 'Save business' }));
+    await waitFor(() => expect(api.calls('POST /businesses')).toHaveLength(1));
+    expect(api.calls('POST /businesses')[0].body).toMatchObject({ businessType: 'other', businessTypeOther: 'Flower shop', legalName: 'Annapoorna Mess' });
+  });
+
+  it('22 Nov (rev 208): the call agent finds the address (typed or a Maps link), checks it on the map, and it fills the street, area, PIN code and pin', async () => {
+    const user = userEvent.setup();
+    const api = mockApi(
+      routes({
+        'POST /maps-link/locate': {
+          latitude: 12.9165, longitude: 77.6102, source: 'address', placeName: null, matched: '16th Main Road, BTM Layout 2nd Stage, Bengaluru 560076', shortLink: false,
+          address: { shopNumber: null, street: '16th Main Road, BTM Layout 2nd Stage', area: 'BTM Layout 2nd Stage', city: 'Bengaluru', state: 'Karnataka', pincode: '560076', displayName: '16th Main Road, BTM Layout 2nd Stage, Bengaluru 560076', locality: 'BTM Layout 2nd Stage' },
+        },
+      }),
+    );
+    signInAs('call_agent');
+    sessionStorage.setItem('laboura.draft.business.staff-ca', JSON.stringify({ ...form, street: '', place: { area: '', pincode: '', latitude: null, longitude: null } }));
+    renderScreen(<RegisterBusiness />, { portal: 'call-agent', path: '/call-agent/register/business' });
+    await user.type(await screen.findByLabelText(/Find the address/), '1273 45th Cross, BTM');
+    await user.click(screen.getByRole('button', { name: /Find on the map/ }));
+    await screen.findByTestId('address-preview');
+    expect(api.calls('POST /maps-link/locate')[0].body).toEqual({ text: '1273 45th Cross, BTM' });
+    expect(screen.getByTestId('address-words')).toHaveTextContent('16th Main Road, BTM Layout 2nd Stage, Bengaluru 560076');
+    await user.click(screen.getByRole('button', { name: 'Yes, fill the address' }));
+    expect((screen.getByLabelText(/^Street/) as HTMLInputElement).value).toBe('16th Main Road, BTM Layout 2nd Stage');
+    expect(screen.getByTestId('address-filled')).toHaveTextContent(/Add the shop number, floor or street/);
+    // The agent's own shop number stays.
+    expect((screen.getByLabelText(/Shop \/ building number/) as HTMLInputElement).value).toBe('No. 14, 1st floor');
+  });
 });

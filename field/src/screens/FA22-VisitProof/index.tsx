@@ -8,7 +8,7 @@ import { Banner, Button, Card, EmptyState, ErrorState, IconTile, ListRow, Loadin
 import { isApiError } from '@/api/errors';
 import { visitPaths } from '@/api/endpoints';
 import { useOfflineQueue } from '@/device/offline-queue';
-import { distanceMeters, formatCoordinates } from '@/device/location/location';
+import { distanceMeters } from '@/device/location/location';
 import type { CapturedPhoto } from '@/device/camera';
 import { formatStampIst } from '@/lib/format';
 import { pageRoutes, routes } from '@/navigation/routes';
@@ -20,6 +20,7 @@ import { minutesOf } from '../_visits/format';
 import { photoRequest } from '../_visits/photo';
 import { useVisit } from '../_visits/useVisit';
 import { updateDraft } from '../_visits/visitDraft';
+import { PhotoPreview } from '../_visits/PhotoPreview';
 
 /** The design's "same spot" line: the proof selfie must be this close to the board photo (server checks too). */
 export const SAME_SPOT_METERS = 100;
@@ -56,23 +57,38 @@ export default function VisitProofScreen() {
   const end = visit.endedAt ? new Date(visit.endedAt).getTime() : selfie ? new Date(selfie.stamp.takenAt).getTime() : openedAt;
   const minutes = minutesOf((end - new Date(visit.startedAt).getTime()) / 1000) ?? 0;
 
-  async function onSelfie(photo: CapturedPhoto) {
+  function next() {
+    // A shop already in Laboura (a revisit) is not registered again: its visit details offer the
+    // next step: "Mark onboarded" the first time, else "Already onboarded — save visit" (rev 189).
+    if (visit!.businessId) router.push(pageRoutes.visitDetails(visit!.id));
+    else router.push({ pathname: routes.visitBusiness, params: { visitId: visit!.id } });
+  }
+
+  // 22 Nov (rev 207): the selfie is shown back first (thumbnail, area, "same spot · N m"); Continue sends it.
+  function onSelfie(photo: CapturedPhoto) {
     setSelfie(photo);
+    setSent(false);
     setProblem(null);
     const distance =
       photo.stamp.latitude !== null && photo.stamp.longitude !== null
         ? distanceMeters(visit!, { latitude: photo.stamp.latitude, longitude: photo.stamp.longitude })
         : null;
-    if (distance !== null && distance > SAME_SPOT_METERS) {
-      setProblem(t('fa22.tooFar', { meters: Math.round(distance) }));
-      return;
-    }
+    if (distance !== null && distance > SAME_SPOT_METERS) setProblem(t('fa22.tooFar', { meters: Math.round(distance) }));
+  }
+
+  async function sendSelfie(photo: CapturedPhoto) {
+    const distance =
+      photo.stamp.latitude !== null && photo.stamp.longitude !== null
+        ? distanceMeters(visit!, { latitude: photo.stamp.latitude, longitude: photo.stamp.longitude })
+        : null;
+    if (distance !== null && distance > SAME_SPOT_METERS) return;
     setBusy(true);
     try {
       await queue.submit(`${t('fa22.queueLabel')} · ${visit!.shopName}`, photoRequest(visitPaths.proof(visit!.id), photo, {}, 'selfie.jpg'));
       updateDraft(visit!.id, { proofDistance: distance === null ? null : Math.round(distance), proofAt: photo.stamp.takenAt });
       setSent(true);
       void client.invalidateQueries({ queryKey: ['field-work'] });
+      next();
     } catch (e) {
       setProblem(isApiError(e) ? e.message : t('common.error'));
     } finally {
@@ -86,6 +102,24 @@ export default function VisitProofScreen() {
       <Screen>
         <StepHeader step={3} revisit={Boolean(visit.businessId)} />
         <Card title={t('fa22.selfieTitle')} icon="user" accent="green">
+          {selfie && !sent ? (
+            <PhotoPreview
+              photo={selfie}
+              busy={busy}
+              continueDisabled={tooFar}
+              continueLabel={visit.businessId ? t('fa22.continueRevisit') : t('fa22.continue')}
+              onRetake={() => setCameraOpen(true)}
+              onContinue={() => void sendSelfie(selfie)}
+              testID="fa22-preview"
+            >
+              {gap !== null ? (
+                <Text variant="small" color={tooFar ? colors.tomato : colors.greenText} testID="fa22-preview-spot">
+                  {tooFar ? t('fa22.farChip', { meters: gap }) : t('fa22.sameSpot', { meters: gap })}
+                </Text>
+              ) : null}
+            </PhotoPreview>
+          ) : (
+          <>
           <LinearGradient colors={done ? doneGradient : heroGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.photoBox}>
             <IconTile icon={done ? 'check' : 'camera'} accent={done ? 'green' : 'cyan'} size={60} />
             <Text variant="h2" align="center" color={colors.white}>
@@ -94,9 +128,9 @@ export default function VisitProofScreen() {
             <Text variant="small" align="center" color={colors.navSoft}>
               {t('fa22.frontCamera')}
             </Text>
-            {selfie && selfie.stamp.latitude !== null && selfie.stamp.longitude !== null ? (
+            {selfie ? (
               <Text variant="tiny" align="center" color={colors.navSoft}>
-                {`${formatCoordinates({ latitude: selfie.stamp.latitude, longitude: selfie.stamp.longitude })} · ${formatStampIst(selfie.stamp.takenAt)}`}
+                {formatStampIst(selfie.stamp.takenAt)}
               </Text>
             ) : null}
           </LinearGradient>
@@ -109,6 +143,8 @@ export default function VisitProofScreen() {
             onPress={() => setCameraOpen(true)}
             testID="fa22-take-selfie"
           />
+          </>
+          )}
         </Card>
         <Card>
           <ListRow
@@ -126,18 +162,14 @@ export default function VisitProofScreen() {
           <ListRow title={t('fa22.timeAtShop')} leading={<IconTile icon="clock" accent="gold" size={34} />} trailing={<Text variant="bodyStrong">{t('common.minutes', { minutes })}</Text>} last testID="fa22-time" />
         </Card>
         {problem ? <Banner tone="error" message={problem} testID="fa22-problem" /> : null}
-        <Button
-          label={visit.businessId ? t('fa22.continueRevisit') : t('fa22.continue')}
-          disabled={!done}
-          onPress={() =>
-            // A shop already in Laboura (a revisit) is not registered again: its visit details offer the
-            // next step: "Mark onboarded" the first time, else "Already onboarded — save visit" (rev 189).
-            visit.businessId
-              ? router.push(pageRoutes.visitDetails(visit.id))
-              : router.push({ pathname: routes.visitBusiness, params: { visitId: visit.id } })
-          }
-          testID="fa22-continue"
-        />
+        {selfie && !sent ? null : (
+          <Button
+            label={visit.businessId ? t('fa22.continueRevisit') : t('fa22.continue')}
+            disabled={!done}
+            onPress={next}
+            testID="fa22-continue"
+          />
+        )}
         <Text variant="muted">{visit.businessId ? t('fa22.nextRevisit') : t('fa22.next')}</Text>
       </Screen>
       <CameraSheet open={cameraOpen} facing="front" label={visit.shopName} onCapture={(p) => void onSelfie(p)} onClose={() => setCameraOpen(false)} />

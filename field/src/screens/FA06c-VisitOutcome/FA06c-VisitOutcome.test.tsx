@@ -81,4 +81,29 @@ describe('FA06c How did the visit go?', () => {
     await fireEvent.press(screen.getByTestId('fa06c-save'));
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/visit/details/v-1'));
   });
+
+  it('22 Nov (rev 207): a shop not onboarded now asks whom he spoke to (required) and the optional shop phone here', async () => {
+    searchParams.current = { id: 'v-22' };
+    const sent: { json: Record<string, unknown> }[] = [];
+    const queue = new OfflineQueue({ store: createMemoryQueueStore(), send: async (item) => void sent.push(item.request as never) });
+    await renderWithApp(<VisitOutcomeScreen />, {
+      signedInAs: kiran,
+      queue,
+      route: (url) => (url.endsWith('/field-visits/v-22') ? { status: 200, body: { ...sampleVisit, id: 'v-22', spokeTo: null } } : undefined),
+    });
+    await waitFor(() => screen.getByTestId('fa06c-contact'));
+    await fireEvent.press(screen.getByTestId('fa06c-outcome-not_interested'));
+    await fireEvent.press(screen.getByTestId('fa06c-reason-fee_too_high'));
+    await fireEvent.press(screen.getByTestId('fa06c-save'));
+    expect(screen.getByTestId('fa06c-problem')).toHaveTextContent('Pick whom you spoke to.');
+    await fireEvent.press(screen.getByTestId('fa06c-spoke-manager'));
+    await fireEvent.changeText(screen.getByTestId('fa06c-mobile'), '12345');
+    await fireEvent.press(screen.getByTestId('fa06c-save'));
+    expect(screen.getByTestId('fa06c-problem')).toBeTruthy();
+    expect(sent).toHaveLength(0);
+    await fireEvent.changeText(screen.getByTestId('fa06c-mobile'), '98450 12345');
+    await fireEvent.press(screen.getByTestId('fa06c-save'));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0].json).toMatchObject({ outcome: 'not_interested', reason: 'fee_too_high', spokeTo: 'manager', contactPhone: '9845012345' });
+  });
 });

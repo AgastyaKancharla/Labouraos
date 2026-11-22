@@ -80,3 +80,24 @@ describe('Visit proof (T-Visits): planned visits can be reassigned (21 Nov)', ()
     await waitFor(() => expect(api.calls('POST /field-assignments/hand-back')[0].body).toEqual({ fromStaffId: 'fa-1' }));
   });
 });
+
+describe('Visit proof: closed revisits (22 Nov, rev 208)', () => {
+  it('lists the revisits his agents closed, with the reason and the note', async () => {
+    mockApi({
+      ...common,
+      'GET /field-assignments/open': { assignments: [], agents: [] },
+      'GET /team-lead/visits': {
+        date: '2026-11-23', summary: { visits: 0, toCheck: 0, signedUp: 0 }, rows: [],
+        closedRevisits: [
+          { id: 'v-9', agent: kiran, shop: 'Reddy mess', lastVisitAt: '2026-11-20T06:00:00Z', closedAt: '2026-11-22T07:00:00Z', reason: 'other', note: 'Owner moved to Hosur' },
+          { id: 'v-8', agent: ravi2, shop: 'Andhra ruchilu', lastVisitAt: '2026-11-19T06:00:00Z', closedAt: '2026-11-22T08:00:00Z', reason: 'wrong_or_duplicate', note: null },
+        ],
+      },
+    });
+    signInAs('team_lead');
+    renderScreen(<TeamLeadVisits />, { portal: 'team-lead', path: '/team-lead/visits', now: NOW });
+    expect(await screen.findByText('Reddy mess')).toBeInTheDocument();
+    expect(screen.getByText('Other · Owner moved to Hosur')).toBeInTheDocument();
+    expect(screen.getByText('Wrong or duplicate shop')).toBeInTheDocument();
+  });
+});

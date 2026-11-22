@@ -33,6 +33,8 @@ export const queryKeys = {
   fieldTargets: ['field-work', 'targets'] as const,
   fieldMap: (lat: number, lng: number) => ['field-work', 'map', lat.toFixed(4), lng.toFixed(4)] as const,
   fieldBusiness: (ref: string) => ['field-work', 'business', ref] as const,
+  /** 22 Nov: the area in words for a GPS fix (rounded to about 11 m; the map's names never change mid-visit). */
+  whereIs: (lat: number, lng: number) => ['where-is', lat.toFixed(4), lng.toFixed(4)] as const,
   visit: (id: string) => ['field-visits', id] as const,
   leaderboard: ['targets', 'leaderboard'] as const,
   registrationOptions: ['registration', 'options'] as const,

@@ -404,7 +404,7 @@ Home opens next time (proposal 3.3).
   "legalMinimumWagePaise": { "unskilled": 2337600, "semi_skilled": 2571400, "skilled": 2828600, "highly_skilled": 3111400 },
   "legalMinimumWageEffectiveFrom": "2026-05-22", "salaryDaysPerMonth": 26, "adultMinimumAge": 18,
   "jobSeeker": { "bestTimeToCall": ["09-12", "12-15", "15-18", "18-21", "09-21"], "shiftPreferences": ["day", "night", "rotational", "any"], "jobTypes": ["full_time", "part_time", "live_in"], "salaryPeriods": ["monthly", "daily"], "maxTrades": 3 },
-  "business": { "businessTypes": ["…, never household"], "contactRoles": ["owner", "manager", "hr", "supervisor"], "employeeCountBands": ["…"], "yearsRunningBands": ["…"], "hiringFrequencies": ["…"] },
+  "business": { "businessTypes": ["the grouped list's values (22 Nov), never household"], "businessTypeGroups": [{ "key": "food", "label": "Food & hospitality", "types": [{ "value": "restaurant", "label": "Restaurant" }, "…"] }, "…"], "businessTypeOtherMax": 80, "contactRoles": ["owner", "manager", "hr", "supervisor"], "employeeCountBands": ["…"], "yearsRunningBands": ["…"], "hiringFrequencies": ["…"] },
   "referral": { "types": ["individual", "business"], "individualRoles": ["auto_driver", "…"] },
   "vacancy": { "extras": ["…"], "interviewTypes": ["walk_in", "scheduled"], "salaryPeriods": ["monthly", "daily"] },
   "callbackTopics": ["signup", "…"]
