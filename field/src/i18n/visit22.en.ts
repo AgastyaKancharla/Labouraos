@@ -46,4 +46,13 @@ export const visit22En = {
   'photo.noGps': 'No GPS on this photo',
   'fa21.needName': 'Type the shop name first.',
   'fa06c.pickSpokeTo': 'Pick whom you spoke to.',
+  'biz.badge.agreement': 'Agreement not signed',
+  'biz.badge.tlCheck': 'Team Lead check',
+  'biz.badge.noVacancy': 'No vacancy',
+  'biz.badge.vacancyWaiting': 'Vacancy waiting',
+  'biz.badge.ready': 'Ready to show candidates',
+  'biz.badge.interviewsToday': 'Interviews today',
+  'biz.badge.allGood': 'All good',
+  'biz.badge.paused': 'Paused',
+  'biz.badge.suspended': 'Suspended',
 } as const;

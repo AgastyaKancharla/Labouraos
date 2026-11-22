@@ -13,8 +13,42 @@ import { colors, type Tone } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { nextStepText } from '../FA08-Business';
 
+/**
+ * Where a business is stuck, in one badge (Master Guide rev 208, 22 Nov):
+ * Agreement not signed, Team Lead check, No vacancy, Ready to show
+ * candidates, Interviews today, or All good.
+ */
+export function businessBadge(row: MyBusinessRow, t: ReturnType<typeof useI18n>['t']): { label: string; tone: Tone } {
+  const step = row.nextStep;
+  switch (step.kind) {
+    case 'suspended':
+      return { label: t('biz.badge.suspended'), tone: 'tomato' };
+    case 'paused':
+      return { label: t('biz.badge.paused'), tone: 'tomato' };
+    case 'agreement_waiting':
+      return { label: t('biz.badge.agreement'), tone: 'tomato' };
+    case 'waiting_tl_check':
+    case 'candidates_hidden':
+      return { label: t('biz.badge.tlCheck'), tone: 'amber' };
+    default:
+      break;
+  }
+  if ((row.interviewsToday ?? 0) > 0) return { label: t('biz.badge.interviewsToday'), tone: 'blue' };
+  switch (step.kind) {
+    case 'vacancy_to_confirm':
+    case 'vacancy_to_send':
+      return { label: t('biz.badge.vacancyWaiting'), tone: 'amber' };
+    case 'add_vacancy':
+      return { label: t('biz.badge.noVacancy'), tone: 'neutral' };
+    case 'ready_show_candidates':
+      return { label: t('biz.badge.ready'), tone: 'green' };
+    default:
+      return { label: t('biz.badge.allGood'), tone: 'green' };
+  }
+}
+
 /** The colour of a business's next step: ready green, waiting on the owner amber, stopped red, nothing grey. */
-function nextTone(row: MyBusinessRow): Tone {
+export function nextTone(row: MyBusinessRow): Tone {
   switch (row.nextStep.kind) {
     case 'ready_show_candidates':
       return 'green';
@@ -36,8 +70,10 @@ function nextTone(row: MyBusinessRow): Tone {
 }
 
 /**
- * FA09 — My businesses, the Businesses tab's main page (redesign, 16 Nov):
- * the agent's own businesses, each with one line saying what it needs next.
+ * FA09 — My businesses, the Businesses tab's main page (redesign, 16 Nov;
+ * 22 Nov, rev 208: always this list, never the last business page): the
+ * agent's businesses (account agent, or onboarded by him), search on top,
+ * each with its area, what it needs next and a badge where it is stuck.
  * Tapping one opens the one business page. The search box filters them by
  * name, BZ- code or area; "Search everyone" finds any record.
  * Data: GET /field-work/businesses?q=.
@@ -66,11 +102,11 @@ export default function MyBusinessesScreen() {
               <ListRow
                 key={b.id}
                 title={b.name}
-                subtitle={`${[b.code, b.locality].filter(Boolean).join(' · ')}\n${nextStepText(b.nextStep, t)}`}
+                subtitle={`${[b.locality, b.code].filter(Boolean).join(' · ')}\n${nextStepText(b.nextStep, t)}${b.openVacancies > 0 ? ` · ${t('fa09.open', { count: b.openVacancies })}` : ''}`}
                 leading={<IconTile icon="store" accent={b.agreementSigned ? 'royal' : 'gold'} size={36} />}
                 trailing={
                   <View style={styles.trailing}>
-                    <StatusChip tone={nextTone(b)} label={b.openVacancies > 0 ? t('fa09.open', { count: b.openVacancies }) : t('selling.noVacancy')} />
+                    <StatusChip tone={businessBadge(b, t).tone} label={businessBadge(b, t).label} />
                     <Icon name="chevron-right" size={16} />
                   </View>
                 }

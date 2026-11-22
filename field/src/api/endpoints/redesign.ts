@@ -259,6 +259,9 @@ export interface MyBusinessRow {
   agreementSigned: boolean;
   openVacancies: number;
   nextStep: BusinessNextStep;
+  /** 22 Nov: interviews at the shop today, and whether he is its account agent. */
+  interviewsToday?: number;
+  isAccountAgent?: boolean;
 }
 
 export type VacancyNextStep =

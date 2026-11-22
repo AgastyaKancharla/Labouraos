@@ -1,7 +1,9 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { router } from '@/test/expo-router-mock';
 import { kiran, renderWithApp } from '@/test/render';
-import MyBusinessesScreen from '.';
+import MyBusinessesScreen, { businessBadge } from '.';
+import { translate } from '@/i18n';
+import type { MyBusinessRow } from '@/api/endpoints';
 
 jest.mock('expo-router', () => require('@/test/expo-router-mock'));
 
@@ -23,7 +25,7 @@ describe('FA09 My businesses', () => {
       },
     });
     await waitFor(() => screen.getByTestId('fa09-business-b-1'));
-    expect(screen.getByTestId('fa09-business-b-1')).toHaveTextContent(/Sri Sai Bakery.*BZ-00012 · JP Nagar.*Agreement link expired · resend it.*No vacancy/);
+    expect(screen.getByTestId('fa09-business-b-1')).toHaveTextContent(/Sri Sai Bakery.*JP Nagar · BZ-00012.*Agreement link expired · resend it.*Agreement not signed/);
     expect(screen.getByTestId('fa09-business-b-2')).toHaveTextContent(/Green Leaf Café.*Ready to show candidates.*2 open/);
     expect(screen.queryByTestId('header-back')).toBeNull();
     await fireEvent.changeText(screen.getByTestId('fa09-filter'), 'green');
@@ -36,5 +38,17 @@ describe('FA09 My businesses', () => {
     expect(router.push).toHaveBeenCalledWith('/businesses/b-2');
     await fireEvent.press(screen.getByTestId('search-bar'));
     expect(router.push).toHaveBeenCalledWith('/businesses/search');
+  });
+
+  it('22 Nov (rev 208): each row shows where the business is stuck', () => {
+    const t = ((key: string, params?: Record<string, string | number>) => translate('en', key as never, params)) as never;
+    const row = (nextStep: unknown, extra: Partial<MyBusinessRow> = {}) => ({ ...rows[0], nextStep, ...extra }) as MyBusinessRow;
+    const label = (r: MyBusinessRow) => businessBadge(r, t).label;
+    expect(label(row({ kind: 'agreement_waiting', agreementState: 'link_sent' }))).toBe('Agreement not signed');
+    expect(label(row({ kind: 'waiting_tl_check' }))).toBe('Team Lead check');
+    expect(label(row({ kind: 'add_vacancy' }))).toBe('No vacancy');
+    expect(label(row({ kind: 'ready_show_candidates', vacancyId: 'v' }))).toBe('Ready to show candidates');
+    expect(label(row({ kind: 'none' }, { interviewsToday: 2 }))).toBe('Interviews today');
+    expect(label(row({ kind: 'none' }))).toBe('All good');
   });
 });

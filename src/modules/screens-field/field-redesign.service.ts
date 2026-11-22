@@ -761,7 +761,12 @@ export class FieldRedesignService {
   async myBusinesses(actor: Actor, q?: string) {
     const now = this.clock.now();
     const query = (q ?? '').trim();
-    const filters: Prisma.BusinessWhereInput[] = [this.myBusinessesWhere(actor.sub), { anonymisedAt: null }];
+    // 22 Nov (rev 208): the Businesses tab lists his businesses — account agent (or his lead), or
+    // onboarded by him on a visit.
+    const filters: Prisma.BusinessWhereInput[] = [
+      { OR: [this.myBusinessesWhere(actor.sub), { visits: { some: { staffId: actor.sub, outcome: 'onboarded' } } }] },
+      { anonymisedAt: null },
+    ];
     if (query) {
       filters.push({
         OR: [
@@ -786,11 +791,21 @@ export class FieldRedesignService {
       },
     });
     const ids = rows.map((b) => b.id);
-    const [agreements, shown, outside] = await Promise.all([
+    const dayStart = istDayStart(now);
+    const [agreements, shown, outside, interviews] = await Promise.all([
       this.agreementInfos(ids, now),
       this.shownByVacancy(rows.flatMap((b) => b.vacancies.filter((v) => v.status === 'open').map((v) => v.id))),
       this.outsideAreaBusinesses(rows),
+      // 22 Nov: "Interviews today" on the row.
+      ids.length
+        ? this.prisma.interview.groupBy({
+            by: ['businessId'],
+            where: { businessId: { in: ids }, slotStartsAt: { gte: dayStart, lt: new Date(dayStart.getTime() + DAY_MS) }, status: { in: ['offered', 'confirmed'] } },
+            _count: { _all: true },
+          })
+        : Promise.resolve([] as Array<{ businessId: string; _count: { _all: number } }>),
     ]);
+    const interviewsToday = new Map(interviews.map((r) => [r.businessId, r._count._all]));
     return {
       query,
       results: rows.map((b) => {
@@ -804,6 +819,8 @@ export class FieldRedesignService {
           agreementSigned: agreement.state === 'signed',
           openVacancies: b.vacancies.filter((v) => v.status === 'open').reduce((sum, v) => sum + v.headcount, 0),
           nextStep: this.businessNextStep(b, agreement, shown, outside.has(b.id), now),
+          interviewsToday: interviewsToday.get(b.id) ?? 0,
+          isAccountAgent: b.accountAgentId === actor.sub,
         };
       }),
     };
