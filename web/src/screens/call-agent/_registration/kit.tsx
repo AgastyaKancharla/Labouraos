@@ -417,7 +417,16 @@ export interface LocatedPin {
   source: 'coordinates' | 'link' | 'address';
   placeName: string | null;
   matched: string | null;
-  address: { pincode: string | null; area: string | null; city: string | null; displayName: string | null } | null;
+  address: {
+    pincode: string | null;
+    area: string | null;
+    city: string | null;
+    displayName: string | null;
+    /** 22 Nov: the road (and neighbourhood), the house number and the area in words. */
+    street?: string | null;
+    shopNumber?: string | null;
+    locality?: string | null;
+  } | null;
   shortLink: boolean;
 }
 
@@ -582,5 +591,113 @@ export function RequiredNote() {
     <span className="sub">
       <span className="req">*</span> {t('reg.requiredNote')}
     </span>
+  );
+}
+
+/** What "Yes, fill the address" hands the form (22 Nov). */
+export interface AddressFill {
+  street: string | null;
+  place: PlaceState;
+  filled: string[];
+}
+
+/**
+ * The address step in the consoles (Master Guide rev 208, 22 Nov): the call
+ * agent is not at the shop, so he types the address or pastes the Google Maps
+ * link the owner shared (the server tries shorter and shorter queries, and
+ * Google Places when its key is set), checks the pin and the address in words
+ * on a small map, and "Yes, fill the address" fills the street, area, PIN code
+ * and pin. He then adds the shop number, floor or street himself.
+ */
+export function AddressFinder({ value, onUse }: { value: PlaceState; onUse: (fill: AddressFill) => void }) {
+  const t = useT();
+  const options = useFormOptions();
+  const [text, setText] = useState('');
+  const [found, setFound] = useState<LocatedPin | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const areas = options.data?.areas ?? [];
+  const maxMeters = options.data?.areaAutoFillMaxMeters ?? DEFAULT_AREA_AUTO_FILL_MAX_METERS;
+  const find = async () => {
+    setError(null);
+    setFound(null);
+    setNote(null);
+    if (!text.trim()) return setError(t('reg.addr.empty'));
+    setBusy(true);
+    try {
+      setFound(await locatePin(text.trim()));
+    } catch (e) {
+      setError(isApiError(e) && !e.isNetworkError ? e.message : t('reg.pin.invalid'));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const use = (pin: LocatedPin) => {
+    const a = pin.address;
+    const words = [a?.area, a?.locality].filter((x): x is string => Boolean(x)).map((x) => x.toLowerCase());
+    const listed =
+      areas.find((x) => words.some((w) => w === x.name.toLowerCase())) ??
+      areas.find((x) => words.some((w) => w.includes(x.name.toLowerCase()) || x.name.toLowerCase().includes(w))) ??
+      nearestArea(areas, pin, maxMeters);
+    const filled: string[] = [];
+    if (a?.street) filled.push(t('reg.biz.street'));
+    if (listed) filled.push(t('reg.area.label'));
+    if (a?.pincode || listed?.pincode) filled.push(t('form.pincode.label'));
+    filled.push(t('reg.pin.label'));
+    onUse({
+      street: a?.street ?? null,
+      place: { area: listed?.name ?? value.area, pincode: a?.pincode ?? listed?.pincode ?? value.pincode, latitude: pin.latitude, longitude: pin.longitude },
+      filled,
+    });
+    setNote(t('reg.addr.filled', { fields: filled.join(', ') }));
+    setFound(null);
+  };
+  return (
+    <div className="fld reg-addr-finder" data-testid="address-finder">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void find();
+        }}
+      >
+        <TextField
+          label={t('reg.addr.findLabel')}
+          value={text}
+          onChange={(v) => {
+            setText(v);
+            setFound(null);
+            setError(null);
+          }}
+          error={error ?? undefined}
+          placeholder={t('reg.pin.findPlaceholder')}
+          autoComplete="off"
+        />
+      </form>
+      {found ? (
+        <div className="lb-pin-confirm" data-testid="address-preview">
+          <PinMap latitude={found.latitude} longitude={found.longitude} label={t('reg.pin.mapLabel')} />
+          <strong>{t('reg.addr.check')}</strong>
+          <span className="sub" data-testid="address-words">
+            {found.matched ?? found.address?.displayName ?? found.placeName ?? t('reg.pin.at', { lat: found.latitude.toFixed(5), lng: found.longitude.toFixed(5) })}
+          </span>
+          <div className="reg-row">
+            <Button onClick={() => setFound(null)}>{t('reg.addr.again')}</Button>
+            <Button variant="primary" onClick={() => use(found)}>
+              {t('reg.addr.use')}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button onClick={() => void find()} loading={busy}>
+          📍 {busy ? t('reg.addr.finding') : t('reg.addr.find')}
+        </Button>
+      )}
+      {note ? (
+        <span className="sub" role="status" data-testid="address-filled">
+          {note}
+        </span>
+      ) : null}
+    </div>
   );
 }

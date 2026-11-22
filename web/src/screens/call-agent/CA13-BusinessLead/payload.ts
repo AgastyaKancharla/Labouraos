@@ -35,8 +35,12 @@ export interface BusinessForm {
   heardFrom: string;
   boardName: string;
   legalName: string;
+  /** 22 Nov (rev 207): "Same as the shop name": the legal name follows the board name. Older drafts have none. */
+  legalSameAsShop?: boolean;
   familyName: string;
   businessType: string;
+  /** 22 Nov (rev 208): "Other (type it)", required when the type is other. Older drafts have none. */
+  businessTypeOther?: string;
   employees: string;
   running: string;
   hiring: string;
@@ -138,6 +142,7 @@ export function businessErrors(
   if (!form.boardName.trim()) e.push('boardName');
   if (household && !form.familyName.trim()) e.push('familyName');
   if (!form.businessType) e.push('businessType');
+  if (form.businessType === 'other' && !(form.businessTypeOther ?? '').trim()) e.push('businessTypeOther');
   if (!form.employees) e.push('employees');
   if (!form.shopNumber.trim()) e.push('shopNumber');
   if (!form.street.trim()) e.push('street');
@@ -167,7 +172,13 @@ export function businessBody(form: BusinessForm, otpRequestId: string, branchOtp
   const address = [form.shopNumber, form.street, form.landmark, form.place.area, form.place.pincode].map((s) => s.trim()).filter(Boolean).join(', ');
   return {
     name: form.boardName.trim(),
-    ...(household ? { familyName: form.familyName.trim() } : form.legalName.trim() ? { legalName: form.legalName.trim() } : {}),
+    ...(household
+      ? { familyName: form.familyName.trim() }
+      : form.legalSameAsShop && form.boardName.trim()
+        ? { legalName: form.boardName.trim() }
+        : form.legalName.trim()
+          ? { legalName: form.legalName.trim() }
+          : {}),
     contactPersonName: form.contactName.trim(),
     contactPersonRole: form.contactRole,
     phone: form.mobile,
@@ -176,6 +187,7 @@ export function businessBody(form: BusinessForm, otpRequestId: string, branchOtp
     ...(form.billingEmail.trim() ? { billingEmail: form.billingEmail.trim() } : {}),
     heardFrom: form.heardFrom,
     businessType: form.businessType,
+    ...(form.businessType === 'other' ? { businessTypeOther: (form.businessTypeOther ?? '').trim() } : {}),
     employeeCountBand: form.employees,
     ...(form.running ? { yearsInOperationBand: form.running } : {}),
     ...(form.hiring ? { hiringFrequency: form.hiring } : {}),

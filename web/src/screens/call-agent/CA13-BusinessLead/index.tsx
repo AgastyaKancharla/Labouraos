@@ -14,7 +14,9 @@ import { formatINR } from '../../../lib/format/money';
 import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { errorDetail, findTrade, useScriptTerms, useTrades } from '../_registration/api';
+import { BusinessTypeField } from '../_registration/BusinessTypeField';
 import {
+  AddressFinder,
   AlreadyRegistered,
   choiceOptions,
   DraftNote,
@@ -27,7 +29,6 @@ import {
   type MobileState,
 } from '../_registration/kit';
 import {
-  BUSINESS_TYPES,
   CONTACT_ROLES,
   EMPLOYEE_BANDS,
   HEADCOUNTS,
@@ -196,9 +197,29 @@ export default function RegisterBusiness() {
             {household ? (
               <TextField label={t('reg.biz.familyName')} required value={form.familyName} onChange={(v) => set('familyName', v)} error={err('familyName')} />
             ) : (
-              <TextField label={t('reg.biz.legalName')} value={form.legalName} onChange={(v) => set('legalName', v)} />
+              <div className="fld">
+                {/* 22 Nov (rev 207): "Same as the shop name" fills the legal name, read-only. */}
+                <label className="reg-check">
+                  <input type="checkbox" checked={Boolean(form.legalSameAsShop)} onChange={(e) => set('legalSameAsShop', e.target.checked)} /> {t('reg.biz.legalSame')}
+                </label>
+                <TextField
+                  label={t('reg.biz.legalName')}
+                  value={form.legalSameAsShop ? form.boardName : form.legalName}
+                  readOnly={Boolean(form.legalSameAsShop)}
+                  onChange={(v) => set('legalName', v)}
+                />
+              </div>
             )}
-            <SelectField label={t('reg.biz.type')} required value={form.businessType} onChange={(v) => set('businessType', v)} options={choiceOptions(t, BUSINESS_TYPES)} error={err('businessType')} />
+            {/* 22 Nov (rev 207–208): the full grouped list with a search; Other needs the type in words. */}
+            <BusinessTypeField
+              label={t('reg.biz.type')}
+              value={form.businessType}
+              onChange={(v) => set('businessType', v)}
+              other={form.businessTypeOther ?? ''}
+              onOther={(v) => set('businessTypeOther', v)}
+              error={err('businessType')}
+              otherError={showErrors && errors.includes('businessTypeOther') ? t('reg.btype.otherRequired') : undefined}
+            />
             <SelectField label={t('reg.biz.employees')} required value={form.employees} onChange={(v) => set('employees', v)} options={choiceOptions(t, EMPLOYEE_BANDS)} error={err('employees')} />
             <SelectField label={t('reg.biz.running')} value={form.running} onChange={(v) => set('running', v)} options={choiceOptions(t, YEARS_RUNNING)} />
             <SelectField label={t('reg.biz.hiring')} value={form.hiring} onChange={(v) => set('hiring', v)} options={choiceOptions(t, HIRING_FREQUENCIES)} />
@@ -223,6 +244,11 @@ export default function RegisterBusiness() {
 
         <fieldset className="sec">
           <SectionHead n={3} title={t('reg.biz.address')} />
+          {/* 22 Nov (rev 208): find the address (typed or a Google Maps link), check it on the map, then it fills in. */}
+          <AddressFinder
+            value={form.place}
+            onUse={(fill) => setForm((f) => ({ ...f, street: fill.street ?? f.street, place: fill.place }))}
+          />
           <div className="fg">
             <TextField label={t('reg.biz.shopNumber')} required value={form.shopNumber} onChange={(v) => set('shopNumber', v)} error={err('shopNumber')} />
             <TextField label={t('reg.biz.street')} required value={form.street} onChange={(v) => set('street', v)} error={err('street')} />
