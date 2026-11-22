@@ -38,6 +38,13 @@ export interface AttendanceToday {
   productionSeconds: number;
   breakSeconds: number;
   idleSeconds: number;
+  /** Time in Start of day (22 Nov): unproductive, shown apart from breaks and idle. */
+  startOfDaySeconds?: number;
+  /**
+   * The day opens at sign-in in Start of day (call agents, Team Leads, Managers; 22 Nov):
+   * no "Start my day" button for them. False for Finance (and older servers leave it out).
+   */
+  startsAtSignIn?: boolean;
   shortfallSeconds: number;
   /** The person's own shift (decided 21 Nov) or the company shift. */
   clocks: { shiftStart: string; shiftEnd: string; now: string };

@@ -57,7 +57,8 @@ export default function ManagerAttendanceLive() {
       <TopBar back={{ to: to('MG-Attendance'), label: 'Attendance' }} title="Attendance · live board" subtitle="Who is working right now in your teams." />
       <AttendanceTabs />
       <StatGrid>
-        <StatTile label="Available" value={count((r) => r.status === 'available')} tone="good" loading={board.isPending} />
+        <StatTile label="Active" value={count((r) => r.status === 'available')} tone="good" loading={board.isPending} />
+        <StatTile label="Start of day" value={count((r) => r.status === 'start_of_day')} tone="violet" loading={board.isPending} />
         <StatTile label="On calls / visits" value={count((r) => BUSY.includes(r.status))} tone="royal" loading={board.isPending} />
         <StatTile label="On break" value={count((r) => BREAKS.includes(r.status) && !r.overBreak)} tone="cyan" loading={board.isPending} />
         <StatTile label="Over break" value={count((r) => r.overBreak)} tone="orange" loading={board.isPending} />
@@ -66,7 +67,7 @@ export default function ManagerAttendanceLive() {
       </StatGrid>
       <div className="panel" style={{ padding: '6px 18px 14px' }}>
         <DataTable columns={columns} rows={people} rowKey={(r) => r.staff.id} caption="Live board" loading={board.isPending} error={board.error} onRetry={() => void board.refetch()} download="attendance-live" emptyTitle="Nobody in your teams marks attendance yet." />
-        <div className="ceo-note">Updates every few seconds · calls stop for anyone not Available</div>
+        <div className="ceo-note">Updates every few seconds · calls go only to people who are Active · Start of day counts as unproductive</div>
       </div>
     </div>
   );

@@ -24,6 +24,8 @@ interface Row {
   countsAs: string | null;
   productionSeconds: number;
   breakSeconds: number;
+  /** Start of day (22 Nov): unproductive. */
+  startOfDaySeconds?: number;
   lateMinutes: number;
   lateDays: number;
   fullDays: number;
@@ -69,6 +71,7 @@ export default function TeamAttendance() {
     { key: 'logout', header: 'Logout', cell: (r) => timeOrDash(r.logoutAt), csv: (r) => r.logoutAt, hideOnPhone: true },
     { key: 'prod', header: 'Production', cell: (r) => (r.loginAt ? hm(r.productionSeconds) : '—'), sortValue: (r) => r.productionSeconds, csv: (r) => Math.round(r.productionSeconds / 60) },
     { key: 'breaks', header: 'Breaks', cell: (r) => (r.loginAt ? hm(r.breakSeconds) : '—'), csv: (r) => Math.round(r.breakSeconds / 60), hideOnPhone: true },
+    { key: 'startOfDay', header: 'Start of day', cell: (r) => (r.loginAt ? <StatusPill tone="start">{hm(r.startOfDaySeconds ?? 0)}</StatusPill> : '—'), csv: (r) => Math.round((r.startOfDaySeconds ?? 0) / 60), hideOnPhone: true },
     { key: 'late', header: 'Late login', cell: (r) => (r.lateMinutes ? formatLateMinutes(r.lateMinutes) : '—'), sortValue: (r) => r.lateMinutes, csv: (r) => r.lateMinutes },
     { key: 'counts', header: 'Counts as', cell: (r) => <StatusPill tone={countsTone(r.countsAs)}>{r.countsAs ?? '—'}</StatusPill>, filter: 'select', filterValue: (r) => r.countsAs ?? '—', csv: (r) => r.countsAs },
   ];

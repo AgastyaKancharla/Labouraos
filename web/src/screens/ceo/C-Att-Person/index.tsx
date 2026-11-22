@@ -31,6 +31,8 @@ interface Day {
   resumeCount?: number;
   extraBreaks?: number;
   idleSeconds: number;
+  /** Start of day (22 Nov): unproductive. */
+  startOfDaySeconds?: number;
   shortfallSeconds: number;
   makeUpSeconds: number;
   hoursLostSeconds: number;
@@ -111,6 +113,7 @@ export default function AttendancePerson() {
       hideOnPhone: true,
     },
     { key: 'breaks', header: 'Breaks over', cell: (d) => hm(d.breakOverSeconds), csv: (d) => Math.round(d.breakOverSeconds / 60), hideOnPhone: true },
+    { key: 'startOfDay', header: 'Start of day', cell: (d) => (d.loginAt ? hm(d.startOfDaySeconds ?? 0) : '—'), csv: (d) => Math.round((d.startOfDaySeconds ?? 0) / 60), hideOnPhone: true },
     { key: 'lost', header: 'Lost', cell: (d) => (d.hoursLostSeconds ? hm(d.hoursLostSeconds) : '—'), csv: (d) => Math.round(d.hoursLostSeconds / 60) },
     { key: 'counts', header: 'Counts as', cell: (d) => <StatusPill tone={d.dayType === 'absent' ? 'danger' : d.change ? 'info' : /short|half/i.test(countsAs(d)) ? 'warn' : 'good'}>{countsAs(d)}</StatusPill>, filter: 'select', filterValue: (d) => countsAs(d).split(' · ')[0], csv: (d) => countsAs(d) },
     {

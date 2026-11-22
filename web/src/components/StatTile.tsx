@@ -6,7 +6,7 @@ import { Link } from 'react-router-dom';
  * big number and a label. `tone` colours the bar (and the number for
  * warning tones) exactly like the designs.
  */
-export type StatTone = 'royal' | 'good' | 'gold' | 'orange' | 'red' | 'cyan' | 'navy';
+export type StatTone = 'royal' | 'good' | 'gold' | 'orange' | 'red' | 'cyan' | 'navy' | 'violet';
 
 const TONE: Record<StatTone, { bar: string; value?: string; border?: string }> = {
   royal: { bar: 'var(--royal)' },
@@ -16,6 +16,8 @@ const TONE: Record<StatTone, { bar: string; value?: string; border?: string }> =
   gold: { bar: 'var(--gold-raw)', value: 'var(--amber)', border: 'rgba(252,206,0,0.70)' },
   orange: { bar: 'var(--orange-raw)', value: 'var(--critical)', border: 'rgba(251,104,0,0.45)' },
   red: { bar: 'var(--red-raw)', value: 'var(--tomato)', border: 'rgba(254,41,1,0.40)' },
+  // Start of day (22 Nov).
+  violet: { bar: '#7A4FC4', value: '#5B3A99', border: 'rgba(122,79,196,0.40)' },
 };
 
 export interface StatTileProps {

@@ -30,6 +30,8 @@ interface Row {
   productionSeconds: number;
   breakSeconds: number;
   overBreak: boolean;
+  /** Start of day (22 Nov): unproductive. */
+  startOfDaySeconds?: number;
   status: string | null;
   changesThisMonth: number;
 }
@@ -59,6 +61,7 @@ export default function TeamLeadAttendance() {
     { key: 'work', header: 'Work time', cell: (r) => (r.loginAt ? hm(r.productionSeconds) : '—'), sortValue: (r) => r.productionSeconds },
     { key: 'late', header: 'Late', cell: (r) => (r.loginAt ? (r.lateMinutes ? <span className="tl-alert">{formatLateMinutes(r.lateMinutes)} late</span> : 'On time') : '—') },
     { key: 'breaks', header: 'Breaks', cell: (r) => (r.loginAt ? `${hm(r.breakSeconds)}${r.overBreak ? ' · over' : ''}` : '—'), hideOnPhone: true },
+    { key: 'startOfDay', header: 'Start of day', cell: (r) => (r.loginAt ? hm(r.startOfDaySeconds ?? 0) : '—'), hideOnPhone: true },
     {
       key: 'now',
       header: b?.isToday ? 'Right now' : 'Counts as',

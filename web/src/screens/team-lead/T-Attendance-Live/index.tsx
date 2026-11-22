@@ -32,18 +32,19 @@ export default function TeamLeadLive() {
       cell: (r) => (
         <StatusPill tone={statusTone(r)}>
           {liveText(r, now)}
-          {r.status === 'available' && r.since ? ` · since ${formatTimeIST(r.since)}` : ''}
+          {(r.status === 'available' || r.status === 'start_of_day') && r.since ? ` · since ${formatTimeIST(r.since)}` : ''}
         </StatusPill>
       ),
     },
-    { key: 'act', header: '', cell: (r) => (r.overBreak || r.idle ? <Remind row={r} /> : <span className="tl-sub">—</span>) },
+    { key: 'act', header: '', cell: (r) => (r.overBreak || r.idle || r.status === 'start_of_day' ? <Remind row={r} /> : <span className="tl-sub">—</span>) },
   ];
   return (
     <div className="lb-page">
       <TopBar showSearch={false} back={{ to: to('T-Attendance'), label: 'Attendance' }} title="Attendance · live board" subtitle="Who in your team is working right now." />
       <AttendanceTabs />
       <StatGrid>
-        <StatTile label="Available" value={live.data ? people.filter((p) => p.status === 'available').length : '—'} tone="good" loading={live.isPending} />
+        <StatTile label="Active" value={live.data ? people.filter((p) => p.status === 'available').length : '—'} tone="good" loading={live.isPending} />
+        <StatTile label="Start of day" value={live.data ? people.filter((p) => p.status === 'start_of_day').length : '—'} tone="violet" loading={live.isPending} />
         <StatTile label="On a call or visit" value={live.data ? people.filter((p) => ON_WORK.includes(p.status)).length : '—'} tone="royal" loading={live.isPending} />
         <StatTile label="Over break" value={live.data ? people.filter((p) => p.overBreak).length : '—'} tone="red" loading={live.isPending} />
         <StatTile label="Travelling" value={live.data ? people.filter((p) => p.status === 'travelling').length : '—'} tone="cyan" loading={live.isPending} />
@@ -51,7 +52,7 @@ export default function TeamLeadLive() {
       <Card flush>
         <DataTable columns={columns} rows={live.data ? people : undefined} rowKey={(r) => r.staff.id} caption="Live board" loading={live.isPending} error={live.error} onRetry={() => void live.refetch()} emptyTitle="Nobody in your team yet." />
         <div className="tl-note" style={{ padding: '0 18px 14px' }}>
-          Updates every few seconds · calls only go to agents who are Available
+          Updates every few seconds · calls only go to agents who are Active · Start of day counts as unproductive
         </div>
       </Card>
     </div>
@@ -61,7 +62,7 @@ export default function TeamLeadLive() {
 function Remind({ row }: { row: LiveRow }) {
   const toast = useToast();
   const remind = useMutation({
-    mutationFn: () => api.post('/team-lead/remind', { staffId: row.staff.id, text: row.overBreak ? 'Your break is over — please come back' : 'You have been idle — pick a status' }),
+    mutationFn: () => api.post('/team-lead/remind', { staffId: row.staff.id, text: row.overBreak ? 'Your break is over — please come back' : row.status === 'start_of_day' ? 'You are still in Start of day — pick a status' : 'You have been idle — pick a status' }),
     onSuccess: () => toast.success(`Reminded ${row.staff.name}`),
     onError: (e) => toast.error(e instanceof ApiError ? e.message : 'Could not send the reminder'),
   });

@@ -31,6 +31,8 @@ const TYPE: Record<string, string> = {
   in_person_onboarding_review: 'Visits',
   break_overrun: 'Attendance',
   agent_idle: 'Attendance',
+  start_of_day_long: 'Attendance',
+  payment_link_after_id: 'Other',
   system_problem: 'Attendance',
 };
 export const typeOf = (kind: string) => TYPE[kind] ?? 'Other';

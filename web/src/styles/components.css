@@ -119,6 +119,11 @@
   color: var(--royal);
   background: var(--sky-bg);
 }
+/* Start of day (22 Nov): its own colour, apart from breaks (gold) and Idle (amber). */
+.lb-pill-start {
+  color: #5B3A99;
+  background: #EFE8FA;
+}
 .lb-nbadge--tomato {
   background: var(--tomato);
   color: #fff;
