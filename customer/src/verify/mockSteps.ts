@@ -17,6 +17,13 @@ export function onMockProgress(listener: ProgressListener): void {
   progressListener = listener;
 }
 
+/** The pretend customer API tells the pretend steps whose link it is (business name and the owner's name). */
+type ProfileLookup = (profileId: string) => { name: string; ownerName: string | null } | null;
+let profileLookup: ProfileLookup | null = null;
+export function onMockProfileLookup(lookup: ProfileLookup): void {
+  profileLookup = lookup;
+}
+
 /** The pretend link token names the profile it is for (src/screens/Verify: `mock-link-<profileId>`). */
 export const mockLinkToken = (profileId: string) => `mock-link-${profileId}`;
 const profileOf = (token: string) => (token.startsWith('mock-link-') ? token.slice('mock-link-'.length) : null);
@@ -262,22 +269,30 @@ export function mockStepsApi(delayMs = 300, persist?: MockPersist): StepsApi {
         return { id: 'p-1', maskedValue: masked, status: 'pending' };
       }),
 
-    agreementDetails: () =>
+    agreementDetails: (token) =>
       wait(() => {
         if (signed) throw new ApiError({ status: 400, messages: ['This link has already been used'] });
+        // The business you registered in the test app, not a made-up one (Agastya, 22 Nov: "Zoom Foods" showed "Sri Sai …").
+        const profileId = profileOf(token);
+        const who = profileId ? profileLookup?.(profileId) : null;
         return {
-          businessName: 'Sri Sai Bakery',
+          businessName: who?.name ?? 'Your business',
           maskedPhone: '+91 ••••• •4321',
           agreementTermsHtml: '',
           agreementSummaryHtml: '<p>50% of the first month’s salary + GST, paid when you select a candidate.</p>',
           agreementBodyHtml: '<p>Full agreement (pretend data).</p>',
           version: '1.1',
-          ownerName: 'Manjunath',
+          ownerName: who?.ownerName ?? null,
           terms: { feePercent: 50, gstPercent: 18, noBypassMonths: 12, noBypassPenaltyPercent: 50 },
           guarantee: { replacementWindowDays: 60, maxFreeReplacements: 2, replacementSearchDays: 15 },
         };
       }),
-    agreementSigned: () => wait(() => ({ signedAt: signed?.signedAt ?? new Date().toISOString(), signedName: signed?.signedName ?? '', businessName: 'Sri Sai Bakery' })),
+    agreementSigned: (token) =>
+      wait(() => {
+        const profileId = profileOf(token);
+        const who = profileId ? profileLookup?.(profileId) : null;
+        return { signedAt: signed?.signedAt ?? new Date().toISOString(), signedName: signed?.signedName ?? '', businessName: who?.name ?? 'Your business' };
+      }),
     signAgreement: (token, _r, code, signedName) =>
       wait(() => {
         if (!/^\d{6}$/.test(code)) throw new ApiError({ status: 400, messages: ['The code is not right'] });
