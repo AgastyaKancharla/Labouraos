@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Linking, Share, StyleSheet, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import QRCode from 'react-native-qrcode-svg';
@@ -31,7 +32,7 @@ export function whatsappUrl(text: string): string {
  * due / approved / paid as a payout statement (a partner gets paid, so no
  * invoice); signed terms and consent copies.
  */
-export function ReferralHomeView({ profileId, home, hero }: { profileId: string; home: ReferralHome; hero: HeroInfo }) {
+export function ReferralHomeView({ profileId, home, hero, belowHero }: { profileId: string; home: ReferralHome; hero: HeroInfo; belowHero?: ReactNode }) {
   const { t } = useI18n();
   const sheet = useSecureSheet();
   const api = useCustomerApi();
@@ -60,6 +61,7 @@ export function ReferralHomeView({ profileId, home, hero }: { profileId: string;
           </View>
         ) : null}
       </HeroCard>
+      {belowHero}
 
       {home.paused ? <Banner tone="warn" title={t('refHome.pausedTitle')} message={home.pausedReason ?? t('refHome.paused')} testID="ref-home-paused" /> : null}
 

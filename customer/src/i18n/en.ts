@@ -7,11 +7,13 @@
  * Notification wording is Agent C's (customer/src/push/), not here.
  */
 import { fixes17En } from './fixes17.en';
+import { v2En } from './v2.en';
 import { verifyEn } from './verify.en';
 
 export const en = {
   ...fixes17En,
   ...verifyEn,
+  ...v2En,
   'common.brand': 'Laboura',
   'common.back': 'Back',
   'common.retry': 'Try again',

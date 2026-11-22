@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Linking, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import type { JobSeekerHome } from '@/api/types';
@@ -22,7 +23,7 @@ export function directionsUrl(i: NonNullable<JobSeekerHome['interview']>): strin
  * interview booked (business name ONLY then — no-bypass), refund status.
  * The guarantee rules are the guide's; the app only shows them.
  */
-export function JobSeekerHomeView({ profileId, home, hero }: { profileId: string; home: JobSeekerHome; hero: HeroInfo }) {
+export function JobSeekerHomeView({ profileId, home, hero, belowHero }: { profileId: string; home: JobSeekerHome; hero: HeroInfo; belowHero?: ReactNode }) {
   const { t } = useI18n();
   const { account } = useAuth();
   const registrationDone = home.payment.status !== 'not_paid';
@@ -90,6 +91,7 @@ export function JobSeekerHomeView({ profileId, home, hero }: { profileId: string
           </View>
         ) : null}
       </HeroCard>
+      {belowHero}
 
       {!registrationDone ? (
         <Card title={t('jsHome.finishTitle')} accent="royal" testID="js-home-steps">

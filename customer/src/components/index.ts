@@ -16,3 +16,7 @@ export { StepList, type StepItem } from './StepList';
 export { Swoosh } from './Swoosh';
 export { Text, type TextVariant } from './Text';
 export { TextField } from './TextField';
+export { AdSlot } from './AdSlot';
+export { BottomBar, type BarItem } from './BottomBar';
+export { QuickActions, type QuickAction } from './QuickActions';
+export { SwooshCurve } from './SwooshCurve';

@@ -15,7 +15,7 @@ interface Props extends ViewProps {
   emoji?: string;
 }
 
-/** `.card`: white, 16 px corners, thin border. */
+/** `.card`: white, 22 px corners, a layered shadow instead of a border (Version 2). */
 export function Card({ title, compact, accent, emoji, style, children, ...rest }: Props) {
   return (
     <View style={[styles.card, compact && styles.compact, style]} {...rest}>
@@ -40,15 +40,13 @@ export function Card({ title, compact, accent, emoji, style, children, ...rest }
 const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
     borderRadius: radius.card,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
+    paddingVertical: 18,
+    paddingHorizontal: 18,
     ...shadow.card,
   },
   compact: { paddingVertical: 12, paddingHorizontal: 12 },
-  bar: { width: 28, height: 4, borderRadius: radius.pill, marginBottom: 10 },
+  bar: { width: 24, height: 4, borderRadius: radius.pill, marginBottom: 10 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
   titleText: { flexShrink: 1 },
   emoji: { fontSize: 16, lineHeight: 20 },
