@@ -89,7 +89,7 @@ export const attendanceEn = {
   'fa04h.to': 'To',
   'fa04h.toAfterFrom': '"To" must be after "From".',
   'fa04h.shouldHaveBeen': 'What should it have been?',
-  'fa04h.available': 'Available (I was working)',
+  'fa04h.available': 'Active (I was working)',
   'fa04h.reason': 'Reason *',
   'fa04h.goesTo':
     'Your Team Lead approves or rejects it with a reason. The change and the reason are kept in the history. You can never edit your own times. A third correction in a month goes to your Manager.',

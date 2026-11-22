@@ -7,6 +7,7 @@ import { redesignEn } from './redesign.en';
 import { fixes17En } from './fixes17.en';
 import { fixes21En } from './fixes21.en';
 import { sessions21En } from './sessions21.en';
+import { attendanceStart22En } from './attendanceStart22.en';
 import { reg21NovEn } from './reg21nov.en';
 /**
  * English — the only language of Laboura Field (Master Guide rev 193). Keys are grouped by the
@@ -26,6 +27,7 @@ export const en = {
   ...fixes17En,
   ...fixes21En,
   ...sessions21En,
+  ...attendanceStart22En,
   ...reg21NovEn,
   'common.appName': 'Laboura Field',
   'common.brand': 'Laboura',
@@ -67,9 +69,9 @@ export const en = {
   'tabs.map': 'Map',
   'tabs.targets': 'Targets',
 
-  'status.available': 'Available',
+  'status.available': 'Active',
   'status.on_call': 'On call',
-  'status.after_call_notes': 'After-call notes',
+  'status.after_call_notes': 'After-call work',
   'status.on_visit': 'On visit',
   'status.travelling': 'Travelling',
   'status.team_meeting': 'Team meeting',

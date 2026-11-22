@@ -7,7 +7,9 @@ import type { MessageKey } from '@/i18n';
  * the server at check-in / check-out, On call and After-call notes by the
  * phone system: they show as the current status, never as a choice.
  */
-export const PICKABLE_STATUSES = ['available', 'team_meeting', 'training', 'one_to_one', 'system_problem', 'short_break', 'lunch'] as const;
+// 22 Nov: Active (available), Team meeting, One-to-one, Training, System problem, Short break, Lunch.
+// Start of day is set at sign-in and is never picked; visits still set On visit / Travelling.
+export const PICKABLE_STATUSES = ['available', 'team_meeting', 'one_to_one', 'training', 'system_problem', 'short_break', 'lunch'] as const;
 export type PickableStatus = (typeof PICKABLE_STATUSES)[number];
 
 export function isPickableStatus(status: string | null | undefined): status is PickableStatus {
@@ -15,6 +17,7 @@ export function isPickableStatus(status: string | null | undefined): status is P
 }
 
 export const STATUS_KEYS: Record<string, MessageKey> = {
+  start_of_day: 'status.start_of_day',
   available: 'status.available',
   on_call: 'status.on_call',
   after_call_notes: 'status.after_call_notes',

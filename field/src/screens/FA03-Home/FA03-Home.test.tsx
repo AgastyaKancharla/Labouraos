@@ -207,9 +207,10 @@ describe('FA03 Today', () => {
     await waitFor(() => screen.getByTestId('attendance-status'));
     expect(screen.getByTestId('attendance-status')).toHaveTextContent(/Travelling/);
     await fireEvent.press(screen.getByTestId('attendance-status'));
-    const offered = ['available', 'team_meeting', 'training', 'one_to_one', 'system_problem', 'short_break', 'lunch'];
+    // 22 Nov: Active, Team meeting, One-to-one, Training, System problem, Short break, Lunch (no calls for field agents).
+    const offered = ['available', 'team_meeting', 'one_to_one', 'training', 'system_problem', 'short_break', 'lunch'];
     for (const s of offered) expect(screen.getByTestId(`status-choice-${s}`)).toBeTruthy();
-    for (const s of ['on_visit', 'travelling', 'on_call', 'after_call_notes']) expect(screen.queryByTestId(`status-choice-${s}`)).toBeNull();
+    for (const s of ['on_visit', 'travelling', 'on_call', 'after_call_notes', 'start_of_day']) expect(screen.queryByTestId(`status-choice-${s}`)).toBeNull();
     expect(STATUS_CHOICES).toEqual(offered);
     expect(screen.getByTestId('status-automatic')).toHaveTextContent(/Now: Travelling/);
     await fireEvent.press(screen.getByTestId('status-choice-lunch'));
@@ -256,6 +257,56 @@ describe('FA03 Today', () => {
     expect(screen.getByTestId('attendance-ended')).toHaveTextContent(/Logged in 9:12 AM · logged out 6:30 PM.*log in again tomorrow/);
     expect(screen.queryByTestId('attendance-login')).toBeNull();
     expect(screen.queryByTestId('attendance-status')).toBeNull();
+  });
+
+  it('22 Nov: the day opened at sign-in in Start of day — no Log in button; one tap starts work as Active', async () => {
+    const sent: unknown[] = [];
+    const startOfDay = { ...loggedIn, status: 'start_of_day', statusSince: '2026-11-09T03:42:00Z', startsAtSignIn: true, locationSaved: true };
+    await renderWithApp(<HomeScreen />, {
+      signedInAs: kiran,
+      route: api(startOfDay, (url, init) => {
+        if (url.endsWith('/attendance/status')) {
+          sent.push(JSON.parse(String(init.body)));
+          return { status: 200, body: { ...startOfDay, status: 'available' } };
+        }
+        return undefined;
+      }),
+    });
+    await waitFor(() => screen.getByTestId('attendance-start-of-day'));
+    expect(screen.queryByTestId('attendance-login')).toBeNull();
+    expect(screen.getByTestId('attendance-status')).toHaveTextContent(/Start of day/);
+    expect(screen.getByTestId('attendance-start-of-day')).toHaveTextContent(/Start of day · since 9:12 AM.*Pick your status to start work/);
+    await fireEvent.press(screen.getByTestId('attendance-status'));
+    expect(screen.queryByTestId('status-choice-start_of_day')).toBeNull();
+    expect(screen.getByTestId('status-automatic')).toHaveTextContent(/Start of day \(since you signed in\)/);
+    expect(screen.getByTestId('status-choice-available')).toHaveTextContent(/Active/);
+    await fireEvent.press(screen.getByTestId('attendance-start-work'));
+    await waitFor(() => expect(sent).toEqual([{ status: 'available' }]));
+    await waitFor(() => expect(screen.queryByTestId('attendance-start-of-day')).toBeNull());
+  });
+
+  it('22 Nov: a day opened at sign-in without a location saves it right away (the GPS rule stays)', async () => {
+    const sent: unknown[] = [];
+    const opened = { ...loggedIn, status: 'start_of_day', statusSince: '2026-11-09T03:42:00Z', startsAtSignIn: true, locationSaved: false };
+    await renderWithApp(<HomeScreen />, {
+      signedInAs: kiran,
+      route: api(opened, (url, init) => {
+        if (url.endsWith('/attendance/login')) {
+          sent.push(JSON.parse(String(init.body)));
+          return { status: 200, body: { ...opened, locationSaved: true } };
+        }
+        return undefined;
+      }),
+    });
+    await waitFor(() => expect(sent).toEqual([{ latitude: 12.9116, longitude: 77.6389 }]));
+    await waitFor(() => expect(screen.queryByTestId('attendance-location')).toBeNull());
+  });
+
+  it('22 Nov: a day that did not open at sign-in asks to sign in again, never Log in', async () => {
+    await renderWithApp(<HomeScreen />, { signedInAs: kiran, route: api({ ...notLoggedIn, startsAtSignIn: true }) });
+    await waitFor(() => screen.getByTestId('attendance-sign-in-starts'));
+    expect(screen.queryByTestId('attendance-login')).toBeNull();
+    expect(screen.getByTestId('attendance-sign-in-again')).toHaveTextContent('Sign in again');
   });
 
   it('Log out also signs out of Laboura Field (21 Nov: the sign-in lasts until Log out)', async () => {

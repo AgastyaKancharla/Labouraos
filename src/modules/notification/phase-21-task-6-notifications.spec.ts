@@ -290,6 +290,8 @@ describe('Phase 21 Task 6: notification bells', () => {
     at(2027, 6, 25, 9, 30);
     const agent = await make('call_agent', 'IDL6', leadA.id);
     await post(agent, '/attendance/login');
+    // 22 Nov: the day opens in Start of day; only Active turns Idle.
+    await post(agent, '/attendance/status', { status: 'available' });
     // Idle from 09:41 (10 minutes, then a minute to answer "Still there?").
     at(2027, 6, 25, 10, 0);
     await app.get(NotificationSweepJob).process(shared.at);

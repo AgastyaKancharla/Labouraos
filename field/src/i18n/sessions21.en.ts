@@ -10,6 +10,6 @@ export const sessions21En = {
   'day.resumeFailed': 'Could not resume your day. Try again.',
   'day.backFromLunch': 'Back from lunch?',
   'day.backFromBreak': 'Back from your break?',
-  'day.breakOver': 'Your {minutes}-minute allowance is over. Tap when you are back: you become Available again.',
+  'day.breakOver': 'Your {minutes}-minute allowance is over. Tap when you are back: you become Active again.',
   'day.imBack': "I'm back",
 } as const;
