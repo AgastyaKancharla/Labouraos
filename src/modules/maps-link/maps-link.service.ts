@@ -3,7 +3,11 @@ import { lookup as dnsLookup } from 'dns/promises';
 import { codedError } from '../../common/http/coded-error';
 import {
   addressFromNominatim,
+  addressQueries,
   extractPin,
+  googlePlaceIdOf,
+  placeFromGoogle,
+  splitShareText,
   isAllowedMapsUrl,
   isPrivateAddress,
   isShortMapsUrl,
@@ -19,7 +23,7 @@ import {
 
 /** The fetch the service uses (tests replace it; nothing else may be fetched). */
 export const MAPS_HTTP = Symbol('MAPS_HTTP');
-export type MapsFetch = (url: string, init: { method: 'GET'; redirect: 'manual'; signal: AbortSignal; headers: Record<string, string> }) => Promise<{
+export type MapsFetch = (url: string, init: { method: 'GET' | 'POST'; redirect: 'manual'; signal: AbortSignal; headers: Record<string, string>; body?: string }) => Promise<{
   status: number;
   headers: { get(name: string): string | null };
   json(): Promise<unknown>;
@@ -47,6 +51,17 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const CACHE_DAYS = 30;
 const CACHE_TTL_MS = CACHE_DAYS * DAY_MS;
 const CACHE_MAX = 5000;
+
+/** "Where am I" lookups (22 Nov: the area in words for every GPS fix): per agent, a minute and a day. */
+export const WHERE_PER_MINUTE = 30;
+export const WHERE_PER_DAY = 600;
+/** A typed address is tried as at most this many shorter queries (22 Nov), within this time. */
+export const MAX_ADDRESS_QUERIES = 5;
+export const SEARCH_BUDGET_MS = 12_000;
+/** Google Places (New), used only when GOOGLE_PLACES_API_KEY is set (server side; the key never reaches a browser). */
+export const GOOGLE_PLACES_SEARCH_URL = 'https://places.googleapis.com/v1/places:searchText';
+export const GOOGLE_PLACES_DETAILS_URL = 'https://places.googleapis.com/v1/places/';
+const GOOGLE_FIELDS = 'id,displayName,formattedAddress,location,addressComponents';
 
 /** A link that opens a search or a place page without coordinates: the page is never read, so ask for a pin. */
 export const NO_PIN_MESSAGE = 'This link has no map pin. In Google Maps, long-press to drop a pin, then share that.';
@@ -79,6 +94,15 @@ export interface LocatedPin {
   shortLink: boolean;
 }
 
+/** POST /maps-link/where (22 Nov): a GPS fix in words, and the address there for the agent to correct. */
+export interface WhereAmI {
+  latitude: number;
+  longitude: number;
+  /** "Kothnur, JP Nagar 8th Phase"; null when the map has no name for the spot (or could not be reached). */
+  area: string | null;
+  address: ReverseAddress | null;
+}
+
 export interface ResolvedMapsLink {
   latitude: number;
   longitude: number;
@@ -103,6 +127,7 @@ export class MapsLinkService {
   private readonly linkCache = new Map<string, { at: number; value: MapsPin }>();
   private readonly searchCache = new Map<string, { at: number; value: { latitude: number; longitude: number; address: ReverseAddress | null } | null }>();
   private readonly perAgent = new Map<string, number[]>();
+  private readonly perAgentWhere = new Map<string, number[]>();
   private nominatimQueue: Promise<unknown> = Promise.resolve();
   private lastNominatimAt = 0;
 
@@ -126,6 +151,12 @@ export class MapsLinkService {
 
   private addresses(host: string): Promise<string[]> {
     return (this.dns ?? defaultMapsDns)(host);
+  }
+
+  /** GOOGLE_PLACES_API_KEY (optional): typed address search through Google Places, else OpenStreetMap. */
+  private googleKey(): string | null {
+    const key = (process.env.GOOGLE_PLACES_API_KEY ?? '').trim();
+    return key || null;
   }
 
   private nominatimBase(): string {
@@ -153,8 +184,19 @@ export class MapsLinkService {
       return { ...coordinates, source: 'coordinates', placeName: null, matched: address?.displayName ?? null, address, shortLink: false };
     }
     if (looksLikeLink(raw)) {
-      const found = await this.fromLink(withScheme(raw));
-      return { ...found, source: 'link', matched: found.address?.displayName ?? found.placeName };
+      try {
+        const found = await this.fromLink(withScheme(raw));
+        return { ...found, source: 'link', matched: found.address?.displayName ?? found.placeName };
+      } catch (error) {
+        // 22 Nov: Google Maps "Share" text is the place's address and then the link. When the link
+        // cannot be read (no pin, not reachable, name not found), the address in the text is looked up.
+        const { rest } = splitShareText(raw);
+        const code = (error as { response?: { code?: unknown } })?.response?.code;
+        if (!rest || !/[a-z]{3}/i.test(rest) || code === 'MAPS_LINK_INVALID' || code === 'TOO_MANY') throw error;
+        const { place } = await this.searchPlace(rest.slice(0, MAX_ADDRESS_LENGTH));
+        if (!place) throw error;
+        return { latitude: place.latitude, longitude: place.longitude, source: 'address', placeName: null, matched: place.address?.displayName ?? null, address: place.address, shortLink: false };
+      }
     }
     if (raw.length > MAX_ADDRESS_LENGTH) throw codedError(HttpStatus.BAD_REQUEST, 'MAPS_ADDRESS_TOO_LONG', `Keep the address under ${MAX_ADDRESS_LENGTH} characters`);
     const { place, reached } = await this.searchPlace(raw);
@@ -176,6 +218,11 @@ export class MapsLinkService {
     const url = parseMapsUrl(text);
     if (!url) throw codedError(HttpStatus.BAD_REQUEST, 'MAPS_LINK_INVALID', 'Paste a Google Maps link (google.com/maps, google.co.in/maps, maps.google.com, maps.app.goo.gl or goo.gl/maps)');
     const shortLink = isShortMapsUrl(url);
+    const placeId = googlePlaceIdOf(url);
+    if (placeId && this.googleKey()) {
+      const place = await this.googleDetails(placeId);
+      if (place) return { latitude: place.latitude, longitude: place.longitude, placeName: placeNameOf(url), address: place.address, shortLink };
+    }
     let pin = extractPin(url);
     let name = placeNameOf(url);
     // A short link (or a full one with neither pin nor name) is opened, hop by hop, to read where it leads.
@@ -197,21 +244,38 @@ export class MapsLinkService {
   }
 
   /** At most LINKS_PER_MINUTE a minute and LINKS_PER_DAY a day per agent. */
-  private claim(staffId: string): void {
+  private claim(staffId: string, book = this.perAgent, perMinute = LINKS_PER_MINUTE, perDay = LINKS_PER_DAY): void {
     const now = this.now();
-    const recent = (this.perAgent.get(staffId) ?? []).filter((t) => now - t < DAY_MS);
+    const recent = (book.get(staffId) ?? []).filter((t) => now - t < DAY_MS);
     const lastMinute = recent.filter((t) => now - t < 60 * 1000).length;
-    if (lastMinute >= LINKS_PER_MINUTE || recent.length >= LINKS_PER_DAY) {
-      this.perAgent.set(staffId, recent);
+    if (lastMinute >= perMinute || recent.length >= perDay) {
+      book.set(staffId, recent);
       throw codedError(HttpStatus.TOO_MANY_REQUESTS, 'TOO_MANY', 'Too many links in a short time. Wait a minute and try again.', {
-        retryAfterSeconds: recent.length >= LINKS_PER_DAY ? DAY_MS / 1000 : 60,
+        retryAfterSeconds: recent.length >= perDay ? DAY_MS / 1000 : 60,
       });
     }
     recent.push(now);
-    this.perAgent.set(staffId, recent);
-    if (this.perAgent.size > 10_000) {
-      for (const [id, times] of this.perAgent) if (!times.some((t) => now - t < DAY_MS)) this.perAgent.delete(id);
+    book.set(staffId, recent);
+    if (book.size > 10_000) {
+      for (const [id, times] of book) if (!times.some((t) => now - t < DAY_MS)) book.delete(id);
     }
+  }
+
+  /**
+   * "Use where I am" and the area in words for every GPS fix (22 Nov): the
+   * address at a GPS spot from OpenStreetMap's reverse lookup (cached, one
+   * request a second for the whole server), with its own per-agent limit.
+   */
+  async where(staffId: string, latitude: unknown, longitude: unknown): Promise<WhereAmI> {
+    const lat = Number(latitude);
+    const lng = Number(longitude);
+    if (latitude === null || latitude === undefined || latitude === '' || longitude === null || longitude === undefined || longitude === '' ||
+      !Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180 || (lat === 0 && lng === 0)) {
+      throw codedError(HttpStatus.BAD_REQUEST, 'MAPS_POINT_INVALID', 'Send the GPS latitude and longitude');
+    }
+    this.claim(staffId, this.perAgentWhere, WHERE_PER_MINUTE, WHERE_PER_DAY);
+    const address = await this.reverse(lat, lng);
+    return { latitude: lat, longitude: lng, area: address?.locality ?? address?.area ?? null, address };
   }
 
   /**
@@ -271,26 +335,102 @@ export class MapsLinkService {
     return (await this.searchPlace(text)).place;
   }
 
-  /** The search, and whether Nominatim answered at all (so "not found" and "could not look it up" differ). */
+  /**
+   * The search, and whether a map service answered at all (so "not found" and
+   * "could not look it up" differ). Google Places first when its key is set;
+   * else (or when Google fails) OpenStreetMap, trying shorter and shorter
+   * queries (22 Nov, owner field test: house numbers dropped, the locality and
+   * Bengaluru kept) until one is found.
+   */
   private async searchPlace(text: string): Promise<{ place: { latitude: number; longitude: number; address: ReverseAddress | null } | null; reached: boolean }> {
     const q = text.replace(/\s+/g, ' ').trim().slice(0, MAX_ADDRESS_LENGTH);
     if (!q) return { place: null, reached: true };
     const key = q.toLowerCase();
     const cached = this.searchCache.get(key);
     if (cached && this.now() - cached.at < CACHE_TTL_MS) return { place: cached.value, reached: true };
-    const base = `${this.nominatimBase()}/search?format=jsonv2&q=${encodeURIComponent(q)}&countrycodes=in&addressdetails=1&limit=1&accept-language=en`;
     let reached = false;
     let found: { latitude: number; longitude: number; address: ReverseAddress | null } | null = null;
-    for (const url of [`${base}&viewbox=${BENGALURU_VIEWBOX}&bounded=1`, base]) {
-      const body = await this.nominatim(url);
-      if (body === undefined) continue;
-      reached = true;
-      found = placeFromNominatimSearch(body);
-      if (found) break;
+    if (this.googleKey()) {
+      const google = await this.googleSearch(q);
+      if (google !== undefined) {
+        reached = true;
+        found = google;
+      }
     }
-    // A miss is remembered too (not a failure to reach Nominatim, which is tried again next time).
+    if (!found) {
+      const started = this.now();
+      const queries = addressQueries(q, MAX_ADDRESS_QUERIES);
+      for (let i = 0; i < queries.length && !found; i += 1) {
+        if (i > 0 && this.now() - started > SEARCH_BUDGET_MS) break;
+        const base = `${this.nominatimBase()}/search?format=jsonv2&q=${encodeURIComponent(queries[i])}&countrycodes=in&addressdetails=1&limit=1&accept-language=en`;
+        // The text as typed: Bengaluru's box first, then all India; the shorter queries already name Bengaluru.
+        const urls = i === 0 ? [`${base}&viewbox=${BENGALURU_VIEWBOX}&bounded=1`, base] : [`${base}&viewbox=${BENGALURU_VIEWBOX}&bounded=1`];
+        for (const url of urls) {
+          const body = await this.nominatim(url);
+          if (body === undefined) continue;
+          reached = true;
+          found = placeFromNominatimSearch(body);
+          if (found) break;
+        }
+        if (!reached) break;
+      }
+    }
+    // A miss is remembered too (not a failure to reach the map, which is tried again next time).
     if (reached) this.remember(this.searchCache, key, found);
     return { place: found, reached };
+  }
+
+  /** Google Places (New) Text Search, biased to Bengaluru; undefined when Google could not be used. */
+  private async googleSearch(text: string): Promise<{ latitude: number; longitude: number; address: ReverseAddress | null } | null | undefined> {
+    const body = await this.google(GOOGLE_PLACES_SEARCH_URL, 'POST', `places.${GOOGLE_FIELDS.split(',').join(',places.')}`, JSON.stringify({
+      textQuery: text,
+      regionCode: 'IN',
+      languageCode: 'en',
+      pageSize: 1,
+      locationBias: { rectangle: { low: { latitude: 12.7, longitude: 77.3 }, high: { latitude: 13.25, longitude: 77.95 } } },
+    }));
+    if (body === undefined) return undefined;
+    const places = (body as { places?: unknown[] })?.places;
+    if (!Array.isArray(places)) return null;
+    for (const p of places) {
+      const found = placeFromGoogle(p);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  /** Google Places (New) Place Details for a place id in a Maps link; null when it cannot be used. */
+  private async googleDetails(placeId: string): Promise<{ latitude: number; longitude: number; address: ReverseAddress } | null> {
+    const body = await this.google(`${GOOGLE_PLACES_DETAILS_URL}${encodeURIComponent(placeId)}?languageCode=en&regionCode=IN`, 'GET', GOOGLE_FIELDS);
+    return body === undefined ? null : placeFromGoogle(body);
+  }
+
+  /** One Google Places request with the key in a header (never in the URL or a log); undefined on any failure. */
+  private async google(url: string, method: 'GET' | 'POST', fieldMask: string, body?: string): Promise<unknown> {
+    const key = this.googleKey();
+    if (!key) return undefined;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    try {
+      const res = await this.fetcher()(url, {
+        method,
+        redirect: 'manual',
+        signal: controller.signal,
+        headers: { 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': fieldMask, 'Content-Type': 'application/json', Accept: 'application/json' },
+        ...(body ? { body } : {}),
+      });
+      if (res.status !== 200) {
+        await res.body?.cancel?.().catch(() => undefined);
+        this.logger.warn(`Google Places answered ${res.status}`);
+        return undefined;
+      }
+      return await res.json();
+    } catch (error) {
+      this.logger.warn(`Google Places not reached: ${(error as Error)?.name ?? 'error'}`);
+      return undefined;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /** One Nominatim request, one at a time with the gap; the parsed JSON, or undefined when it failed. */

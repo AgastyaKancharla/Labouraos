@@ -187,6 +187,10 @@ services:
       # Only if "enhanced push security" is switched on in the Expo account.
       - key: EXPO_ACCESS_TOKEN
         sync: false
+      # Optional (22 Nov): typed address search through Google Places, server side only.
+      # Empty = OpenStreetMap Nominatim (the GPS "Use where I am" path never needs it).
+      - key: GOOGLE_PLACES_API_KEY
+        sync: false
       # SMS and OTP (MSG91 or another DLT-registered gateway)
       - key: SMS_API_KEY
         sync: false
