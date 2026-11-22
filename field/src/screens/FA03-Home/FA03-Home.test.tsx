@@ -9,6 +9,11 @@ import { kiran, renderWithApp, type FetchRoute } from '@/test/render';
 import { todayView } from '@/test/redesign-fixtures';
 import { translate } from '@/i18n';
 import HomeScreen, { STATUS_CHOICES } from '.';
+import { DayControls } from '../_attendance/DayControls';
+import { groupNeeds } from './groupNeeds';
+
+/** The full day controls (My day, My attendance): Log out and the status bar left Today on 22 Nov. */
+const FullDay = () => <DayControls />;
 
 jest.mock('expo-router', () => require('@/test/expo-router-mock'));
 
@@ -74,10 +79,11 @@ describe('FA03 Today', () => {
     });
     await waitFor(() => screen.getByTestId('attendance-login'));
     await fireEvent.press(screen.getByTestId('attendance-login'));
-    await waitFor(() => screen.getByTestId('attendance-logged-in'));
+    // 22 Nov (rev 207): no "Logged in at" card on Today; the status shows under the bell.
+    await waitFor(() => screen.getByTestId('header-status'));
     expect(sent).toEqual([{ latitude: 12.9116, longitude: 77.6389 }]);
-    expect(screen.getByTestId('attendance-logged-in')).toHaveTextContent(/Logged in at 9:12 AM.*on time/);
-    expect(screen.getByText('Travelling')).toBeTruthy();
+    expect(screen.queryByTestId('attendance-logged-in')).toBeNull();
+    expect(screen.getByTestId('header-status')).toHaveTextContent(/Travelling/);
   });
 
   it('explains when location is off instead of logging in without it', async () => {
@@ -91,8 +97,10 @@ describe('FA03 Today', () => {
 
   it('shows the late login; today’s numbers wait for the server (a dash, never an invented number)', async () => {
     await renderWithApp(<HomeScreen />, { signedInAs: kiran, route: api({ ...loggedIn, lateMinutes: 12 }) });
-    await waitFor(() => screen.getByTestId('attendance-logged-in'));
-    expect(screen.getByTestId('attendance-logged-in')).toHaveTextContent(/12 min late/);
+    await waitFor(() => screen.getByTestId('header-status'));
+    // 22 Nov: lateness stays on My attendance, never on Today; no Log out here (it is in Me).
+    expect(screen.queryByText(/12 min late/)).toBeNull();
+    expect(screen.queryByTestId('attendance-logout')).toBeNull();
     expect(screen.getByTestId('stat-shopsVisited')).toHaveTextContent(/^—shops visited$/);
   });
 
@@ -152,11 +160,17 @@ describe('FA03 Today', () => {
     await renderWithApp(<HomeScreen />, { signedInAs: kiran, route: api(loggedIn, (url) => (url.endsWith('/field-work/today') ? { status: 200, body: todayView() } : undefined)) });
     await waitFor(() => screen.getByTestId('needs-interview_today:iv-1'));
     expect(screen.getByTestId('needs-interview_today:iv-1')).toHaveTextContent(/Sri Sai Hotel.*Interview at 12:00 PM · Ramesh G\..*Today/);
-    expect(screen.getByTestId('needs-agreement_waiting:b-1')).toHaveTextContent(/Sri Sai Bakery.*Agreement link expired · resend it/);
+    // 22 Nov (rev 207): one row per business, its open items under it; the row opens the business.
+    expect(screen.getByTestId('needs-group-b:b-1-open')).toHaveTextContent(/Sri Sai Bakery.*Agreement link expired · resend it.*Check and send to the owner · Cook × 2.*JP Nagar/);
+    expect(screen.getAllByText('Sri Sai Bakery')).toHaveLength(1);
+    expect(screen.getByTestId('needs-agreement_waiting:b-1')).toHaveTextContent(/Agreement link expired · resend it/);
     expect(screen.getByTestId('needs-vacancy_draft:vac-1')).toHaveTextContent(/Check and send to the owner · Cook × 2/);
     expect(screen.getByTestId('needs-revisit_due:v-9')).toHaveTextContent(/Lakshmi Tiffins.*Revisit due.*Overdue/);
     // 17 Nov: a heads-up per business with vacancies to fill, opening that business.
-    expect(screen.getByTestId('needs-vacancies_to_fill:b-4')).toHaveTextContent(/Green Leaf Café.*2 vacancies to fill · Waiter, Cook · Jayanagar/);
+    expect(screen.getByTestId('needs-group-b:b-4-open')).toHaveTextContent(/Green Leaf Café.*Ready to show candidates.*2 vacancies to fill · Waiter, Cook.*Jayanagar/);
+    expect(screen.getAllByText('Green Leaf Café')).toHaveLength(1);
+    await fireEvent.press(screen.getByTestId('needs-group-b:b-1-open'));
+    expect(router.push).toHaveBeenLastCalledWith('/businesses/b-1');
     const expected: [string, unknown][] = [
       ['interview_today:iv-1', '/visit/interview/iv-1/day'],
       ['visit_unfinished:v-3', { pathname: '/visit/business', params: { visitId: 'v-3' } }],
@@ -184,7 +198,7 @@ describe('FA03 Today', () => {
     expect(screen.getByTestId('needs-vacancy_draft:vac-1')).toHaveTextContent(/Check and send to the owner · Cook × 2$/);
     expect(screen.getByTestId('needs-vacancy_awaiting_owner:vac-2')).not.toHaveTextContent(/Helper · Helper/);
     // Other subtitles (the area) still show.
-    expect(screen.getByTestId('needs-agreement_waiting:b-1')).toHaveTextContent(/JP Nagar/);
+    expect(screen.getByTestId('needs-group-b:b-1-open')).toHaveTextContent(/JP Nagar/);
   });
 
   it('dates are in English (rev 193)', async () => {
@@ -204,9 +218,10 @@ describe('FA03 Today', () => {
         return undefined;
       }),
     });
-    await waitFor(() => screen.getByTestId('attendance-status'));
-    expect(screen.getByTestId('attendance-status')).toHaveTextContent(/Travelling/);
-    await fireEvent.press(screen.getByTestId('attendance-status'));
+    // 22 Nov (rev 207): the status button sits under the bell.
+    await waitFor(() => screen.getByTestId('header-status'));
+    expect(screen.getByTestId('header-status')).toHaveTextContent(/Travelling/);
+    await fireEvent.press(screen.getByTestId('header-status'));
     // 22 Nov: Active, Team meeting, One-to-one, Training, System problem, Short break, Lunch (no calls for field agents).
     const offered = ['available', 'team_meeting', 'one_to_one', 'training', 'system_problem', 'short_break', 'lunch'];
     for (const s of offered) expect(screen.getByTestId(`status-choice-${s}`)).toBeTruthy();
@@ -214,7 +229,7 @@ describe('FA03 Today', () => {
     expect(STATUS_CHOICES).toEqual(offered);
     expect(screen.getByTestId('status-automatic')).toHaveTextContent(/Now: Travelling/);
     await fireEvent.press(screen.getByTestId('status-choice-lunch'));
-    await waitFor(() => expect(screen.getByTestId('attendance-status')).toHaveTextContent(/Lunch/));
+    await waitFor(() => expect(screen.getByTestId('header-status')).toHaveTextContent(/Lunch/));
     expect(sent).toEqual([{ status: 'lunch' }]);
   });
 
@@ -227,17 +242,17 @@ describe('FA03 Today', () => {
           : undefined,
       ),
     });
-    await waitFor(() => screen.getByTestId('attendance-status'));
-    await fireEvent.press(screen.getByTestId('attendance-status'));
+    await waitFor(() => screen.getByTestId('header-status'));
+    await fireEvent.press(screen.getByTestId('header-status'));
     await fireEvent.press(screen.getByTestId('status-choice-training'));
-    await waitFor(() => screen.getByTestId('attendance-error'));
-    expect(screen.getByTestId('attendance-error')).toHaveTextContent(translate('en', 'today.statusFailed'));
-    expect(screen.getByTestId('attendance-error')).not.toHaveTextContent(/set automatically/);
+    await waitFor(() => screen.getByTestId('header-status-error'));
+    expect(screen.getByTestId('header-status-error')).toHaveTextContent(translate('en', 'today.statusFailed'));
+    expect(screen.getByTestId('header-status-error')).not.toHaveTextContent(/set automatically/);
   });
 
   it('Log out asks first, then ends the day: no Log in again today (17 Nov)', async () => {
     let ended = false;
-    await renderWithApp(<HomeScreen />, {
+    await renderWithApp(<FullDay />, {
       signedInAs: kiran,
       route: api(loggedIn, (url) => {
         if (url.endsWith('/attendance/logout')) {
@@ -274,9 +289,9 @@ describe('FA03 Today', () => {
     });
     await waitFor(() => screen.getByTestId('attendance-start-of-day'));
     expect(screen.queryByTestId('attendance-login')).toBeNull();
-    expect(screen.getByTestId('attendance-status')).toHaveTextContent(/Start of day/);
+    expect(screen.getByTestId('header-status')).toHaveTextContent(/Start of day/);
     expect(screen.getByTestId('attendance-start-of-day')).toHaveTextContent(/Start of day · since 9:12 AM.*Pick your status to start work/);
-    await fireEvent.press(screen.getByTestId('attendance-status'));
+    await fireEvent.press(screen.getByTestId('header-status'));
     expect(screen.queryByTestId('status-choice-start_of_day')).toBeNull();
     expect(screen.getByTestId('status-automatic')).toHaveTextContent(/Start of day \(since you signed in\)/);
     expect(screen.getByTestId('status-choice-available')).toHaveTextContent(/Active/);
@@ -310,7 +325,7 @@ describe('FA03 Today', () => {
   });
 
   it('Log out also signs out of Laboura Field (21 Nov: the sign-in lasts until Log out)', async () => {
-    const { store, fetchImpl } = await renderWithApp(<HomeScreen />, {
+    const { store, fetchImpl } = await renderWithApp(<FullDay />, {
       signedInAs: kiran,
       route: api(loggedIn, (url) => {
         if (url.endsWith('/attendance/logout')) return { status: 200, body: { ...loggedIn, logoutAt: '2026-11-09T13:00:00Z', canResume: true } };
@@ -328,7 +343,7 @@ describe('FA03 Today', () => {
   it('a day ended with Log out today offers Resume my day; it opens the day again (21 Nov)', async () => {
     let resumed = false;
     const ended = { ...loggedIn, logoutAt: '2026-11-09T08:00:00Z', closedReason: 'logout', canResume: true };
-    await renderWithApp(<HomeScreen />, {
+    await renderWithApp(<FullDay />, {
       signedInAs: kiran,
       route: api(ended, (url) => {
         if (url.endsWith('/attendance/resume')) {
@@ -411,7 +426,7 @@ describe('FA03 Today', () => {
 
   it('Log out refused because the day already ended elsewhere shows the ended day, never an error', async () => {
     let closed = false;
-    await renderWithApp(<HomeScreen />, {
+    await renderWithApp(<FullDay />, {
       signedInAs: kiran,
       route: (url) => {
         if (url.endsWith('/attendance/today')) return { status: 200, body: closed ? { ...loggedIn, logoutAt: '2026-11-09T08:00:00Z' } : loggedIn };
@@ -483,5 +498,29 @@ describe('FA03 Today', () => {
     await renderWithApp(<HomeScreen />, { signedInAs: kiran, route: api(notLoggedIn) });
     await waitFor(() => expect(screen.getByTestId('attendance-not-logged-in')).toHaveTextContent(/Not logged in yet/));
     expect(screen.queryByTestId('language-switcher')).toBeNull();
+  });
+});
+
+describe('22 Nov (rev 207): Today groups Needs you now per business', () => {
+  const item = (id: string, kind: string, title: string, target: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+    ({ id, kind, title, subtitle: null, at: null, due: null, target: { type: 'business', id: 'x', ...target }, ...extra }) as never;
+  it('one group per business (screenshot ed67613a: Andhra ruchilu ×3, Reddy mess ×2), most urgent first, an unregistered shop by its name', () => {
+    const groups = groupNeeds([
+      item('ready_show_candidates:b-7', 'ready_show_candidates', 'Andhra ruchilu', { type: 'business', id: 'b-7' }),
+      item('ready_show_candidates:b-8', 'ready_show_candidates', 'Andhra foods', { type: 'business', id: 'b-8' }),
+      item('vacancies_to_fill:b-7', 'vacancies_to_fill', 'Andhra ruchilu', { type: 'business', id: 'b-7' }),
+      item('revisit_due:v-1', 'revisit_due', 'Reddy mess', { type: 'revisit', id: 'v-1', businessId: null }, { due: 'overdue' }),
+      item('revisit_due:v-2', 'revisit_due', 'Andhra ruchilu', { type: 'revisit', id: 'v-2', businessId: 'b-7' }, { due: 'overdue' }),
+      item('revisit_due:v-3', 'revisit_due', 'Reddy  Mess ', { type: 'revisit', id: 'v-3', businessId: null }, { due: 'today' }),
+      item('verification_visit:a-1', 'verification_visit', 'Andhra ruchilu', { type: 'verification', id: 'a-1', businessId: 'b-7' }),
+    ]);
+    expect(groups.map((g) => [g.title, g.items.length, g.due])).toEqual([
+      ['Andhra ruchilu', 3, 'overdue'],
+      ['Andhra foods', 1, null],
+      ['Reddy mess', 2, 'overdue'],
+      ['Andhra ruchilu', 1, null],
+    ]);
+    expect(groups[0].businessId).toBe('b-7');
+    expect(groups[2].businessId).toBeNull();
   });
 });

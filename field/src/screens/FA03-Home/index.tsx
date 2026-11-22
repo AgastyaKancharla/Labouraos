@@ -262,7 +262,10 @@ function NeedsGroupRow({ group, last }: { group: NeedsGroup; last: boolean }) {
     <View testID={`needs-group-${group.key}`}>
       <ListRow
         title={group.title}
-        subtitle={group.items.map((i) => needsWhat(i, t, tn) + (i.due === 'overdue' && group.items.length > 1 ? ` (${t('needs.overdue').toLowerCase()})` : '')).join(' · ')}
+        subtitle={[
+          ...group.items.map((i) => needsWhat(i, t, tn) + (i.due === 'overdue' ? ` (${t('needs.overdue').toLowerCase()})` : '')),
+          group.items.find((i) => i.subtitle && !i.vacancy && i.kind !== 'followup_task')?.subtitle ?? null,
+        ].filter(Boolean).join(' · ')}
         leading={<IconTile icon={look.icon} accent={look.accent} size={34} />}
         trailing={due ? <StatusChip tone={group.due === 'overdue' ? 'tomato' : group.due === 'today' ? 'amber' : 'neutral'} label={due} /> : <Icon name="chevron-right" size={16} />}
         onPress={open ? () => router.push(open as never) : undefined}
