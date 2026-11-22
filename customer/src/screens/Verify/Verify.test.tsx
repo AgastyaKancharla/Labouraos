@@ -249,12 +249,13 @@ describe('Referral partner steps in the app', () => {
 });
 
 describe('Business agreement in the app', () => {
-  it('name prefilled, three ticks first, then the code signs; the signed view follows', async () => {
+  it('the name, three ticks first, then the code signs; the signed view follows', async () => {
     const steps = spiedSteps();
     await renderVerify('business_agreement', 'p-biz', steps);
     const page = await screen.findByTestId('agree');
     expect(page).toHaveTextContent(/50% of the first month’s salary \+ 18% GST/);
     expect(screen.getByTestId('agree-otp-send')).toBeDisabled();
+    await fireEvent.changeText(screen.getByTestId('agree-name'), 'Manjunath');
     await fireEvent.press(screen.getByTestId('agree-tick-terms'));
     await fireEvent.press(screen.getByTestId('agree-tick-authority'));
     await fireEvent.press(screen.getByTestId('agree-tick-recording'));

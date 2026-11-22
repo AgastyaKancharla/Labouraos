@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useI18n } from '@/i18n';
 import { colors, fonts, fontSize, radius, touch } from '@/theme';
 import { Text } from '../Text';
@@ -37,7 +38,7 @@ function Hint({ error, hint, testID }: { error?: string | null; hint?: string; t
 
 /** A picker row that opens a sheet of choices (the `<select>` in the designs). */
 export function SelectField<V extends string>({
-  label, value, choices, onChange, placeholder, required, error, hint, testID,
+  label, value, choices, onChange, placeholder, required, error, hint, searchable = true, testID,
 }: {
   label: string;
   value: V | '' | null;
@@ -47,12 +48,14 @@ export function SelectField<V extends string>({
   required?: boolean;
   error?: string | null;
   hint?: string;
+  /** Long lists get a search box; a list of times does not need one. */
+  searchable?: boolean;
   testID?: string;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const current = choices.find((c) => c.value === value);
-  const search = useChoiceSearch(choices, open, testID);
+  const search = useChoiceSearch(choices, open, testID, searchable);
   return (
     <View style={styles.field}>
       <FieldLabel label={label} required={required} />
@@ -103,16 +106,26 @@ function Sheet({ open, onClose, title, header, children }: { open: boolean; onCl
   // lets the list grow to its full length and cuts it off instead of scrolling (Agastya, 22 Nov, again).
   const { height } = useWindowDimensions();
   const listMax = Math.round(height * (header ? 0.5 : 0.6));
+  // Android draws edge to edge: without the bottom inset the last choices sit under the phone's own
+  // back / home buttons, where they can neither be tapped nor scrolled up into view.
+  const insets = useSafeAreaInsets();
   return (
-    <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={open} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent navigationBarTranslucent>
       <View style={styles.backdrop}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel={t('common.close')} />
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { paddingBottom: 28 + insets.bottom }]} testID="choice-sheet">
           <Text variant="label" style={styles.sheetTitle}>
             {title}
           </Text>
           {header}
-          <ScrollView style={[styles.sheetList, { maxHeight: listMax }]} keyboardShouldPersistTaps="handled" nestedScrollEnabled testID="choice-sheet-list">
+          <ScrollView
+            style={[styles.sheetList, { maxHeight: listMax }]}
+            contentContainerStyle={styles.sheetListContent}
+            keyboardShouldPersistTaps="handled"
+            nestedScrollEnabled
+            persistentScrollbar
+            testID="choice-sheet-list"
+          >
             {children}
           </ScrollView>
         </View>
@@ -124,7 +137,7 @@ function Sheet({ open, onClose, title, header, children }: { open: boolean; onCl
 /** Long lists (areas, trades) get a search box at the top of the sheet. */
 const SEARCH_FROM = 10;
 
-function useChoiceSearch<C extends Choice>(choices: readonly C[], open: boolean, testID?: string) {
+function useChoiceSearch<C extends Choice>(choices: readonly C[], open: boolean, testID?: string, searchable = true) {
   const { t } = useI18n();
   const [query, setQuery] = useState('');
   const [wasOpen, setWasOpen] = useState(open);
@@ -135,7 +148,7 @@ function useChoiceSearch<C extends Choice>(choices: readonly C[], open: boolean,
   const q = query.trim().toLowerCase();
   const shown = q ? choices.filter((c) => c.label.toLowerCase().includes(q)) : choices;
   const header =
-    choices.length >= SEARCH_FROM ? (
+    searchable && choices.length >= SEARCH_FROM ? (
       <View style={[styles.box, styles.searchBox]}>
         <TextInput
           value={query}
@@ -553,7 +566,7 @@ export function TimeField({ label, value, onChange, from = '09:00', to = '21:00'
     }
     return out;
   }, [from, to, step]);
-  return <SelectField label={label} value={value} choices={choices} onChange={onChange} required={required} error={error} testID={testID} />;
+  return <SelectField label={label} value={value} choices={choices} onChange={onChange} required={required} error={error} searchable={false} testID={testID} />;
 }
 
 const styles = StyleSheet.create({
@@ -601,6 +614,7 @@ const styles = StyleSheet.create({
   },
   sheetTitle: { marginBottom: 8 },
   sheetList: { flexGrow: 0, flexShrink: 1 },
+  sheetListContent: { paddingBottom: 8 },
   searchBox: { marginBottom: 8 },
   noMatch: { paddingVertical: 12, paddingHorizontal: 12 },
   option: { minHeight: touch.min, justifyContent: 'center', paddingHorizontal: 12, borderRadius: radius.md },
