@@ -2,7 +2,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const vm = require('vm');
-const { basePath, buildManifest, injectHead, normaliseBase, run } = require('./pwa');
+const { basePath, buildManifest, buildRegisterScript, buildServiceWorker, injectHead, normaliseBase, run } = require('./pwa');
 
 const exported = `<!doctype html><html lang="en"><head>
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
@@ -54,6 +54,58 @@ describe('installable web app (scripts/pwa.js)', () => {
     fs.writeFileSync(path.join(dist, '_expo', 'static', 'js', 'web', 'entry-1.js'), 'y');
     expect(run(dist, '/field/').version).not.toBe(first.version);
     fs.rmSync(dist, { recursive: true, force: true });
+  });
+
+  describe('a new deploy takes over (22 Nov evening: the owner\'s phone kept an old bundle)', () => {
+    it('the new worker skips waiting and claims the open pages; screens are network first', () => {
+      const sw = buildServiceWorker('/', ['index.html'], 'v1');
+      expect(sw).toContain('self.skipWaiting()');
+      expect(sw).toContain('self.clients.claim()');
+      expect(sw).toContain("request.mode === 'navigate' ? navigation(request) : asset(request)");
+    });
+
+    /** Runs register-sw.js in a fake browser and returns its hooks. */
+    function page(controlled) {
+      const listeners = {};
+      const docListeners = {};
+      const registration = { update: jest.fn(() => Promise.resolve()) };
+      const sw = {
+        controller: controlled ? {} : null,
+        addEventListener: (type, fn) => (listeners[type] = fn),
+        register: jest.fn(() => Promise.resolve(registration)),
+      };
+      const reload = jest.fn();
+      const context = {
+        navigator: { serviceWorker: sw },
+        window: { addEventListener: (type, fn) => (listeners[`window:${type}`] = fn), location: { reload } },
+        document: { visibilityState: 'visible', addEventListener: (type, fn) => (docListeners[type] = fn) },
+      };
+      vm.runInNewContext(buildRegisterScript('/'), context);
+      return { listeners, docListeners, registration, reload, sw };
+    }
+
+    it('reloads once when a new worker takes over a page an older one controlled', async () => {
+      const p = page(true);
+      p.listeners.controllerchange();
+      p.listeners.controllerchange();
+      expect(p.reload).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not reload on the very first install', () => {
+      const p = page(false);
+      p.listeners.controllerchange();
+      expect(p.reload).not.toHaveBeenCalled();
+    });
+
+    it('asks for a new deploy each time the app comes back on screen', async () => {
+      const p = page(true);
+      p.listeners['window:load']();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(p.sw.register).toHaveBeenCalledWith('/sw.js', { scope: '/' });
+      p.docListeners.visibilitychange();
+      expect(p.registration.update).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('the second build, for the root of field.laboura.com (decided 14 Nov)', () => {
