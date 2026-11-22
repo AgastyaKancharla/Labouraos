@@ -98,6 +98,22 @@ describe('Phase 13 Task 2 — business profile and documents', () => {
     expect(response.body.udyamNumber).toBeNull();
   });
 
+  it('22 Nov (rev 207–208): the full grouped list is accepted, older values stay valid, and "Other" needs the type in words', async () => {
+    const tea = await createBusiness({ name: 'Chai Point Corner', businessType: 'tea_coffee_stall' });
+    expect(tea.status).toBe(201);
+    const legacy = await createBusiness({ name: 'Old Style Hotel', businessType: 'restaurant_hotel' });
+    expect(legacy.status).toBe(201);
+    const bare = await createBusiness({ name: 'Flower Corner', businessType: 'other' });
+    expect(bare.status).toBe(400);
+    expect(bare.body.code).toBe('BUSINESS_TYPE_OTHER_REQUIRED');
+    const typed = await createBusiness({ name: 'Flower Corner Two', businessType: 'other', businessTypeOther: '  Flower shop  ' });
+    expect(typed.status).toBe(201);
+    expect((await prisma.business.findUniqueOrThrow({ where: { id: typed.body.id } })).businessTypeOther).toBe('Flower shop');
+    // Not "other": any typed words are not kept.
+    const plain = await createBusiness({ name: 'Bakery With Words', businessType: 'bakery', businessTypeOther: 'ignored' });
+    expect((await prisma.business.findUniqueOrThrow({ where: { id: plain.body.id } })).businessTypeOther).toBeNull();
+  });
+
   it('rejects business types outside the closed list', async () => {
     const response = await createBusiness({ name: 'Unknown Business Type', businessType: 'unlisted_type' });
     expect(response.status).toBe(400);

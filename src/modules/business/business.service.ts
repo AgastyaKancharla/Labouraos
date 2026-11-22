@@ -1,3 +1,5 @@
+import { codedError } from '../../common/http/coded-error';
+import { BUSINESS_TYPE_OTHER_MAX, OTHER_BUSINESS_TYPE } from './business-types';
 import { PRODUCT_LANGUAGE } from '../../common/language/english-only';
 import { OwnTeam, businessesOwnedBy } from '../../common/rbac/own-team';
 import { ZONE_ADDRESS_FIELDS, zoneForBusiness } from '../trade/minimum-wage';
@@ -6,6 +8,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpStatus,
   Inject,
   Injectable,
   NotFoundException,
@@ -72,6 +75,7 @@ export const ALLOWED_BUSINESS_UPDATE_FIELDS: ReadonlySet<string> = new Set([
   'contactRole',
   'contactWhatsAppPhone',
   'businessType',
+  'businessTypeOther',
   'employeeCountBand',
   'employeeCount',
   'staffNeeded',
@@ -327,6 +331,11 @@ export class BusinessService {
     if (businessType && !(BUSINESS_TYPES as readonly string[]).includes(businessType)) {
       throw new BadRequestException('businessType is not one of the allowed business types');
     }
+    // 22 Nov (rev 208): "Other" always says what the type is (required from staff: Field and the consoles).
+    const businessTypeOther = businessType === OTHER_BUSINESS_TYPE ? (dto.businessTypeOther?.trim().slice(0, BUSINESS_TYPE_OTHER_MAX) || null) : null;
+    if (businessType === OTHER_BUSINESS_TYPE && staff && !businessTypeOther) {
+      throw codedError(HttpStatus.BAD_REQUEST, 'BUSINESS_TYPE_OTHER_REQUIRED', 'Type what kind of business it is (Other)');
+    }
 
     const isHousehold = businessType === 'household';
     if (isHousehold && !dto.familyName?.trim()) {
@@ -551,6 +560,7 @@ export class BusinessService {
           // English only (rev 193): every message to the business is in English.
           contactLanguage: PRODUCT_LANGUAGE,
           businessType,
+          businessTypeOther,
           employeeCountBand: dto.employeeCountBand?.trim() || null,
           employeeCount: dto.employeeCount ?? null,
           staffNeeded: [...(dto.staffNeeded ?? []), ...(dto.staffNeededRows ?? []).map((row) => `${row.trade.trim()} x${row.headcount}`)],

@@ -1,21 +1,11 @@
-export const BUSINESS_TYPES = [
-  'restaurant_hotel',
-  'bakery',
-  'retail_shop',
-  'supermarket',
-  'apartment_society',
-  'restaurant',
-  'retail',
-  'factory',
-  'office',
-  'warehouse',
-  'hospital_clinic',
-  'construction',
-  'security_agency',
-  'salon',
-  'household',
-  'other',
-] as const;
+import { ALL_BUSINESS_TYPES } from './business-types';
+
+/**
+ * Every valid business type (22 Nov, rev 207): the full grouped list
+ * (business-types.ts) plus the older values, which stay valid so old rows
+ * still display. Pickers offer only the grouped list.
+ */
+export const BUSINESS_TYPES: readonly string[] = ALL_BUSINESS_TYPES;
 
 export const BUSINESS_CONTACT_ROLES = ['owner', 'manager', 'hr', 'supervisor', 'other'] as const;
 export const EMPLOYEE_COUNT_BANDS = ['1-5', '6-20', '21-50', '51-200', '200+'] as const;
@@ -23,7 +13,7 @@ export const EMPLOYEE_COUNT_BANDS = ['1-5', '6-20', '21-50', '51-200', '200+'] a
 export const YEARS_RUNNING_BANDS = ['under_1', '1_3', '3_10', '10_plus'] as const;
 export const HIRING_FREQUENCIES = ['rarely', 'every_few_months', 'every_month', 'every_week'] as const;
 
-export type BusinessType = (typeof BUSINESS_TYPES)[number];
+export type BusinessType = string;
 
 /**
  * Visit purposes that are the business's verification visit: the usual
