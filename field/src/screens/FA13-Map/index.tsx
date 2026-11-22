@@ -9,7 +9,7 @@ import { queryKeys } from '@/api/queryClient';
 import type { ShopPoint } from '@/api/endpoints';
 import { useLocation } from '@/device/location/useLocation';
 import { formatCoordinates } from '@/device/location/location';
-import { pageRoutes, routes } from '@/navigation/routes';
+import { pageRoutes } from '@/navigation/routes';
 import { colors, shadow } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { formatDistance } from '../_visits/format';

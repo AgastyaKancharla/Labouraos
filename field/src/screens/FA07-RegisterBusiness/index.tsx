@@ -273,7 +273,7 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
   // city) for the agent to correct, and a small map with the pin and the address in words to check it.
   // The shop number, floor or street he adds himself. Without signal the pin is still set.
   const [where, setWhere] = useState<{ latitude: number; longitude: number; accuracy: number | null; words: string | null; state: 'filled' | 'pin_only' | 'offline' } | null>(null);
-  async function useWhereIAm() {
+  async function fillFromWhereIAm() {
     setProblem(null);
     setBusy('where');
     try {
@@ -467,10 +467,10 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
         <Card style={styles.gapCard} stripe accent={SECTION_ACCENTS[2]}>
           <Section n={3} title={t('fa07.s3')} />
           <Button
-            label={busy === 'where' ? t('addr.finding') : t('addr.useWhereIAm')}
+            label={busy === 'where' ? t('addr.finding') : t('addr.fillFromWhereIAm')}
             icon={<Text color={colors.white}>📍</Text>}
             loading={busy === 'where'}
-            onPress={() => void useWhereIAm()}
+            onPress={() => void fillFromWhereIAm()}
             testID="fa07-where"
           />
           {where ? (

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useI18n, type MessageKey } from '@/i18n';
@@ -22,7 +22,6 @@ import { useAttendanceToday } from './useHome';
 import { DayControls } from '../_attendance/DayControls';
 import { needsTarget } from './needsTarget';
 import { groupNeeds, type NeedsGroup } from './groupNeeds';
-import { Pressable } from 'react-native';
 import { VerificationJobCard } from '../_visits/VerificationJobCard';
 
 export { STATUS_CHOICES } from '../_attendance/DayControls';
