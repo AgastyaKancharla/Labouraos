@@ -78,7 +78,7 @@ export function resultHref(row: SearchRow): string | null {
   const businessCode = typeof row.extra.businessCode === 'string' ? row.extra.businessCode : null;
   switch (row.type) {
     case 'job_seeker':
-      return pageRoutes.seekerProgress(row.id); // FA10c
+      return pageRoutes.seekerProfile(row.id); // FA10e (22 Nov evening: the profile first)
     case 'business':
       return pageRoutes.business(row.id); // FA08
     case 'vacancy':

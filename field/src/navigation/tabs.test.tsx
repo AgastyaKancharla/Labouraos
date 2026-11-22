@@ -117,6 +117,8 @@ const SCREENS: [design: string, url: string, tab: Tab][] = [
   ['FA10-CaptureSeeker', routes.jobSeekerNew, 'Job seekers'],
   ['FA10b-SeekerSaved', pageRoutes.seekerSaved('js-1'), 'Job seekers'],
   ['FA10c-SeekerProgress', pageRoutes.seekerProgress('js-1'), 'Job seekers'],
+  // 22 Nov evening: tapping a job seeker opens his profile (FA10e); registration is a step from it.
+  ['FA10e-SeekerProfile', pageRoutes.seekerProfile('js-1'), 'Job seekers'],
   ['FA23-RegisterReferral', routes.referralNew, 'Job seekers'],
   ['FA23b-ReferralSaved', pageRoutes.referralSaved('rf-1'), 'Job seekers'],
   // Me
@@ -247,6 +249,61 @@ describe('Laboura Field tabs', () => {
     await fireEvent.press(screen.getByTestId('tab-me'));
     expect(screen.getByTestId('screen')).toHaveTextContent('(app)/(tabs)/me/index');
     expect(activeTab()).toEqual(['Me']);
+  });
+
+  // 22 Nov evening (owner's phone): a business page opened from another tab (Today, Visits, the
+  // bell, search) built the Businesses stack with that page alone, so the tab kept opening it.
+  const tapTab = async (tab: string) => {
+    await fireEvent.press(screen.getByTestId(`tab-${tab}`));
+    await act(async () => {
+      jest.runOnlyPendingTimers?.();
+    });
+  };
+
+  it('the Businesses tab always opens the list, even after a business page was opened from Today', async () => {
+    await render(routes.home);
+    await act(async () => {
+      testRouter.push(pageRoutes.business('b-1'));
+    });
+    expect(screen.getByTestId('screen')).toHaveTextContent('(app)/(tabs)/businesses/[id]');
+    await tapTab('(today)');
+    expect(activeTab()).toEqual(['Today']);
+    await tapTab('businesses');
+    expect(activeTab()).toEqual(['Businesses']);
+    expect(screen.getByTestId('screen')).toHaveTextContent('(app)/(tabs)/businesses/index');
+  });
+
+  it('tapping Businesses while on a business page opened from another tab shows the list', async () => {
+    await render(routes.home);
+    await act(async () => {
+      testRouter.push(pageRoutes.business('b-1'));
+    });
+    await tapTab('businesses');
+    expect(screen.getByTestId('screen')).toHaveTextContent('(app)/(tabs)/businesses/index');
+  });
+
+  it('a business page opened from a visit: both Visits and Businesses open their main pages afterwards', async () => {
+    await render(routes.visits);
+    await act(async () => {
+      testRouter.push(pageRoutes.visitDetails('v-1'));
+    });
+    await act(async () => {
+      testRouter.push(pageRoutes.business('b-1'));
+    });
+    await tapTab('(visits)');
+    expect(screen.getByTestId('screen')).toHaveTextContent('(app)/(tabs)/(visits)/visits/index');
+    await tapTab('businesses');
+    expect(screen.getByTestId('screen')).toHaveTextContent('(app)/(tabs)/businesses/index');
+  });
+
+  it('a job seeker profile opened from Today: the Job seekers tab still opens the list', async () => {
+    await render(routes.home);
+    await act(async () => {
+      testRouter.push(pageRoutes.seekerProfile('js-1'));
+    });
+    await tapTab('(today)');
+    await tapTab('job-seekers');
+    expect(screen.getByTestId('screen')).toHaveTextContent('(app)/(tabs)/job-seekers/index');
   });
 
   it('every signed-in route file sits inside one of the five tabs, so none can lose the tab bar', () => {

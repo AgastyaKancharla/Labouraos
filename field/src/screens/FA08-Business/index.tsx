@@ -18,6 +18,7 @@ import { istDateKey, minutesOf } from '../_visits/format';
 import { outcomeKey, verificationKey } from '../_visits/labels';
 import { VacancyStep } from '../_business/VacancyStep';
 import { ShiftsCard } from '../_business/Shifts';
+import { BusinessRowEnd, businessStatusText } from '../FA09-MyBusinesses';
 
 const HIDDEN_KEYS: Record<string, MessageKey> = {
   suspended: 'biz.hidden.suspended',
@@ -95,6 +96,7 @@ function Page({ b }: { b: BusinessPage }) {
         last
       />
       {!b.canAct ? <Banner tone="info" title={t('biz.viewOnly')} message={t('biz.viewOnlyBody')} testID="fa08-view-only" /> : null}
+      {b.canAct && b.row ? <StuckBox b={b} /> : null}
 
       {b.canAct ? (
         <View style={styles.actions}>
@@ -174,6 +176,30 @@ function Page({ b }: { b: BusinessPage }) {
 
       <History b={b} today={today} />
     </>
+  );
+}
+
+/**
+ * "Where it's stuck" (Laboura Field lists, 22 Nov evening), as on the Team Lead's and CEO's
+ * profiles: the business's one plain status and its next-step button (the same as its row
+ * in My businesses), "Waiting" while the Team Lead checks, or "All done".
+ */
+function StuckBox({ b }: { b: BusinessPage }) {
+  const { t } = useI18n();
+  const row = b.row!;
+  return (
+    <Card title={t('fa08.stuck')} icon="clipboard" accent="royal" testID="fa08-stuck">
+      {row.done && !row.action ? (
+        <Banner tone="ok" plain title={t('fa08.allDone')} message={businessStatusText(row, t)} testID="fa08-all-done" />
+      ) : (
+        <View style={styles.stuck}>
+          <Text variant="bodyStrong" style={styles.flex1} testID="fa08-stuck-status">
+            {businessStatusText(row, t)}
+          </Text>
+          <BusinessRowEnd b={b} row={row} testPrefix="fa08" />
+        </View>
+      )}
+    </Card>
   );
 }
 
@@ -293,4 +319,6 @@ const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   cell: { flexBasis: '48%', flexGrow: 1 },
+  flex1: { flex: 1 },
+  stuck: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 48 },
 });

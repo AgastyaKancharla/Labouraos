@@ -32,7 +32,7 @@ export function notificationHref(target: FieldNotificationTarget | null): Href |
     case 'vacancy_matches':
       return target.businessId && target.vacancyId ? sellingRoutes.matches(target.businessId, target.vacancyId) : null;
     case 'job_seeker':
-      return pageRoutes.seekerProgress(target.id);
+      return pageRoutes.seekerProfile(target.id);
     case 'referral':
       return pageRoutes.referralSaved(target.id);
     case 'leave':
