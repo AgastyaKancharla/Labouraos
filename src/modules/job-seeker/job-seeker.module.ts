@@ -13,6 +13,8 @@ import { TradeModule } from '../trade/trade.module';
 import { MessageModule } from '../message/message.module';
 import { OtpModule } from '../../common/otp/otp.module';
 import { AadhaarQrModule } from '../aadhaar-qr/aadhaar-qr.module';
+import { NotificationModule } from '../notification/notification.module';
+import { IdApprovedPaymentLinkService } from './id-approved-payment-link.service';
 import {
   CANDIDATE_PHOTO_STORAGE,
   sharedCandidatePhotoStorage,
@@ -20,11 +22,12 @@ import {
 } from './photo-storage';
 
 @Module({
-  imports: [PaymentModule, PricingModule, ConsentModule, ReviewFlagModule, TradeModule, MessageModule, OtpModule, AadhaarQrModule, LegalModule],
+  imports: [PaymentModule, PricingModule, ConsentModule, ReviewFlagModule, TradeModule, MessageModule, OtpModule, AadhaarQrModule, LegalModule, NotificationModule],
   controllers: [JobSeekerController, JobSeekerHitController, RegistrationController],
   providers: [
     JobSeekerService,
     RegistrationJourneyService,
+    IdApprovedPaymentLinkService,
     {
       provide: CANDIDATE_PHOTO_STORAGE,
       useFactory: () => process.env.CANDIDATE_PHOTO_STORAGE_MODE === 'supabase'

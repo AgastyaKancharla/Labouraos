@@ -218,6 +218,8 @@ export const callAgentEn = {
   'ca.history.offer': 'Offer · {business} · {status}',
   'ca.history.paid': '₹499 confirmed by the bank',
   'ca.history.registered': 'Registered by {by}',
+  'ca.history.linkAfterIdSent': 'ID approved · payment link sent by itself',
+  'ca.history.linkAfterIdNotSent': 'ID approved · payment link not sent by itself (use Resend)',
 
   'ca.intro.title': 'Jobs and businesses',
   'ca.intro.none': 'Not introduced to any business yet.',

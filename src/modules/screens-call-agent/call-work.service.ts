@@ -1109,7 +1109,7 @@ export class CallWorkService {
 
   /** Calls, messages, interviews and payments for one person, newest first. */
   private async history(staffId: string, type: SubjectType, id: string) {
-    const [calls, messages, interviews, payments, seeker] = await Promise.all([
+    const [calls, messages, interviews, payments, seeker, linkAfterId] = await Promise.all([
       this.prisma.callRecord.findMany({
         where: { subjectType: type, subjectId: id },
         orderBy: { createdAt: 'desc' },
@@ -1149,6 +1149,15 @@ export class CallWorkService {
       type === 'job_seeker'
         ? this.prisma.jobSeeker.findUnique({ where: { id }, select: { createdAt: true, registeredBy: { select: { name: true } } } })
         : Promise.resolve(null),
+      // 22 Nov: the payment link sent by itself after another ID was approved (or why it was not).
+      type === 'job_seeker'
+        ? this.prisma.statusHistory.findMany({
+            where: { subjectType: 'job_seeker', subjectId: id, reason: { startsWith: 'payment_link_after_id_approval:' } },
+            orderBy: { changedAt: 'desc' },
+            take: 5,
+            select: { reason: true, changedAt: true },
+          })
+        : Promise.resolve([]),
     ]);
     const rows: HistoryRow[] = [
       ...calls.map((c) => ({
@@ -1169,6 +1178,10 @@ export class CallWorkService {
       ]),
       ...payments.map((p) => ({ kind: 'payment_confirmed', at: (p.confirmedAt ?? p.createdAt).toISOString(), feePaise: p.amount })),
       ...(seeker ? [{ kind: 'registered', at: seeker.createdAt.toISOString(), by: seeker.registeredBy?.name ?? null }] : []),
+      ...linkAfterId.map((h) => {
+        const [, outcome, why] = (h.reason ?? '').split(':');
+        return { kind: 'payment_link_after_id', at: h.changedAt.toISOString(), sent: outcome === 'sent', reason: why ?? null };
+      }),
     ];
     return rows.sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 40);
   }

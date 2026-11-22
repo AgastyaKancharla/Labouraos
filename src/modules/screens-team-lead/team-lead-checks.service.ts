@@ -482,7 +482,7 @@ export class TeamLeadChecksService {
     const subjectType = body?.subjectType === 'referral' ? 'referral' : 'job_seeker';
     const subject = await this.requireTeamSubject(actor, subjectType, id, 'decide');
     // One general check per person (L-8): a second tap, or the Manager's fallback at the same moment, gets 409.
-    return oneRegistrationCheck(this.prisma, subjectType, subject.id, async () => {
+    const result = await oneRegistrationCheck(this.prisma, subjectType, subject.id, async () => {
       // The ID decision first: anything it refuses (under-18 stop, not this Team Lead's to decide, photo
       // gone or not opened, decided a moment ago) leaves everything as it was — no check row, no flag,
       // no photo deleted. Then the ID photos (QR or card) go, as they are kept only until this check.
@@ -508,6 +508,11 @@ export class TeamLeadChecksService {
       await this.audit.log({ actorId: actor.id, action: `team_lead.registration_${verdict}`, entityType: subjectType, entityCode: subject.code, after: { verdict, flagId, otherIdDecided } });
       return { id: check.id, verdict, flagId, otherIdDecided, idPhotoDeleted: photosDeleted > 0, qrPhotoDeleted: photosDeleted > 0 };
     });
+    // 22 Nov: an approved other ID sends the ₹499 payment link by itself (after the check is saved).
+    const paymentLink = this.otherIds
+      ? await this.otherIds.afterDecision(subjectType, subject.id, result.otherIdDecided, actor, this.clock.now())
+      : { status: 'none' as const, reason: null };
+    return { ...result, paymentLink };
   }
 
   // -------------------------------------------------------------- visits

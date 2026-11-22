@@ -12,6 +12,7 @@ import { ID_PHOTO_EXPIRED_REASON, IdCheckPhotoService } from './id-check-photo.s
 import { CARD_PHOTO_MESSAGES, checkCardPhoto } from './id-card-image';
 import { AADHAAR_ONLY_BY_QR, isOtherIdMethod, OTHER_ID_METHODS, OtherIdMethod } from './id-methods';
 import { OtherIdApprovalService, OtherIdSubjectType } from './other-id-approval.service';
+import { OtherIdDecisionHooks, OtherIdFollowUp } from './other-id-decision-hooks';
 import { UNDER_18_STOP_MESSAGE, Under18StopService } from './under18-stop.service';
 
 /** What a typed number must look like (spaces ignored, capitals). */
@@ -96,7 +97,24 @@ export class OtherIdService {
     private readonly stops: Under18StopService,
     private readonly approvals: OtherIdApprovalService,
     @Optional() private readonly flags?: ReviewFlagService,
+    @Optional() private readonly decisionHooks?: OtherIdDecisionHooks,
   ) {}
+
+  /**
+   * After a decision has been saved (called by the deciders once their check is recorded): an
+   * approved other ID sends the person's next-step link by itself (22 Nov: the ₹499 payment link to a
+   * job seeker who hasn't paid, the same way as Resend). Never undoes or fails the decision.
+   */
+  async afterDecision(
+    subjectType: OtherIdSubjectType,
+    subjectId: string,
+    otherIdDecided: 'verified' | 'failed' | null,
+    actor: { id: string; role: string },
+    now = new Date(),
+  ): Promise<OtherIdFollowUp> {
+    if (otherIdDecided !== 'verified' || !this.decisionHooks) return { status: 'none', reason: null };
+    return this.decisionHooks.approved({ subjectType, subjectId, actor, now });
+  }
 
   /** A one-time token for the camera that just opened (2 minutes, one upload, this person — and this field agent in Laboura Field). */
   async issueCaptureNonce(subjectType: OtherIdSubjectType, subjectId: string, context: { staffId?: string | null; now?: Date } = {}) {
