@@ -29,6 +29,7 @@ import { ownerAccountIds } from './signup-owner-accounts';
 import { SIGNUP_REMINDER_SENDER, SignupReminderSender } from './signup-reminder.port';
 import { blocksFor } from '../call/contact-block';
 import { onShiftAt, shiftFor } from '../attendance/staff-shift';
+import { NOT_IN_START_OF_DAY } from '../attendance/attendance.constants';
 
 /** Outcomes that mean "closed without finishing". Only `no_response` is nudged again (gave_up never is). */
 export const REENGAGE_OUTCOMES = ['no_response', 'gave_up'];
@@ -674,7 +675,7 @@ export class SignupTrackerService {
     const today = new Date(`${istDateKey(now.getTime())}T00:00:00.000Z`);
     const [days, sessions, open, last, owners] = await Promise.all([
       this.prisma.attendanceDay.findMany({
-        where: { staffId: { in: ids }, date: today, loginAt: { not: null }, logoutAt: null, dayType: { not: 'leave' } },
+        where: { staffId: { in: ids }, date: today, loginAt: { not: null }, logoutAt: null, dayType: { not: 'leave' }, ...NOT_IN_START_OF_DAY },
         select: { staffId: true },
       }),
       this.prisma.staffSession.findMany({

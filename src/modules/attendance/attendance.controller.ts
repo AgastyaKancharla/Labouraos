@@ -88,7 +88,8 @@ export class AttendanceController {
   @RequireRoles(...STAFF_ROLES)
   today(@Req() req: Authed) {
     // An owner account's day starts by itself here (owner decision 14 Nov).
-    return this.attendance.todayForSelf(req.user.sub);
+    // A call or field agent, Team Lead or Manager signed in today: their day opens in Start of day (22 Nov).
+    return this.attendance.todayForSelf(req.user.sub, req.user.sid ?? null);
   }
 
   @Post('system-problem/:segmentId/approve')

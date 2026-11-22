@@ -60,7 +60,7 @@ export class AuthController {
     const ip = req.ip || req.socket.remoteAddress;
     const userAgent = req.headers['user-agent'];
     return this.afterLogin(
-      await this.authService.login(loginDto, { ip, userAgent, app: requestedApp(loginDto?.app, req) }),
+      await this.authService.login(loginDto, { ip, userAgent, app: requestedApp(loginDto?.app, req), location: signInLocation(loginDto) }),
     );
   }
 
@@ -82,7 +82,7 @@ export class AuthController {
       await this.authService.verifyLoginCode(
         body.loginRequestId,
         body.code,
-        { ip, userAgent, app: requestedApp(body?.app, req) },
+        { ip, userAgent, app: requestedApp(body?.app, req), location: signInLocation(body) },
         { deviceId: body.deviceId, loginRequestProof: body.loginRequestProof },
       ),
     );
@@ -147,4 +147,16 @@ export class AuthController {
     this.live?.recheckSessions(req.user.sub);
     return result;
   }
+}
+
+/**
+ * The location Laboura Field may send with a sign-in (22 Nov: the attendance
+ * day opens at sign-in and keeps a field agent's location). Only finite numbers
+ * are passed on; anything else is ignored, never an error.
+ */
+function signInLocation(body: { latitude?: unknown; longitude?: unknown } | null | undefined): { latitude?: number; longitude?: number } {
+  const latitude = body?.latitude;
+  const longitude = body?.longitude;
+  if (typeof latitude !== 'number' || typeof longitude !== 'number' || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return {};
+  return { latitude, longitude };
 }

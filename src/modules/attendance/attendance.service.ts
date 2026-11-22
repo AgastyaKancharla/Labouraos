@@ -23,7 +23,9 @@ import {
   IDLE_STATUS,
   PRESENCE_TIMEOUT_MINUTES,
   PRODUCTION_STATUSES,
+  START_OF_DAY_STATUS,
   isStaffPickedStatus,
+  startsDayAtSignIn,
 } from './attendance.constants';
 import { AuditService } from '../../common/audit/audit.service';
 import { shiftFor, withShift, type StaffShift } from './staff-shift';
@@ -99,6 +101,15 @@ export interface TodayView {
   productionSeconds: number;
   breakSeconds: number;
   idleSeconds: number;
+  /** Time in Start of day (decided 22 Nov): unproductive, shown apart from breaks and idle. */
+  startOfDaySeconds?: number;
+  /**
+   * Field agents: false while today's day has no saved location (it opened at
+   * sign-in without one); Laboura Field then saves it with POST /attendance/login.
+   */
+  locationSaved?: boolean;
+  /** The day opens at sign-in in Start of day for this person (call and field agents, Team Leads, Managers; 22 Nov). */
+  startsAtSignIn?: boolean;
   shortfallSeconds: number;
   /** The person's own shift (decided 21 Nov), or the company shift when they have none. */
   clocks: { shiftStart: string; shiftEnd: string; now: string };
@@ -203,9 +214,50 @@ export class AttendanceService {
     return { refreshed: open.length };
   }
 
+  /**
+   * POST /attendance/login (kept for compatibility, 22 Nov). For call and field
+   * agents, Team Leads and Managers the day already opened at sign-in (in Start
+   * of day); for them this only opens it if it is not open yet (as at sign-in)
+   * and saves a field agent's location when the sign-in had none.
+   */
   async login(
     staffId: string,
     body: { latitude?: number; longitude?: number; loginAt?: string },
+  ): Promise<TodayView> {
+    return this.startDay(staffId, body, 'button');
+  }
+
+  /**
+   * The first successful sign-in of the IST day (web console or Laboura Field)
+   * opens the attendance day in Start of day (Master Guide rev 206, decided
+   * 22 Nov) for call agents, field agents, Team Leads and Managers. Lateness is
+   * measured from this sign-in. A day already open is left alone; a day that
+   * ended (Log out — Resume my day carries on — or closed by a senior or the
+   * night job) is never reopened by signing in. CEO, Finance and owner accounts
+   * are unchanged. Never throws: a sign-in never fails because of attendance.
+   */
+  async openAtSignIn(staffId: string, location: { latitude?: number; longitude?: number } = {}): Promise<boolean> {
+    try {
+      const staff = await this.requireStaff(staffId);
+      if (!startsDayAtSignIn(staff)) return false;
+      const now = this.clock.now();
+      const day = await this.prisma.attendanceDay.findUnique({
+        where: { staffId_date: { staffId, date: this.istDate(now) } },
+        select: { loginAt: true, logoutAt: true },
+      });
+      if (day?.logoutAt || day?.loginAt) return false;
+      await this.startDay(staffId, location, 'sign_in');
+      return true;
+    } catch (error) {
+      this.logger.warn(`Day start at sign-in failed: ${(error as Error).message}`);
+      return false;
+    }
+  }
+
+  private async startDay(
+    staffId: string,
+    body: { latitude?: number; longitude?: number; loginAt?: string },
+    via: 'button' | 'sign_in',
   ): Promise<TodayView> {
     const now = this.clock.now();
     const staff = await this.requireStaff(staffId);
@@ -229,14 +281,22 @@ export class AttendanceService {
           : 'This day is already closed: log in again tomorrow',
       );
     }
+    const validLocation = this.validCoordinate(body.latitude, body.longitude);
     if (existing?.loginAt) {
+      // The day opened at sign-in without a location (22 Nov): Laboura Field saves it now.
+      if (staff.role === 'field_agent' && existing.loginLat === null && validLocation) {
+        await this.prisma.attendanceDay.update({
+          where: { id: existing.id },
+          data: { loginLat: body.latitude as number, loginLng: body.longitude as number },
+        });
+      }
       return this.today(staffId);
     }
     let loginLat: number | null = null;
     let loginLng: number | null = null;
-    const validLocation = this.validCoordinate(body.latitude, body.longitude);
-    if (owner) {
+    if (owner || via === 'sign_in') {
       // No location rule for an owner account: its day can start by itself. A location sent is kept.
+      // At sign-in a field agent's location is kept when the app sent one; otherwise Laboura Field saves it next.
       if (validLocation) {
         loginLat = body.latitude as number;
         loginLng = body.longitude as number;
@@ -248,6 +308,8 @@ export class AttendanceService {
       loginLat = body.latitude as number;
       loginLng = body.longitude as number;
     }
+    // Call and field agents, Team Leads and Managers start in Start of day and pick a status (22 Nov).
+    const firstStatus = startsDayAtSignIn(staff) ? START_OF_DAY_STATUS : 'available';
     // A login on a leave day (full day, or two halves joined) makes it a working day with normal
     // lateness; on a half day of leave the working half starts mid-shift when the first half is off.
     // Owner accounts are never late (owner decision 14 Nov).
@@ -269,22 +331,22 @@ export class AttendanceService {
           dayType: 'open',
           closedReason: null,
           segments: {
-            create: { staffId, status: 'available', startedAt: now, source: 'staff' },
+            create: { staffId, status: firstStatus, startedAt: now, source: 'staff' },
           },
         },
       });
-      this.announce(staffId, 'available', now);
+      this.announce(staffId, firstStatus, now);
       return this.today(staffId);
     }
     try {
-      await this.createLoginDay(staffId, date, now, loginLat, loginLng, lateMinutes);
+      await this.createLoginDay(staffId, date, now, loginLat, loginLng, lateMinutes, firstStatus);
     } catch (error) {
       // Log in tapped twice (or from two screens) at the same moment: the other request
       // started the day, so this one simply shows it (17 Nov: Log in never errors on a double tap).
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') return this.today(staffId);
       throw error;
     }
-    this.announce(staffId, 'available', now);
+    this.announce(staffId, firstStatus, now);
     return this.today(staffId);
   }
 
@@ -295,6 +357,7 @@ export class AttendanceService {
     loginLat: number | null,
     loginLng: number | null,
     lateMinutes: number,
+    firstStatus: string,
   ): Promise<void> {
     await this.prisma.attendanceDay.create({
       data: {
@@ -310,7 +373,7 @@ export class AttendanceService {
         segments: {
           create: {
             staffId,
-            status: 'available',
+            status: firstStatus,
             startedAt: now,
             source: 'staff',
           },
@@ -413,14 +476,15 @@ export class AttendanceService {
     });
     const person = await this.prisma.staff.findUnique({
       where: { id: staffId },
-      select: { isOwnerAccount: true, shiftStart: true, shiftEnd: true },
+      select: { isOwnerAccount: true, shiftStart: true, shiftEnd: true, role: true },
     });
     const owner = isOwnerAccount(person);
     const shift = shiftFor(person, policy);
+    const startsAtSignIn = startsDayAtSignIn(person);
     if (!day || !day.loginAt) {
       const leaveHalf = day?.leaveKind ? (day.leaveHalf ?? null) : null;
       const empty = this.emptyToday(now, policy, Boolean(leaveHalf), shift);
-      return { ...empty, dayType: day?.dayType ?? 'open', leaveHalf, ownerAccount: owner, ...(owner ? { shortfallSeconds: 0 } : {}) };
+      return { ...empty, dayType: day?.dayType ?? 'open', leaveHalf, ownerAccount: owner, startsAtSignIn, ...(owner ? { shortfallSeconds: 0 } : {}) };
     }
     const end = day.logoutAt ?? now;
     const totals = this.totals(day.segments, now);
@@ -443,6 +507,9 @@ export class AttendanceService {
       productionSeconds: day.logoutAt ? day.productionSeconds : totals.productionSeconds,
       breakSeconds: day.logoutAt ? day.breakSeconds : totals.breakSeconds,
       idleSeconds: day.logoutAt ? day.idleSeconds : totals.idleSeconds,
+      startOfDaySeconds: day.logoutAt ? day.startOfDaySeconds : totals.startOfDaySeconds,
+      ...(person?.role === 'field_agent' ? { locationSaved: day.loginLat !== null } : {}),
+      startsAtSignIn,
       shortfallSeconds: owner
         ? 0
         : day.logoutAt
@@ -482,8 +549,11 @@ export class AttendanceService {
    * "Start my day" (calls, incoming calls) blocks its work. A day the owner
    * ended stays ended until they start it again.
    */
-  async todayForSelf(staffId: string): Promise<TodayView> {
-    const staff = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { isOwnerAccount: true } });
+  async todayForSelf(staffId: string, sessionId?: string | null): Promise<TodayView> {
+    const staff = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { isOwnerAccount: true, role: true } });
+    // The day opens at sign-in (22 Nov). A sign-in made today whose day did not open (a sign-in from
+    // before this rule, or the start failed) opens it here, the same way; never a day that ended.
+    if (sessionId && startsDayAtSignIn(staff)) await this.openForTodaysSession(staffId, sessionId);
     if (isOwnerAccount(staff)) {
       const now = this.clock.now();
       const day = await this.prisma.attendanceDay.findUnique({
@@ -501,6 +571,14 @@ export class AttendanceService {
       }
     }
     return this.today(staffId);
+  }
+
+  private async openForTodaysSession(staffId: string, sessionId: string): Promise<void> {
+    const now = this.clock.now();
+    const session = await this.prisma.staffSession.findUnique({ where: { id: sessionId }, select: { staffId: true, createdAt: true, revokedAt: true } });
+    if (!session || session.staffId !== staffId || session.revokedAt) return;
+    if (this.istDate(session.createdAt).getTime() !== this.istDate(now).getTime()) return;
+    await this.openAtSignIn(staffId);
   }
 
   /** An owner account starts a day it had ended: the live status comes back as Available. */
@@ -917,8 +995,10 @@ export class AttendanceService {
       },
     });
     if (reopened.count !== 1) return;
+    // Call and field agents, Team Leads and Managers come back to the status picker in Start of day (22 Nov).
+    const firstStatus = startsDayAtSignIn(await this.requireStaff(staffId)) ? START_OF_DAY_STATUS : 'available';
     await this.prisma.attendanceSegment.create({
-      data: { staffId, dayId: day.id, status: 'available', startedAt: now, source: 'staff' },
+      data: { staffId, dayId: day.id, status: firstStatus, startedAt: now, source: 'staff' },
     });
     await this.audit?.log({
       actorId: record.actorId,
@@ -938,7 +1018,7 @@ export class AttendanceService {
       after: { logoutAt: null, dayType: 'open', reopenedAt: now.toISOString(), staffId, dayTypeChangedAt: null },
       ...(record.reason ? { reason: record.reason } : {}),
     });
-    this.announce(staffId, 'available', now);
+    this.announce(staffId, firstStatus, now);
   }
 
   private async switchStatus(
@@ -973,6 +1053,9 @@ export class AttendanceService {
     if (segment.status === IDLE_STATUS) {
       await this.bell('idle ended', (bells) => bells.closeIdle(segment.id, segment.staffId, endedAt));
     }
+    if (segment.status === START_OF_DAY_STATUS) {
+      await this.bell('start of day ended', (bells) => bells.closeStartOfDay(segment.dayId, segment.staffId, endedAt));
+    }
   }
 
   private async raiseBreakOverrun(segment: AttendanceSegment, endedAt: Date): Promise<void> {
@@ -1006,15 +1089,20 @@ export class AttendanceService {
     productionSeconds: number;
     breakSeconds: number;
     idleSeconds: number;
+    startOfDaySeconds: number;
   } {
     let productionSeconds = 0;
     let breakSeconds = 0;
     let idleSeconds = 0;
+    let startOfDaySeconds = 0;
     for (const segment of segments) {
       const end = segment.endedAt ?? now;
       const seconds = Math.max(0, Math.floor((end.getTime() - segment.startedAt.getTime()) / 1000));
       if (segment.status === IDLE_STATUS) {
         idleSeconds += seconds;
+      } else if (segment.status === START_OF_DAY_STATUS) {
+        // Unproductive (22 Nov): neither production nor a break.
+        startOfDaySeconds += seconds;
       } else if ((BREAK_STATUSES as readonly string[]).includes(segment.status)) {
         breakSeconds += seconds;
       } else if ((PRODUCTION_STATUSES as readonly string[]).includes(segment.status)) {
@@ -1022,7 +1110,7 @@ export class AttendanceService {
         productionSeconds += seconds;
       }
     }
-    return { productionSeconds, breakSeconds, idleSeconds };
+    return { productionSeconds, breakSeconds, idleSeconds, startOfDaySeconds };
   }
 
   private lastActivity(day: AttendanceDay & { segments: AttendanceSegment[] }): Date {
@@ -1061,6 +1149,7 @@ export class AttendanceService {
       productionSeconds: 0,
       breakSeconds: 0,
       idleSeconds: 0,
+      startOfDaySeconds: 0,
       shortfallSeconds: fullSeconds,
       clocks: { shiftStart: shift.start, shiftEnd: shift.end, now: now.toISOString() },
       ownShift: shift.own,

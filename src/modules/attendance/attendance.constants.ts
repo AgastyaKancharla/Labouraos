@@ -17,6 +17,26 @@ export const VISIT_STATUSES = ['on_visit', 'travelling'] as const;
 
 export const IDLE_STATUS = 'idle';
 
+/**
+ * Attendance start and console layout (Master Guide rev 206, decided 22 Nov):
+ * for call agents, field agents, Team Leads and Managers the first sign-in of
+ * the IST day opens the attendance day in this status. It is not production
+ * and not a break: it counts as unproductive time. The person then picks a
+ * status (Active, a meeting, a break…); it cannot be picked again once left.
+ * Nobody in Start of day receives calls or new work (only Active does).
+ */
+export const START_OF_DAY_STATUS = 'start_of_day';
+
+/** The roles whose day opens at sign-in, in Start of day. CEO, Finance and owner accounts are unchanged. */
+export const START_OF_DAY_ROLES = ['call_agent', 'field_agent', 'team_lead', 'manager'] as const;
+
+/** Longer than this in Start of day rings the person's Team Lead (the Manager for a Team Lead), once a day. */
+export const START_OF_DAY_BELL_MINUTES = 15;
+
+export function startsDayAtSignIn(staff: { role: string; isOwnerAccount?: boolean | null } | null | undefined): boolean {
+  return Boolean(staff && !staff.isOwnerAccount && (START_OF_DAY_ROLES as readonly string[]).includes(staff.role));
+}
+
 /** After-call notes last this long, then the person is Available again. */
 export const AFTER_CALL_NOTES_MS = 2 * 60 * 1000;
 
@@ -69,3 +89,10 @@ export const ATTENDANCE_SETTING_KEYS = [
 export function isStaffPickedStatus(status: string): boolean {
   return (STAFF_PICKED_STATUSES as readonly string[]).includes(status);
 }
+
+/**
+ * A filter on AttendanceDay for "on shift" checks (missed-call hand-out,
+ * WhatsApp and lead assignment, app sign-up calls): someone still in Start of
+ * day is not available for work (22 Nov: only Active receives calls).
+ */
+export const NOT_IN_START_OF_DAY = { segments: { none: { status: START_OF_DAY_STATUS, endedAt: null } } } as const;
