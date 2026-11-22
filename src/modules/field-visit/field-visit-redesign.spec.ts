@@ -165,7 +165,7 @@ describe('Laboura Field redesign: visit results, change result, details, own-onl
     const id = randomUUID();
     await startVisit(agent, { id }).expect(201);
     clock.at = new Date(START.getTime() + 20 * MIN);
-    await outcome(agent, id, { outcome: 'owner_not_there', shopName: 'Ganesh Stores', revisitOn: '2026-11-13' }).expect(201);
+    await outcome(agent, id, { spokeTo: 'owner', outcome: 'owner_not_there', shopName: 'Ganesh Stores', revisitOn: '2026-11-13' }).expect(201);
     const again = await outcome(agent, id, { outcome: 'owner_not_there', shopName: 'Ganesh Stores', revisitOn: '2026-11-13' }).expect(201);
     expect(again.body).toMatchObject({ outcome: 'owner_not_there', revisitOn: '2026-11-13', nextStep: 'done' });
     const stale = await outcome(agent, id, { outcome: 'interested_later', revisitOn: '2026-11-14' }).expect(409);
@@ -214,7 +214,7 @@ describe('Laboura Field redesign: visit results, change result, details, own-onl
     expect((await changeResult(agent, id, { outcome: 'not_interested', outcomeReason: 'fee_too_high', reason: 'Owner said no on the phone' }).expect(409)).body.code)
       .toBe('VISIT_HAS_NO_RESULT');
     clock.at = new Date(START.getTime() + 140 * MIN);
-    await outcome(agent, id, { outcome: 'owner_not_there', shopName: 'Vinayaka Bakery', revisitOn: '2026-11-13' }).expect(201);
+    await outcome(agent, id, { spokeTo: 'owner', outcome: 'owner_not_there', shopName: 'Vinayaka Bakery', revisitOn: '2026-11-13' }).expect(201);
     // POST /field-visits/:id/change-result: another field agent is refused (404)
     await changeResult(otherAgent, id, { outcome: 'interested_later', revisitOn: '2026-11-14', reason: 'Not mine to change at all' }).expect(404);
     const bad = async (body: Record<string, unknown>, code: string) =>
@@ -277,7 +277,7 @@ describe('Laboura Field redesign: visit results, change result, details, own-onl
     const theirs = randomUUID();
     await startVisit(otherAgent, { id: theirs }).expect(201);
     clock.at = new Date(START.getTime() + 420 * MIN);
-    await outcome(otherAgent, theirs, { outcome: 'interested_later', shopName: 'Their Shop', revisitOn: '2026-11-13' }).expect(201);
+    await outcome(otherAgent, theirs, { spokeTo: 'owner', outcome: 'interested_later', shopName: 'Their Shop', revisitOn: '2026-11-13' }).expect(201);
     const asRevisit = await startVisit(agent, { id: randomUUID(), revisitOfVisitId: theirs }).expect(403);
     expect(asRevisit.body.code).toBe('NOT_YOUR_VISIT');
     const business = await makeBusiness({ accountAgentId: otherAgent.id, leadCreatedByStaffId: otherAgent.id, suffix: '1' });
@@ -358,7 +358,7 @@ describe('Laboura Field redesign: visit results, change result, details, own-onl
     const last = randomUUID();
     await startVisit(fresh, { id: last }).expect(201);
     clock.at = new Date(clock.at.getTime() + 20 * MIN);
-    await outcome(fresh, last, { outcome: 'not_interested', reason: 'fee_too_high', shopName: 'One More Shop' }).expect(201);
+    await outcome(fresh, last, { spokeTo: 'owner', outcome: 'not_interested', reason: 'fee_too_high', shopName: 'One More Shop' }).expect(201);
     expect(await prisma.reviewFlag.count({ where: { kind: 'visits_no_onboarding', subjectId: fresh.id } })).toBe(0);
   });
 

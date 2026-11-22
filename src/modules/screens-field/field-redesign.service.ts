@@ -22,6 +22,7 @@ import { LEGAL_DOCUMENT_VERSIONS } from '../legal/legal-documents';
 import { FieldAgentMetricsService } from '../target/field-agent-metrics.service';
 import { VacancyConfirmationService } from '../vacancy/vacancy-confirmation.service';
 import { REVISIT_OUTCOMES } from '../field-visit/field-visit.constants';
+import { sameShop } from '../field-visit/revisit-shops';
 import { DAY_MS, FieldVisitClock, istDateKey, istDayStart, keyFromDate } from '../field-visit/field-visit-clock';
 import { visitNextStep } from '../field-visit/field-visit.service';
 import { handedAwayIds, handedTo, sweepHandovers } from '../field-visit/field-handover.service';
@@ -1364,6 +1365,8 @@ export class FieldRedesignService {
         OR: [{ staffId }, { id: { in: handedIn.map((h) => h.recordId) } }],
         outcome: { in: [...REVISIT_OUTCOMES] },
         revisitOn: { lte: new Date(`${byKey}T00:00:00.000Z`) },
+        // 22 Nov (rev 208): a closed revisit never comes back.
+        revisitClosedAt: null,
       },
       orderBy: { visitedAt: 'desc' },
       include: { business: { select: { id: true, name: true, locality: true } } },
@@ -1371,11 +1374,11 @@ export class FieldRedesignService {
     });
     const openVerification = await this.extras.openVerificationVisitIds(rows);
     const result: Array<{ visitId: string; businessId: string | null; name: string; locality: string | null; revisitOn: string | null; revisitTime: string | null; coverFor: string | null }> = [];
-    const seen = new Set<string>();
+    // One row per shop (22 Nov): the business, or the same board name close by (two separate visits).
+    const kept: Array<{ businessId: string | null; shopName: string | null; latitude: number; longitude: number }> = [];
     for (const v of rows) {
-      const shopKey = v.businessId ?? v.id;
-      if (seen.has(shopKey)) continue;
-      seen.add(shopKey);
+      if (kept.some((k) => sameShop(k, v))) continue;
+      kept.push(v);
       if (away.has(v.id) || openVerification.has(v.id) || FIELD_REVISIT_EXCLUDE.has(v.purpose ?? '')) continue;
       const later = v.businessId
         ? await this.prisma.businessVisit.findFirst({ where: { businessId: v.businessId, visitedAt: { gt: v.visitedAt } }, select: { id: true } })

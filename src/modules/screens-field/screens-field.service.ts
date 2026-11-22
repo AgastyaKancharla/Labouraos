@@ -8,6 +8,7 @@ import { calculateHaversineDistanceMeters } from '../../common/geo/geo.util';
 import { getCalendarPartsInTimezone, getPeriodBoundaries } from '../../common/time/period-boundary';
 import { PricingService } from '../pricing/pricing.service';
 import { REVISIT_OUTCOMES } from '../field-visit/field-visit.constants';
+import { onePerShop, sameShop } from '../field-visit/revisit-shops';
 import { visitNextStep } from '../field-visit/field-visit.service';
 import { firstOnboardingsBy } from './field-redesign.service';
 import { DAY_MS, FieldVisitClock, istDateKey, istDayStart, keyFromDate } from '../field-visit/field-visit-clock';
@@ -42,6 +43,10 @@ export interface ShopPoint {
   /** Rev 188: the agent may act here (own business, or his own visit to an unregistered shop). */
   canAct: boolean;
   distanceMeters?: number;
+  /** 22 Nov (rev 208): the agent's own revisit due here — "Close this revisit" is offered. */
+  revisitClosable?: boolean;
+  /** The last visit's note ("Owner said: …"), for a revisit due. */
+  note?: string | null;
 }
 
 /**
@@ -348,7 +353,8 @@ export class ScreensFieldService {
         canAct: fieldAgentCanAct(b, viewer),
       };
     });
-    const prospects = await this.prospectTips({ latitude: box, longitude: boxLng });
+    // One pin per unregistered shop (22 Nov): the newest visit of each (same board name close by).
+    const prospects = onePerShop(await this.prospectTips({ latitude: box, longitude: boxLng }));
     for (const v of prospects) {
       points.push({
         kind: 'prospect',
@@ -364,6 +370,27 @@ export class ScreensFieldService {
         lastVisitAt: v.visitedAt.toISOString(),
         isMine: v.staffId === actor.sub,
         canAct: v.staffId === actor.sub,
+        note: v.note,
+      });
+    }
+    // 22 Nov (rev 208): the agent's own revisits due show on the map too (also those handed over to
+    // him), as "Revisit due" pins he can visit or close — never twice for one shop.
+    for (const r of await this.revisitsDue(actor.sub, todayKey)) {
+      const point = points.find((p) => p.visitId === r.visitId || (r.businessId ? p.businessId === r.businessId : p.kind === 'prospect' && sameShop({ businessId: null, shopName: p.name, latitude: p.latitude, longitude: p.longitude }, { businessId: null, shopName: r.name, latitude: r.latitude, longitude: r.longitude })));
+      if (point) {
+        point.status = 'revisit_due';
+        point.visitId = r.visitId;
+        point.canAct = true;
+        point.revisitClosable = true;
+        point.note = r.note;
+        point.revisitOn = r.revisitOn;
+        continue;
+      }
+      if (r.latitude < box.gte || r.latitude > box.lte || r.longitude < boxLng.gte || r.longitude > boxLng.lte) continue;
+      points.push({
+        kind: r.businessId ? 'business' : 'prospect', id: r.businessId ?? r.visitId, businessId: r.businessId, visitId: r.visitId, code: null,
+        name: r.name, latitude: r.latitude, longitude: r.longitude, status: 'revisit_due', revisitOn: r.revisitOn, lastVisitAt: r.lastVisitAt,
+        isMine: true, canAct: true, revisitClosable: true, note: r.note,
       });
     }
     for (const p of points) p.distanceMeters = Math.round(calculateHaversineDistanceMeters(latitude, longitude, p.latitude, p.longitude));
@@ -498,6 +525,8 @@ export class ScreensFieldService {
         OR: [{ staffId }, { id: { in: handedIn.map((h) => h.recordId) } }],
         outcome: { in: [...REVISIT_OUTCOMES] },
         revisitOn: { lte: new Date(`${byKey}T00:00:00.000Z`) },
+        // 22 Nov (rev 208): a closed revisit never comes back.
+        revisitClosedAt: null,
       },
       orderBy: { visitedAt: 'desc' },
       include: { business: { select: { id: true, code: true, name: true, locality: true, latitude: true, longitude: true } } },
@@ -509,7 +538,11 @@ export class ScreensFieldService {
       revisitOn: string | null; revisitTime: string | null; note: string | null; latitude: number; longitude: number; lastVisitAt: string;
       covering: boolean;
     }> = [];
+    // One row per shop (22 Nov, owner's field test: "Reddy mess" twice): the newest visit of each.
+    const kept: Array<{ businessId: string | null; shopName: string | null; latitude: number; longitude: number }> = [];
     for (const v of rows) {
+      if (kept.some((k) => sameShop(k, v))) continue;
+      kept.push(v);
       if (away.has(v.id) || openVerification.has(v.id) || FIELD_REVISIT_EXCLUDE.has(v.purpose ?? '')) continue;
       const later = v.businessId
         ? await this.prisma.businessVisit.findFirst({ where: { businessId: v.businessId, visitedAt: { gt: v.visitedAt } }, select: { id: true } })
@@ -559,7 +592,8 @@ function statusFromVisit(visit: BusinessVisit | undefined, todayKey: string): Sh
   if (!visit || !visit.outcome) return 'lead';
   if (visit.outcome === 'onboarded' || visit.outcome === 'already_onboarded') return 'onboarded';
   if (visit.outcome === 'not_interested') return 'not_interested';
-  if (REVISIT_OUTCOMES.includes(visit.outcome)) return dueBy(visit, todayKey) ? 'revisit_due' : 'interested';
+  // 22 Nov (rev 208): a closed revisit is not coming back.
+  if (REVISIT_OUTCOMES.includes(visit.outcome)) return visit.revisitClosedAt ? 'not_interested' : dueBy(visit, todayKey) ? 'revisit_due' : 'interested';
   return 'lead';
 }
 

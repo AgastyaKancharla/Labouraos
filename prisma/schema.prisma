@@ -444,6 +444,8 @@ model Business {
   contactWhatsAppPhone     String?
   contactLanguage          String?
   businessType             String?
+  /// 22 Nov: "Other (type it)" — the type in words, required when businessType is other.
+  businessTypeOther        String?
   employeeCountBand        String?
   employeeCount            Int?
   staffNeeded              String[]  @default([])
@@ -1336,6 +1338,12 @@ model BusinessVisit {
   createdAt    DateTime  @default(now())
   /// "Change result" history (Laboura Field redesign, rev 188).
   resultChanges BusinessVisitResultChange[]
+  /// 22 Nov (rev 208): "Close this revisit" — no more revisits of this shop. Kept, never deleted;
+  /// the Team Lead sees it in Visit proof. Reasons: not_interested, shop_closed, wrong_or_duplicate, other.
+  revisitClosedAt        DateTime?
+  revisitClosedReason    String?
+  revisitClosedNote      String?
+  revisitClosedByStaffId String?
 
   @@index([businessId])
   @@index([selfieHash])

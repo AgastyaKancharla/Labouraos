@@ -35,10 +35,28 @@ interface VisitRow {
   flags: Array<{ id: string; code: string; kind: string }>;
   check: { verdict: string; at: string } | null;
 }
+/** 22 Nov (rev 208): a revisit an agent closed, with the reason. The visit itself is kept. */
+interface ClosedRevisit {
+  id: string;
+  agent: Brief | null;
+  shop: string;
+  lastVisitAt: string;
+  closedAt: string;
+  reason: string | null;
+  note: string | null;
+}
 interface VisitsBoard {
   summary: { visits: number; toCheck: number; signedUp: number };
   rows: VisitRow[];
+  closedRevisits?: ClosedRevisit[];
 }
+
+const CLOSE_REASON: Record<string, string> = {
+  not_interested: 'Not interested',
+  shop_closed: 'Shop closed',
+  wrong_or_duplicate: 'Wrong or duplicate shop',
+  other: 'Other',
+};
 
 const FLAG_TEXT: Record<string, string> = {
   visit_short: 'Very short visit',
@@ -89,6 +107,14 @@ export default function TeamLeadVisits() {
     { key: 'act', header: '', cell: (v) => <VisitActions visit={v} managerName={mgr} /> },
   ];
 
+  const closedColumns: Column<ClosedRevisit>[] = [
+    { key: 'agent', header: 'Agent', cell: (r) => r.agent?.name ?? '—', filter: 'select', filterValue: (r) => r.agent?.name ?? '—' },
+    { key: 'shop', header: 'Shop', cell: (r) => r.shop },
+    { key: 'last', header: 'Last visit', cell: (r) => formatDateIST(r.lastVisitAt), sortValue: (r) => r.lastVisitAt },
+    { key: 'closed', header: 'Closed', cell: (r) => formatDateIST(r.closedAt), sortValue: (r) => r.closedAt },
+    { key: 'why', header: 'Why', cell: (r) => [r.reason ? (CLOSE_REASON[r.reason] ?? humanize(r.reason)) : '—', r.note].filter(Boolean).join(' · ') },
+  ];
+
   return (
     <div className="lb-page">
       <TopBar showSearch={false} back={{ to: to('T-Home'), label: 'My team' }} title="Visit proof" subtitle="Assign visits to your field agents and check every visit really happened." />
@@ -103,6 +129,18 @@ export default function TeamLeadVisits() {
       </Card>
       <PlannedVisits />
       <AwayAgents />
+      <Card title="Closed revisits (last 30 days)" flush>
+        <DataTable
+          columns={closedColumns}
+          rows={b?.closedRevisits}
+          rowKey={(r) => r.id}
+          caption="Closed revisits"
+          loading={board.isPending}
+          error={board.error}
+          onRetry={() => void board.refetch()}
+          emptyTitle="No revisits closed."
+        />
+      </Card>
       <Card title="Today's visits and their proof" flush>
         <DataTable columns={visitColumns} rows={b?.rows} rowKey={(v) => v.id} caption="Today's visits" loading={board.isPending} error={board.error} onRetry={() => void board.refetch()} emptyTitle="No shop visits today yet." />
         <div className="tl-note" style={{ padding: '0 18px 14px' }}>

@@ -415,7 +415,7 @@ describe('Laboura Field fixes of 21 Nov (server)', () => {
     // "Couldn't finish" (owner not there) ends it with a come-back date and time.
     clock.at = new Date(START.getTime() + 140 * MIN);
     await http().post(`/field-visits/${id}/outcome`).set(authOf(fa1)).send({ outcome: 'owner_not_there', revisitOn: TOMORROW, revisitTime: '25:00' }).expect(400);
-    await http().post(`/field-visits/${id}/outcome`).set(authOf(fa1)).send({ outcome: 'owner_not_there', revisitOn: TOMORROW, revisitTime: '16:30' }).expect(201);
+    await http().post(`/field-visits/${id}/outcome`).set(authOf(fa1)).send({ outcome: 'owner_not_there', spokeTo: 'no_one', revisitOn: TOMORROW, revisitTime: '16:30' }).expect(201);
     const ended = await prisma.businessVisit.findUniqueOrThrow({ where: { id } });
     expect(ended).toMatchObject({ durationSeconds: 20 * 60, revisitTime: '16:30' });
     expect(await statusOf(fa1.id)).toBe('travelling');

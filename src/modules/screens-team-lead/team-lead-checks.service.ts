@@ -562,8 +562,26 @@ export class TeamLeadChecksService {
       };
     });
     const agreements = await this.prisma.businessAgreement.findMany({ where: { signedAt: { gte: start, lt: end }, business: { accountAgentId: { in: ids } } }, select: { businessId: true } });
+    // 22 Nov (rev 208): revisits his agents closed in the last 30 days, with the reason (nothing is deleted).
+    const closed = await this.prisma.businessVisit.findMany({
+      where: { staffId: { in: ids }, revisitClosedAt: { gte: new Date(end.getTime() - 30 * DAY_MS), lt: end } },
+      orderBy: { revisitClosedAt: 'desc' },
+      take: 100,
+      select: { id: true, staffId: true, shopName: true, outcome: true, visitedAt: true, revisitClosedAt: true, revisitClosedReason: true, revisitClosedNote: true, revisitClosedByStaffId: true, business: { select: { name: true, code: true } } },
+    });
     return {
       date: day,
+      closedRevisits: closed.map((v) => ({
+        id: v.id,
+        agent: team.find((row) => row.id === (v.revisitClosedByStaffId ?? v.staffId)) ?? null,
+        shop: v.business?.name ?? v.shopName ?? 'Shop',
+        businessCode: v.business?.code ?? null,
+        lastVisitAt: v.visitedAt.toISOString(),
+        outcome: v.outcome,
+        closedAt: v.revisitClosedAt!.toISOString(),
+        reason: v.revisitClosedReason,
+        note: v.revisitClosedNote,
+      })),
       summary: {
         visits: rows.length,
         toCheck: rows.filter((row) => row.flags.length && !row.check).length,
