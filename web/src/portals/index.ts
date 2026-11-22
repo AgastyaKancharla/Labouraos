@@ -2,7 +2,7 @@ import type { StaffRole } from '../auth/roles';
 import type { DesignFamily } from '../components/family';
 import type { MessageKey } from '../i18n/en';
 import { callAgentScreens, ceoScreens, financeScreens, managerScreens, publicScreens, teamLeadScreens } from './screens';
-import { ceoSidebar, financeSidebar, managerSidebar, teamLeadSidebar } from './sidebars';
+import { callAgentSidebar, ceoSidebar, financeSidebar, managerSidebar, teamLeadSidebar } from './sidebars';
 import type { ScreenDef, SidebarConfig } from './types';
 
 /**
@@ -20,7 +20,10 @@ export interface PortalDef {
   roles: readonly StaffRole[];
   screens: readonly ScreenDef[];
   sidebar?: SidebarConfig;
-  /** Header links of the call agent console (CA03-Home design). */
+  /**
+   * The call agent console's old header links (CA03-Home design). Since 22 Nov they are in its
+   * left sidebar (`sidebar`); kept for code that still reads them.
+   */
   topNav?: readonly { screen: string; label: MessageKey }[];
 }
 
@@ -35,6 +38,8 @@ export const PORTALS: readonly PortalDef[] = [
     family: 'console',
     roles: ['call_agent'],
     screens: callAgentScreens,
+    // 22 Nov: the console's navigation is a left sidebar like the Team Lead, Manager and CEO portals.
+    sidebar: callAgentSidebar,
     topNav: [
       { screen: 'CA03-Home', label: 'screen.CA03-Home' },
       { screen: 'CA10-FollowUps', label: 'screen.CA10-FollowUps' },

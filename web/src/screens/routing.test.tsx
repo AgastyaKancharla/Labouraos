@@ -123,12 +123,22 @@ describe('routes and guards', () => {
     }
   });
 
-  it('call agent console has the CA03 header navigation and logs out', async () => {
+  it('call agent console has its navigation in a left sidebar (22 Nov) and logs out from its foot', async () => {
     signInAs('call_agent');
     mockApi({ 'POST /auth/logout': { success: true } });
     renderAt('/call-agent/follow-ups');
     const nav = await screen.findByRole('navigation', { name: 'Main' });
-    expect(within(nav).getByRole('link', { name: 'My follow-ups' })).toHaveClass('on');
+    expect(nav.closest('aside')).toHaveClass('lb-shell__side');
+    expect(within(nav).getByRole('link', { name: 'My follow-ups' })).toHaveClass('nav-item', 'active');
+    // The header has no navigation links any more: only the console's name, the date and the status menu.
+    expect(document.querySelector('.lb-console__hdr nav')).toBeNull();
+    // Phone width: the sidebar folds into a menu button.
+    const menu = screen.getByRole('button', { name: 'Open menu' });
+    expect(menu).toHaveAttribute('aria-controls', 'lb-sidebar');
+    await userEvent.click(menu);
+    expect(document.getElementById('lb-sidebar')).toHaveClass('is-open');
+    await userEvent.click(screen.getByRole('button', { name: 'Close menu' }));
+    expect(document.getElementById('lb-sidebar')).not.toHaveClass('is-open');
     expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Home', 'My follow-ups', 'WhatsApp', 'My targets', 'Attendance']);
     await userEvent.click(screen.getByRole('button', { name: 'Log out' }));
     expect(await screen.findByText('You have signed out.')).toBeInTheDocument();

@@ -18,8 +18,13 @@ function Blank() {
 
 describe('attendance statuses and clocks', () => {
   it('lists the guide’s statuses: call agents see On call and After-call notes, office staff do not, and neither can pick them', () => {
-    expect(menuStatuses('agent')).toEqual(['available', 'on_call', 'after_call_notes', 'team_meeting', 'training', 'one_to_one', 'system_problem', 'short_break', 'lunch']);
-    expect(menuStatuses('office')).toEqual(['available', 'team_meeting', 'training', 'one_to_one', 'system_problem', 'short_break', 'lunch']);
+    // 22 Nov: Active, Team meeting, One-to-one, Training, System problem, Short break, Lunch; Start of day only while in it.
+    expect(menuStatuses('agent')).toEqual(['available', 'on_call', 'after_call_notes', 'team_meeting', 'one_to_one', 'training', 'system_problem', 'short_break', 'lunch']);
+    expect(menuStatuses('office')).toEqual(['available', 'team_meeting', 'one_to_one', 'training', 'system_problem', 'short_break', 'lunch']);
+    expect(menuStatuses('agent', 'start_of_day')[0]).toBe('start_of_day');
+    expect(menuStatuses('office', 'available')).not.toContain('start_of_day');
+    expect(pickableStatuses('agent')).not.toContain('start_of_day');
+    expect(pickableStatuses('office')).not.toContain('start_of_day');
     expect(pickableStatuses('agent')).not.toContain('on_call');
     expect(pickableStatuses('agent')).not.toContain('after_call_notes');
     expect(pickableStatuses('agent')).not.toContain('idle');
@@ -27,7 +32,7 @@ describe('attendance statuses and clocks', () => {
 
   it('writes the chip as the designs do, and turns a break red once it runs over', () => {
     const now = new Date(istAt('11:30')).getTime();
-    expect(chipText(t, 'agent', openToday(), 'available', now)).toMatchObject({ text: 'Available · 11:20', over: false });
+    expect(chipText(t, 'agent', openToday(), 'available', now)).toMatchObject({ text: 'Active · 11:20', over: false });
     const left = chipText(t, 'agent', onBreakToday('11:24'), 'short_break', new Date(istAt('11:30')).getTime() + 20_000);
     expect(left).toMatchObject({ text: 'Short break · 08:40 left', over: false });
     const over = chipText(t, 'agent', onBreakToday('11:10'), 'short_break', new Date(istAt('11:30')).getTime());
@@ -71,12 +76,12 @@ describe('header status menu (call agent console)', () => {
     });
     signInAs('call_agent');
     renderScreen(<Blank />, { portal: 'call-agent', path: '/call-agent', now: ATT_NOW });
-    const chip = await screen.findByRole('button', { name: 'My status: Available · 11:20. Change it' });
+    const chip = await screen.findByRole('button', { name: 'My status: Active · 11:20. Change it' });
     await userEvent.click(chip);
     const menu = screen.getByRole('menu', { name: 'Change my status' });
-    expect(within(menu).getByRole('menuitemradio', { name: /^Available/ })).toHaveAttribute('aria-checked', 'true');
+    expect(within(menu).getByRole('menuitemradio', { name: /^Active/ })).toHaveAttribute('aria-checked', 'true');
     expect(within(menu).getByRole('menuitemradio', { name: /On call/ })).toHaveAttribute('aria-disabled', 'true');
-    expect(within(menu).getByRole('menuitemradio', { name: /After-call notes/ })).toHaveAttribute('aria-disabled', 'true');
+    expect(within(menu).getByRole('menuitemradio', { name: /After-call work/ })).toHaveAttribute('aria-disabled', 'true');
     expect(within(menu).getByRole('menuitemradio', { name: 'System problem (Team Lead approves)' })).toBeInTheDocument();
     expect(within(menu).getByRole('menuitemradio', { name: 'Short break (15 min)' })).toBeInTheDocument();
     expect(within(menu).getByRole('menuitemradio', { name: 'Lunch (30 min)' })).toBeInTheDocument();
@@ -115,13 +120,13 @@ describe('header status menu (call agent console)', () => {
     });
     signInAs('call_agent');
     renderScreen(<Blank />, { portal: 'call-agent', path: '/call-agent', now: ATT_NOW });
-    await userEvent.click(await screen.findByRole('button', { name: /^My status: Available/ }));
+    await userEvent.click(await screen.findByRole('button', { name: /^My status: Active/ }));
     await userEvent.click(screen.getByRole('menuitem', { name: 'End my day' }));
     const dialog = screen.getByRole('dialog', { name: 'End your day?' });
     expect(dialog).toHaveTextContent('Production so far: 3h 34m of 8h 00m.');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     expect(api.calls('POST /attendance/logout')).toHaveLength(0);
-    await userEvent.click(screen.getByRole('button', { name: /^My status: Available/ }));
+    await userEvent.click(screen.getByRole('button', { name: /^My status: Active/ }));
     await userEvent.click(screen.getByRole('menuitem', { name: 'End my day' }));
     await userEvent.click(screen.getByRole('button', { name: 'Yes, end my day' }));
     await waitFor(() => expect(api.calls('POST /attendance/logout')).toHaveLength(1));
@@ -158,7 +163,7 @@ describe('header status menu (call agent console)', () => {
     // A token of its own: the shared live channel remembers tokens it was refused with earlier.
     sessionStore.set({ token: fakeJwt({ sub: TEST_STAFF.call_agent.id, role: 'call_agent', live: 'att' }), staff: TEST_STAFF.call_agent, expiresAt: Date.now() + 900_000, totpSetupOnly: false });
     renderScreen(<Blank />, { portal: 'call-agent', path: '/call-agent', now: ATT_NOW });
-    expect(await screen.findByRole('button', { name: /^My status: Available · 11:20/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /^My status: Active · 11:20/ })).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: /^My status: On call · 11:31/ })).toBeInTheDocument();
   });
 
@@ -169,19 +174,71 @@ describe('header status menu (call agent console)', () => {
     const api = mockApi({ 'GET /attendance/today': openToday(), 'POST /attendance/heartbeat': openToday() });
     signInAs('call_agent');
     renderScreen(<Blank />, { portal: 'call-agent', path: '/call-agent' });
-    expect(await screen.findByRole('button', { name: /^My status: Available/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /^My status: Active/ })).toBeInTheDocument();
     nowMs += 10 * 60_000 + 8_000;
     vi.setSystemTime(nowMs);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1100);
     });
     const prompt = await screen.findByRole('alertdialog', { name: 'Still there, Deepa?' });
-    expect(prompt).toHaveTextContent('You’ve been Available for 10 minutes with no calls or clicks.');
+    expect(prompt).toHaveTextContent('You’ve been Active for 10 minutes with no calls or clicks.');
     expect(prompt).toHaveTextContent(/0:5\d/);
     expect(prompt).toHaveTextContent('If you don’t answer, your status changes to Idle, calls stop, and your Team Lead sees it.');
-    fireEvent.click(within(prompt).getByRole('button', { name: 'I’m here — stay Available' }));
+    fireEvent.click(within(prompt).getByRole('button', { name: 'I’m here — stay Active' }));
     await waitFor(() => expect(api.calls('POST /attendance/heartbeat').length).toBeGreaterThanOrEqual(1));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+  });
+});
+
+describe('decided 22 Nov: the day opens at sign-in, in Start of day', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('shows Start of day greyed, with its own colour, and “Start work — Active” in the banner; nothing to start by hand', async () => {
+    const startOfDay = openToday({
+      status: 'start_of_day',
+      statusSince: istAt('09:32'),
+      loginAt: istAt('09:32'),
+      startsAtSignIn: true,
+      segments: [{ status: 'start_of_day', startedAt: istAt('09:32'), endedAt: null, source: 'staff', approved: null }],
+    });
+    const api = mockApi({
+      'GET /attendance/today': startOfDay,
+      'POST /attendance/status': ({ body }: { body: { status: string } }) => openToday({ status: body.status, statusSince: istAt('11:30'), startsAtSignIn: true }),
+    });
+    signInAs('call_agent');
+    renderScreen(<Blank />, { portal: 'call-agent', path: '/call-agent', now: ATT_NOW });
+    const chip = await screen.findByRole('button', { name: 'My status: Start of day · 9:32. Change it' });
+    const banner = await screen.findByTestId('att-start-of-day');
+    expect(banner).toHaveTextContent('Start of day · since 9:32 AM');
+    expect(banner).toHaveTextContent('Calls come to you only when you are Active.');
+    await userEvent.click(chip);
+    const menu = screen.getByRole('menu', { name: 'Change my status' });
+    const start = within(menu).getByRole('menuitemradio', { name: /^Start of day/ });
+    expect(start).toHaveAttribute('aria-disabled', 'true');
+    expect(start).toHaveAttribute('aria-checked', 'true');
+    expect(start.querySelector('.lb-att-dot')).toHaveStyle({ background: '#7A4FC4' });
+    expect(within(menu).queryByRole('menuitem', { name: 'Start my day' })).not.toBeInTheDocument();
+    await userEvent.click(start);
+    expect(api.calls('POST /attendance/status')).toHaveLength(0);
+    await userEvent.click(within(banner).getByRole('button', { name: 'Start work — Active' }));
+    await waitFor(() => expect(api.calls('POST /attendance/status')[0]?.body).toEqual({ status: 'available' }));
+    expect(await screen.findByRole('button', { name: /^My status: Active/ })).toBeInTheDocument();
+  });
+
+  it('a call agent whose day did not open is asked to sign in again, never to Start my day', async () => {
+    mockApi({ 'GET /attendance/today': notStartedToday({ startsAtSignIn: true }), 'POST /auth/logout': { success: true } });
+    signInAs('call_agent');
+    renderScreen(<Blank />, { portal: 'call-agent', path: '/call-agent', now: ATT_NOW });
+    expect(await screen.findByText('Your day starts when you sign in. Sign out and sign in again to start it.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Start my day' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'My status: Not logged in. Change it' }));
+    expect(screen.queryByRole('menuitem', { name: 'Start my day' })).not.toBeInTheDocument();
+  });
+
+  it('writes Active, After-call work and Start of day as the status names', () => {
+    expect(t('att.status.available')).toBe('Active');
+    expect(t('att.status.after_call_notes')).toBe('After-call work');
+    expect(t('att.status.start_of_day')).toBe('Start of day');
   });
 });
 
@@ -196,7 +253,7 @@ describe('decided 21 Nov: presence, Back from lunch?, Resume my day, own shifts'
     });
     signInAs('call_agent');
     renderScreen(<Blank />, { portal: 'call-agent', path: '/call-agent', now: ATT_NOW });
-    await screen.findByRole('button', { name: /^My status: Available/ });
+    await screen.findByRole('button', { name: /^My status: Active/ });
     await act(async () => {
       vi.advanceTimersByTime(61_000);
     });

@@ -36,7 +36,42 @@ describe('Call agent attendance (CA14, CA14b, CA14c, CA14d)', () => {
     await userEvent.click(start);
     await waitFor(() => expect(api.calls('POST /attendance/login')).toHaveLength(1));
     expect(api.calls('POST /attendance/login')[0]!.body).toEqual({});
-    expect(await screen.findByText('● Available · since 9:31 AM')).toBeInTheDocument();
+    expect(await screen.findByText('● Active · since 9:31 AM')).toBeInTheDocument();
+  });
+
+  it('22 Nov: the day opened at sign-in in Start of day — the page is the status picker, with no Start my day', async () => {
+    const api = mockApi({
+      'GET /attendance/today': openToday({
+        status: 'start_of_day',
+        statusSince: istAt('09:32'),
+        loginAt: istAt('09:32'),
+        startsAtSignIn: true,
+        startOfDaySeconds: 120,
+        segments: [{ status: 'start_of_day', startedAt: istAt('09:32'), endedAt: null, source: 'staff', approved: null }],
+      }),
+      'POST /attendance/status': ({ body }: { body: { status: string } }) => openToday({ status: body.status, statusSince: istAt('11:30'), startsAtSignIn: true }),
+    });
+    signInAs('call_agent');
+    renderScreen(<Attendance />, path);
+    expect(await screen.findByText('● Start of day · since 9:32 AM')).toBeInTheDocument();
+    expect(screen.getByText('Pick your status to start work. Calls come to you only when you are Active.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Start my day' })).not.toBeInTheDocument();
+    const select = screen.getByRole('combobox', { name: 'Change my status' });
+    const options = within(select).getAllByRole('option');
+    expect(options[0]).toHaveTextContent('Start of day');
+    expect(options[0]).toBeDisabled();
+    expect(options.map((o) => o.textContent)).toEqual(expect.arrayContaining(['Active', 'Team meeting', 'One-to-one with Team Lead', 'Training']));
+    await userEvent.click(screen.getByRole('button', { name: 'Start work — Active' }));
+    await waitFor(() => expect(api.calls('POST /attendance/status')[0]?.body).toEqual({ status: 'available' }));
+  });
+
+  it('22 Nov: before the day opened, a call agent is asked to sign in again instead of Start my day', async () => {
+    mockApi({ 'GET /attendance/today': notStartedToday({ startsAtSignIn: true }), ...monthRoutes });
+    signInAs('call_agent');
+    renderScreen(<Attendance />, path);
+    expect(await screen.findByText('Good morning, Deepa')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Start my day' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Sign in again' }).length).toBeGreaterThanOrEqual(1);
   });
 
   it('the open day: status banner, tiles, the status select, the timeline and End my day (CA14b)', async () => {
@@ -46,23 +81,23 @@ describe('Call agent attendance (CA14, CA14b, CA14c, CA14d)', () => {
     });
     signInAs('call_agent');
     renderScreen(<Attendance />, path);
-    expect(await screen.findByText('● Available · since 11:20 AM')).toBeInTheDocument();
+    expect(await screen.findByText('● Active · since 11:20 AM')).toBeInTheDocument();
     expect(screen.getByText('Calls are coming to you')).toBeInTheDocument();
     expect(screen.getAllByText('9:31 AM').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Shift 9:30 AM – 6:30 PM · On time')).toBeInTheDocument();
     expect(screen.getByText('3h 34m')).toBeInTheDocument();
     expect(screen.getByRole('progressbar', { name: 'Production' })).toHaveAttribute('aria-valuenow', '45');
     expect(screen.getByText('Lunch 0m of 30m · meetings 25m')).toBeInTheDocument();
-    expect(screen.getByText('On call, After-call notes and Idle are set automatically.')).toBeInTheDocument();
+    expect(screen.getByText('Start of day, On call, After-call work and Idle are set automatically.')).toBeInTheDocument();
 
     const timeline = screen.getByRole('list', { name: 'Today so far' });
     const rows = within(timeline).getAllByRole('listitem');
     expect(rows.map((r) => r.textContent)).toEqual([
-      '9:31 AMLogged in · Available29m',
+      '9:31 AMLogged in · Active29m',
       '10:00 AMTeam meeting25m',
-      '10:25 AMAvailable · 14 calls40m',
+      '10:25 AMActive · 14 calls40m',
       '11:05 AMShort break15m',
-      '11:20 AMAvailablenow',
+      '11:20 AMActivenow',
     ]);
 
     const select = screen.getByRole('combobox', { name: 'Change my status' });
@@ -89,7 +124,7 @@ describe('Call agent attendance (CA14, CA14b, CA14c, CA14d)', () => {
     expect(await screen.findByText('08:40 left')).toBeInTheDocument();
     expect(screen.getByText(/Started 11:24 AM\. Calls are stopped for you\. After 15 minutes the timer turns red/)).toBeInTheDocument();
     expect(screen.getByText(/Short break number 2 today \(15m \+ 6m so far\)\./)).toBeInTheDocument();
-    await userEvent.click(screen.getAllByRole('button', { name: 'I’m back — Available' })[0]!);
+    await userEvent.click(screen.getAllByRole('button', { name: 'I’m back — Active' })[0]!);
     await waitFor(() => expect(api.calls('POST /attendance/status')[0]?.body).toEqual({ status: 'available' }));
     view.unmount();
 
