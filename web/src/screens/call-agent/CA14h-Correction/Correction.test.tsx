@@ -23,7 +23,7 @@ describe('Request a correction (CA14h)', () => {
     signInAs('call_agent');
     renderScreen(<RequestCorrection />, path);
     const should = await screen.findByRole('combobox', { name: /What should it have been\?/ });
-    expect(within(should).getAllByRole('option').map((o) => o.textContent)).toEqual(['Available (I was working)', 'Team meeting', 'Training', 'One-to-one with Team Lead']);
+    expect(within(should).getAllByRole('option').map((o) => o.textContent)).toEqual(['Active (I was working)', 'Team meeting', 'Training', 'One-to-one with Team Lead']);
     expect(screen.getByLabelText(/^Day/)).toHaveAttribute('max', '2026-11-09');
     expect(screen.getByLabelText(/^From/)).toHaveAttribute('type', 'time');
     expect(screen.getByText('Your Team Lead approves or rejects it with a reason. The change and the reason are kept in the history. You can never edit your own times.')).toBeInTheDocument();

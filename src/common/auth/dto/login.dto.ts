@@ -14,7 +14,9 @@ export class LoginDto {
    * Accepted on the body only so a request that still sends an email can be
    * refused. It is never used to find an account.
    */
-  email?: string;
+  email?: string;  /** Laboura Field: the phone's location, kept on the attendance day that opens at this sign-in (22 Nov). Optional. */
+  latitude?: number;
+  longitude?: number;
 }
 
 export class VerifyLoginCodeDto {
@@ -26,6 +28,9 @@ export class VerifyLoginCodeDto {
   loginRequestProof?: string;
   /** The same app the login was started from ('office' or 'field'). */
   app?: string;
+  /** Laboura Field: the phone's location, kept on the attendance day that opens at this sign-in (22 Nov). Optional. */
+  latitude?: number;
+  longitude?: number;
 }
 
 export class LoginResponseDto {

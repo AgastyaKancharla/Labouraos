@@ -1823,6 +1823,8 @@ model AttendanceDay {
   productionSeconds Int                 @default(0)
   breakSeconds      Int                 @default(0)
   idleSeconds       Int                 @default(0)
+  /// Time in Start of day (decided 22 Nov): from the sign-in to the first status picked. Unproductive.
+  startOfDaySeconds Int                 @default(0)
   dayType           String              @default("open") // full, half, absent, leave, off, open
   closedReason      String?             // logout, auto_closed_no_logout, no_login
   /// Last click, key, call or saved work (decided 21 Nov): "Still there?" counts from

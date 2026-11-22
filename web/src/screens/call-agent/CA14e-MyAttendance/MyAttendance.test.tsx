@@ -97,9 +97,9 @@ describe('My attendance (CA14e)', () => {
     expect(within(today).getByText('Still working')).toBeInTheDocument();
     expect(within(today).getByText('3h 34m')).toBeInTheDocument();
     expect(within(today).getByText('0h 21m')).toBeInTheDocument();
-    expect(within(today).getByText('Breaks 15m · idle 6m')).toBeInTheDocument();
+    expect(within(today).getByText('Start of day 0m · breaks 15m · idle 6m')).toBeInTheDocument();
     expect(within(today).getByText('1 min')).toBeInTheDocument();
-    expect(within(today).getByText(/Available/)).toBeInTheDocument();
+    expect(within(today).getByText(/Active/)).toBeInTheDocument();
     // The month is still below it.
     expect(screen.getByRole('table', { name: 'Each day this month' })).toBeInTheDocument();
   });

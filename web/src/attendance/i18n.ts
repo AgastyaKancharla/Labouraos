@@ -6,9 +6,11 @@
  */
 export const attendanceEn = {
   // Status names
-  'att.status.available': 'Available',
+  // 22 Nov: "Active" is the name shown for Available, "After-call work" for after-call notes.
+  'att.status.start_of_day': 'Start of day',
+  'att.status.available': 'Active',
   'att.status.on_call': 'On call',
-  'att.status.after_call_notes': 'After-call notes',
+  'att.status.after_call_notes': 'After-call work',
   'att.status.on_visit': 'On visit',
   'att.status.travelling': 'Travelling',
   'att.status.team_meeting': 'Team meeting',
@@ -31,6 +33,7 @@ export const attendanceEn = {
   'att.menu.shortBreak': 'Short break ({minutes} min)',
   'att.menu.lunch': 'Lunch ({minutes} min)',
   'att.menu.phoneSets': 'set by the phone system',
+  'att.menu.signInSets': 'since you signed in — pick a status',
   'att.menu.start': 'Start my day',
   'att.menu.end': 'End my day',
   'att.menu.open': 'My attendance',
@@ -46,7 +49,14 @@ export const attendanceEn = {
   'att.banner.notProduction': 'Doesn’t count as production',
   'att.banner.notStarted': 'You haven’t started your day. Calls and your list unlock after you start it.',
   'att.banner.notStartedOffice': 'You haven’t started your day yet. Your attendance starts when you do.',
-  'att.banner.back': 'I’m back — Available',
+  'att.banner.back': 'I’m back — Active',
+  // 22 Nov: the day opens at sign-in, in Start of day.
+  'att.banner.startOfDay': 'Pick your status to start work. Calls come to you only when you are Active.',
+  'att.banner.startOfDayOffice': 'Pick your status to start work. Start of day doesn’t count as production.',
+  'att.banner.startWork': 'Start work — Active',
+  'att.banner.signInStarts': 'Your day starts when you sign in. Sign out and sign in again to start it.',
+  'att.banner.signInAgain': 'Sign in again',
+  'att.start.signInNote': 'Your attendance day starts when you sign in; you then pick your status.',
 
   // CA14 — before the day starts
   'att.start.shift': 'Your shift today: {shift}.',
@@ -77,8 +87,8 @@ export const attendanceEn = {
   'att.tile.productionSubOffice': 'Includes meetings and training',
   'att.tile.breaks': 'Breaks',
   'att.tile.breaksSub': 'Lunch {lunch} of {lunchAllowance} · meetings {meetings}',
-  'att.change.auto': 'On call, After-call notes and Idle are set automatically.',
-  'att.change.autoOffice': 'Idle is set automatically.',
+  'att.change.auto': 'Start of day, On call, After-call work and Idle are set automatically.',
+  'att.change.autoOffice': 'Start of day and Idle are set automatically.',
   'att.timeline.title': 'Today so far',
   'att.timeline.loggedIn': 'Logged in · {status}',
   'att.timeline.calls': '{count} calls',
@@ -108,6 +118,7 @@ export const attendanceEn = {
   'att.ended.shortBreaks': 'Short breaks',
   'att.ended.lunch': 'Lunch',
   'att.ended.idle': 'Idle',
+  'att.ended.startOfDay': 'Start of day',
   'att.ended.late': 'Late',
   'att.ended.no': 'No',
   'att.ended.lateYes': 'Yes · {late}',
@@ -118,10 +129,10 @@ export const attendanceEn = {
 
   // CA14i — still there?
   'att.idle.title': 'Still there, {name}?',
-  'att.idle.body': 'You’ve been Available for {minutes} minutes with no calls or clicks. Tap below to stay Available, or pick another status.',
+  'att.idle.body': 'You’ve been Active for {minutes} minutes with no calls or clicks. Tap below to stay Active, or pick another status.',
   'att.idle.after': 'If you don’t answer, your status changes to Idle, calls stop, and your Team Lead sees it.',
   'att.idle.afterOffice': 'If you don’t answer, your status changes to Idle and it shows on the attendance board.',
-  'att.idle.stay': 'I’m here — stay Available',
+  'att.idle.stay': 'I’m here — stay Active',
   'att.idle.change': 'Change status',
 
   // Toasts
@@ -136,7 +147,7 @@ export const attendanceEn = {
   'att.resume.button': 'Resume my day',
   'att.back.lunch': 'Back from lunch?',
   'att.back.break': 'Back from your break?',
-  'att.back.body': 'Your {minutes}-minute allowance is over. Tap when you are back: you become Available again.',
+  'att.back.body': 'Your {minutes}-minute allowance is over. Tap when you are back: you become Active again.',
   'att.back.yes': 'I’m back',
   'att.back.notYet': 'Not yet',
   'att.shift.mine': 'Your shift {start} – {end}',
@@ -157,7 +168,7 @@ export const attendanceEn = {
   'att.shifts.empty': 'Nobody in your team yet.',
   'att.reopen.button': 'Reopen today',
   'att.reopen.reason': 'Why reopen this day?',
-  'att.reopen.done': 'Day reopened: they are Available again.',
+  'att.reopen.done': 'Day reopened: they are back in Start of day and pick their status.',
 
   // Day types (CA14e "Counts as", CA14d)
   'att.day.today': 'Today',
@@ -181,8 +192,8 @@ export const attendanceEn = {
   'att.today.loggedOut': 'Logged out at',
   'att.today.stillWorking': 'Still working',
   'att.today.productive': 'Productive',
-  'att.today.unproductive': 'Unproductive (breaks + idle)',
-  'att.today.unproductiveSub': 'Breaks {breaks} · idle {idle}',
+  'att.today.unproductive': 'Unproductive (start of day + breaks + idle)',
+  'att.today.unproductiveSub': 'Start of day {start} · breaks {breaks} · idle {idle}',
   'att.today.late': 'Late',
   'att.today.lateValue': '{late}',
   'att.today.status': 'Status now',
@@ -263,7 +274,7 @@ export const attendanceEn = {
   'att.corr.to': 'To',
   'att.corr.toAfterFrom': '“To” must be after “From”.',
   'att.corr.should': 'What should it have been?',
-  'att.corr.available': 'Available (I was working)',
+  'att.corr.available': 'Active (I was working)',
   'att.corr.reason': 'Reason',
   'att.corr.goesTo': 'Your Team Lead approves or rejects it with a reason. The change and the reason are kept in the history. You can never edit your own times.',
   'att.corr.goesToOffice': 'The person you report to approves or rejects it with a reason. The change and the reason are kept in the history. You can never edit your own times.',

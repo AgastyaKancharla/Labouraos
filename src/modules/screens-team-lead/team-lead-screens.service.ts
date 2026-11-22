@@ -336,6 +336,7 @@ export class TeamLeadScreensService {
         overBreak: now2?.overBreak ?? false,
         shortfallSeconds: day?.shortfallSeconds ?? 0,
         idleSeconds: now2 ? now2.idleSeconds : (day?.idleSeconds ?? 0),
+        startOfDaySeconds: now2 ? now2.startOfDaySeconds : (day?.startOfDaySeconds ?? 0),
         status: now2?.status ?? null,
         since: now2?.since ?? null,
         changesThisMonth: changes.find((row) => row.staffId === member.id)?._count ?? 0,

@@ -35,8 +35,12 @@ const OFFICE_ATTENDANCE_PORTALS: readonly PortalKey[] = ['team-lead', 'manager',
  *   with badges, the signed-in person and Log out) from Main.dc.html,
  *   MG-Home, T-Home and FN-Home. Below 900 px the sidebar becomes a drawer
  *   opened from a menu button.
- * - ConsoleShell: the call agent console's top header (CA03-Home), with the
- *   attendance status menu and the language switcher.
+ * - ConsoleShell: the call agent console. Since 22 Nov (Master Guide rev 206)
+ *   its navigation is the same left sidebar as the portals (Home, My
+ *   follow-ups, WhatsApp, My targets, Attendance; the name and Log out at its
+ *   foot); a slim header keeps the console's name, the date and the
+ *   attendance status menu top right. Below 900 px the sidebar folds into a
+ *   menu button in that header, with no sideways scroll.
  * - PublicShell: the phone header with the language switcher (P00…P06).
  *
  * <AppShell portal={…}> picks the right one and provides the portal and the
@@ -213,55 +217,66 @@ function PortalShell({ portal, children }: { portal: PortalDef; children: ReactN
 
 function ConsoleShell({ portal, children }: { portal: PortalDef; children: ReactNode }) {
   const t = useT();
-  const { session, signOut } = useAuth();
   const now = useNow(60_000);
-  const staff = session?.staff;
+  const [open, setOpen] = useState(false);
+  const location = useLocation();
+  const menuButton = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => setOpen(false), [location.pathname]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpen(false);
+        menuButton.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open]);
+
   return (
-    <div className="console lb-console">
+    <div className="console lb-console lb-console--side">
       <SkipLink />
-      <header className="hdr lb-console__hdr">
-        <div className="lb-console__brand">
-          <Link to={portal.root} className="lb-console__home" title={t('error.goHome')} data-testid="logo-home">
-            <img src={LOGO_SRC} alt={t('error.goHome')} width={32} height={32} />
-          </Link>
-          <div>
-            <span className="t">{t('subtitle.callAgent')}</span>
-            <span className="s">
-              {formatDayMonthIST(now)} · {t('subtitle.callingHours')}
-            </span>
-          </div>
-        </div>
-        <div className="lb-console__right">
-          <nav className="nav" aria-label={t('common.mainNav')}>
-            {(portal.topNav ?? []).map((item) => {
-              const to = screenPath(portal, item.screen);
-              return (
-                <NavLink key={item.screen} to={to} end={to === portal.root} className={({ isActive }) => (isActive ? 'on' : '')}>
-                  {t(item.label)}
-                </NavLink>
-              );
-            })}
-          </nav>
-          <StatusMenu tone="onDark" />
-          {staff && (
-            <div className="chip">
-              <div className="av" aria-hidden="true">
-                {initials(staff.name)}
-              </div>
-              <span>{staff.name}</span>
-              <button type="button" className="lb-logout" onClick={() => void signOut()}>
-                {t('common.logout')}
-              </button>
+      <aside id="lb-sidebar" className={open ? 'lb-shell__side is-open' : 'lb-shell__side'}>
+        <Sidebar portal={portal} onNavigate={() => setOpen(false)} />
+      </aside>
+      {open && <div className="lb-shell__scrim" onClick={() => setOpen(false)} aria-hidden="true" />}
+      <div className="lb-console__body">
+        <header className="hdr lb-console__hdr">
+          <div className="lb-console__brand">
+            <button
+              ref={menuButton}
+              type="button"
+              className="lb-console__menu"
+              aria-label={open ? t('common.closeMenu') : t('common.openMenu')}
+              aria-expanded={open}
+              aria-controls="lb-sidebar"
+              onClick={() => setOpen((o) => !o)}
+            >
+              <UiIcon name={open ? 'close' : 'menu'} size={20} />
+            </button>
+            <Link to={portal.root} className="lb-console__home lb-console__phonelogo" title={t('error.goHome')} data-testid="logo-home-phone">
+              <img src={LOGO_SRC} alt={t('error.goHome')} width={28} height={28} />
+            </Link>
+            <div>
+              <span className="t">{t('subtitle.callAgent')}</span>
+              <span className="s">
+                {formatDayMonthIST(now)} · {t('subtitle.callingHours')}
+              </span>
             </div>
-          )}
-        </div>
-      </header>
-      <div className="swoosh lb-console__swoosh" />
-      <main id="main" className="wrap lb-console__main" tabIndex={-1}>
-        <StatusBanner />
-        {portal.key === 'call-agent' && <UnfinishedRegistrationBanner />}
-        {children}
-      </main>
+          </div>
+          <div className="lb-console__right">
+            <StatusMenu tone="onDark" />
+          </div>
+        </header>
+        <div className="swoosh lb-console__swoosh" />
+        <main id="main" className="wrap lb-console__main" tabIndex={-1}>
+          <StatusBanner />
+          {portal.key === 'call-agent' && <UnfinishedRegistrationBanner />}
+          {children}
+        </main>
+      </div>
       {portal.key === 'call-agent' && <IncomingCallWatcher />}
     </div>
   );

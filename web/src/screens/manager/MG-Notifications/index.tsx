@@ -32,6 +32,7 @@ const TYPE_OF: Record<string, string> = {
   shortage_task: 'Quality',
   break_overrun: 'People',
   agent_idle: 'People',
+  start_of_day_long: 'People',
   system_problem: 'People',
   no_reporting_line: 'People',
 };

@@ -156,9 +156,14 @@ describe('Day-long sessions, a login code once a day, sign-in bells (21 Nov)', (
     expect(row.endedReason).toBe('max_length');
   });
 
-  it('a session that never opened the attendance day still ends after 2 hours', async () => {
+  it('a session whose attendance day is not open still ends after 2 hours', async () => {
     const { staff, deviceId } = await agent();
     const s = await signInWithCode(staff.code, deviceId);
+    // 22 Nov: the sign-in opened the day in Start of day; a day that is not open (here closed) keeps the old limits.
+    const opened = await prisma.attendanceDay.findFirstOrThrow({ where: { staffId: staff.id }, include: { segments: true } });
+    expect(opened.loginAt?.toISOString()).toBe(start.toISOString());
+    expect(opened.segments.map((segment) => segment.status)).toEqual(['start_of_day']);
+    await prisma.attendanceDay.updateMany({ where: { staffId: staff.id }, data: { logoutAt: plus(1), dayType: 'full', closedReason: 'auto_closed_no_logout' } });
     now = plus(121);
     expect((await today(s.accessToken)).status).toBe(401);
   });
@@ -451,6 +456,8 @@ describe('Day-long sessions, a login code once a day, sign-in bells (21 Nov)', (
     it('background polls do not keep the idle clock alive: outside an open day the 1-hour idle sign-out works', async () => {
       const { staff, deviceId } = await agent();
       const s = await signInWithCode(staff.code, deviceId);
+      // The sign-in opened the day (22 Nov); this test is about a day that is not open.
+      await prisma.attendanceDay.updateMany({ where: { staffId: staff.id }, data: { logoutAt: plus(0), dayType: 'full', closedReason: 'auto_closed_no_logout' } });
       const poll = (background: boolean) => {
         const req = http().get('/attendance/today').set('Authorization', `Bearer ${s.accessToken}`);
         return background ? req.set('X-Laboura-Background', '1') : req;

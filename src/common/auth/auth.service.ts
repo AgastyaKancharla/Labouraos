@@ -39,6 +39,7 @@ import {
   sessionEndMessage,
 } from './session-lifetime';
 import { SessionDayService } from './session-day.service';
+import { StaffSignInHooks } from './sign-in-hooks';
 import { istClockOn } from '../../modules/attendance/staff-shift';
 import { userAgentFamily } from './user-agent-family';
 import { appForRole, appLabel, FIELD_APP_ONLY_MESSAGE, isStaffApp, roleAllowedInApp, StaffApp, UNKNOWN_APP_MESSAGE, wrongAppMessage } from './staff-app';
@@ -125,6 +126,8 @@ export interface LoginMetadata {
    * controller from the body's `app` and the Laboura Field address.
    */
   app?: { app: StaffApp | null; fieldHost: boolean; invalid: boolean };
+  /** The device's location, when the app sent one with the sign-in (Laboura Field; the attendance day opens at sign-in, 22 Nov). */
+  location?: { latitude?: number; longitude?: number };
 }
 
 /** An authenticator code that was already accepted once. */
@@ -151,6 +154,7 @@ export class AuthService {
     private readonly reportingScope: ReportingScopeService,
     private readonly sessionDay: SessionDayService,
     @Optional() private readonly signInBells?: SignInBellsService,
+    @Optional() private readonly signInHooks?: StaffSignInHooks,
   ) {}
 
   /**
@@ -993,6 +997,8 @@ export class AuthService {
       ...(withoutCode ? { withoutCode } : {}),
     });
     const passwordResetNotice = await this.takePasswordResetNotice(staff);
+    // The first sign-in of the day opens the attendance day in Start of day (22 Nov). Never blocks the sign-in.
+    await this.signInHooks?.signedIn({ staffId: staff.id, role: staff.role, sessionId: session.id, location: metadata?.location ?? {} });
 
     return {
       accessToken,

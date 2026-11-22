@@ -42,20 +42,26 @@ export function TodayCard() {
         <p className="lb-att-muted" style={{ margin: '4px 0 8px' }}>
           {t('att.today.notLoggedIn')}
         </p>
-        <Link className="btn bg lb-btn" to={to('CA14b-AttendanceActive')}>
-          {t('att.menu.start')}
-        </Link>
+        {/* 22 Nov: the day opens at sign-in for call agents, Team Leads and Managers; Finance still starts it here. */}
+        {today.startsAtSignIn ? (
+          <p className="sub" style={{ margin: 0 }}>{t('att.start.signInNote')}</p>
+        ) : (
+          <Link className="btn bg lb-btn" to={to('CA14b-AttendanceActive')}>
+            {t('att.menu.start')}
+          </Link>
+        )}
       </section>
     );
   }
 
-  const unproductive = today.breakSeconds + today.idleSeconds;
+  const startOfDay = today.startOfDaySeconds ?? 0;
+  const unproductive = startOfDay + today.breakSeconds + today.idleSeconds;
   const status = chipText(t, attendance.audience, today, attendance.status, now.getTime());
   const cells: Array<[string, string, string | null]> = [
     [t('att.today.loggedIn'), clockTime(today.loginAt), null],
     [t('att.today.loggedOut'), today.logoutAt ? clockTime(today.logoutAt) : t('att.today.stillWorking'), null],
     [t('att.today.productive'), hm(today.productionSeconds), null],
-    [t('att.today.unproductive'), hm(unproductive), t('att.today.unproductiveSub', { breaks: span(today.breakSeconds), idle: span(today.idleSeconds) })],
+    [t('att.today.unproductive'), hm(unproductive), t('att.today.unproductiveSub', { start: span(startOfDay), breaks: span(today.breakSeconds), idle: span(today.idleSeconds) })],
     [t('att.today.late'), today.lateMinutes > 0 ? t('att.today.lateValue', { late: formatLateMinutes(today.lateMinutes) }) : t('att.onTime'), null],
     [t('att.today.status'), status.text, null],
   ];

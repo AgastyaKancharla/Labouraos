@@ -4,7 +4,7 @@ import type { ApiClient } from '../client';
 export interface AttendanceToday {
   /** IST date label, e.g. "2026-11-09". */
   date: string;
-  /** Current status (available, on_visit, travelling, short_break…) or null before login. */
+  /** Current status (start_of_day, available, on_visit, travelling, short_break…) or null before login. */
   status: string | null;
   loginAt: string | null;
   logoutAt: string | null;
@@ -23,6 +23,12 @@ export interface AttendanceToday {
   statusSince?: string | null;
   /** Allowances from Settings (lunch, short break, "Still there?"). */
   policy?: { lunchMinutes: number; shortBreakMinutes: number; idleAfterMinutes: number };
+  /** Time in Start of day (22 Nov): unproductive. */
+  startOfDaySeconds?: number;
+  /** False while today's day (opened at sign-in) has no saved location yet: the app saves it next. */
+  locationSaved?: boolean;
+  /** The day opens at sign-in in Start of day (22 Nov): no Log in button. */
+  startsAtSignIn?: boolean;
   flagged: boolean;
   closedReason: string | null;
   dayType: string;
@@ -37,7 +43,10 @@ export interface AttendanceLoginBody {
 
 export const attendanceApi = (api: ApiClient) => ({
   today: () => api.get<AttendanceToday>('/attendance/today'),
-  /** Field agents must send their location; the server refuses without it. */
+  /**
+   * Field agents must send their location; the server refuses without it. Since 22 Nov the day
+   * opens at sign-in; this saves the day's location when the sign-in had none.
+   */
   login: (body: AttendanceLoginBody) => api.post<AttendanceToday>('/attendance/login', body),
   logout: () => api.post<AttendanceToday>('/attendance/logout'),
   setStatus: (status: string) => api.post<AttendanceToday>('/attendance/status', { status }),

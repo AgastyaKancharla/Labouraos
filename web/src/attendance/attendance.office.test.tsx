@@ -17,7 +17,7 @@ describe('header status menu (Team Lead, Manager, Finance)', () => {
     });
     signInAs('team_lead');
     renderScreen(<TopBar title="Home" />, { portal: 'team-lead', path: '/team-lead', now: ATT_NOW });
-    await userEvent.click(await screen.findByRole('button', { name: 'My status: Available · 11:20. Change it' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'My status: Active · 11:20. Change it' }));
     const menu = screen.getByRole('menu');
     expect(within(menu).queryByRole('menuitemradio', { name: /On call/ })).not.toBeInTheDocument();
     expect(within(menu).getByRole('menuitemradio', { name: 'One-to-one' })).toBeInTheDocument();
@@ -44,7 +44,7 @@ describe('Own attendance for a Team Lead, Manager or Finance (same screen)', () 
     expect(await screen.findByText('● One-to-one · since 11:00 AM')).toBeInTheDocument();
     expect(screen.getByText('Counts as production')).toBeInTheDocument();
     expect(screen.getByText('Includes meetings and training')).toBeInTheDocument();
-    expect(screen.getByText('Idle is set automatically.')).toBeInTheDocument();
+    expect(screen.getByText('Start of day and Idle are set automatically.')).toBeInTheDocument();
     const select = screen.getByRole('combobox', { name: 'Change my status' });
     expect(within(select).getByRole('option', { name: 'System problem (needs approval)' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'My attendance, leave & payslips →' })).toHaveAttribute('href', '/manager/my-attendance/month');

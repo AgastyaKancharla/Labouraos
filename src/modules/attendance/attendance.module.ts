@@ -20,6 +20,7 @@ import { AttendanceService } from './attendance.service';
 import { AttendanceDaysService } from './attendance-days.service';
 import { AttendanceShiftsService } from './attendance-shifts.service';
 import { AttendanceActivityInterceptor } from './attendance-activity.interceptor';
+import { AttendanceSignInHook } from './attendance-sign-in.hook';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 
 @Module({
@@ -34,6 +35,7 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
     AttendanceService,
     AttendanceDaysService,
     AttendanceShiftsService,
+    AttendanceSignInHook,
     { provide: APP_INTERCEPTOR, useClass: AttendanceActivityInterceptor },
     AttendanceClock,
     LeaveService,

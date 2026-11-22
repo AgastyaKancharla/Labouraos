@@ -26,6 +26,8 @@ export const aadhaarQrEn = {
   'pub.id.nextBodyPartner':
     'A Laboura Team Lead checks your card against your selfie. When it is approved, open this same link again to add your UPI ID for payouts. You can close this page.',
   'pub.id.done': 'Done',
+  // 22 Nov: how long the Team Lead's check of the card usually takes.
+  'pub.id.checkTime': 'Usually checked within 2 hours during working hours.',
   'pub.id.doneBodyPartner': 'Your ID card is with a Team Lead. You can close this page and open this link again after the check to add your UPI ID.',
   'pub.id.doneTitle': 'All done for now.',
   'pub.id.doneBody': 'Your ID card is with a Team Lead. You can close this page and open this link again after the check to pay.',

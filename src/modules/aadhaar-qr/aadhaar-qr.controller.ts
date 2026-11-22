@@ -212,7 +212,7 @@ export class AadhaarQrController {
     const right = await this.approvals.rightFor(actor, { ...person, id, subjectType });
     if (!right.allowed) throw new ForbiddenException(right.reason ?? 'Not yours to check');
     // One general check per person (L-8): the Team Lead's T-Verify at the same moment can't record a second.
-    return oneRegistrationCheck(this.prisma, subjectType, id, async () => {
+    const result = await oneRegistrationCheck(this.prisma, subjectType, id, async () => {
       const decided = await this.otherIds.recordDecision(subjectType, id, verdict, actor);
       let flagId: string | null = null;
       if (verdict === 'fake') {
@@ -240,6 +240,9 @@ export class AadhaarQrController {
       });
       return { id: check.id, verdict, flagId, ...decided };
     });
+    // 22 Nov: an approved other ID sends the ₹499 payment link by itself (after the check is saved).
+    const paymentLink = await this.otherIds.afterDecision(subjectType, id, result.otherIdDecided, actor);
+    return { ...result, paymentLink };
   }
 
   @Get('identity/:subjects/:id/aadhaar-check')

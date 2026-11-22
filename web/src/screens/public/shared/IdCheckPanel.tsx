@@ -176,6 +176,7 @@ export function IdCheckPanel({
           <strong>{t('pub.id.doneTitle')}</strong>
         </Ok>
         <span className="sub">{t(partner ? 'pub.id.doneBodyPartner' : 'pub.id.doneBody')}</span>
+        <span className="sub" data-testid="id-check-time">{t('pub.id.checkTime')}</span>
       </div>
     );
   }
@@ -188,6 +189,7 @@ export function IdCheckPanel({
           </Ok>
           <strong>{t('pub.id.nextTitle')}</strong>
           <span className="sub" data-testid="id-pending-next">{t(partner ? 'pub.id.nextBodyPartner' : 'pub.id.nextBody')}</span>
+          <strong data-testid="id-check-time">{t('pub.id.checkTime')}</strong>
           <button type="button" className="btn bp full" onClick={() => setFinished(true)}>
             {t('pub.id.done')}
           </button>

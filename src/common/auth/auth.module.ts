@@ -10,6 +10,7 @@ import { JwtStrategy } from './jwt.strategy';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { TotpService } from './totp.service';
 import { SessionDayService } from './session-day.service';
+import { StaffSignInHooks } from './sign-in-hooks';
 import { CloudflareAccessVerifier } from './cloudflare-access.verifier';
 import {
   AuthThrottlerGuard,
@@ -61,6 +62,7 @@ import { ReportingScopeModule } from '../../modules/staff/reporting-scope.module
     AuthClock,
     TotpService,
     SessionDayService,
+    StaffSignInHooks,
     JwtStrategy,
     JwtAuthGuard,
     CloudflareAccessVerifier,
@@ -71,6 +73,7 @@ import { ReportingScopeModule } from '../../modules/staff/reporting-scope.module
     AuthClock,
     TotpService,
     SessionDayService,
+    StaffSignInHooks,
     JwtModule,
     JwtAuthGuard,
     CloudflareAccessVerifier,

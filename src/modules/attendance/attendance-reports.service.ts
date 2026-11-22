@@ -38,6 +38,8 @@ export interface LiveRow {
   overBreak: boolean;
   idle: boolean;
   idleSeconds: number;
+  /** Time in Start of day today (22 Nov): unproductive, shown with its own label. */
+  startOfDaySeconds: number;
 }
 
 export interface MonthSheetRow {
@@ -138,6 +140,7 @@ export class AttendanceReportsService {
         overBreak,
         idle: status === 'idle',
         idleSeconds: today.idleSeconds,
+        startOfDaySeconds: today.startOfDaySeconds ?? 0,
       });
     }
     const counts: Record<string, number> = {};
@@ -148,6 +151,7 @@ export class AttendanceReportsService {
         ...counts,
         overBreak: rows.filter((row) => row.overBreak).length,
         idle: rows.filter((row) => row.idle).length,
+        startOfDay: rows.filter((row) => row.status === 'start_of_day').length,
       },
       people: rows,
     };
@@ -196,6 +200,7 @@ export class AttendanceReportsService {
         /** Short breaks past the two a day the shift allows (guide, Attendance). */
         extraBreaks: Math.max(0, row.breakCount - SHORT_BREAKS_PER_DAY),
         idleSeconds: row.idleSeconds,
+        startOfDaySeconds: row.startOfDaySeconds,
         shortfallSeconds: row.shortfallSeconds,
         makeUpSeconds: row.makeUpSeconds,
         hoursLostSeconds: row.shortfallSeconds + row.idleSeconds,
@@ -217,6 +222,7 @@ export class AttendanceReportsService {
       rows.push({
         staff: person,
         productionSeconds: totals.productionSeconds,
+        startOfDaySeconds: totals.startOfDaySeconds,
         hoursLostSeconds: totals.hoursLostSeconds,
         lateLogins: totals.lateLogins,
         absentDays: totals.absentDays,
@@ -340,6 +346,7 @@ export class AttendanceReportsService {
     let productionSeconds = 0;
     let breakOverSeconds = 0;
     let idleSeconds = 0;
+    let startOfDaySeconds = 0;
     let shortfallSeconds = 0;
     let makeUpSeconds = 0;
     let lateLogins = 0;
@@ -348,6 +355,7 @@ export class AttendanceReportsService {
       productionSeconds += row.productionSeconds;
       breakOverSeconds += row.breakOverSeconds;
       idleSeconds += row.idleSeconds;
+      startOfDaySeconds += row.startOfDaySeconds;
       shortfallSeconds += row.shortfallSeconds;
       makeUpSeconds += row.makeUpSeconds;
       if (row.lateMinutes > 0) lateLogins += 1;
@@ -357,6 +365,7 @@ export class AttendanceReportsService {
       productionSeconds,
       breakOverSeconds,
       idleSeconds,
+      startOfDaySeconds,
       shortfallSeconds,
       makeUpSeconds,
       hoursLostSeconds: shortfallSeconds + idleSeconds,

@@ -40,6 +40,8 @@ export const NAV_ICONS = {
   bank: "<path d=\"M3 8h14M4.5 8v7M8 8v7M12 8v7M15.5 8v7M2.5 16.5h15M10 3l7 3.5H3L10 3Z\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linejoin=\"round\"></path>",
   tax: "<path d=\"M6 14 14 6\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\"></path><circle cx=\"6.5\" cy=\"6.5\" r=\"1.8\" stroke=\"currentColor\" stroke-width=\"1.5\"></circle><circle cx=\"13.5\" cy=\"13.5\" r=\"1.8\" stroke=\"currentColor\" stroke-width=\"1.5\"></circle>",
   approvalLimits: "<path d=\"M10 2.5 16 5v4.6c0 3.7-2.6 6.6-6 7.9-3.4-1.3-6-4.2-6-7.9V5l6-2.5Z\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linejoin=\"round\"></path><path d=\"m7.3 10 1.9 1.9 3.6-3.8\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path>",
+  // The call agent console's WhatsApp inbox (22 Nov: its navigation moved to a left sidebar).
+  chat: "<path d=\"M4 15.5V5.8A2.3 2.3 0 0 1 6.3 3.5h7.4A2.3 2.3 0 0 1 16 5.8v5.4a2.3 2.3 0 0 1-2.3 2.3H7.5L4 15.5Z\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linejoin=\"round\"></path><path d=\"M7.3 7.8h5.4M7.3 10.5h3.4\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\"></path>",
 } as const;
 
 export type NavIconName = keyof typeof NAV_ICONS;

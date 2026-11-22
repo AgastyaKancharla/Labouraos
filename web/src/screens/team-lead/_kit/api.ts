@@ -156,9 +156,11 @@ export function waitedFor(iso: string, now: Date): string {
 
 /** Plain words for a live status. */
 export const STATUS_LABEL: Record<string, string> = {
-  available: 'Available',
+  // 22 Nov: Start of day (from the sign-in until a status is picked; unproductive), Active, After-call work.
+  start_of_day: 'Start of day',
+  available: 'Active',
   on_call: 'On a call',
-  after_call_notes: 'After-call notes',
+  after_call_notes: 'After-call work',
   on_visit: 'On a visit',
   travelling: 'Travelling',
   team_meeting: 'Team meeting',
@@ -173,8 +175,9 @@ export const STATUS_LABEL: Record<string, string> = {
   on_leave: 'On leave',
 };
 
-export function statusTone(row: { status: string; overBreak?: boolean }): 'good' | 'info' | 'danger' | 'warn' | 'muted' {
+export function statusTone(row: { status: string; overBreak?: boolean }): 'good' | 'info' | 'danger' | 'warn' | 'muted' | 'start' {
   if (row.overBreak) return 'danger';
+  if (row.status === 'start_of_day') return 'start';
   if (row.status === 'available') return 'good';
   if (['on_call', 'after_call_notes', 'on_visit', 'team_meeting', 'training', 'one_to_one'].includes(row.status)) return 'info';
   if (['idle', 'not_logged_in', 'system_problem'].includes(row.status)) return 'warn';

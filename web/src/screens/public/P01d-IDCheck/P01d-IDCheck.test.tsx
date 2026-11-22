@@ -128,6 +128,8 @@ describe('P01d-IDCheck (Aadhaar Secure QR, guide 14 Nov)', () => {
     expect(screen.getByTestId('id-pending-next')).toHaveTextContent(/Team Lead checks your card.*open this same link again to pay.*You can close this page/);
     await userEvent.click(screen.getByRole('button', { name: 'Done' }));
     expect(screen.getByTestId('id-pending-done')).toHaveTextContent(/All done for now\..*close this page/);
+    // 22 Nov: how long the check usually takes, after the card photo.
+    expect(screen.getByTestId('id-check-time')).toHaveTextContent('Usually checked within 2 hours during working hours.');
     expect(screen.queryByRole('button', { name: /scan the QR code/i })).toBeNull();
     const sent = api.fetch.mock.calls.find(([url]) => String(url).endsWith(`/registration/${TOKEN}/other-id`));
     const form = sent![1]!.body as FormData;

@@ -175,6 +175,27 @@ export const teamLeadSidebar: SidebarConfig = {
   ],
 };
 
+/**
+ * The call agent console (Master Guide rev 206, decided 22 Nov): the links that
+ * were in its top bar — Home, My follow-ups, WhatsApp, My targets, Attendance —
+ * in a left sidebar like the Team Lead, Manager and CEO portals.
+ */
+export const callAgentSidebar: SidebarConfig = {
+  subtitle: 'subtitle.callAgent',
+  sections: [
+    {
+      label: 'navSection.work',
+      items: [
+        { screen: 'CA03-Home', label: 'screen.CA03-Home', icon: 'commandCenter' },
+        { screen: 'CA10-FollowUps', label: 'screen.CA10-FollowUps', icon: 'workList' },
+        { screen: 'CA18-WhatsApp', label: 'screen.CA18-WhatsApp', icon: 'chat' },
+        { screen: 'CA11-Targets', label: 'screen.CA11-Targets', icon: 'targets' },
+        { screen: 'CA14b-AttendanceActive', label: 'screen.CA14b-AttendanceActive', icon: 'attendance' },
+      ],
+    },
+  ],
+};
+
 export const financeSidebar: SidebarConfig = {
   subtitle: "subtitle.finance",
   sections: [

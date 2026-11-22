@@ -2,6 +2,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { istDateKey } from '../signup-tracker/signup-timing';
 import { ownerAccountIds } from '../signup-tracker/signup-owner-accounts';
 import { ShiftPolicy, onShiftAt, shiftFor } from '../attendance/staff-shift';
+import { NOT_IN_START_OF_DAY } from '../attendance/attendance.constants';
 
 /**
  * Who gets an inbound WhatsApp conversation or a referral partner's lead
@@ -63,7 +64,7 @@ export async function loadLeadAgents(prisma: PrismaService, now: Date, policy: S
   const today = new Date(`${istDateKey(now.getTime())}T00:00:00.000Z`);
   const [days, sessions, conversations, leads, lastConversation, lastLead, owners] = await Promise.all([
     prisma.attendanceDay.findMany({
-      where: { staffId: { in: ids }, date: today, loginAt: { not: null }, logoutAt: null, dayType: { not: 'leave' } },
+      where: { staffId: { in: ids }, date: today, loginAt: { not: null }, logoutAt: null, dayType: { not: 'leave' }, ...NOT_IN_START_OF_DAY },
       select: { staffId: true },
     }),
     prisma.staffSession.findMany({

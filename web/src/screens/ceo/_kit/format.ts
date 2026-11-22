@@ -45,10 +45,12 @@ export function initials(name: string): string {
     .join('');
 }
 
-export const LIVE_STATUS: Record<string, { label: string; tone: 'good' | 'info' | 'warn' | 'danger' | 'muted' | 'crit' }> = {
-  available: { label: 'Available', tone: 'good' },
+export const LIVE_STATUS: Record<string, { label: string; tone: 'good' | 'info' | 'warn' | 'danger' | 'muted' | 'crit' | 'start' }> = {
+  // 22 Nov: the day opens at sign-in in Start of day (unproductive); Available is shown as Active.
+  start_of_day: { label: 'Start of day', tone: 'start' },
+  available: { label: 'Active', tone: 'good' },
   on_call: { label: 'On call', tone: 'info' },
-  after_call_notes: { label: 'After-call notes', tone: 'info' },
+  after_call_notes: { label: 'After-call work', tone: 'info' },
   on_visit: { label: 'On visit', tone: 'info' },
   travelling: { label: 'Travelling', tone: 'info' },
   team_meeting: { label: 'Team meeting', tone: 'muted' },
@@ -63,6 +65,6 @@ export const LIVE_STATUS: Record<string, { label: string; tone: 'good' | 'info' 
   not_logged_in: { label: 'Not logged in', tone: 'danger' },
 };
 
-export function liveLabel(status: string | null | undefined): { label: string; tone: 'good' | 'info' | 'warn' | 'danger' | 'muted' | 'crit' } {
+export function liveLabel(status: string | null | undefined): { label: string; tone: 'good' | 'info' | 'warn' | 'danger' | 'muted' | 'crit' | 'start' } {
   return (status && LIVE_STATUS[status]) || { label: status ? status.replace(/_/g, ' ') : '—', tone: 'muted' };
 }

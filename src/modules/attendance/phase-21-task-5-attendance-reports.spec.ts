@@ -97,6 +97,8 @@ describe('Phase 21 Task 5: attendance reports and the live board', () => {
         action === 'login' ? '/attendance/login' : action === 'logout' ? '/attendance/logout' : '/attendance/status';
       const res = await post(person, path, action === 'login' || action === 'logout' ? {} : { status: action });
       expect(res.status).toBe(201);
+      // 22 Nov: the day opens in Start of day; these hand-worked days pick Active at once.
+      if (action === 'login') expect((await post(person, '/attendance/status', { status: 'available' })).status).toBe(201);
     }
   }
 

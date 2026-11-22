@@ -20,14 +20,16 @@ import { formatLateMinutes } from '../../../lib/format/late';
 /**
  * Attendance — designs CA14-Attendance (before the day starts), CA14b-
  * AttendanceActive (my status), CA14c-OnBreak, CA14d-DayEnded and, with the
- * "Still there?" check that every page shows, CA14i-Idle. The day starts only
- * when the person taps Start my day; times come from Laboura's server.
+ * "Still there?" check that every page shows, CA14i-Idle. For call agents,
+ * Team Leads and Managers the day opens at sign-in in Start of day (22 Nov) and
+ * they pick their status here; Finance still taps Start my day. Times come
+ * from Laboura's server.
  *
  * The same screen is the Team Lead's, Manager's and Finance's own attendance
  * (owner decision 12 Nov), with their production statuses and wording.
  *
- * Right after sign-in a call agent lands here: if the day has already
- * started, they go straight on to Home.
+ * Right after sign-in a call agent lands here: still in Start of day, they
+ * pick a status here; once a status is picked they go straight on to Home.
  */
 export default function AttendanceScreen() {
   const t = useT();
@@ -40,7 +42,7 @@ export default function AttendanceScreen() {
 
   if (!attendance) return null;
   const { today, phase } = attendance;
-  if (landing && phase === 'open') return <Navigate to={portal.root} replace />;
+  if (landing && phase === 'open' && attendance.status !== 'start_of_day') return <Navigate to={portal.root} replace />;
 
   return (
     <div className="lb-page lb-att-page">
@@ -68,7 +70,7 @@ function shiftText(today: AttendanceToday): string {
 function BeforeStart({ today }: { today: AttendanceToday }) {
   const t = useT();
   const attendance = useAttendance()!;
-  const { session } = useAuth();
+  const { session, signOut } = useAuth();
   const now = useNow(60_000);
   const office = attendance.audience === 'office';
   const firstName = session?.staff.name.split(/\s+/)[0] ?? '';
@@ -93,10 +95,22 @@ function BeforeStart({ today }: { today: AttendanceToday }) {
           {shiftAfter} {t(office ? 'att.start.unlockOffice' : 'att.start.unlock')}
         </span>
         {attendance.phase === 'leave' && <span className="lb-att-warn">{t('att.start.onLeave')}</span>}
-        <button type="button" className="btn bg lb-btn lb-att-cta" onClick={() => void attendance.start()} disabled={attendance.busy} aria-busy={attendance.busy || undefined}>
-          {t('att.menu.start')}
-        </button>
-        <span className="sub">{t('att.start.serverTime', { time: lateFrom })}</span>
+        {today.startsAtSignIn ? (
+          // 22 Nov: no "Start my day" — the day opens at sign-in (a sign-in from before that signs in again).
+          <>
+            <span className="lb-att-muted">{t('att.banner.signInStarts')}</span>
+            <button type="button" className="btn bg lb-btn lb-att-cta" onClick={() => void signOut()} disabled={attendance.busy}>
+              {t('att.banner.signInAgain')}
+            </button>
+          </>
+        ) : (
+          <>
+            <button type="button" className="btn bg lb-btn lb-att-cta" onClick={() => void attendance.start()} disabled={attendance.busy} aria-busy={attendance.busy || undefined}>
+              {t('att.menu.start')}
+            </button>
+            <span className="sub">{t('att.start.serverTime', { time: lateFrom })}</span>
+          </>
+        )}
       </div>
       <div className="lb-att-grid3">
         <div className="card lb-att-stat">
@@ -172,7 +186,12 @@ function bannerFor(t: Translate, status: AttendanceStatus, audience: AttendanceA
   const def = STATUS_DEFS[status];
   const label = t('att.banner.since', { status: t(statusLabelKey(status, audience)), time: today.statusSince ? clockTime(today.statusSince) : '' });
   const working = status === 'available' || status === 'on_call' || status === 'after_call_notes';
-  const sub = audience === 'agent' ? t(working ? 'att.banner.callsOn' : 'att.banner.callsOff') : t(def.kind === 'production' ? 'att.banner.production' : 'att.banner.notProduction');
+  const sub =
+    status === 'start_of_day'
+      ? t(audience === 'agent' ? 'att.banner.startOfDay' : 'att.banner.startOfDayOffice')
+      : audience === 'agent'
+        ? t(working ? 'att.banner.callsOn' : 'att.banner.callsOff')
+        : t(def.kind === 'production' ? 'att.banner.production' : 'att.banner.notProduction');
   const tone = status === 'available' ? '' : def.kind === 'production' ? ' lb-att-ok--blue' : ' lb-att-ok--warn';
   return { label, sub, tone };
 }
@@ -224,7 +243,7 @@ function DayOpen({ today }: { today: AttendanceToday }) {
         <span className="lb-att-ok__sub">{banner.sub}</span>
         {status !== 'available' && STATUS_DEFS[status].kind !== 'production' && (
           <button type="button" className="btn bg lb-btn" onClick={() => void attendance.pick('available')} disabled={attendance.busy}>
-            {t('att.banner.back')}
+            {t(status === 'start_of_day' ? 'att.banner.startWork' : 'att.banner.back')}
           </button>
         )}
       </div>
@@ -347,6 +366,12 @@ function DayEnded({ today }: { today: AttendanceToday }) {
           <span>{t('att.ended.idle')}</span>
           <span>{span(today.idleSeconds)}</span>
         </div>
+        {(today.startOfDaySeconds ?? 0) > 0 && (
+          <div className="lb-att-row lb-att-row--split">
+            <span>{t('att.ended.startOfDay')}</span>
+            <span>{span(today.startOfDaySeconds ?? 0)}</span>
+          </div>
+        )}
         <div className="lb-att-row lb-att-row--split">
           <span>{t('att.ended.late')}</span>
           <span>{today.lateMinutes > 0 ? t('att.ended.lateYes', { late: formatLateMinutes(today.lateMinutes) }) : t('att.ended.no')}</span>

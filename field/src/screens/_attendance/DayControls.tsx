@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useI18n } from '@/i18n';
@@ -46,8 +46,9 @@ export function dayState(day: Pick<AttendanceToday, 'loginAt' | 'logoutAt'> | un
 
 /**
  * The working day, the same on Today (FA03), My day (FA04) and My attendance
- * (FA04e) — Master Guide rev 193, 17 Nov: a clear Log in button (once a day,
- * GPS saved), then the login time, on time or late, the status (tap to
+ * (FA04e) — Master Guide rev 193, 17 Nov; since 22 Nov (rev 206) the day opens
+ * at sign-in in Start of day (no Log in button; the GPS is saved right after,
+ * or on "Save my location"), then the login time, on time or late, the status (tap to
  * change; only the seven a person may pick) and a clear Log out button (the
  * old "End my day": it ends the day). After Log out the day shows as ended,
  * with no button: log in again tomorrow. The status picker and Log out are
@@ -60,6 +61,7 @@ export function DayControls({ testID = 'attendance' }: { testID?: string }) {
   const attendance = useAttendanceToday();
   const login = useAttendanceLogin();
   const client = useQueryClient();
+  const auth = useAuth();
 
   if (attendance.isPending) return <LoadingState compact />;
   if (attendance.isError) return <ErrorState error={attendance.error} onRetry={() => void attendance.refetch()} compact />;
@@ -72,6 +74,16 @@ export function DayControls({ testID = 'attendance' }: { testID?: string }) {
         ? `${t('fa03.loginNeedsLocation')} ${t(LOCATION_ERROR_KEYS[login.error.code])}`
         : attendanceErrorText(login.error, 'today.loginFailed', t)
       : null;
+
+  if (state === 'not_started' && day.startsAtSignIn) {
+    // 22 Nov: the day opens at sign-in (no Log in button); a sign-in from before that signs in again.
+    return (
+      <View style={styles.gap}>
+        <Banner tone="warn" icon="clock" title={t('fa03.notLoggedIn')} message={t('day.signInStarts')} testID={`${testID}-sign-in-starts`} />
+        <Button label={t('day.signInAgain')} variant="secondary" onPress={() => void auth.logout()} testID={`${testID}-sign-in-again`} />
+      </View>
+    );
+  }
 
   if (state === 'not_started') {
     // The agent's own shift when a senior set one (decided 21 Nov), else the company shift.
@@ -196,6 +208,21 @@ function OpenDay({ day, testID }: { day: AttendanceToday; testID: string }) {
     onError: (error) => (isDayStateError(error) ? (setEnding(false), reread()) : undefined),
   });
   const status = day.status;
+  // 22 Nov: the day opened at sign-in; a sign-in without a location saves it now (once, then on a tap).
+  const saveLocation = useAttendanceLogin();
+  const triedLocation = useRef(false);
+  const needsLocation = day.locationSaved === false;
+  useEffect(() => {
+    if (!needsLocation || triedLocation.current) return;
+    triedLocation.current = true;
+    saveLocation.mutate(undefined, { onError: () => undefined });
+  }, [needsLocation, saveLocation]);
+  const locationError =
+    saveLocation.error && !isDayStateError(saveLocation.error)
+      ? isLocationError(saveLocation.error)
+        ? `${t('fa03.loginNeedsLocation')} ${t(LOCATION_ERROR_KEYS[saveLocation.error.code])}`
+        : attendanceErrorText(saveLocation.error, 'today.loginFailed', t)
+      : null;
   // After the allowance: "Back from lunch?" — one tap and he is Available again (decided 21 Nov).
   const breakMinutes = useBreakMinutes(status, day.statusSince);
   const allowance = status === 'lunch' ? day.policy?.lunchMinutes : status === 'short_break' ? day.policy?.shortBreakMinutes : undefined;
@@ -219,10 +246,35 @@ function OpenDay({ day, testID }: { day: AttendanceToday; testID: string }) {
           style={styles.statusTap}
           testID={`${testID}-status`}
         >
-          <StatusChip label={status ? statusLabel(status, t) : t('today.pickStatus')} tone="green" dot />
+          <StatusChip label={status ? statusLabel(status, t) : t('today.pickStatus')} tone={status === 'start_of_day' ? 'navy' : 'green'} dot />
           <Icon name="chevron-right" size={14} color={colors.greenText} />
         </Pressable>
       </View>
+      {status === 'start_of_day' ? (
+        <View style={styles.gap} testID={`${testID}-start-of-day`}>
+          <Banner tone="warn" icon="clock" title={t('day.startOfDayTitle', { time: day.statusSince ? formatTimeIst(day.statusSince) : '' })} message={t('day.startOfDayBody')} />
+          <Button
+            label={t('day.startWork')}
+            variant="success"
+            icon={<Icon name="check" color={colors.white} />}
+            loading={change.isPending}
+            onPress={() => change.mutate('available')}
+            testID={`${testID}-start-work`}
+          />
+        </View>
+      ) : null}
+      {needsLocation ? (
+        <View style={styles.gap} testID={`${testID}-location`}>
+          <Banner tone="warn" icon="clock" message={locationError ?? t('day.locationNeeded')} />
+          <Button
+            label={saveLocation.isPending ? t('day.savingLocation') : t('day.saveLocation')}
+            variant="secondary"
+            loading={saveLocation.isPending}
+            onPress={() => saveLocation.mutate(undefined, { onError: () => undefined })}
+            testID={`${testID}-save-location`}
+          />
+        </View>
+      ) : null}
       {breakOver ? (
         <View style={styles.gap} testID={`${testID}-back-prompt`}>
           <Banner
@@ -246,7 +298,9 @@ function OpenDay({ day, testID }: { day: AttendanceToday; testID: string }) {
 
       <Sheet open={picking} onClose={() => setPicking(false)} title={t('today.changeStatus')}>
         {status && !isPickableStatus(status) ? (
-          <Text variant="muted" testID="status-automatic">{t('today.statusAutomatic', { status: statusLabel(status, t) })}</Text>
+          <Text variant="muted" testID="status-automatic">
+            {status === 'start_of_day' ? t('today.statusSignIn') : t('today.statusAutomatic', { status: statusLabel(status, t) })}
+          </Text>
         ) : null}
         <ChoiceList
           choices={STATUS_CHOICES.map((s) => ({ value: s, label: statusLabel(s, t), ...STATUS_ICON[s] }))}

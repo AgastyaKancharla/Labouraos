@@ -7,6 +7,7 @@ import { OtherIdService } from './other-id.service';
 import { Under18StopService } from './under18-stop.service';
 import { IdCheckAccessService } from './id-check-access.service';
 import { OtherIdApprovalService } from './other-id-approval.service';
+import { OtherIdDecisionHooks } from './other-id-decision-hooks';
 import { ReviewFlagModule } from '../review-flag/review-flag.module';
 
 /**
@@ -18,7 +19,7 @@ import { ReviewFlagModule } from '../review-flag/review-flag.module';
  */
 @Module({
   imports: [PrismaModule, AuditModule, ReportingScopeModule, ReviewFlagModule],
-  providers: [IdCheckPhotoService, Under18StopService, OtherIdService, IdCheckAccessService, OtherIdApprovalService],
-  exports: [IdCheckPhotoService, Under18StopService, OtherIdService, IdCheckAccessService, OtherIdApprovalService],
+  providers: [IdCheckPhotoService, Under18StopService, OtherIdService, IdCheckAccessService, OtherIdApprovalService, OtherIdDecisionHooks],
+  exports: [IdCheckPhotoService, Under18StopService, OtherIdService, IdCheckAccessService, OtherIdApprovalService, OtherIdDecisionHooks],
 })
 export class IdCheckPhotoModule {}

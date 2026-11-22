@@ -6,6 +6,7 @@ import type { MessageKey } from '../i18n/en';
  * starts the next. Server names: src/modules/attendance/attendance.constants.ts.
  */
 export type AttendanceStatus =
+  | 'start_of_day'
   | 'available'
   | 'on_call'
   | 'after_call_notes'
@@ -22,7 +23,8 @@ export type AttendanceStatus =
 /** Who is using the menu: the call agent console, or a Team Lead / Manager / Finance header. */
 export type AttendanceAudience = 'agent' | 'office';
 
-export type StatusKind = 'production' | 'break' | 'idle';
+/** 'unproductive': Start of day (22 Nov) — not production, not a break. */
+export type StatusKind = 'production' | 'break' | 'idle' | 'unproductive';
 
 export interface StatusDef {
   status: AttendanceStatus;
@@ -39,9 +41,13 @@ const GOLD = '#FCCE00';
 const CYAN = '#02D0F8';
 const TOMATO = '#BB232B';
 const AMBER = '#92670A';
+/** Start of day's own colour (22 Nov), apart from breaks (gold) and Idle (amber). */
+export const START_OF_DAY_DOT = '#7A4FC4';
 export const NOT_STARTED_DOT = '#8290B8';
 
 export const STATUS_DEFS: Record<AttendanceStatus, StatusDef> = {
+  // Set at sign-in (22 Nov): shown, never picked by hand.
+  start_of_day: { status: 'start_of_day', kind: 'unproductive', dot: START_OF_DAY_DOT, automatic: true },
   available: { status: 'available', kind: 'production', dot: GREEN, automatic: false },
   on_call: { status: 'on_call', kind: 'production', dot: CYAN, automatic: true },
   after_call_notes: { status: 'after_call_notes', kind: 'production', dot: CYAN, automatic: true },
@@ -61,14 +67,16 @@ export function isKnownStatus(value: unknown): value is AttendanceStatus {
 }
 
 /**
- * The menu, in the guide's order. Call agents also see On call and
- * After-call notes (greyed: the phone system sets them). Team Leads,
- * Managers and Finance have the production statuses of an office person:
- * Available, meetings, training, one-to-ones, System problem, breaks, lunch.
+ * The menu, in the guide's order (22 Nov): Active (the name shown for
+ * Available), Team meeting, One-to-one, Training, System problem, Short break,
+ * Lunch. Call agents also see On call and After-call work (greyed: the phone
+ * system sets them). Start of day is shown greyed while the person is in it
+ * (the day opens in it at sign-in); it cannot be picked once left.
  */
-export function menuStatuses(audience: AttendanceAudience): AttendanceStatus[] {
-  const picked: AttendanceStatus[] = ['team_meeting', 'training', 'one_to_one', 'system_problem', 'short_break', 'lunch'];
-  return audience === 'agent' ? ['available', 'on_call', 'after_call_notes', ...picked] : ['available', ...picked];
+export function menuStatuses(audience: AttendanceAudience, current: AttendanceStatus | null = null): AttendanceStatus[] {
+  const picked: AttendanceStatus[] = ['team_meeting', 'one_to_one', 'training', 'system_problem', 'short_break', 'lunch'];
+  const start: AttendanceStatus[] = current === 'start_of_day' ? ['start_of_day'] : [];
+  return audience === 'agent' ? [...start, 'available', 'on_call', 'after_call_notes', ...picked] : [...start, 'available', ...picked];
 }
 
 /** Statuses a person may pick by hand (the server refuses the rest). */

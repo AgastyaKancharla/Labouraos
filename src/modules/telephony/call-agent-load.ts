@@ -1,5 +1,6 @@
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ShiftPolicy, onShiftAt, shiftFor, staffShift } from '../attendance/staff-shift';
+import { NOT_IN_START_OF_DAY } from '../attendance/attendance.constants';
 
 const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -77,7 +78,7 @@ export async function onShiftCallAgents(prisma: PrismaService, now: Date, among?
   });
   if (staff.length === 0) return [];
   const days = await prisma.attendanceDay.findMany({
-    where: { staffId: { in: staff.map((s) => s.id) }, date: istDateValue(now), loginAt: { not: null }, logoutAt: null, dayType: { not: 'leave' } },
+    where: { staffId: { in: staff.map((s) => s.id) }, date: istDateValue(now), loginAt: { not: null }, logoutAt: null, dayType: { not: 'leave' }, ...NOT_IN_START_OF_DAY },
     select: { staffId: true },
   });
   const open = new Set(days.map((d) => d.staffId));

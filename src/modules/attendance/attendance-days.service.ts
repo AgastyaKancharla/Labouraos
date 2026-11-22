@@ -41,6 +41,8 @@ export interface DayRow {
   /** "Resume my day" presses that day (21 Nov). */
   resumeCount: number;
   idleSeconds: number;
+  /** Time in Start of day (22 Nov): unproductive, apart from breaks and idle. */
+  startOfDaySeconds: number;
   shortfallSeconds: number;
   makeUpSeconds: number;
   flagged: boolean;
@@ -71,6 +73,8 @@ export interface MonthSummary {
   breakSeconds: number;
   breakOverSeconds: number;
   idleSeconds: number;
+  /** Time in Start of day (22 Nov): unproductive. */
+  startOfDaySeconds: number;
   shortfallSeconds: number;
   makeUpSeconds: number;
   deductibleShortfallSeconds: number;
@@ -280,6 +284,7 @@ export class AttendanceDaysService {
       breakSeconds: 0,
       breakOverSeconds: 0,
       idleSeconds: 0,
+      startOfDaySeconds: 0,
       shortfallSeconds: 0,
       makeUpSeconds: 0,
       deductibleShortfallSeconds: 0,
@@ -308,6 +313,7 @@ export class AttendanceDaysService {
       summary.breakSeconds += row.breakSeconds;
       summary.breakOverSeconds += row.breakOverSeconds;
       summary.idleSeconds += row.idleSeconds;
+      summary.startOfDaySeconds += row.startOfDaySeconds;
       if (row.dayType !== 'open') {
         summary.shortfallSeconds += row.shortfallSeconds;
         summary.makeUpSeconds += row.makeUpSeconds;
@@ -409,6 +415,7 @@ export class AttendanceDaysService {
       productionSeconds: number;
       breakSeconds: number;
       idleSeconds: number;
+      startOfDaySeconds?: number;
       shortfallSeconds: number;
       makeUpSeconds: number;
       flagged: boolean;
@@ -439,6 +446,7 @@ export class AttendanceDaysService {
       breakCount: day.segments.filter((segment) => segment.status === 'short_break').length,
       resumeCount: day.resumeCount ?? 0,
       idleSeconds: day.idleSeconds,
+      startOfDaySeconds: day.startOfDaySeconds ?? 0,
       shortfallSeconds: day.dayType === 'open' ? 0 : day.shortfallSeconds,
       makeUpSeconds: day.dayType === 'open' ? 0 : day.makeUpSeconds,
       flagged: day.flagged,

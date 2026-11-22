@@ -187,6 +187,8 @@ function historyText(row: HistoryRow, t: ReturnType<typeof useT>): string {
       return t('ca.history.paid');
     case 'registered':
       return t('ca.history.registered', { by: (row.by as string | null) ?? '—' });
+    case 'payment_link_after_id':
+      return t(row.sent ? 'ca.history.linkAfterIdSent' : 'ca.history.linkAfterIdNotSent');
     default:
       return row.kind;
   }

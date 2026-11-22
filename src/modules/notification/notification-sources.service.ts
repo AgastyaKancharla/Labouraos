@@ -4,6 +4,7 @@ import { AttendanceCorrection, LeaveRequest, Notification, ReviewFlag } from '@p
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { formatINR } from '../../common/money/money';
 import { REASON_TEXT, placementOf } from '../attendance/request-routing';
+import { START_OF_DAY_BELL_MINUTES, START_OF_DAY_STATUS } from '../attendance/attendance.constants';
 import {
   FLAG_KIND_TO_NOTIFICATION,
   FLAG_NOTIFICATION_KINDS,
@@ -28,9 +29,9 @@ const SYSTEM_PROBLEM_LOOKBACK_DAYS = 31;
 const READ_SYNC_THROTTLE_MS = 15_000;
 
 /** The groups of sources a reader's role needs refreshed before reading the bell. */
-const READ_GROUPS: Record<string, Array<'requests' | 'team' | 'ceoMoney' | 'financeMoney' | 'lines' | 'payroll'>> = {
-  team_lead: ['requests', 'team'],
-  manager: ['requests', 'lines'],
+const READ_GROUPS: Record<string, Array<'requests' | 'team' | 'ceoMoney' | 'financeMoney' | 'lines' | 'payroll' | 'startOfDay'>> = {
+  team_lead: ['requests', 'team', 'startOfDay'],
+  manager: ['requests', 'lines', 'startOfDay'],
   ceo: ['requests', 'ceoMoney', 'lines', 'payroll'],
   finance: ['financeMoney', 'payroll'],
 };
@@ -147,6 +148,7 @@ export class NotificationSourcesService {
       extra: await this.safely('extra sources', () => this.syncExtraSources(now)),
       flags: await this.safely('flags', () => this.syncAllFlags(now, dir)),
       idle: await this.safely('idle', () => this.syncIdle(now, dir)),
+      startOfDay: await this.safely('start of day', () => this.syncStartOfDay(now, dir)),
       systemProblems: await this.safely('system problems', () => this.syncSystemProblems(now, dir)),
       breaks: await this.safely('breaks', () => this.clearEndedBreaks(now)),
       money: await this.safely('money', () => this.syncMoney(now, dir, 'all')),
@@ -183,6 +185,7 @@ export class NotificationSourcesService {
       if (group === 'ceoMoney') await this.safely('money', () => this.syncMoney(now, dir, 'ceo'));
       if (group === 'financeMoney') await this.safely('money', () => this.syncMoney(now, dir, 'finance'));
       if (group === 'lines') await this.safely('lines', () => this.syncNoReportingLine(now, dir));
+      if (group === 'startOfDay') await this.safely('start of day', () => this.syncStartOfDay(now, dir));
       if (group === 'payroll') await this.safely('payroll', () => this.syncPayroll(now, dir));
     }
   }
@@ -663,6 +666,58 @@ export class NotificationSourcesService {
     await this.notifications.clear(
       { kind: 'agent_idle', subjectType: 'attendance_segment', subjectId: segmentId },
       { byStaffId: staffId, reason: 'idle_ended' },
+      now,
+    );
+  }
+
+  /**
+   * In Start of day more than 15 minutes after signing in (Master Guide rev 206,
+   * decided 22 Nov): a bell to the person's Team Lead — the Manager for a Team
+   * Lead. One bell per person per day (subject: the attendance day, sent once);
+   * cleared as soon as they pick a status (closeStartOfDay) or the day ends.
+   * No rule was given for a Manager in Start of day: nobody is rung.
+   */
+  async syncStartOfDay(now: Date, dir?: StaffDirectory): Promise<void> {
+    const directory = dir ?? (await this.directory());
+    const before = new Date(now.getTime() - START_OF_DAY_BELL_MINUTES * 60 * 1000);
+    const waiting = await this.prisma.attendanceSegment.findMany({
+      where: { status: START_OF_DAY_STATUS, endedAt: null, startedAt: { lte: before }, day: { logoutAt: null } },
+    });
+    const drafts = waiting.flatMap((segment) => {
+      const person = directory.get(segment.staffId);
+      if (!person || person.isOwnerAccount) return [];
+      const chain = directory.chainOf(person.id);
+      const to = AGENT_ROLES.includes(person.role) ? chain.teamLead : person.role === 'team_lead' ? chain.manager : null;
+      const minutes = Math.floor((now.getTime() - segment.startedAt.getTime()) / 60000);
+      return this.drafts([to], {
+        kind: 'start_of_day_long',
+        title: `${person.name} (${person.code}) still in Start of day after ${START_OF_DAY_BELL_MINUTES} minutes`,
+        body: `Signed in at ${segment.startedAt.toISOString()} and has not picked a status yet (${minutes} minutes)`,
+        subjectType: 'attendance_day',
+        subjectId: segment.dayId,
+        once: true,
+      });
+    });
+    await this.notifications.reconcileKind(
+      'start_of_day_long',
+      drafts,
+      async (row) => {
+        const open = await this.prisma.attendanceSegment.findFirst({
+          where: { dayId: row.subjectId, status: START_OF_DAY_STATUS },
+          orderBy: { startedAt: 'desc' },
+          select: { staffId: true, endedAt: true },
+        });
+        return { byStaffId: open?.staffId ?? null, reason: open?.endedAt ? 'start_of_day_ended' : 'day_closed' };
+      },
+      now,
+    );
+  }
+
+  /** The person left Start of day (picked a status, or the day ended): clear the bell. */
+  async closeStartOfDay(dayId: string, staffId: string, now: Date = this.notifications.now()): Promise<void> {
+    await this.notifications.clear(
+      { kind: 'start_of_day_long', subjectType: 'attendance_day', subjectId: dayId },
+      { byStaffId: staffId, reason: 'start_of_day_ended' },
       now,
     );
   }

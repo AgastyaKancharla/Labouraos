@@ -87,6 +87,10 @@ describe('Phase 21 Task 3: full days, half days, shortfall and the month', () =>
         .set('Authorization', `Bearer ${token}`)
         .send(action === 'login' || action === 'logout' ? {} : { status: action });
       expect(res.status).toBe(201);
+      if (action === 'login') {
+        // 22 Nov: the day opens in Start of day; these hand-worked days pick Active at once.
+        await request(app.getHttpServer()).post('/attendance/status').set('Authorization', `Bearer ${token}`).send({ status: 'available' }).expect(201);
+      }
     }
   }
 

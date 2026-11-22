@@ -219,12 +219,15 @@ describe('Phase 21 Task 2: the working day', () => {
     at('2026-11-10T04:00:00.000Z');
     const agent = await make('call_agent', 'HND');
     await login(tokenFor(agent)).expect(201);
-    for (const status of ['on_call', 'after_call_notes', 'on_visit', 'travelling', 'idle']) {
+    // Start of day (22 Nov) is shown, never picked by hand.
+    for (const status of ['on_call', 'after_call_notes', 'on_visit', 'travelling', 'idle', 'start_of_day']) {
       const refused = await postStatus(tokenFor(agent), status);
       expect(refused.status).toBe(400);
     }
     const before = await login(tokenFor(agent));
-    expect(before.body.status).toBe('available');
+    expect(before.body.status).toBe('start_of_day');
+    expect((await postStatus(tokenFor(agent), 'available')).body.status).toBe('available');
+    expect((await postStatus(tokenFor(agent), 'start_of_day')).status).toBe(400);
   });
 
   it('adds production across calls, breaks, lunch, idle and an approved system problem', async () => {
@@ -240,10 +243,11 @@ describe('Phase 21 Task 2: the working day', () => {
 
     plus(0);
     expect((await login(token)).body).toMatchObject({
-      status: 'available',
+      status: 'start_of_day',
       productionSeconds: 0,
       lateMinutes: 0,
     });
+    expect((await postStatus(token, 'available')).body.status).toBe('available');
     plus(10);
     expect((await postStatus(token, 'short_break')).body.productionSeconds).toBe(600);
     plus(20);
@@ -295,6 +299,7 @@ describe('Phase 21 Task 2: the working day', () => {
     const token = tokenFor(agent);
     const start = shared.at.getTime();
     await login(token).expect(201);
+    await postStatus(token, 'available').expect(201);
     at(new Date(start + 10 * 60 * 1000).toISOString());
     expect((await today(token)).body.status).toBe('available');
     at(new Date(start + 11 * 60 * 1000).toISOString());
@@ -302,6 +307,7 @@ describe('Phase 21 Task 2: the working day', () => {
     const lateLook = await make('call_agent', 'ID2');
     at(new Date(start).toISOString());
     await login(tokenFor(lateLook)).expect(201);
+    await postStatus(tokenFor(lateLook), 'available').expect(201);
     at(new Date(start + 20 * 60 * 1000).toISOString());
     const openedLate = await today(tokenFor(lateLook));
     expect(openedLate.body.status).toBe('idle');
@@ -324,6 +330,9 @@ describe('Phase 21 Task 2: the working day', () => {
       data: { callRoutingPhone: encryptCallRoutingPhone('+919811100001') },
     });
     await login(token).expect(201);
+    // 22 Nov: no calls from Start of day; Active makes and receives calls.
+    expect((await request(app.getHttpServer()).post('/calls').set('Authorization', `Bearer ${token}`).send({ subjectType: 'job_seeker', subjectId: 'x', purpose: 'general' })).status).not.toBe(201);
+    await postStatus(token, 'available').expect(201);
     const seeker = await prisma.jobSeeker.create({
       data: {
         code: `JS-AT2-${stamp}`,
@@ -483,6 +492,7 @@ describe('Phase 21 Task 2: the working day', () => {
     const agent = await make('call_agent', 'FGT');
     const token = tokenFor(agent);
     await login(token).expect(201);
+    await postStatus(token, 'available').expect(201);
     at(new Date(start.getTime() + 5 * 60 * 1000).toISOString());
     await request(app.getHttpServer())
       .post('/attendance/heartbeat')

@@ -130,6 +130,8 @@ export class CeoOpsService {
       const totals = {
         productionSeconds: days.reduce((s, d) => s + d.productionSeconds, 0),
         breakSeconds: days.reduce((s, d) => s + d.breakSeconds, 0),
+        // Start of day (22 Nov): unproductive, shown apart.
+        startOfDaySeconds: days.reduce((s, d) => s + (d.startOfDaySeconds ?? 0), 0),
         lateMinutes: days.reduce((s, d) => s + d.lateMinutes, 0),
         lateDays: days.filter((d) => d.lateMinutes > 0).length,
         // Whole and half days (a half day of leave is half leave, half a working day).

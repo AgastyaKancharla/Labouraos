@@ -43,9 +43,11 @@ export function optionLabel(t: Translate, status: AttendanceStatus, audience: At
 /**
  * The one status dropdown in the header ("Available · 11:20 ▾"), from the CA03
  * and CA14 designs; Team Leads, Managers and Finance get the same control in
- * their page header. Start my day before the day starts; then every status
- * the person may pick (On call and After-call notes are shown greyed — the
- * phone system sets them), My attendance and End my day.
+ * their page header. The day opens at sign-in in Start of day for call agents,
+ * Team Leads and Managers (22 Nov; Finance still has Start my day); then every
+ * status the person may pick (Start of day, On call and After-call work are
+ * shown greyed — sign-in and the phone system set them), My attendance and
+ * End my day.
  */
 export function StatusMenu({ tone }: { tone: 'onDark' | 'onLight' }) {
   const t = useT();
@@ -130,7 +132,7 @@ export function StatusMenu({ tone }: { tone: 'onDark' | 'onLight' }) {
       {open && (
         <div ref={menu} id={menuId} className={alignLeft ? 'lb-att-menu lb-att-menu--left' : 'lb-att-menu'} role="menu" aria-label={t('att.menu.title')} onKeyDown={onKeyDown}>
           {phase === 'open' ? (
-            menuStatuses(audience).map((s) => {
+            menuStatuses(audience, status).map((s) => {
               const def = STATUS_DEFS[s];
               const current = s === status;
               return (
@@ -150,13 +152,14 @@ export function StatusMenu({ tone }: { tone: 'onDark' | 'onLight' }) {
                   <span className="lb-att-dot" style={{ background: def.dot }} aria-hidden="true" />
                   <span className="lb-att-menu__label">
                     {optionLabel(t, s, audience, today)}
-                    {def.automatic && <span className="lb-att-menu__sub">{t('att.menu.phoneSets')}</span>}
+                    {def.automatic && <span className="lb-att-menu__sub">{t(s === 'start_of_day' ? 'att.menu.signInSets' : 'att.menu.phoneSets')}</span>}
                   </span>
                   {current && <span aria-hidden="true">✓</span>}
                 </button>
               );
             })
-          ) : phase === 'ended' ? null : (
+          ) : phase === 'ended' || today?.startsAtSignIn ? null : (
+            // 22 Nov: no "Start my day" for call agents, Team Leads and Managers (the day opens at sign-in); Finance keeps it.
             <button type="button" role="menuitem" tabIndex={-1} className="lb-att-menu__item lb-att-menu__start" onClick={() => run(() => void attendance.start())}>
               {t('att.menu.start')}
             </button>

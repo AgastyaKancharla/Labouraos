@@ -13,8 +13,9 @@ import type { BadgeTone } from '../portals/types';
  *   info    neutral information, in progress       (cyan)
  *   blue    selected / brand                       (royal blue)
  *   muted   inactive, not applicable               (grey)
+ *   start   Start of day (22 Nov): signed in, no status picked yet (violet)
  */
-export type StatusTone = 'good' | 'warn' | 'crit' | 'danger' | 'info' | 'blue' | 'muted';
+export type StatusTone = 'good' | 'warn' | 'crit' | 'danger' | 'info' | 'blue' | 'muted' | 'start';
 
 const PORTAL: Record<StatusTone, string> = {
   good: 'pill good',
@@ -24,6 +25,7 @@ const PORTAL: Record<StatusTone, string> = {
   info: 'pill info',
   blue: 'pill lb-pill-blue',
   muted: 'pill muted',
+  start: 'pill lb-pill-start',
 };
 const CONSOLE: Record<StatusTone, string> = {
   good: 'tag tg',
@@ -33,6 +35,7 @@ const CONSOLE: Record<StatusTone, string> = {
   info: 'tag tc',
   blue: 'tag tb',
   muted: 'tag tn',
+  start: 'tag lb-pill-start',
 };
 
 export function StatusPill({ tone, children, title }: { tone: StatusTone; children: ReactNode; title?: string }) {

@@ -713,3 +713,31 @@ When a call ends for someone who was On visit or Travelling when it started (a f
 - The "signed in again without a code" bell counts the old session as live only if it was used for real (not a background poll) in the last 5 minutes.
 - One `day_resumed_again` bell per person per day, updated in place with the count. Resume waits 2 minutes after Log out (`400 RESUME_TOO_SOON`).
 - The web app waits up to 2 seconds for another tab's renewed token before signing out on a refused renewal.
+
+## Attendance start and console layout (Master Guide rev 206, decided 22 Nov)
+
+### The day starts at sign-in
+
+- For call agents, field agents, Team Leads and Managers, the first successful sign-in of the IST day (`POST /auth/login` or `POST /auth/login/verify-code`, web console or Laboura Field) opens the attendance day in the new status **`start_of_day`** (`AttendanceService.openAtSignIn`, through `StaffSignInHooks` → `AttendanceSignInHook`). Lateness, grace and the own shift are measured from that sign-in. A sign-in never fails because of attendance.
+- A day already open is left alone. A day that ended — Log out (press Resume my day), or closed by a senior or the night clean-up — is never reopened by signing in.
+- CEO, Finance and owner accounts are unchanged (Finance still starts the day with `POST /attendance/login`, as Available; an owner account's day still starts by itself as Available).
+- Laboura Field may send `latitude` and `longitude` with the sign-in body; they are kept on the day (`loginLat`/`loginLng`). Without them the day still opens, `GET /attendance/today` answers `locationSaved: false` for a field agent, and Laboura Field saves the location with `POST /attendance/login { latitude, longitude }` (allowed on an open day with no location; otherwise it just returns today).
+- `POST /attendance/login` stays for compatibility: for these roles it opens the day in `start_of_day` when it is not open yet, and otherwise returns today.
+- `GET /attendance/today` also opens the day the same way when the caller's session (`sid`) was created today (IST) and the day has not opened (a sign-in from before this rule, or a failed start).
+- `POST /attendance/resume` and a Team Lead's Reopen bring these roles back to `start_of_day` (the status picker), not Available.
+
+### Start of day
+
+- Not production and not a break: unproductive. `GET /attendance/today` adds `startOfDaySeconds` and `startsAtSignIn`; `AttendanceDay.startOfDaySeconds` (migration `20261207100000_attendance_start_of_day`) is kept per day and shown in `GET /attendance/month` (`startOfDaySeconds` on the month and each day), `GET /attendance/report` (each day and `totals`), `GET /attendance/team-summary` (each person), `GET /attendance/live` (each row, and `counts.startOfDay`), `GET /team-lead/attendance` rows and `GET /ceo/attendance` rows.
+- Shown, never picked: `POST /attendance/status { "status": "start_of_day" }` is `400`. The picker shows Active (the name shown for `available`; the code value is unchanged), Team meeting, One-to-one, Training, System problem, Short break, Lunch.
+- Nobody in Start of day receives calls or new work: incoming-call routing and `POST /calls` need `available`; the missed-call hand-out (`onShiftCallAgents`), WhatsApp and referral lead assignment (`loadLeadAgents`) and app sign-up calls skip anyone whose open status is `start_of_day` (`NOT_IN_START_OF_DAY`).
+- More than 15 minutes in Start of day rings the person's Team Lead (the Manager for a Team Lead) — bell kind `start_of_day_long`, subject the attendance day, once per person per day, from the notification sweep and the Team Lead's / Manager's bell read; cleared (`start_of_day_ended`) as soon as they pick a status, or when the day closes. No rule was given for a Manager in Start of day: nobody is rung.
+- `after_call_notes` is shown as **After-call work** everywhere; it still lasts 2 minutes, then Active.
+
+### Another ID approved → payment link
+
+- When a Team Lead, Manager or the CEO approves a PAN, driving licence or voter ID (`POST /team-lead/registrations/:id/check`, `POST /identity/job-seekers/:id/other-id/decision`, `POST /identity/job-seekers/:id/registration-check` with `verdict: "ok"`) of a job seeker who hasn't paid (`lead`, `consented` or `pending_activation`, no payment received), the ₹499 payment link is sent by itself with the same service as Resend (`JobSeekerService.createActivationPayment`: SMS and WhatsApp, the same ID gate, re-consent and ban-review checks). The answer carries `paymentLink: { status: "sent" | "skipped" | "none", reason }`.
+- Not sent (`skipped`) when: already paid (`already_paid`), not waiting for a payment (`not_payable`), consent not complete (`no_consent`), a live wrong number / do not call block (`contact_blocked`), 9 PM–9 AM IST (`quiet_hours`), or the request is refused (`not_sent`). The agent then uses Resend.
+- Every outcome is in the job seeker's history (StatusHistory reason `payment_link_after_id_approval:sent` or `…:skipped:<reason>`, shown on CA04's history; audit `job_seeker.payment_link_after_id_approval`), and the agent who holds him (assigned, else registered) gets the informational bell `payment_link_after_id` (no rupee amount).
+- Payment before the check stays refused. A referral partner's approved ID sends nothing: their next step (the UPI details) is in the same registration link, with no separate link to send.
+- The link page says "Usually checked within 2 hours during working hours." after the card photo.

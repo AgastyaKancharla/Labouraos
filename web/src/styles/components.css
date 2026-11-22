@@ -119,6 +119,11 @@
   color: var(--royal);
   background: var(--sky-bg);
 }
+/* Start of day (22 Nov): its own colour, apart from breaks (gold) and Idle (amber). */
+.lb-pill-start {
+  color: #5B3A99;
+  background: #EFE8FA;
+}
 .lb-nbadge--tomato {
   background: var(--tomato);
   color: #fff;
@@ -370,6 +375,49 @@ a.lb-sidebar__brand,
   background: var(--bg);
   display: flex;
   flex-direction: column;
+}
+/* 22 Nov: the console's navigation is the portals' left sidebar; the page sits beside it. */
+.lb-console--side {
+  flex-direction: row;
+}
+.lb-console__body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.lb-console__menu,
+.lb-console__phonelogo {
+  display: none;
+}
+@media (max-width: 900px) {
+  .lb-console--side {
+    flex-direction: column;
+  }
+  .lb-console__menu {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 9px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .lb-console__phonelogo {
+    display: inline-flex;
+  }
+  .lb-console__phonelogo img {
+    border-radius: 7px;
+  }
+  .lb-console--side .lb-console__hdr {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+  }
 }
 .hdr {
   display: flex;
