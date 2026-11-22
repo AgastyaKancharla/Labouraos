@@ -32,7 +32,7 @@ async function fillRequired() {
     await waitFor(() => screen.getByText(/Checked by OTP at/));
     expect(screen.queryByTestId('fa07-language')).toBeNull(); // English only (rev 193): no message language
     await fireEvent.press(screen.getByTestId('fa07-type'));
-    await fireEvent.press(screen.getByTestId('fa07-type-restaurant_hotel'));
+    await fireEvent.press(screen.getByTestId('fa07-type-restaurant'));
     await fireEvent.press(screen.getByTestId('fa07-employees'));
     await fireEvent.press(screen.getByTestId('fa07-employees-1-5'));
     await fireEvent.changeText(screen.getByLabelText('Shop / building number *'), 'No. 14');
@@ -156,6 +156,40 @@ describe('FA07 Register a business', () => {
     await waitFor(() => expect(screen.getByTestId('fa07-pin-place')).toHaveTextContent(/area shown when online/));
   });
 
+  it('22 Nov (rev 207–208): the business type picker has group headings and a search box; Other needs the type in words; "Same as the shop name" fills the legal name', async () => {
+    searchParams.current = {};
+    await renderWithApp(<RegisterBusinessScreen />, {
+      signedInAs: kiran,
+      route: (url) => {
+        if (url.endsWith('/screens/call-registration/options')) return { status: 200, body: { city: 'Bengaluru', areas: [] } };
+        if (url.endsWith('/trades')) return { status: 200, body: trades };
+        return undefined;
+      },
+    });
+    await waitFor(() => screen.getByTestId('fa07-type'));
+    await fireEvent.press(screen.getByTestId('fa07-type'));
+    expect(screen.getByTestId('fa07-type-group-Food & hospitality')).toBeTruthy();
+    await fireEvent.changeText(screen.getByTestId('fa07-type-search'), 'dairy');
+    expect(screen.getByTestId('fa07-type-group-Agriculture')).toBeTruthy();
+    await fireEvent.changeText(screen.getByTestId('fa07-type-search'), 'tea');
+    expect(screen.getByTestId('fa07-type-tea_coffee_stall')).toBeTruthy();
+    expect(screen.queryByTestId('fa07-type-dairy')).toBeNull();
+    await fireEvent.changeText(screen.getByTestId('fa07-type-search'), 'other');
+    await fireEvent.press(screen.getByTestId('fa07-type-other'));
+    await fireEvent.press(screen.getByTestId('fa07-save'));
+    expect(screen.getByTestId('fa07-type-other')).toBeTruthy();
+    expect(screen.getByText('Type what kind of business it is.')).toBeTruthy();
+    await fireEvent.changeText(screen.getByTestId('fa07-board-name'), 'Rose Petals');
+    await fireEvent.press(screen.getByTestId('fa07-legal-same'));
+    expect(screen.getByTestId('fa07-legal-name').props.value).toBe('Rose Petals');
+    expect(screen.getByTestId('fa07-legal-name').props.editable).toBe(false);
+  });
+
+  it('22 Nov: the body sends the legal name from the shop name and the typed Other type', () => {
+    const base = businessBody({ ...({} as FormState), staff: [], branches: [], mobile: { number: '9', requestId: 'r', code: '', verifiedAt: 'x', sentAt: null }, boardName: 'Rose Petals', legalName: 'old', legalSameAsShop: true, businessType: 'other', businessTypeOther: ' Flower shop ', shopNumber: '', street: '', landmark: '', area: '', pincode: '', familyName: '', contactName: '', contactRole: '', whatsappSame: true, whatsapp: '', billingEmail: '', heardFrom: 'field_visit', employees: '1-5', running: '', hiring: '', opensAt: '', closesAt: '', pin: null, gstin: '', fssai: '', licenceKind: 'licenceNumber', licenceNumber: '', pan: '', noDocuments: true }, null);
+    expect(base).toMatchObject({ legalName: 'Rose Petals', businessType: 'other', businessTypeOther: 'Flower shop' });
+  });
+
   it('starts from the visit (board name, map pin), checks the mobile by OTP, warns below the minimum wage, and registers from the visit', async () => {
     saveDraft({
       id: 'v-7', startedAt: '2026-11-09T06:00:00Z', latitude: 12.9116, longitude: 77.6101, accuracy: 8, shopName: 'Annapoorna Mess', businessId: null,
@@ -206,7 +240,7 @@ describe('FA07 Register a business', () => {
     await waitFor(() => expect(posted).toHaveLength(1));
     expect(posted[0]).toMatchObject({
       name: 'Annapoorna Mess', contactPersonName: 'Shankar Rao', contactPersonRole: 'owner', phone: '9900054321', otpRequestId: 'otp-9',
-      heardFrom: 'field_visit', businessType: 'restaurant_hotel', locality: 'BTM Layout 2nd Stage', pincode: '560076',
+      heardFrom: 'field_visit', businessType: 'restaurant', locality: 'BTM Layout 2nd Stage', pincode: '560076',
       latitude: 12.9116, longitude: 77.6101, fieldVisitId: 'v-7',
       staffNeededRows: [{ trade: 'Cook', headcount: 1, salaryMinPaise: 1600000, salaryMaxPaise: 1600000, shift: 'day' }],
     });

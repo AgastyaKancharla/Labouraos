@@ -55,4 +55,9 @@ export const visit22En = {
   'biz.badge.allGood': 'All good',
   'biz.badge.paused': 'Paused',
   'biz.badge.suspended': 'Suspended',
+  'form.search': 'Search',
+  'form.noMatch': 'Nothing matches.',
+  'fa07.legalSame': 'Same as the shop name',
+  'fa07.typeOther': 'What kind of business? *',
+  'fa07.typeOtherRequired': 'Type what kind of business it is.',
 } as const;

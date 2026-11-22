@@ -9,6 +9,8 @@ export interface Choice<V extends string = string> {
   /** A drawn icon in a coloured round tile at the start of the row (ChoiceList only). */
   icon?: IconName;
   accent?: Accent;
+  /** SelectField: the heading the choice sits under (22 Nov: business types grouped by sector). */
+  group?: string;
 }
 
 /** A radio list (`input radio` in the designs): one tall row per choice, optionally with a coloured icon tile. */

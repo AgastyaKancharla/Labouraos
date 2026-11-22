@@ -18,6 +18,7 @@ import { routes } from '@/navigation/routes';
 import { useFormDraft } from '@/lib/formDraft';
 import { inShortText } from '@/api/endpoints/legal';
 import { type Accent, accents, colors, fonts, radius, touch } from '@/theme';
+import { BUSINESS_TYPE_GROUPS, businessTypeLabel } from '@/lib/businessTypes';
 import { AppHeader } from '../_shared/AppHeader';
 import { SelectField } from '../_visits/SelectField';
 import { DatePicker } from '../_visits/DatePicker';
@@ -28,10 +29,8 @@ import { businessBody, DEFAULT_CITY, formErrors, type FormState, type MobileStat
 
 const ROLES = ['owner', 'manager', 'hr', 'supervisor', 'other'] as const;
 const HEARD = ['toll_free_missed_call', 'ad', 'referral_partner', 'field_visit', 'social_media', 'whatsapp', 'walk_in', 'other'] as const;
-const BTYPES = [
-  'restaurant_hotel', 'bakery', 'retail_shop', 'supermarket', 'apartment_society', 'household', 'office',
-  'factory', 'warehouse', 'hospital_clinic', 'construction', 'security_agency', 'salon', 'other',
-] as const;
+/** 22 Nov (rev 207): the full grouped list, the same as the consoles and the server. */
+const BTYPE_CHOICES = BUSINESS_TYPE_GROUPS.flatMap((g) => g.types.map((ty) => ({ value: ty.value, label: ty.label, group: g.label })));
 const EMPLOYEES = ['1-5', '6-20', '21-50', '51-200', '200+'] as const;
 const RUNNING = ['under_1', '1_3', '3_10', '10_plus'] as const;
 const HIRING = ['rarely', 'every_few_months', 'every_month', 'every_week'] as const;
@@ -447,9 +446,37 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
           {household ? (
             <TextField label={t('fa07.familyName')} value={form.familyName} onChangeText={(v) => set({ familyName: v })} error={err('familyName') ? t('fa07.required') : null} />
           ) : (
-            <TextField label={t('fa07.legalName')} value={form.legalName} onChangeText={(v) => set({ legalName: v })} />
+            <>
+              {/* 22 Nov (rev 207): "Same as the shop name" fills the legal name and keeps it read-only. */}
+              <Toggle label={t('fa07.legalSame')} value={Boolean(form.legalSameAsShop)} onChange={(v) => set({ legalSameAsShop: v })} testID="fa07-legal-same" />
+              <TextField
+                label={t('fa07.legalName')}
+                value={form.legalSameAsShop ? form.boardName : form.legalName}
+                editable={!form.legalSameAsShop}
+                onChangeText={(v) => set({ legalName: v })}
+                testID="fa07-legal-name"
+              />
+            </>
           )}
-          <SelectField label={t('fa07.businessType')} value={form.businessType} choices={choice(BTYPES, 'btype')} onChange={(v) => set({ businessType: v })} error={err('businessType')} testID="fa07-type" />
+          <SelectField
+            label={t('fa07.businessType')}
+            value={form.businessType}
+            choices={BTYPE_CHOICES.some((c) => c.value === form.businessType) || !form.businessType ? BTYPE_CHOICES : [...BTYPE_CHOICES, { value: form.businessType, label: businessTypeLabel(form.businessType), group: undefined }]}
+            onChange={(v) => set({ businessType: v })}
+            error={err('businessType')}
+            searchable
+            testID="fa07-type"
+          />
+          {form.businessType === 'other' ? (
+            <TextField
+              label={t('fa07.typeOther')}
+              value={form.businessTypeOther ?? ''}
+              maxLength={80}
+              onChangeText={(v) => set({ businessTypeOther: v })}
+              error={err('businessTypeOther') ? t('fa07.typeOtherRequired') : null}
+              testID="fa07-type-other"
+            />
+          ) : null}
           <SelectField label={t('fa07.employees')} value={form.employees} choices={EMPLOYEES.map((v) => ({ value: v, label: v.replace('-', '–') }))} onChange={(v) => set({ employees: v })} error={err('employees')} testID="fa07-employees" />
           <SelectField label={t('fa07.running')} value={form.running} choices={choice(RUNNING, 'running')} onChange={(v) => set({ running: v })} />
           <SelectField label={t('fa07.hiring')} value={form.hiring} choices={choice(HIRING, 'hiring')} onChange={(v) => set({ hiring: v })} />
@@ -670,9 +697,9 @@ function Section({ n, title }: { n: number; title: string }) {
   );
 }
 
-function Toggle({ label, value, onChange, error }: { label: string; value: boolean; onChange: (v: boolean) => void; error?: boolean }) {
+function Toggle({ label, value, onChange, error, testID }: { label: string; value: boolean; onChange: (v: boolean) => void; error?: boolean; testID?: string }) {
   return (
-    <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: value }} accessibilityLabel={label} onPress={() => onChange(!value)} style={styles.toggle}>
+    <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: value }} accessibilityLabel={label} onPress={() => onChange(!value)} style={styles.toggle} testID={testID}>
       <View style={[styles.box, value && styles.boxOn, error && styles.boxError]}>{value ? <Text style={styles.tick}>✓</Text> : null}</View>
       <Text variant="small" style={styles.flex1}>
         {label}

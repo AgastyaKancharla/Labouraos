@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, View } from 'react-native';
-import { Button, Text } from '@/components';
+import { Button, Text, TextField } from '@/components';
 import { useI18n } from '@/i18n';
 import { colors, radius, touch } from '@/theme';
 import type { Choice } from './ChoiceList';
@@ -13,6 +13,7 @@ export function SelectField<V extends string>({
   onChange,
   placeholder,
   error,
+  searchable = false,
   testID,
 }: {
   label: string;
@@ -21,11 +22,25 @@ export function SelectField<V extends string>({
   onChange: (value: V) => void;
   placeholder?: string;
   error?: boolean;
+  /** A search box over the list (22 Nov: the long grouped list of business types). */
+  searchable?: boolean;
   testID?: string;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const current = choices.find((c) => c.value === value);
+  // Group headings (choices with `group`), filtered by the search words.
+  const q = query.trim().toLowerCase();
+  const shown = q ? choices.filter((c) => c.label.toLowerCase().includes(q) || (c.group ?? '').toLowerCase().includes(q)) : choices;
+  type Row = { kind: 'heading'; key: string; label: string } | { kind: 'choice'; key: string; choice: Choice<V> };
+  const rows: Row[] = [];
+  let lastGroup: string | undefined;
+  for (const c of shown) {
+    if (c.group && c.group !== lastGroup) rows.push({ kind: 'heading', key: `h:${c.group}`, label: c.group });
+    lastGroup = c.group;
+    rows.push({ kind: 'choice', key: c.value, choice: c });
+  }
   return (
     <View style={styles.field}>
       <Text variant="small" style={styles.label}>
@@ -47,10 +62,23 @@ export function SelectField<V extends string>({
             <Text variant="h2" style={styles.sheetTitle}>
               {label}
             </Text>
+            {searchable ? (
+              <TextField label={t('form.search')} value={query} onChangeText={setQuery} autoCorrect={false} testID={testID ? `${testID}-search` : undefined} />
+            ) : null}
             <FlatList
-              data={choices as Choice<V>[]}
-              keyExtractor={(c) => c.value}
-              renderItem={({ item }) => (
+              data={rows}
+              keyExtractor={(r) => r.key}
+              ListEmptyComponent={<Text variant="muted">{t('form.noMatch')}</Text>}
+              renderItem={({ item: row }) => {
+                if (row.kind === 'heading') {
+                  return (
+                    <Text variant="label" style={styles.heading} testID={testID ? `${testID}-group-${row.label}` : undefined}>
+                      {row.label}
+                    </Text>
+                  );
+                }
+                const item = row.choice;
+                return (
                 <Pressable
                   accessibilityRole="button"
                   accessibilityState={{ disabled: !!item.disabled }}
@@ -64,7 +92,8 @@ export function SelectField<V extends string>({
                 >
                   <Text variant={item.value === value ? 'bodyStrong' : 'body'}>{item.label}</Text>
                 </Pressable>
-              )}
+                );
+              }}
             />
             <Button label={t('common.close')} variant="secondary" onPress={() => setOpen(false)} />
           </View>
@@ -95,4 +124,5 @@ const styles = StyleSheet.create({
   option: { minHeight: touch.min, justifyContent: 'center', paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: colors.border },
   optionOn: { backgroundColor: colors.blue100 },
   optionOff: { opacity: 0.5 },
+  heading: { paddingTop: 12, paddingBottom: 4, paddingHorizontal: 8 },
 });
