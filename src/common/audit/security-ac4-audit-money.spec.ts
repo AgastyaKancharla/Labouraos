@@ -85,13 +85,18 @@ describe('Security AC-4: money is stripped from audit rows except for the CEO an
     const list = (token: string) =>
       request(app.getHttpServer()).get('/audit-logs').query({ entityType: 'payment', entityCode }).set('Authorization', `Bearer ${token}`).expect(200);
 
+    // Only the money-bearing fields, and only whole numbers: the row's random ids and time stamps
+    // could otherwise contain "999" (a UUID like 3999754b-… made this flaky).
+    const MONEY = /(?<![0-9a-f])(99900|49900|999)(?![0-9a-f])/i;
+    const moneyFields = (row: { before: unknown; after: unknown; reason: unknown }) => JSON.stringify({ before: row.before, after: row.after, reason: row.reason });
+
     it('a Team Lead reads the row without any money, in the list and by id', async () => {
       const rows = (await list(tokens.lead)).body as Array<{ id: string; before: unknown; after: unknown; reason: string }>;
       expect(rows).toHaveLength(1);
-      expect(JSON.stringify(rows[0])).not.toMatch(/99900|49900|999/);
+      expect(moneyFields(rows[0])).not.toMatch(MONEY);
       expect(rows[0].after).toEqual({ status: 'approved' });
       const one = await request(app.getHttpServer()).get(`/audit-logs/${rows[0].id}`).set('Authorization', `Bearer ${tokens.lead}`).expect(200);
-      expect(JSON.stringify(one.body)).not.toMatch(/99900|49900/);
+      expect(moneyFields(one.body)).not.toMatch(MONEY);
     });
 
     it('the CEO still sees the amounts', async () => {
