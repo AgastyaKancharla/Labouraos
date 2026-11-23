@@ -758,13 +758,17 @@ export class FieldRedesignService {
     return { OR: [{ accountAgentId: staffId }, { accountAgentId: null, leadCreatedByStaffId: staffId }] };
   }
 
-  async myBusinesses(actor: Actor, q?: string) {
+  /**
+   * `owned` (23 Nov, call agent console lists): whose businesses the list holds; by default the
+   * field agent's own (below). `take`: how many at most (newest first).
+   */
+  async myBusinesses(actor: Actor, q?: string, owned?: Prisma.BusinessWhereInput, take: number = LIST_LIMIT) {
     const now = this.clock.now();
     const query = (q ?? '').trim();
     // 22 Nov (rev 208): the Businesses tab lists his businesses — account agent (or his lead), or
     // onboarded by him on a visit.
     const filters: Prisma.BusinessWhereInput[] = [
-      { OR: [this.myBusinessesWhere(actor.sub), { visits: { some: { staffId: actor.sub, outcome: 'onboarded' } } }] },
+      owned ?? { OR: [this.myBusinessesWhere(actor.sub), { visits: { some: { staffId: actor.sub, outcome: 'onboarded' } } }] },
       { anonymisedAt: null },
     ];
     if (query) {
@@ -779,7 +783,7 @@ export class FieldRedesignService {
     const rows = await this.prisma.business.findMany({
       where: { AND: filters },
       orderBy: [{ createdAt: 'desc' }],
-      take: LIST_LIMIT,
+      take,
       select: {
         id: true, code: true, name: true, locality: true, verificationStatus: true, pausedAt: true, suspendedAt: true,
         suspendedUntil: true, inPersonOnboardedAt: true, fieldVerifiedAt: true, leadChannel: true, accountAgentId: true,
@@ -1285,10 +1289,11 @@ export class FieldRedesignService {
 
   // --------------------------------------------------------- Job seekers
 
-  async myJobSeekers(actor: Actor, q?: string) {
+  /** `owned` and `take`: as for myBusinesses (23 Nov, call agent console lists). */
+  async myJobSeekers(actor: Actor, q?: string, owned?: Prisma.JobSeekerWhereInput, take: number = LIST_LIMIT) {
     const query = (q ?? '').trim();
     // His own: registered by him, or assigned to him by his Team Lead (peopleOwnedBy, rev 194).
-    const filters: Prisma.JobSeekerWhereInput[] = [peopleOwnedBy([actor.sub]), { anonymisedAt: null }];
+    const filters: Prisma.JobSeekerWhereInput[] = [owned ?? peopleOwnedBy([actor.sub]), { anonymisedAt: null }];
     if (query) {
       // Own records only; a phone matches by exactly its last 4 digits (never a longer run, AC-2).
       filters.push({
@@ -1302,7 +1307,7 @@ export class FieldRedesignService {
     const rows = await this.prisma.jobSeeker.findMany({
       where: { AND: filters },
       orderBy: { createdAt: 'desc' },
-      take: LIST_LIMIT,
+      take,
       select: {
         id: true, code: true, name: true, phone: true, status: true, createdAt: true, paymentReceivedAt: true,
         identityVerifications: { select: { status: true, verifiedAt: true } },

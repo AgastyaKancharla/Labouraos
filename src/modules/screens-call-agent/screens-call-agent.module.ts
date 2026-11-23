@@ -11,12 +11,14 @@ import { CallWorkController, SearchController } from './call-work.controller';
 import { CallWorkService } from './call-work.service';
 import { CallWorkClock } from './call-work-clock';
 import { SearchService } from './search.service';
+import { CallPeopleService } from './call-people.service';
+import { ScreensFieldModule } from '../screens-field/screens-field.module';
 
 /** Backend reads for the call agent console's daily-work screens, and the global search. */
 @Module({
-  imports: [PrismaModule, PricingModule, AttendanceModule, CallModule, VacancyModule, TelephonyModule, TargetModule, SignupTrackerModule],
+  imports: [PrismaModule, PricingModule, AttendanceModule, CallModule, VacancyModule, TelephonyModule, TargetModule, SignupTrackerModule, ScreensFieldModule],
   controllers: [CallWorkController, SearchController],
-  providers: [CallWorkService, CallWorkClock, SearchService],
+  providers: [CallWorkService, CallWorkClock, SearchService, CallPeopleService],
   exports: [CallWorkService, SearchService],
 })
 export class ScreensCallAgentModule {}

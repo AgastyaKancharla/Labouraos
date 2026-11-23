@@ -6,9 +6,20 @@ import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { ALL_STAFF_ROLES } from '../../common/rbac/rbac.types';
 import { CallWorkService } from './call-work.service';
+import { CallPeopleService } from './call-people.service';
+import { queryText } from '../../common/http/plain-query';
 import { SearchService } from './search.service';
 
 type AuthedRequest = Request & { user: JwtPayload };
+
+function listQuery(q: unknown, filter: unknown, offset: unknown, limit: unknown) {
+  return {
+    q: queryText(q, 'q')?.slice(0, 64),
+    filter: queryText(filter, 'filter'),
+    offset: queryText(offset, 'offset'),
+    limit: queryText(limit, 'limit'),
+  };
+}
 
 /**
  * The call agent console's daily-work reads (designs CA03 Home, CA04 profile,
@@ -18,7 +29,33 @@ type AuthedRequest = Request & { user: JwtPayload };
 @Controller('call-work')
 @UseGuards(JwtAuthGuard, RbacGuard)
 export class CallWorkController {
-  constructor(private readonly work: CallWorkService) {}
+  constructor(
+    private readonly work: CallWorkService,
+    private readonly people: CallPeopleService,
+  ) {}
+
+  /**
+   * The console lists (rev 210, 23 Nov): My job seekers, My businesses, My referral partners —
+   * the agent's own people only, with the row's status line and one button, needs action first.
+   * ?q= search, ?filter= all|needs_action|waiting_tl|active|done, ?offset=&limit= for "Load more".
+   */
+  @Get('my/job-seekers')
+  @RequireRoles('call_agent')
+  myJobSeekers(@Req() req: AuthedRequest, @Query('q') q?: unknown, @Query('filter') filter?: unknown, @Query('offset') offset?: unknown, @Query('limit') limit?: unknown) {
+    return this.people.jobSeekers(req.user, listQuery(q, filter, offset, limit));
+  }
+
+  @Get('my/businesses')
+  @RequireRoles('call_agent')
+  myBusinesses(@Req() req: AuthedRequest, @Query('q') q?: unknown, @Query('filter') filter?: unknown, @Query('offset') offset?: unknown, @Query('limit') limit?: unknown) {
+    return this.people.businesses(req.user, listQuery(q, filter, offset, limit));
+  }
+
+  @Get('my/referrals')
+  @RequireRoles('call_agent')
+  myReferrals(@Req() req: AuthedRequest, @Query('q') q?: unknown, @Query('filter') filter?: unknown, @Query('offset') offset?: unknown, @Query('limit') limit?: unknown) {
+    return this.people.referrals(req.user, listQuery(q, filter, offset, limit));
+  }
 
   @Get('home')
   @RequireRoles('call_agent')

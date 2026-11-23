@@ -217,6 +217,11 @@ export const callAgentScreens: readonly ScreenDef[] = [
   { id: 'CA15b-ReferralSaved', path: 'register/referral/saved', title: 'screen.CA15b-ReferralSaved' },
   // No design file: the WhatsApp tab (Master Guide rev 202, 21 Nov).
   { id: 'CA18-WhatsApp', path: 'whatsapp', title: 'screen.CA18-WhatsApp' },
+  // No design file: the console lists (Master Guide rev 210, "Call agent console lists, decided 23 Nov").
+  // Tapping a row opens CA04-Profile (people/:id), which serves job seekers, businesses and partners.
+  { id: 'CA-MyJobSeekers', path: 'my/job-seekers', title: 'screen.CA-MyJobSeekers' },
+  { id: 'CA-MyBusinesses', path: 'my/businesses', title: 'screen.CA-MyBusinesses' },
+  { id: 'CA-MyPartners', path: 'my/referral-partners', title: 'screen.CA-MyPartners' },
 ];
 
 export const publicScreens: readonly ScreenDef[] = [

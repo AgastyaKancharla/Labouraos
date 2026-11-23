@@ -21,5 +21,7 @@ import { ProfileStuckModule } from '../profile-stuck/profile-stuck.module';
   imports: [PrismaModule, PricingModule, FieldVisitModule, AuditModule, AttendanceModule, ConsentModule, TargetModule, VacancyModule, NotificationModule, ReviewFlagModule, JobSeekerModule, ProfileStuckModule],
   controllers: [ScreensFieldController],
   providers: [ScreensFieldService, FieldRedesignService, FieldWorkExtrasService, FieldPeopleService],
+  // The call agent console lists (23 Nov) reuse the same rows with the call agent as viewer.
+  exports: [FieldPeopleService],
 })
 export class ScreensFieldModule {}

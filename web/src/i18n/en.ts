@@ -17,6 +17,7 @@ import { fixes17En } from './fixes17';
 import { reg21NovEn } from './reg21nov';
 import { visit22En } from './visit22';
 import { whatsappEn } from './whatsapp';
+import { consoleListsEn } from '../screens/call-agent/_lists/i18n';
 export const en = {
   "app.name": "Laboura",
   "common.loading": "Loading…",
@@ -635,6 +636,7 @@ export const en = {
   ...payslipEn,
   ...attendanceEn,
   ...workerLeftEn,
+  ...consoleListsEn,
 } as const;
 
 export type MessageKey = keyof typeof en;

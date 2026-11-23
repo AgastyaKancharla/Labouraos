@@ -830,7 +830,7 @@ export class CallWorkService {
       }),
       this.prisma.vacancy.findMany({
         where: { capturedByStaffId: staffId, createdAt: { gte: since } },
-        select: { id: true, code: true, tradeSkill: true, createdAt: true, business: { select: { name: true } } },
+        select: { id: true, code: true, tradeSkill: true, createdAt: true, business: { select: { name: true, code: true } } },
         orderBy: { createdAt: 'desc' },
         take: 10,
       }),
@@ -857,15 +857,16 @@ export class CallWorkService {
     const subjects = await this.loadSubjects(
       outcomes.filter((o) => o.subjectType && o.subjectId).map((o) => ({ type: o.subjectType as SubjectType, id: o.subjectId! })),
     );
+    // `ref` (23 Nov): the person the row opens (JS-, BZ- or RF- code; a vacancy opens its business).
     const rows = [
-      ...regs.map((r) => ({ kind: 'registered', at: r.createdAt.toISOString(), name: r.name, code: r.code, status: r.status, extra: null as string | null })),
-      ...businessRegs.map((b) => ({ kind: 'business_registered', at: b.createdAt.toISOString(), name: b.name, code: b.code, status: b.verificationStatus ?? 'lead', extra: null as string | null })),
-      ...partnerRegs.map((r) => ({ kind: 'partner_registered', at: r.createdAt.toISOString(), name: r.name, code: r.code, status: 'registered', extra: null as string | null })),
-      ...interviews.map((i) => ({ kind: 'interview_booked', at: i.proposedAt.toISOString(), name: i.jobSeeker.name, code: i.jobSeeker.code, status: i.status, extra: i.slotStartsAt.toISOString() })),
-      ...vacancies.map((v) => ({ kind: 'vacancy_added', at: v.createdAt.toISOString(), name: v.business.name, code: v.code, status: 'captured', extra: v.tradeSkill })),
+      ...regs.map((r) => ({ kind: 'registered', at: r.createdAt.toISOString(), name: r.name, code: r.code, ref: r.code as string | null, status: r.status, extra: null as string | null })),
+      ...businessRegs.map((b) => ({ kind: 'business_registered', at: b.createdAt.toISOString(), name: b.name, code: b.code, ref: b.code as string | null, status: b.verificationStatus ?? 'lead', extra: null as string | null })),
+      ...partnerRegs.map((r) => ({ kind: 'partner_registered', at: r.createdAt.toISOString(), name: r.name, code: r.code, ref: r.code as string | null, status: 'registered', extra: null as string | null })),
+      ...interviews.map((i) => ({ kind: 'interview_booked', at: i.proposedAt.toISOString(), name: i.jobSeeker.name, code: i.jobSeeker.code, ref: i.jobSeeker.code as string | null, status: i.status, extra: i.slotStartsAt.toISOString() })),
+      ...vacancies.map((v) => ({ kind: 'vacancy_added', at: v.createdAt.toISOString(), name: v.business.name, code: v.code, ref: v.business.code as string | null, status: 'captured', extra: v.tradeSkill })),
       ...outcomes.map((o) => {
         const s = subjects.get(`${o.subjectType}:${o.subjectId}`);
-        return { kind: 'call_outcome', at: o.agentOutcomeAt!.toISOString(), name: s?.name ?? '', code: s?.code ?? null, status: o.agentOutcome!, extra: null };
+        return { kind: 'call_outcome', at: o.agentOutcomeAt!.toISOString(), name: s?.name ?? '', code: s?.code ?? null, ref: s?.code ?? null, status: o.agentOutcome!, extra: null };
       }),
     ];
     return rows.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 12);

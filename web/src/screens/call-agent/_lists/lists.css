@@ -1,0 +1,184 @@
+/* Call agent console lists (rev 210, 23 Nov): My job seekers, My businesses, My referral partners
+   and the Home lists. No sideways scroll at phone width: rows wrap, the button drops below. */
+.lb-cl {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+.lb-cl-search {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 460px;
+  width: 100%;
+}
+.lb-cl-input {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1px solid var(--line, var(--border));
+  border-radius: 10px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  background: #fff;
+  box-sizing: border-box;
+}
+.lb-cl-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lb-cl-chip {
+  min-height: 32px;
+}
+.lb-cl-list {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 16px !important;
+  min-width: 0;
+}
+.lb-cl-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+.lb-cl-list > div:last-of-type > .lb-cl-row,
+.lb-cl-home > .lb-cl-row:last-child {
+  border-bottom: 0;
+}
+.lb-cl-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1 1 220px;
+  min-width: 0;
+  color: var(--ink);
+  text-decoration: none;
+}
+a.lb-cl-main:hover .lb-cl-name {
+  text-decoration: underline;
+}
+.lb-cl-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.lb-cl-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--navy, var(--ink));
+  overflow-wrap: anywhere;
+}
+.lb-cl-status {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.lb-cl-status--ink {
+  color: var(--ink);
+}
+.lb-cl-status--red {
+  color: var(--tomato, var(--danger));
+}
+.lb-cl-status--green {
+  color: var(--good);
+}
+.lb-cl-status--amber {
+  color: var(--amber);
+}
+.lb-cl-line {
+  font-size: 12.5px;
+  color: var(--soft, var(--muted));
+  overflow-wrap: anywhere;
+}
+.lb-cl-small {
+  font-size: 11.5px;
+  color: var(--soft, var(--muted));
+}
+.lb-cl-trailing {
+  display: flex;
+  justify-content: flex-end;
+  margin-left: auto;
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+.lb-cl-end {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  max-width: 220px;
+}
+.lb-cl-btn {
+  min-height: 38px !important;
+  padding: 8px 14px !important;
+  white-space: normal;
+  text-align: center;
+}
+.lb-cl-error {
+  font-size: 11.5px;
+  color: var(--tomato, var(--danger));
+  text-align: right;
+}
+.lb-cl-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.lb-cl-mark--done {
+  background: var(--green100, #e3f6ea);
+  color: var(--good);
+}
+.lb-cl-mark--waiting {
+  background: var(--amber100, #fff3d6);
+  color: var(--amber);
+}
+.lb-cl-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: 0 0 44px;
+  background: var(--navy100, var(--blue100));
+}
+.lb-cl-avatar--initials {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--navy, var(--ink));
+}
+.lb-cl-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 0;
+}
+.lb-cl-home {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+@media (max-width: 520px) {
+  .lb-cl-trailing {
+    flex: 1 1 100%;
+  }
+  .lb-cl-end {
+    max-width: 100%;
+  }
+}

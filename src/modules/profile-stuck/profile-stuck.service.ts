@@ -53,6 +53,20 @@ const LIST_CAP = 40;
 
 type Actor = { id: string; role: string };
 
+/**
+ * An agent's own records (the owner rule of own-team.ts): a job seeker or partner assigned to him,
+ * else registered by him; a business whose account agent he is, else whose lead he created. The
+ * "Stuck registrations" list and the call agent console lists (23 Nov) use this one definition.
+ */
+export function agentOwnedWheres(staffId: string): { seeker: Prisma.JobSeekerWhereInput; referral: Prisma.ReferralWhereInput; business: Prisma.BusinessWhereInput } {
+  const mine = { OR: [{ assignedStaffId: staffId }, { assignedStaffId: null, registeredByStaffId: staffId }] };
+  return {
+    seeker: mine as Prisma.JobSeekerWhereInput,
+    referral: mine as Prisma.ReferralWhereInput,
+    business: { OR: [{ accountAgentId: staffId }, { accountAgentId: null, leadCreatedByStaffId: staffId }] },
+  };
+}
+
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
@@ -98,6 +112,11 @@ export class ProfileStuckService {
    */
   async forJobSeeker(id: string): Promise<StuckView> {
     return this.jobSeeker({ id });
+  }
+
+  /** The same for one referral partner (call agent console lists, 23 Nov: the agent's own partners only). */
+  async forReferral(id: string): Promise<StuckView> {
+    return this.referral({ id });
   }
 
   /**
@@ -158,11 +177,8 @@ export class ProfileStuckService {
   /** Whose records a "Stuck registrations" list holds (owner rules of own-team.ts / record-scope.ts). */
   private async ownerScope(actor: Actor): Promise<RecordWheres> {
     if (actor.role === 'call_agent' || actor.role === 'field_agent') {
-      const mine = { OR: [{ assignedStaffId: actor.id }, { assignedStaffId: null, registeredByStaffId: actor.id }] };
       return {
-        seeker: mine as Prisma.JobSeekerWhereInput,
-        referral: mine as Prisma.ReferralWhereInput,
-        business: { OR: [{ accountAgentId: actor.id }, { accountAgentId: null, leadCreatedByStaffId: actor.id }] },
+        ...agentOwnedWheres(actor.id),
         vacancy: {},
         interview: {},
         placement: {},
