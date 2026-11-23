@@ -43,7 +43,9 @@ describe('Security AC-2: phone search accepts only the last 4 digits or a full n
     });
     seekerId = seeker.id;
     const business = await prisma.business.create({
-      data: { code: `BZ-AC2-${suffix}`, name: `AC2 Shop ${suffix}`, phone: `+91${ten.slice(0, 9)}${(Number(ten[9]) + 1) % 10}`, city: 'Bengaluru' },
+      // The name is searched with "contains": spelled in letters, so a 5–9 digit phone tail can never
+      // match the time-stamp digits in it (a name with the digits made the test fail ~1 run in 100).
+      data: { code: `BZ-AC2-${suffix}`, name: `AC2 Shop ${suffix.replace(/\d/g, (d) => 'abcdefghij'[Number(d)])}`, phone: `+91${ten.slice(0, 9)}${(Number(ten[9]) + 1) % 10}`, city: 'Bengaluru' },
     });
     businessId = business.id;
   });
