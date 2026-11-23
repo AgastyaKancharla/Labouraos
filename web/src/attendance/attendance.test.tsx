@@ -148,12 +148,15 @@ describe('header status menu (call agent console)', () => {
     let status = 'available';
     const api = mockApi({ 'GET /attendance/today': () => openToday(status === 'available' ? {} : { status, statusSince: istAt('11:31') }) });
     const sse = 'event: attendance_status\ndata: {"status":"on_call","since":"x"}\n\n';
+    // The phone system's event is sent only once "Active" is on screen (a fixed 50 ms timer raced the
+    // first render on a slow CI runner, so the menu sometimes never showed "Active").
+    let sendEvent: () => void = () => undefined;
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
-        setTimeout(() => {
+        sendEvent = () => {
           status = 'on_call';
           controller.enqueue(new TextEncoder().encode(sse));
-        }, 50);
+        };
       },
     });
     const fallback = api.fetch.getMockImplementation()!;
@@ -164,6 +167,7 @@ describe('header status menu (call agent console)', () => {
     sessionStore.set({ token: fakeJwt({ sub: TEST_STAFF.call_agent.id, role: 'call_agent', live: 'att' }), staff: TEST_STAFF.call_agent, expiresAt: Date.now() + 900_000, totpSetupOnly: false });
     renderScreen(<Blank />, { portal: 'call-agent', path: '/call-agent', now: ATT_NOW });
     expect(await screen.findByRole('button', { name: /^My status: Active · 11:20/ })).toBeInTheDocument();
+    sendEvent();
     expect(await screen.findByRole('button', { name: /^My status: On call · 11:31/ })).toBeInTheDocument();
   });
 
