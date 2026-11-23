@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { peopleOwnedBy } from '../../common/rbac/own-team';
 import { phoneLast4 } from '../../common/phone/indian-mobile';
@@ -73,6 +74,46 @@ export interface SeekerRowState {
   waiting: boolean;
   done: boolean;
   group: ListGroup;
+}
+
+/** A referral partner row's status line (call agent console lists, 23 Nov): terms, selfie, ID, UPI, then all set. */
+export type ReferralRowStatus =
+  | 'paused'
+  | 'terms_not_signed'
+  | 'selfie_missing'
+  | 'id_check_needed'
+  | 'waiting_tl'
+  | 'id_stopped'
+  | 'upi_missing'
+  | 'upi_checking'
+  | 'upi_mismatch'
+  | 'all_set';
+
+export interface ReferralRowState {
+  status: ReferralRowStatus;
+  /** The one button: send the partner terms link again (POST /referrals/:id/terms-links). */
+  action: 'partner_terms_link' | null;
+  vacancyId: null;
+  waiting: boolean;
+  done: boolean;
+  group: ListGroup;
+}
+
+/**
+ * Who works the rows (23 Nov). The field agent's lists (Laboura Field) and the call agent's
+ * console lists share the rules above; `call_agent` maps each button to what the console can
+ * do from a desk (callAgentBusinessRow, callAgentSeekerRow) and changes whose people are listed.
+ */
+export type PeopleViewer = 'field_agent' | 'call_agent';
+
+export interface PeopleScope {
+  viewer: PeopleViewer;
+  /** Whose people the list holds (default: the field agent's own). */
+  seekers?: Prisma.JobSeekerWhereInput;
+  businesses?: Prisma.BusinessWhereInput;
+  referrals?: Prisma.ReferralWhereInput;
+  /** How many at most, newest first (default 100). */
+  take?: number;
 }
 
 const ROW_ORDER: Record<ListGroup, number> = { needs_action: 0, waiting_tl: 1, active: 2, done: 3 };
@@ -162,6 +203,73 @@ export function seekerRowState(input: {
 }
 
 /**
+ * A business row for the call agent console (23 Nov). The same status line; the button only
+ * where the console can do it: the agreement link on a lead he created that is still a lead
+ * (the business write rule for call agents), the vacancy confirmation link or finishing the
+ * draft (vacancy writes: any business), Add vacancy (the form adds a shift when there is none).
+ * Showing candidates in the shop and recording a visit are field work: no button, so the row
+ * moves from Needs action to Active.
+ */
+export function callAgentBusinessRow(row: BusinessRowState, ctx: { canSendAgreement: boolean }): BusinessRowState {
+  const drop = (): BusinessRowState => ({ ...row, action: null, vacancyId: null, group: row.group === 'needs_action' ? 'active' : row.group });
+  switch (row.action) {
+    case 'agreement_link':
+      return ctx.canSendAgreement ? row : drop();
+    case 'add_shifts':
+      return { ...row, action: 'add_vacancy' };
+    case 'confirm_vacancy':
+    case 'add_vacancy':
+      return row;
+    case 'show_candidates':
+    case 'record_visit':
+      return drop();
+    default:
+      return row;
+  }
+}
+
+/**
+ * A job seeker row for the call agent console (23 Nov): the ID check is done from his own phone
+ * in his link, so "Scan Aadhaar QR" (Laboura Field, live) becomes Resend link, as on the profile's
+ * "Where they're stuck" box. The other buttons are the same.
+ */
+export function callAgentSeekerRow(row: SeekerRowState): SeekerRowState {
+  return row.action === 'scan_aadhaar' ? { ...row, action: 'registration_link' } : row;
+}
+
+/**
+ * A referral partner row (23 Nov) from "Where they're stuck" (ProfileStuckService, the same steps
+ * as the partner's profile): terms, selfie, ID check, UPI; Send partner terms link while the link
+ * can still finish a step; Waiting during the Team Lead's ID check; Done once all is set.
+ */
+export function referralRowState(input: {
+  paused: boolean;
+  stuck: Pick<StuckView, 'step' | 'state' | 'reason' | 'waitingForTeamLead' | 'actions'>;
+}): ReferralRowState {
+  const base = { action: null, vacancyId: null, waiting: false, done: false } as const;
+  const s = input.stuck;
+  const link = s.actions.includes('partner_terms_link') ? ('partner_terms_link' as const) : null;
+  const act = (status: ReferralRowStatus): ReferralRowState =>
+    link ? { ...base, status, action: link, group: 'needs_action' } : { ...base, status, group: 'active' };
+  if (input.paused) return { ...base, status: 'paused', group: 'active' };
+  switch (s.step) {
+    case 'terms':
+      return act('terms_not_signed');
+    case 'selfie':
+      return act('selfie_missing');
+    case 'id_check':
+      if (s.waitingForTeamLead) return { ...base, status: 'waiting_tl', waiting: true, group: 'waiting_tl' };
+      if (s.state === 'stuck' && /18/.test(s.reason ?? '')) return { ...base, status: 'id_stopped', group: 'done' };
+      return act('id_check_needed');
+    case 'upi':
+      if (link) return act('upi_missing');
+      return { ...base, status: /did not match/i.test(s.reason ?? '') ? 'upi_mismatch' : 'upi_checking', group: 'active' };
+    default:
+      return { ...base, status: 'all_set', done: true, group: 'done' };
+  }
+}
+
+/**
  * Laboura Field lists (Master Guide, "Laboura Field lists, decided 22 Nov
  * evening"): the Businesses and Job seekers tabs list the agent's own people,
  * each with its name, one plain status line, a few numbers and either "Done",
@@ -187,8 +295,9 @@ export class FieldPeopleService {
   // ------------------------------------------------------------ Businesses
 
   /** GET /field-work/businesses: my businesses (FA09) with type, numbers, last visit and the row's status and button. */
-  async businesses(actor: Actor, q?: string) {
-    const list = await this.redesign.myBusinesses(actor, q);
+  async businesses(actor: Actor, q?: string, scope?: PeopleScope) {
+    const callAgent = scope?.viewer === 'call_agent';
+    const list = await this.redesign.myBusinesses(actor, q, scope?.businesses, scope?.take);
     const ids = list.results.map((b) => b.id);
     if (!ids.length) return { ...list, results: [] };
     const now = this.clock.now();
@@ -224,7 +333,13 @@ export class FieldPeopleService {
       const d = byId.get(b.id);
       const visit = lastVisit.get(b.id);
       const revisitKey = visit?.revisitOn ? keyFromDate(visit.revisitOn) : null;
-      const canAct = d ? fieldAgentCanAct(d, viewer) : false;
+      // A call agent adds vacancies to any business (rights per button: callAgentBusinessRow).
+      const canAct = callAgent ? true : d ? fieldAgentCanAct(d, viewer) : false;
+      const row = businessRowState(b.nextStep, {
+        canAct,
+        shifts: shiftCount.get(b.id) ?? 0,
+        freshVacancy: (d?.vacancies ?? []).some((v) => !shownVacancies.has(v.id)),
+      });
       return {
         ...b,
         businessType: d?.businessType ?? null,
@@ -235,11 +350,11 @@ export class FieldPeopleService {
           visit && revisitKey && revisitKey < todayKey && !visit.revisitClosedAt && REVISIT_OUTCOMES.includes(visit.outcome ?? ''),
         ),
         canAct,
-        row: businessRowState(b.nextStep, {
-          canAct,
-          shifts: shiftCount.get(b.id) ?? 0,
-          freshVacancy: (d?.vacancies ?? []).some((v) => !shownVacancies.has(v.id)),
-        }),
+        row: callAgent
+          ? callAgentBusinessRow(row, {
+              canSendAgreement: Boolean(d && d.leadCreatedByStaffId === actor.sub && (d.verificationStatus ?? 'lead') === 'lead'),
+            })
+          : row,
       };
     });
     return { ...list, results: sortRows(results) };
@@ -263,8 +378,8 @@ export class FieldPeopleService {
   // ----------------------------------------------------------- Job seekers
 
   /** GET /field-work/job-seekers: my job seekers (FA10d) with photo, trade, area, status line, guarantee day, hits and the row's button. */
-  async jobSeekers(actor: Actor, q?: string) {
-    const list = await this.redesign.myJobSeekers(actor, q);
+  async jobSeekers(actor: Actor, q?: string, scope?: PeopleScope) {
+    const list = await this.redesign.myJobSeekers(actor, q, scope?.seekers, scope?.take);
     const ids = list.results.map((s) => s.id);
     if (!ids.length) return { ...list, results: [] };
     const now = this.clock.now();
@@ -274,7 +389,7 @@ export class FieldPeopleService {
         const e = extra.get(s.id)!;
         const unpaid = !s.steps.paidAt && !ENDED_SEEKER.includes(s.status) && s.status !== 'active';
         const stuck = unpaid ? await this.stuckOf(s.id).catch(() => null) : null;
-        const row = seekerRowState({
+        const fieldRow = seekerRowState({
           status: s.status,
           stuck,
           linkSent: Boolean(s.steps.linkSentAt),
@@ -282,6 +397,7 @@ export class FieldPeopleService {
           nextInterviewAt: e.nextInterviewAt,
           bookableVacancyId: e.bookableVacancyId,
         });
+        const row = scope?.viewer === 'call_agent' ? callAgentSeekerRow(fieldRow) : fieldRow;
         return {
           ...s,
           photoUrl: await this.photoUrl(e.photoStoragePath),
@@ -296,6 +412,58 @@ export class FieldPeopleService {
       }),
     );
     return { ...list, results: sortRows(results) };
+  }
+
+  // ------------------------------------------------------ Referral partners
+
+  /**
+   * The agent's own referral partners (call agent console, 23 Nov; `scope.referrals` says whose):
+   * name, Individual / Business, area, the status line from "Where they're stuck" (terms, selfie,
+   * ID, UPI, all set), how many job seekers they referred, and the row's one button. Search by
+   * name, RF- code, area or exactly the last 4 digits of the phone (AC-2). No rupee amounts.
+   */
+  async referrals(q: string | undefined, scope: PeopleScope & { referrals: Prisma.ReferralWhereInput }) {
+    const query = (q ?? '').trim();
+    const filters: Prisma.ReferralWhereInput[] = [scope.referrals, { anonymisedAt: null }];
+    if (query) {
+      filters.push({
+        OR: [
+          { name: { contains: query, mode: 'insensitive' } },
+          { code: query.toUpperCase() },
+          { locality: { contains: query, mode: 'insensitive' } },
+          ...(/^\d{4}$/.test(query) ? [{ phone: { endsWith: query } }] : []),
+        ],
+      });
+    }
+    const rows = await this.prisma.referral.findMany({
+      where: { AND: filters },
+      orderBy: { createdAt: 'desc' },
+      take: scope.take ?? 100,
+      select: {
+        id: true, code: true, name: true, phone: true, type: true, locality: true, pausedAt: true, createdAt: true,
+        _count: { select: { jobSeekers: true } },
+      },
+    });
+    const results = await Promise.all(
+      rows.map(async (r) => {
+        const stuck = await this.stuck.forReferral(r.id).catch(() => null);
+        const row: ReferralRowState = stuck
+          ? referralRowState({ paused: Boolean(r.pausedAt), stuck })
+          : { status: r.pausedAt ? 'paused' : 'all_set', action: null, vacancyId: null, waiting: false, done: !r.pausedAt, group: r.pausedAt ? 'active' : 'done' };
+        return {
+          id: r.id,
+          code: r.code,
+          name: r.name,
+          phoneLast4: phoneLast4(r.phone),
+          partnerType: r.type === 'business' ? ('business' as const) : ('individual' as const),
+          locality: r.locality,
+          registeredAt: r.createdAt.toISOString(),
+          referred: r._count.jobSeekers,
+          row,
+        };
+      }),
+    );
+    return { query, results: sortRows(results) };
   }
 
   /**

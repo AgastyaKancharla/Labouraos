@@ -139,7 +139,8 @@ describe('routes and guards', () => {
     expect(document.getElementById('lb-sidebar')).toHaveClass('is-open');
     await userEvent.click(screen.getByRole('button', { name: 'Close menu' }));
     expect(document.getElementById('lb-sidebar')).not.toHaveClass('is-open');
-    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Home', 'My follow-ups', 'WhatsApp', 'My targets', 'Attendance']);
+    // 23 Nov (rev 210): My job seekers, My businesses and My referral partners after Home.
+    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Home', 'My job seekers', 'My businesses', 'My referral partners', 'My follow-ups', 'WhatsApp', 'My targets', 'Attendance']);
     await userEvent.click(screen.getByRole('button', { name: 'Log out' }));
     expect(await screen.findByText('You have signed out.')).toBeInTheDocument();
   });

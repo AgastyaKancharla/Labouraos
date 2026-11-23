@@ -31,11 +31,18 @@ describe('Call agent Home (CA03)', () => {
     expect(screen.getByText('team avg 21')).toBeInTheDocument();
     expect(screen.getByText('4%')).toBeInTheDocument();
     expect(await screen.findByText('Stuck registrations (1)')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Pooja Nair' })).toBeInTheDocument();
-    expect(screen.getByTestId('stuck-row')).toHaveTextContent('Job seeker · JS-00301');
+    // 23 Nov: the row style of the console lists — bold name, status line, one button; tapping opens CA04.
+    const stuck = screen.getByTestId('stuck-row');
+    expect(within(stuck).getByRole('link', { name: /Pooja Nair/ })).toHaveAttribute('href', '/call-agent/people/JS-00301');
+    expect(within(stuck).getByTestId('row-status')).toHaveTextContent('Stuck at payment');
+    expect(stuck).toHaveTextContent('Job seeker · JS-00301');
+    expect(within(stuck).getAllByRole('button')).toHaveLength(1);
     expect(screen.getByText('1 of your people are near day 30 · no suitable offer yet')).toBeInTheDocument();
     expect(screen.queryByText(/₹1,497/)).not.toBeInTheDocument();
-    expect(screen.getByText('Kavya Reddy · registered')).toBeInTheDocument();
+    const done = screen.getByTestId('done-row');
+    expect(within(done).getByRole('link', { name: /Kavya Reddy/ })).toHaveAttribute('href', '/call-agent/people/JS-00400');
+    expect(within(done).getByTestId('row-status')).toHaveTextContent(/^Registered · /);
+    expect(within(done).getByTestId('row-done')).toHaveTextContent('Consent given');
   });
 
   it('filters the work list with the chips', async () => {
@@ -115,7 +122,10 @@ describe('Call agent Home (CA03)', () => {
     expect(await screen.findByText('Stuck registrations (2)')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Send payment link' })).toHaveLength(1);
     expect(screen.getByText("Waiting for the Team Lead's ID check")).toBeInTheDocument();
-    expect(screen.getByText('nothing to do — the Team Lead checks the ID')).toBeInTheDocument();
+    // Nothing to send: "Waiting" on the right instead of a button.
+    const waitingRow = screen.getAllByTestId('stuck-row')[1]!;
+    expect(within(waitingRow).getByTestId('row-waiting')).toHaveTextContent('Waiting');
+    expect(within(waitingRow).queryByRole('button')).toBeNull();
     await userEvent.click(within(callers).getByRole('button', { name: 'Not a lead' }));
     await waitFor(() => expect(api.calls('POST /telephony/callbacks/cb9/complete')).toHaveLength(1));
   });
@@ -153,14 +163,19 @@ describe('Call agent Home (CA03)', () => {
     renderScreen(<Home />, path);
     expect(await screen.findByText('Stuck registrations (2)')).toBeInTheDocument();
     const [biz, partner] = screen.getAllByTestId('stuck-row');
-    expect(biz).toHaveTextContent('Zoom food court · Business · BZ-00005');
-    expect(biz).toHaveTextContent('agreement not signed');
+    expect(within(biz!).getByText('Zoom food court')).toBeInTheDocument();
+    expect(biz).toHaveTextContent('Business · BZ-00005');
+    expect(within(biz!).getByTestId('row-status')).toHaveTextContent('Agreement not signed');
+    expect(within(biz!).getByRole('link', { name: /Zoom food court/ })).toHaveAttribute('href', '/call-agent/people/BZ-00005');
     expect(partner).toHaveTextContent('Referral partner · RF-00044');
+    expect(within(partner!).getByTestId('row-status')).toHaveTextContent('Stuck at the selfie');
     await userEvent.click(within(biz!).getByRole('button', { name: 'Send agreement link' }));
     await waitFor(() => expect(api.calls('POST /businesses/b5/agreement-links')).toHaveLength(1));
     await userEvent.click(within(partner!).getByRole('button', { name: 'Send partner terms link' }));
     await waitFor(() => expect(api.calls('POST /referrals/rf4/terms-links')).toHaveLength(1));
-    expect(screen.getByText('Zoom food court · business registered')).toBeInTheDocument();
-    expect(screen.getByText('Antony G · referral partner registered')).toBeInTheDocument();
+    const [bizDone, partnerDone] = screen.getAllByTestId('done-row');
+    expect(within(bizDone!).getByTestId('row-status')).toHaveTextContent(/^Business registered · /);
+    expect(within(bizDone!).getByRole('link', { name: /Zoom food court/ })).toHaveAttribute('href', '/call-agent/people/BZ-00005');
+    expect(within(partnerDone!).getByTestId('row-status')).toHaveTextContent(/^Referral partner registered · /);
   });
 });

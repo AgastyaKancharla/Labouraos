@@ -13,7 +13,8 @@ import { useScreenPath } from '../../../portals/PortalContext';
 import { useHome, type MetricView, type WorkCategory } from '../_lib/api';
 import { CallNextButton } from '../_lib/CallNextButton';
 import { clock12, durationHM, whenShort } from '../_lib/format';
-import { StuckList, useStuckList } from '../../shared/StuckList';
+import { useStuckList } from '../../shared/StuckList';
+import { HomeDoneRows, HomeStuckRows } from '../_lists/HomeLists';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../../lib/api/client';
 import { useNow } from '../../../lib/useNow';
@@ -205,7 +206,7 @@ export default function CallAgentHome() {
             <Link to={to('CA11-Targets')} style={{ fontSize: 13, fontWeight: 600 }}>{t('ca.month.seeTargets')}</Link>
           </div>
 
-          <div className="grid2" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))' }}>
+          <div className="grid2" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(min(260px,100%),1fr))' }}>
             <div className="card">
               <div className="lbl lb-h-tile" style={{ marginBottom: 4 }}>
                 <ToneTile icon="requests" tone="orange" size="sm" />
@@ -213,18 +214,8 @@ export default function CallAgentHome() {
               </div>
               {/* 22 Nov: every stuck job seeker, business and partner of his (GET /profile-stuck/list), with the
                   profile box's buttons; waiting for the Team Lead's ID check shows that, with no resend. */}
-              <StuckList
-                rows={stuckList.data?.rows}
-                nameCell={(r) =>
-                  r.kind === 'job_seeker' ? (
-                    <Link to={to('CA08c-InProgress', { id: r.code })} style={{ color: 'var(--ink)' }}>
-                      {r.name}
-                    </Link>
-                  ) : (
-                    <b>{r.name}</b>
-                  )
-                }
-              />
+              {/* 23 Nov (rev 210): the console lists' row style — bold name, one status line, one button. */}
+              <HomeStuckRows rows={stuckList.data?.rows} />
             </div>
             <div className="card">
               <div className="lbl lb-h-tile" style={{ marginBottom: 4 }}>
@@ -250,13 +241,8 @@ export default function CallAgentHome() {
               <ToneTile icon="checkRegistrations" tone="good" size="sm" />
               {t('ca.done.title')}
             </div>
-            {data && data.doneToday.length === 0 && <p className="sub">{t('ca.done.none')}</p>}
-            {data?.doneToday.map((d, i) => (
-              <div className="row" key={`${d.kind}-${d.at}-${i}`}>
-                <span>{doneText(d, t)}</span>
-                <span className={`tag ${DONE_TONE[d.kind] ?? 'tn'}`}>{doneTag(d, t)}</span>
-              </div>
-            ))}
+            {/* 23 Nov (rev 210): the same row style; tapping a row opens the person (a vacancy, its business). */}
+            <HomeDoneRows rows={data?.doneToday} tagOf={(d) => doneTag(d, t)} />
           </div>
         </section>
       </div>
@@ -264,26 +250,6 @@ export default function CallAgentHome() {
       {data?.callRoutingPhoneSet === true && <CallRoutingPhoneCard isSet onSaved={() => void home.refetch()} />}
     </div>
   );
-}
-
-const DONE_TONE: Record<string, string> = { registered: 'tg', interview_booked: 'tb', vacancy_added: 'tc', call_outcome: 'ta' };
-
-function doneText(d: { kind: string; name: string; extra: string | null; status: string }, t: ReturnType<typeof useT>): string {
-  switch (d.kind) {
-    case 'registered':
-      return t('ca.done.registered', { name: d.name });
-    case 'interview_booked':
-      return t('ca.done.interview_booked', { name: d.name });
-    case 'vacancy_added':
-      return t('ca.done.vacancy_added', { name: d.name, trade: d.extra ?? '' });
-    // 22 Nov: businesses and referral partners registered today too.
-    case 'business_registered':
-      return t('ca.done.business_registered', { name: d.name });
-    case 'partner_registered':
-      return t('ca.done.partner_registered', { name: d.name });
-    default:
-      return t('ca.done.call_outcome', { name: d.name });
-  }
 }
 
 const OUTCOMES = ['interested', 'accepted_offer', 'rejected_offer', 'callback_requested', 'not_interested', 'working_now', 'wrong_number', 'do_not_call', 'busy', 'switched_off', 'other'];

@@ -187,6 +187,10 @@ export const callAgentSidebar: SidebarConfig = {
       label: 'navSection.work',
       items: [
         { screen: 'CA03-Home', label: 'screen.CA03-Home', icon: 'commandCenter' },
+        // Call agent console lists (rev 210, 23 Nov): the people he registered or is given.
+        { screen: 'CA-MyJobSeekers', label: 'screen.CA-MyJobSeekers', icon: 'jobSeekers' },
+        { screen: 'CA-MyBusinesses', label: 'screen.CA-MyBusinesses', icon: 'businesses' },
+        { screen: 'CA-MyPartners', label: 'screen.CA-MyPartners', icon: 'referrals' },
         { screen: 'CA10-FollowUps', label: 'screen.CA10-FollowUps', icon: 'workList' },
         { screen: 'CA18-WhatsApp', label: 'screen.CA18-WhatsApp', icon: 'chat' },
         { screen: 'CA11-Targets', label: 'screen.CA11-Targets', icon: 'targets' },

@@ -118,7 +118,8 @@ export interface HomeData {
   /** Older answers leave it out. */
   newCallers?: NewCallerRow[];
   nearRefund: { count: number; windowDays: number };
-  doneToday: Array<{ kind: string; at: string; name: string; code: string | null; status: string; extra: string | null }>;
+  /** `ref` (23 Nov): the person the row opens (a vacancy opens its business). */
+  doneToday: Array<{ kind: string; at: string; name: string; code: string | null; ref?: string | null; status: string; extra: string | null }>;
 }
 
 export interface CallNextResult {
