@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react-native';
 import { router } from 'expo-router';
-import { addDays, todayKeyIst } from '@/components/form';
+import { todayKeyIst } from '@/components/form';
 import { openSecureSheet } from '@/sheet/openSheet';
 import { account, jsProfile } from '@/test/fixtures';
 import { fakeApi, renderWithApp } from '@/test/render';
@@ -36,7 +36,7 @@ describe('job seeker form rules', () => {
   it('requires the agent form fields and a sensible salary range', () => {
     const errors = validateJobSeeker({ ...emptyJobSeeker('en'), salaryMinPaise: 2_000_000, salaryMaxPaise: 1_000_000 });
     expect(Object.keys(errors)).toEqual(
-      expect.arrayContaining(['fullName', 'gender', 'bestTimeToCall', 'area', 'pincode', 'travelKm', 'trade0', 'years0', 'availableFrom', 'lookingFor', 'shift', 'jobType', 'languagesSpoken', 'salaryMax']),
+      expect.arrayContaining(['fullName', 'gender', 'area', 'pincode', 'travelKm', 'trade0', 'years0', 'availableFrom', 'shift', 'jobType', 'languagesSpoken', 'salaryMax']),
     );
     expect(errors.salaryMax).toBe('jobSeeker.maxBelowMin');
   });
@@ -100,7 +100,6 @@ describe('Register a job seeker', () => {
 
     await fireEvent.changeText(screen.getByTestId('js-name'), 'Ravi Kumar');
     await fireEvent.press(screen.getByTestId('js-gender-male'));
-    await choose('js-best-time', '18-21');
     await fireEvent.press(screen.getByTestId('js-languages-add'));
     await fireEvent.press(screen.getByTestId('js-languages-option-Kannada'));
     await choose('js-area', 'BTM Layout');
@@ -111,7 +110,6 @@ describe('Register a job seeker', () => {
     await fireEvent.press(screen.getByTestId('js-available'));
     await fireEvent.press(screen.getByTestId(`js-available-day-${today}`));
     // How long he has been looking: a simple choice, sent as a date (today minus 2 weeks).
-    await choose('js-looking', '2w');
     await choose('js-shift', 'day');
     await choose('js-job-type', 'full_time');
     await fireEvent.changeText(screen.getByTestId('js-salary-min'), '30000');
@@ -131,13 +129,13 @@ describe('Register a job seeker', () => {
         fullName: 'Ravi Kumar',
         dateOfBirth: `1995-${month}-10`,
         gender: 'male',
-        bestTimeToCall: '18-21',
+        bestTimeToCall: '09-21',
         area: 'BTM Layout',
         pincode: '560076',
         pin: { latitude: 12.9166, longitude: 77.6101 }, // no GPS: the area's centre
         travelKm: 10,
         trades: [{ trade: 'Cook', years: 5 }],
-        lookingSince: addDays(today, -14),
+        lookingSince: today,
         salaryMinPaise: 3_000_000,
         salaryMaxPaise: 3_200_000,
         salaryPeriod: 'monthly',

@@ -1,5 +1,4 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { router } from 'expo-router';
 import Start from '../../../app/index';
 import { account, jsProfile } from '@/test/fixtures';
@@ -18,59 +17,14 @@ beforeEach(() => {
 });
 
 describe('Sign in', () => {
-  it('offers Google and mobile number (Apple only on iPhone when available)', async () => {
-    await renderWithApp(<SignIn />);
-    expect(screen.getByTestId('sign-in-google')).toHaveTextContent('Continue with Google');
-    expect(screen.getByTestId('sign-in-mobile')).toHaveTextContent('Continue with mobile number');
+  it('the mobile number is the only way in: no Google or Apple button', async () => {
+    const api = fakeApi({ sendSignInOtp: otpSent });
+    await renderWithApp(<SignIn />, { api });
+    expect(screen.queryByTestId('sign-in-google')).toBeNull();
     expect(screen.queryByTestId('sign-in-apple')).toBeNull();
-    await fireEvent.press(screen.getByTestId('sign-in-mobile'));
-    expect(router.push).toHaveBeenCalledWith('/sign-in-phone');
-  });
-
-  it('Google: sends only the ID token to the server, then goes to the start (which asks for the phone)', async () => {
-    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID = 'web-client.apps.googleusercontent.com';
-    const api = fakeApi({ signInWithGoogle: async () => ({ accessToken: 'tok', account: account({ phoneVerified: false, signInMethods: ['google'] }) }) });
-    await renderWithApp(<SignIn />, { api });
-    await fireEvent.press(screen.getByTestId('sign-in-google'));
-    await waitFor(() => expect(api.signInWithGoogle).toHaveBeenCalledWith('google-id-token'));
-    expect(GoogleSignin.configure).toHaveBeenCalledWith(expect.objectContaining({ webClientId: 'web-client.apps.googleusercontent.com' }));
-    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/'));
-  });
-
-  it('hides Google when the server has it switched off (GET /config)', async () => {
-    const api = fakeApi({ config: async () => ({ googleSignIn: false, googleWebClientId: null, googleIosClientId: null, appleSignIn: false, otpTestMode: false }) });
-    await renderWithApp(<SignIn />, { api });
-    await waitFor(() => expect(screen.queryByTestId('sign-in-google')).toBeNull());
-    expect(screen.getByTestId('sign-in-mobile')).toBeTruthy();
-  });
-
-  it('uses the Google client id from the server when the build has none', async () => {
-    const api = fakeApi({
-      config: async () => ({ googleSignIn: true, googleWebClientId: 'from-server.apps.googleusercontent.com', googleIosClientId: null, appleSignIn: false, otpTestMode: false }),
-      signInWithGoogle: async () => ({ accessToken: 'tok', account: account({ phoneVerified: false }) }),
-    });
-    await renderWithApp(<SignIn />, { api });
-    await waitFor(() => expect(api.config).toHaveBeenCalled());
-    await new Promise((r) => setTimeout(r, 0));
-    await fireEvent.press(screen.getByTestId('sign-in-google'));
-    await waitFor(() => expect(api.signInWithGoogle).toHaveBeenCalledWith('google-id-token'));
-  });
-
-  it('Google not set up in this build: says so and points to the mobile number', async () => {
-    await renderWithApp(<SignIn />);
-    await fireEvent.press(screen.getByTestId('sign-in-google'));
-    expect(await screen.findByTestId('sign-in-error')).toHaveTextContent(/not set up in this test app/);
-  });
-
-  it('Google cancelled: no error, nothing sent', async () => {
-    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID = 'web-client';
-    (GoogleSignin.signIn as jest.Mock).mockResolvedValueOnce({ type: 'cancelled', data: null });
-    const api = fakeApi();
-    await renderWithApp(<SignIn />, { api });
-    await fireEvent.press(screen.getByTestId('sign-in-google'));
-    await waitFor(() => expect(GoogleSignin.signIn).toHaveBeenCalled());
-    expect(screen.queryByTestId('sign-in-error')).toBeNull();
-    expect(api.signInWithGoogle).not.toHaveBeenCalled();
+    await fireEvent.changeText(screen.getByTestId('phone-otp-mobile'), '9876543210');
+    await fireEvent.press(screen.getByTestId('phone-otp-send'));
+    expect(api.sendSignInOtp).toHaveBeenCalledWith('9876543210', undefined);
   });
 });
 
