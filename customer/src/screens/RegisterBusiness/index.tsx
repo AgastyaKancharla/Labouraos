@@ -13,7 +13,7 @@ import { colors } from '@/theme';
 import { clearDraft, useDraft } from '@/lib/drafts';
 import { RegisterOtpStep } from '../shared/RegisterOtpStep';
 import { SavedNextSteps } from '../shared/SavedNextSteps';
-import { businessTypeChoices, contactRoleChoices, heardFromChoices, shiftChoices } from '../shared/choices';
+import { businessTypeChoices, contactRoleChoices, experienceChoices, heardFromChoices, shiftChoices } from '../shared/choices';
 import { emptyBusiness, emptyStaffRow, toBusinessForm, validateBusiness, type BusinessErrors } from './form';
 
 /**
@@ -186,6 +186,15 @@ export default function RegisterBusiness() {
                 <Text variant="label">{t('business.staffRow', { n: i + 1 })}</Text>
                 <SelectField label={t('vacancy.trade')} value={row.trade} choices={tradeChoices} onChange={(v) => setRow(i, { trade: v })} required error={err(`staffTrade${i}`)} testID={`biz-staff-trade-${i}`} />
                 <NumberField label={t('business.howMany')} value={row.count} onChange={(v) => setRow(i, { count: v })} required max={99} error={err(`staffCount${i}`)} testID={`biz-staff-count-${i}`} />
+                <SelectField
+                  label={t('experience.label')}
+                  value={row.experience ?? ''}
+                  choices={experienceChoices(t)}
+                  onChange={(v) => setRow(i, { experience: v })}
+                  required
+                  error={err(`staffExperience${i}`)}
+                  testID={`biz-staff-experience-${i}`}
+                />
                 <MoneyField label={t('vacancy.salaryMin')} valuePaise={row.salaryMinPaise} onChange={(v) => setRow(i, { salaryMinPaise: v })} required error={err(`staffMin${i}`)} testID={`biz-staff-min-${i}`} />
                 <MoneyField label={t('vacancy.salaryMax')} valuePaise={row.salaryMaxPaise} onChange={(v) => setRow(i, { salaryMaxPaise: v })} required error={err(`staffSalary${i}`)} testID={`biz-staff-max-${i}`} />
                 <SelectField label={t('form.shift')} value={row.shift} choices={shiftChoices(t)} onChange={(v) => setRow(i, { shift: v })} testID={`biz-staff-shift-${i}`} />

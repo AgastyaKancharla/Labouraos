@@ -26,3 +26,19 @@ export const spokenLanguageChoices = (t: T): Choice[] =>
     value: v.charAt(0).toUpperCase() + v.slice(1),
     label: t(`spoken.${v}`),
   }));
+
+/**
+ * Experience a business needs for a vacancy (24 Nov): the same five choices
+ * as the call agent's Add vacancy (CA09), sent as `experienceRequiredYears`
+ * — matching gives experience 15% of the score.
+ */
+export const EXPERIENCE_NEEDED = [
+  { value: '0', years: 0 },
+  { value: '1', years: 1 },
+  { value: '2', years: 2 },
+  { value: '3', years: 3 },
+  { value: '5', years: 5 },
+] as const;
+export type ExperienceNeeded = (typeof EXPERIENCE_NEEDED)[number]['value'];
+export const experienceChoices = (t: T): Choice<ExperienceNeeded>[] => EXPERIENCE_NEEDED.map((x) => ({ value: x.value, label: t(`experience.${x.value}`) }));
+export const experienceYears = (value: string): number => EXPERIENCE_NEEDED.find((x) => x.value === value)?.years ?? 0;

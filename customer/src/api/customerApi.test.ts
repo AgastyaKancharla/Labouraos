@@ -141,8 +141,8 @@ describe('the real API calls', () => {
       'POST /me/profiles/p-3/vacancy-drafts/d-9/confirm': { status: 201, body: { vacancy: { code: 'VC-9', status: 'open' } } },
       'POST /me/deletion': { status: 201, body: { id: 'del', status: 'requested' } },
     });
-    const draft = await api.createVacancy('p-3', { trade: 'Helper', roleTitle: null, openings: 2, salaryMinPaise: 2_000_000, salaryMaxPaise: null, salaryPeriod: 'monthly', businessShiftId: 'sh-1', startDate: '2026-12-01', description: '', legalMinimumAcknowledged: true });
-    expect(calls[0].body).toEqual({ form: { tradeSkill: 'Helper', headcount: 2, salaryMinPaise: 2_000_000, salaryPeriod: 'monthly', businessShiftId: 'sh-1', startDate: '2026-12-01', ownerToldMinimumWage: true } });
+    const draft = await api.createVacancy('p-3', { trade: 'Helper', roleTitle: null, openings: 2, salaryMinPaise: 2_000_000, salaryMaxPaise: null, salaryPeriod: 'monthly', businessShiftId: 'sh-1', startDate: '2026-12-01', experienceYears: 2, description: '', legalMinimumAcknowledged: true });
+    expect(calls[0].body).toEqual({ form: { tradeSkill: 'Helper', headcount: 2, salaryMinPaise: 2_000_000, salaryPeriod: 'monthly', businessShiftId: 'sh-1', startDate: '2026-12-01', experienceRequiredYears: 2, ownerToldMinimumWage: true } });
     expect(draft).toMatchObject({ id: 'd-9', belowLegalMinimum: true, legalMinimumPaise: 2340000 });
     const confirmed = await api.confirmVacancy('p-3', 'd-9', { otp: { requestId: 'otp_v', code: '123456' }, ownerToldMinimumWage: true });
     expect(calls[1].body).toEqual({ purpose: 'confirm_vacancy', requestId: 'otp_v', code: '123456' });

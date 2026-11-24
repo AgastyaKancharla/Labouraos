@@ -1,6 +1,7 @@
 import type { Area, BusinessContactRole, BusinessForm, BusinessType, EmployeeBand, HeardFrom, Pin, Shift, YearsBand } from '@/api/types';
 import type { MessageKey } from '@/i18n';
 import { isEmail, isGstin, isPincode } from '@/lib/validate';
+import { experienceYears } from '../shared/choices';
 
 export interface StaffRow {
   trade: string;
@@ -9,6 +10,8 @@ export interface StaffRow {
   salaryMaxPaise: number | null;
   shift: Shift;
   startDate: string;
+  /** Experience needed (24 Nov): '0' fresher OK, '1', '2', '3', '5' years. */
+  experience: string;
 }
 
 export interface BusinessDraft {
@@ -40,7 +43,7 @@ export interface BusinessDraft {
   heardFrom: HeardFrom;
 }
 
-export const emptyStaffRow = (): StaffRow => ({ trade: '', count: 1, salaryMinPaise: null, salaryMaxPaise: null, shift: 'day', startDate: '' });
+export const emptyStaffRow = (): StaffRow => ({ trade: '', count: 1, salaryMinPaise: null, salaryMaxPaise: null, shift: 'day', startDate: '', experience: '' });
 
 export const emptyBusiness = (): BusinessDraft => ({
   contactName: '',
@@ -96,6 +99,7 @@ export function validateBusiness(d: BusinessDraft): BusinessErrors {
     if (!row.salaryMaxPaise) e[`staffSalary${i}`] = 'form.required';
     else if (row.salaryMinPaise && row.salaryMaxPaise < row.salaryMinPaise) e[`staffSalary${i}`] = 'jobSeeker.maxBelowMin';
     if (!row.startDate) e[`staffStart${i}`] = 'form.required';
+    if (!row.experience) e[`staffExperience${i}`] = 'form.required';
   });
   return e;
 }
@@ -145,6 +149,7 @@ export function toBusinessForm(d: BusinessDraft, areas: Area[] = []): BusinessFo
       salaryMaxPaise: row.salaryMaxPaise ?? 0,
       shift: row.shift,
       startDate: row.startDate,
+      experienceYears: experienceYears(row.experience ?? ''),
     })),
     billingEmail: d.billingEmail.trim(),
     heardFrom: d.heardFrom,

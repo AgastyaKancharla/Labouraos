@@ -201,6 +201,8 @@ export interface StaffNeeded {
   salaryMaxPaise: number;
   shift: Shift;
   startDate: string;
+  /** Experience needed, in years (0 = fresher OK). */
+  experienceYears: number;
 }
 
 export interface BusinessForm {
@@ -475,6 +477,8 @@ export interface VacancyDraft {
   /** One of the business's own shifts (17 Nov). */
   businessShiftId: string;
   startDate: string;
+  /** Experience needed, in years (0 = fresher OK). */
+  experienceYears: number;
   description: string;
   /** Required (true) when the salary is below the legal minimum wage. */
   legalMinimumAcknowledged: boolean;

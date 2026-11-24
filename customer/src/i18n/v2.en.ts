@@ -23,6 +23,12 @@ export const v2En = {
   'quick.sendLead': 'Send a lead',
   'quick.privacy': 'Privacy',
   'ad.sponsored': 'Sponsored',
+  'experience.label': 'Experience needed',
+  'experience.0': 'Fresher OK',
+  'experience.1': '1 year',
+  'experience.2': '2 years',
+  'experience.3': '3 years',
+  'experience.5': '5 years+',
   'ad.placeholderTitle': 'Ad space',
   'ad.placeholderBody': 'Partner offers will show here.',
 } as const;
