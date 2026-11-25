@@ -213,6 +213,34 @@ export class MapsLinkService {
     };
   }
 
+  /**
+   * 25 Nov (rev 211, B2): the pin of a Google Maps link given as a business proof — read from
+   * the link itself (a short link is followed, Google hosts only), with no address lookup.
+   * Null when the link is not a Google Maps link or has no readable pin; never throws for
+   * a link that cannot be read (the proof is then simply not valid and the Team Lead looks).
+   */
+  async pinForProof(who: string, text: unknown): Promise<{ latitude: number; longitude: number; placeName: string | null; link: string } | null> {
+    const raw = typeof text === 'string' ? text.trim() : '';
+    if (!raw) return null;
+    const url = parseMapsUrl(withScheme(raw));
+    if (!url) return null;
+    let pin = extractPin(url);
+    let name = placeNameOf(url);
+    try {
+      if (!pin && isShortMapsUrl(url)) {
+        this.claim(who);
+        const followed = await this.follow(url);
+        pin = followed.pin;
+        name = followed.last ? placeNameOf(followed.last) ?? name : name;
+      }
+    } catch (error) {
+      this.logger.warn(`Maps link proof could not be read: ${(error as Error).message}`);
+      return null;
+    }
+    if (!pin) return null;
+    return { latitude: pin.latitude, longitude: pin.longitude, placeName: pin.placeName ?? name, link: url.toString() };
+  }
+
   /** The pin a Google Maps link points at, and its address. */
   private async fromLink(text: string): Promise<ResolvedMapsLink> {
     const url = parseMapsUrl(text);

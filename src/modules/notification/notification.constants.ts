@@ -295,6 +295,9 @@ const FLAG_TITLES: Record<string, string> = {
   calls_unanswered: 'Three calls unanswered: retries stopped',
   wrong_number_paid: 'Wrong number on a paid job seeker',
   signup_call_not_attempted: 'App sign-up call not made',
+  business_auto_check_failed: 'Business to check: the automatic verification did not pass',
+  vacancy_tl_check: 'Vacancy to check: unusual salary or many openings',
+  candidate_shop_report: 'Business paused: a candidate said the shop or job was not real',
 };
 
 export function flagTitle(kind: string): string {

@@ -16,7 +16,7 @@ describe('InterviewService booking', () => {
     vacancy: { findFirst: Mock };
     jobSeeker: { findFirst: Mock };
     vacancyInterviewSlot: { findUnique: Mock; findMany: Mock };
-    interview: { findUnique: Mock; findMany: Mock; update: Mock; updateMany: Mock; count: Mock };
+    interview: { findFirst: Mock; findUnique: Mock; findMany: Mock; update: Mock; updateMany: Mock; count: Mock };
     callRecord: { findUnique: Mock; findFirst: Mock };
     messageLog: { findMany: Mock };
     reviewFlag: { findFirst: Mock };
@@ -89,7 +89,7 @@ describe('InterviewService booking', () => {
       vacancy: { findFirst: jest.fn().mockResolvedValue(vacancy) },
       jobSeeker: { findFirst: jest.fn().mockResolvedValue(seeker) },
       vacancyInterviewSlot: { findUnique: jest.fn().mockResolvedValue(slot), findMany: jest.fn().mockResolvedValue([]) },
-      interview: { findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn().mockResolvedValue({}), updateMany: jest.fn().mockResolvedValue({ count: 1 }), count: jest.fn().mockResolvedValue(0) },
+      interview: { findFirst: jest.fn().mockResolvedValue(null), findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn().mockResolvedValue({}), updateMany: jest.fn().mockResolvedValue({ count: 1 }), count: jest.fn().mockResolvedValue(0) },
       callRecord: { findUnique: jest.fn(), findFirst: jest.fn() },
       messageLog: { findMany: jest.fn().mockResolvedValue([{ channel: 'sms' }, { channel: 'whatsapp' }]) },
       reviewFlag: { findFirst: jest.fn().mockResolvedValue(null) },

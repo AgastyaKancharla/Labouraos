@@ -120,7 +120,11 @@ export interface BusinessStatus {
     visit: Step & { suggestedStaffName?: string | null; assignedStaffName?: string | null };
     teamLeadApproval: Step;
     verified: Step;
+    /** 25 Nov (rev 211–212): the automatic check after signing (absent on older servers). */
+    autoCheck?: Step & { smallBusiness?: boolean };
   };
+  /** 25 Nov: a household keeps the visit; every other business is checked automatically. */
+  household?: boolean;
   draftVacancies: {
     id: string;
     code: string;

@@ -1,4 +1,5 @@
 import { agentSeesFullBusiness, agentViewerFor, businessForViewer } from '../business/business-agent-view';
+import { isHouseholdBusiness } from '../business/business-auto-check.service';
 import { ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { refundGuaranteeDeadline } from '../../common/money/money';
@@ -473,7 +474,15 @@ export class ScreensCallRegistrationService {
               ? step('in_progress')
               : step('not_started'),
         verified: step(verified ? 'done' : 'not_started', { time: business.verifiedAt ?? business.inPersonOnboardedAt }),
+        // 25 Nov (rev 211–212, B5): every business but a household is checked automatically after signing
+        // (no visit); a failed check goes to the Team Lead with its reasons.
+        autoCheck: found.autoCheckStatus === 'passed'
+          ? step('done', { time: found.autoCheckedAt })
+          : found.autoCheckStatus === 'failed'
+            ? step('stuck', { time: found.autoCheckedAt, smallBusiness: found.verificationPath === 'small_business' })
+            : step(agreement ? 'in_progress' : 'not_started'),
       },
+      household: isHouseholdBusiness(found.businessType),
       draftVacancies: business.vacancies.map((vacancy) => ({
         id: vacancy.id,
         code: vacancy.code,

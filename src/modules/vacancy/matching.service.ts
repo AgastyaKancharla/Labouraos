@@ -5,7 +5,7 @@ import { Prisma } from '@prisma/client';
 import { refundGuaranteeDeadline } from '../../common/money/money';
 import { ConsentClock } from '../consent/consent-clock';
 import { PricingPolicy, PricingService } from '../pricing/pricing.service';
-import { isUnconfirmedVacancyStatus } from './vacancy-confirmation.service';
+import { isUnconfirmedVacancyStatus, isVacancyWaitingForTeamLead, VACANCY_WAITS_FOR_TEAM_LEAD_MESSAGE } from './vacancy-confirmation.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { jobSeekerHasTrade } from '../job-seeker/job-seeker-legacy-read';
 import { compareMatches, refundPriorityOf } from '../refund-priority/refund-priority.rules';
@@ -164,6 +164,7 @@ export class MatchingService {
     if (isUnconfirmedVacancyStatus(vacancy.status)) {
       throw new BadRequestException('Candidates are shown only after the contact person confirms this vacancy by OTP');
     }
+    if (isVacancyWaitingForTeamLead(vacancy.status)) throw new BadRequestException(VACANCY_WAITS_FOR_TEAM_LEAD_MESSAGE);
     const access = businessCandidateAccess(vacancy.business);
     if (!access.allowed) {
       throw new ForbiddenException(access.reason === 'paused'
@@ -278,6 +279,7 @@ export class MatchingService {
     for (const vacancy of vacancies) {
       if (
         isUnconfirmedVacancyStatus(vacancy.status) ||
+        isVacancyWaitingForTeamLead(vacancy.status) ||
         !businessCandidateAccess(vacancy.business).allowed ||
         !listedTrades.has(tradeKey(vacancy.tradeSkill))
       ) {

@@ -311,6 +311,21 @@ export class ScreensManagerController {
     return this.sections.business(await this.scope(req), id);
   }
 
+  /** 25 Nov (rev 211, B3/B4): every business and vacancy waiting for a check in his teams (and unowned ones). */
+  @Get('business-checks')
+  @RequireRoles('manager')
+  async businessChecks(@Req() req: AuthedRequest) {
+    return this.sections.businessChecks(await this.scope(req), false);
+  }
+
+  /** 25 Nov (rev 211, B1): the owner's selfie and shop photo, for a business he may open; signed links only. */
+  @Get('businesses/:id/owner-photos')
+  @RequireRoles('manager')
+  async ownerPhotos(@Req() req: AuthedRequest, @Param('id') id: string) {
+    (req as unknown as Record<string, unknown>)[PHOTO_LINK_ANSWER] = true;
+    return this.sections.ownerPhotos(await this.scope(req), id);
+  }
+
   /** C-Business: a visit's name-board photo and selfie, for a business he may open; signed links only. */
   @Get('businesses/:id/visits/:visitId/photos')
   @RequireRoles('manager')

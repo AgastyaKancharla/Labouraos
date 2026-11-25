@@ -2,6 +2,7 @@ import { OwnTeam, businessOwners, businessesOwnedBy } from '../../common/rbac/ow
 import {
   BadRequestException,
   ForbiddenException,
+  HttpStatus,
   Injectable,
   NotFoundException,
   Optional,
@@ -26,6 +27,11 @@ import { isMinimumWageZone, legalMinimumFor } from '../trade/minimum-wage';
 import { tradeNameKey } from '../trade/trade.service';
 import { ownerVisitOtpPurpose } from '../../common/otp/bound-otp-purposes';
 import { onApprovedLeave } from '../field-visit/field-handover.service';
+import { AUTO_CHECK_FLAG, BusinessAutoCheckService, isHouseholdBusiness } from './business-auto-check.service';
+import { allowedShopKinds } from './business-paths';
+import { validProofCount } from './business-proofs';
+import { smallBusinessMissing } from './business-owner-check.service';
+import { codedError } from '../../common/http/coded-error';
 
 /**
  * 21 Nov: a verification visit proven to be at the shop: GPS inside the geofence (geofenceFlag
@@ -43,7 +49,8 @@ function getCalendarDateKey(at: Date): string {
 }
 
 // business_signup: a business that signed up in the customer app (proposal 4.2).
-const VISIT_PURPOSES = ['verification', 'revisit', 'interview_attendance', 'follow_up', 'business_signup'] as const;
+// candidate_report (25 Nov, B6): a candidate said after the first interview that the shop or job was not real.
+const VISIT_PURPOSES = ['verification', 'revisit', 'interview_attendance', 'follow_up', 'business_signup', 'candidate_report'] as const;
 
 export interface CreateVisitAssignmentDto {
   purpose: string;
@@ -67,6 +74,7 @@ export class BusinessVerificationService {
     private readonly clock: BusinessClock,
     @Optional() private readonly customerNotifications?: CustomerNotificationHooks,
     @Optional() private readonly pricing?: PricingService,
+    @Optional() private readonly autoCheck?: BusinessAutoCheckService,
   ) {}
 
   /**
@@ -197,18 +205,21 @@ export class BusinessVerificationService {
 
   async createAssignment(businessId: string, actorId: string, dto: CreateVisitAssignmentDto) {
     if (!(VISIT_PURPOSES as readonly string[]).includes(dto.purpose)) {
-      throw new BadRequestException('purpose must be verification, revisit, interview_attendance or follow_up');
+      throw new BadRequestException('purpose must be verification, revisit, interview_attendance, follow_up or candidate_report');
     }
     const actor = await this.requireReviewActor(actorId);
     const business = await this.prisma.business.findUnique({ where: { id: businessId } });
     if (!business) throw new NotFoundException(`Business '${businessId}' not found`);
     await this.assertTeamLeadOwnsBusiness(actor, business.leadCreatedByStaffId, business.accountAgentId);
-    if (dto.purpose === 'verification' && business.verificationStatus !== 'lead') {
-      throw new BadRequestException('A verification visit can only be assigned while the business is a lead');
+    // 25 Nov (rev 211, B5): a Team Lead may also ask for a visit while he checks a business the
+    // automatic check sent him (pending_tl_check); the status then stays as it is.
+    const visitWhileChecking = dto.purpose === 'verification' && business.verificationStatus === 'pending_tl_check';
+    if (dto.purpose === 'verification' && business.verificationStatus !== 'lead' && !visitWhileChecking) {
+      throw new BadRequestException('A verification visit can only be assigned while the business is a lead or waits for the Team Lead check');
     }
 
     const suggestedStaffId =
-      dto.purpose === 'verification' ? await this.suggestFieldAgent(business) : null;
+      dto.purpose === 'verification' || dto.purpose === 'candidate_report' ? await this.suggestFieldAgent(business) : null;
     const assignment = await this.prisma.$transaction(async (tx) => {
       const created = await tx.visitAssignment.create({
         data: {
@@ -221,7 +232,7 @@ export class BusinessVerificationService {
         },
         include: { suggestedStaff: { select: { id: true, code: true, name: true } } },
       });
-      if (dto.purpose === 'verification') {
+      if (dto.purpose === 'verification' && !visitWhileChecking) {
         await tx.business.update({
           where: { id: businessId },
           data: { verificationStatus: 'pending_visit' },
@@ -251,6 +262,36 @@ export class BusinessVerificationService {
       },
       changedFields: ['purpose', 'suggestedStaffId', 'status'],
       city: business.city,
+    });
+    return assignment;
+  }
+
+  /**
+   * 25 Nov (rev 211, B6): a candidate said after the first interview that the shop or job was not
+   * real: a field visit request (purpose candidate_report) with the nearest available field agent
+   * suggested; the Team Lead confirms or changes it. One open request per business.
+   */
+  async requestCandidateReportVisit(businessId: string, interviewId: string) {
+    const business = await this.prisma.business.findUnique({ where: { id: businessId } });
+    if (!business) return null;
+    const open = await this.prisma.visitAssignment.findFirst({
+      where: { businessId, purpose: 'candidate_report', status: { in: ['pending', 'assigned'] } },
+      select: { id: true },
+    });
+    if (open) return open;
+    const suggestedStaffId = await this.suggestFieldAgent(business);
+    const assignment = await this.prisma.visitAssignment.create({
+      data: { businessId, purpose: 'candidate_report', suggestedStaffId, relatedType: 'interview', relatedId: interviewId, status: 'pending' },
+    });
+    await this.auditService.log({
+      actorId: 'system',
+      action: 'business.visit_assignment_created',
+      entityType: 'visit_assignment',
+      entityCode: assignment.id,
+      after: { businessId, purpose: 'candidate_report', suggestedStaffId, relatedType: 'interview', relatedId: interviewId, status: 'pending' },
+      changedFields: ['purpose', 'suggestedStaffId', 'relatedType', 'relatedId', 'status'],
+      city: business.city,
+      reason: 'A candidate said the shop or job was not real: field visit to check it',
     });
     return assignment;
   }
@@ -397,9 +438,42 @@ export class BusinessVerificationService {
     return { success: true, requestId: result.requestId, phone: `******${digits.slice(-4)}`, ...testModeFields(result) };
   }
 
+  /**
+   * 25 Nov (rev 211, B3/B5): after the agreement is signed, and again whenever a missing proof
+   * or photo is added, the automatic check decides. Passed: verified with no Team Lead and no
+   * field visit. Failed: pending_tl_check with every failed reason; a business a field agent
+   * onboarded in person still shows candidates the same day while it waits (the same-day Team
+   * Lead review applies only now, when the check failed). Households hiring help keep the
+   * verification visit and the Team Lead check below, unchanged.
+   */
   async advanceToPendingTlCheckIfReady(businessId: string, changedByStaffId?: string | null) {
+    if (this.autoCheck) {
+      const business = await this.prisma.business.findUnique({ where: { id: businessId }, select: { businessType: true } });
+      if (business && !isHouseholdBusiness(business.businessType)) {
+        const evaluated = await this.autoCheck.evaluate(businessId);
+        const signed = await this.prisma.businessAgreement.findFirst({ where: { businessId }, select: { id: true } });
+        if (!evaluated || !signed) return null;
+        if (evaluated.result.passed) {
+          const outcome = await this.autoCheck.run(businessId, changedByStaffId ? 'field or staff step' : 'agreement or owner photo');
+          return outcome.ran && outcome.passed ? { verificationStatus: 'verified' } : null;
+        }
+        // Failed: in-person onboarding (lead → pending_tl_check, candidates the same day) first, or a
+        // verification visit a Team Lead asked for, then the reasons.
+        const inPerson = await this.completeInPersonOnboardingIfReady(businessId, changedByStaffId);
+        const visited = inPerson ? null : await this.advanceAfterVerificationVisit(businessId, changedByStaffId);
+        const outcome = await this.autoCheck.run(businessId, changedByStaffId ? 'field or staff step' : 'agreement or owner photo');
+        if (inPerson) return inPerson;
+        if (visited) return visited;
+        return outcome.ran ? { verificationStatus: 'pending_tl_check' } : null;
+      }
+    }
     const inPerson = await this.completeInPersonOnboardingIfReady(businessId, changedByStaffId);
     if (inPerson) return inPerson;
+    return this.advanceAfterVerificationVisit(businessId, changedByStaffId);
+  }
+
+  /** A completed verification visit plus the signed agreement: pending_visit → pending_tl_check (households; or a visit a Team Lead asked for). */
+  private async advanceAfterVerificationVisit(businessId: string, changedByStaffId?: string | null) {
     const transition = await this.prisma.$transaction(async (tx) => {
       const business = await tx.business.findUnique({ where: { id: businessId } });
       if (!business || business.verificationStatus !== 'pending_visit') return null;
@@ -699,8 +773,12 @@ export class BusinessVerificationService {
 
     // An in-person onboarded business already has its visit proof from registration;
     // every other business needs the assigned verification visit.
-    let visitStaffId: string;
+    let visitStaffId: string | null;
     if (business.inPersonOnboardedAt && business.accountAgentId) {
+      visitStaffId = business.accountAgentId;
+    } else if (!isHouseholdBusiness(business.businessType) && business.autoCheckedAt) {
+      // 25 Nov (rev 211, B3): the automatic check sent it here; no field visit is needed. The account
+      // agent stays as it is (or the one the Team Lead names).
       visitStaffId = business.accountAgentId;
     } else {
       const visit = await this.prisma.businessVisit.findFirst({
@@ -724,15 +802,34 @@ export class BusinessVerificationService {
     }
     const agreement = await this.prisma.businessAgreement.findFirst({ where: { businessId } });
     if (!agreement) throw new BadRequestException('A signed business agreement is required before approval');
-    const finalAccountAgentId = accountAgentId ?? visitStaffId;
-    const accountAgent = await this.prisma.staff.findUnique({ where: { id: finalAccountAgentId } });
-    if (!accountAgent) throw new NotFoundException('Account agent not found');
-    // A Team Lead who names a different account agent picks one from their own team (L1).
-    if (accountAgentId) await this.assertTeamLeadPicksOwnAgent(actor, accountAgent.id);
-    if (accountAgent.city !== business.city) {
-      throw new BadRequestException('The account agent must work in the business city');
+    // 25 Nov (rev 212, B9): a small business is approved only once the owner's ID, the photos, one
+    // business proof, the checked address proof and the Team Lead's video call are all in.
+    if (business.verificationPath === 'small_business' && !isHouseholdBusiness(business.businessType)) {
+      const [check, photos] = await Promise.all([
+        this.prisma.businessOwnerCheck.findUnique({ where: { businessId } }),
+        this.prisma.businessOwnerPhoto.findMany({ where: { businessId }, select: { kind: true } }),
+      ]);
+      const shopKinds: string[] = allowedShopKinds(business);
+      const missing = smallBusinessMissing({
+        ownerId: { method: check?.idMethod ?? null, type: check?.idType ?? null, result: check?.idResult ?? null, last4: null, failureReason: null },
+        businessProof: { given: Boolean(check?.businessProofKind) || validProofCount(business) >= 1, kind: check?.businessProofKind ?? null, fromProofs: validProofCount(business) >= 1 },
+        addressProof: { submitted: Boolean(check?.addressSubmittedAt), docType: check?.addressDocType ?? null, result: check?.addressResult ?? null },
+        videoCall: { done: Boolean(check?.videoCallDoneAt), at: null },
+        photos: { selfie: photos.some((p) => p.kind === 'owner_selfie'), workspace: photos.some((p) => shopKinds.includes(p.kind)) },
+      });
+      if (missing.length) throw codedError(HttpStatus.BAD_REQUEST, 'SMALL_BUSINESS_CHECKS_MISSING', `Before approving this small business: ${missing.join(', ')}`, { missing });
     }
-    this.assertAvailableFieldAgent(accountAgent, this.clock.now());
+    const finalAccountAgentId = accountAgentId ?? visitStaffId;
+    if (finalAccountAgentId && (accountAgentId || finalAccountAgentId !== business.accountAgentId)) {
+      const accountAgent = await this.prisma.staff.findUnique({ where: { id: finalAccountAgentId } });
+      if (!accountAgent) throw new NotFoundException('Account agent not found');
+      // A Team Lead who names a different account agent picks one from their own team (L1).
+      if (accountAgentId) await this.assertTeamLeadPicksOwnAgent(actor, accountAgent.id);
+      if (accountAgent.city !== business.city) {
+        throw new BadRequestException('The account agent must work in the business city');
+      }
+      this.assertAvailableFieldAgent(accountAgent, this.clock.now());
+    }
 
     const now = this.clock.now();
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -742,8 +839,8 @@ export class BusinessVerificationService {
           verificationStatus: 'verified',
           verifiedAt: now,
           verifiedByStaffId: actorId,
-          accountAgentId: finalAccountAgentId,
-          accountAgentAssignedAt: now,
+          accountAgentId: finalAccountAgentId ?? null,
+          accountAgentAssignedAt: finalAccountAgentId ? (finalAccountAgentId === business.accountAgentId ? business.accountAgentAssignedAt ?? now : now) : null,
         },
       });
       await recordStatusChange(tx, {
@@ -758,6 +855,7 @@ export class BusinessVerificationService {
       return row;
     });
 
+    await this.closeAutoCheckFlag(businessId, { id: actorId, role: actor.role }, 'Team Lead checked the reasons and approved the business');
     if (business.inPersonOnboardedAt) {
       const reviewFlag = await this.prisma.reviewFlag.findFirst({
         where: { subjectType: 'business', subjectId: businessId, kind: 'in_person_onboarding_review', status: 'open' },
@@ -806,6 +904,15 @@ export class BusinessVerificationService {
     return updated;
   }
 
+  /** The open "automatic check failed" item is answered by the Team Lead's approve or reject. */
+  private async closeAutoCheckFlag(businessId: string, actor: { id: string; role: string }, resolution: string) {
+    const flag = await this.prisma.reviewFlag.findFirst({
+      where: { subjectType: 'business', subjectId: businessId, kind: AUTO_CHECK_FLAG, status: 'open' },
+      select: { id: true },
+    });
+    if (flag) await this.reviewFlagService.resolve(flag.id, actor, { status: 'resolved', resolution }, { closedByOwnWork: true });
+  }
+
   async reject(businessId: string, actorId: string, reason: string) {
     const trimmedReason = reason?.trim();
     if (!trimmedReason) throw new BadRequestException('A reason is required to reject business verification');
@@ -843,6 +950,7 @@ export class BusinessVerificationService {
       reason: trimmedReason,
       city: business.city,
     });
+    await this.closeAutoCheckFlag(businessId, { id: actorId, role: actor.role }, `Team Lead rejected the business: ${trimmedReason}`);
     return updated;
   }
 

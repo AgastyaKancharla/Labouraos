@@ -24,7 +24,8 @@ export type LegalDocumentKey = (typeof LEGAL_DOCUMENT_KEYS)[number];
 export const LEGAL_DOCUMENT_VERSIONS: Record<LegalDocumentKey, string> = {
   // 1.2 (rev 211, 25 Nov): Consent → Selfie → Payment → ID check; the 30 days start after the ID check.
   job_seeker_terms: '1.2',
-  business_agreement: '1.1',
+  // 1.2 (rev 211, 25 Nov): clauses 3.2–3.4, automatic verification.
+  business_agreement: '1.2',
   referral_terms: '1.0',
 };
 

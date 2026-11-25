@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { VISIT_PURPOSE_BUSINESS_SIGNUP } from '../../common/customer-auth/customer-app.constants';
+import { isHouseholdBusiness } from '../business/business-auto-check.service';
 import {
   StageResult,
   businessStage,
@@ -69,7 +70,7 @@ export class SignupFactsService {
 
   private async business(id: string): Promise<StageResult> {
     const [business, agreement, visits] = await Promise.all([
-      this.prisma.business.findUnique({ where: { id }, select: { verificationStatus: true } }),
+      this.prisma.business.findUnique({ where: { id }, select: { verificationStatus: true, businessType: true, autoCheckStatus: true } }),
       this.prisma.businessAgreement.findFirst({ where: { businessId: id }, select: { id: true } }),
       this.prisma.visitAssignment.findMany({
         where: { businessId: id, purpose: { in: ['verification', VISIT_PURPOSE_BUSINESS_SIGNUP] }, status: { not: 'cancelled' } },
@@ -79,6 +80,8 @@ export class SignupFactsService {
     if (!business) return noRecordStage('business');
     const status = business.verificationStatus ?? 'lead';
     return businessStage({
+      household: isHouseholdBusiness(business.businessType),
+      autoCheckFailed: business.autoCheckStatus === 'failed',
       agreementSigned: Boolean(agreement),
       visitBooked: visits.some((v) => v.status === 'assigned' || v.status === 'done'),
       visitRequested: visits.some((v) => v.status === 'pending'),

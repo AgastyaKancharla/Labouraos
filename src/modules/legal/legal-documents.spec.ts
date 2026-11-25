@@ -46,11 +46,10 @@ const EMPTY_COMPANY: LegalCompanyDetails = legalCompanyFrom({ companyLegalName: 
 
 const text = (html: string) => html.replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
 
-describe('Legal documents (Master Guide rev 176; job seeker terms v1.2, rev 211)', () => {
-  it('has the approved versions: job seeker terms 1.2 (rev 211), business agreement 1.1, referral partner terms 1.0, consent notice 1.3 (rev 211)', () => {
-    expect(LEGAL_DOCUMENT_VERSIONS.job_seeker_terms).toBe('1.2');
-    expect(LEGAL_DOCUMENT_VERSIONS.referral_terms).toBe('1.0');
-    expect(BUSINESS_AGREEMENT_VERSION).toBe('1.1');
+describe('Legal documents (Master Guide rev 176; job seeker terms v1.2 and business agreement v1.2, rev 211)', () => {
+  it('has the approved versions: job seeker terms 1.2 (rev 211), business agreement 1.2 (rev 211), referral partner terms 1.0, consent notice 1.3 (rev 211)', () => {
+    expect(LEGAL_DOCUMENT_VERSIONS).toEqual({ job_seeker_terms: '1.2', business_agreement: '1.2', referral_terms: '1.0' });
+    expect(BUSINESS_AGREEMENT_VERSION).toBe('1.2');
     expect(REFERRAL_TERMS_VERSION).toBe('1.0');
     expect(DEFAULT_NOTICE_VERSION).toBe('1.3');
   });

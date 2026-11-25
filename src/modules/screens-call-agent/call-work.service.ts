@@ -1151,7 +1151,7 @@ export class CallWorkService {
       type === 'job_seeker'
         ? this.prisma.interview.findMany({
             where: { jobSeekerId: id },
-            select: { id: true, status: true, result: true, offerSentAt: true, slotStartsAt: true, business: { select: { name: true } } },
+            select: { id: true, status: true, result: true, offerSentAt: true, slotStartsAt: true, shopCheckAsked: true, shopCheckAnswer: true, business: { select: { name: true } } },
           })
         : Promise.resolve([]),
       type === 'job_seeker'
@@ -1189,7 +1189,11 @@ export class CallWorkService {
       })),
       ...messages.map((m) => ({ kind: 'message', at: (m.sentAt ?? m.createdAt).toISOString(), channel: m.channel, template: m.template, status: m.status })),
       ...interviews.flatMap((i) => [
-        { kind: 'offer', at: i.offerSentAt.toISOString(), businessName: i.business.name, status: i.status, result: i.result, slotStartsAt: i.slotStartsAt.toISOString() },
+        {
+          kind: 'offer', at: i.offerSentAt.toISOString(), businessName: i.business.name, status: i.status, result: i.result, slotStartsAt: i.slotStartsAt.toISOString(),
+          // 25 Nov (rev 211, B6): the agent records "Was the shop real…?" from the call or his WhatsApp.
+          interviewId: i.id, shopCheckPending: i.shopCheckAsked && !i.shopCheckAnswer, shopCheckAnswer: i.shopCheckAnswer,
+        },
       ]),
       ...payments.map((p) => ({ kind: 'payment_confirmed', at: (p.confirmedAt ?? p.createdAt).toISOString(), feePaise: p.amount })),
       ...(seeker ? [{ kind: 'registered', at: seeker.createdAt.toISOString(), by: seeker.registeredBy?.name ?? null }] : []),

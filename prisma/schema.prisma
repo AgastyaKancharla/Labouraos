@@ -520,6 +520,32 @@ model Business {
   suspendedUntil           DateTime?
   suspendedByStaffId       String?
   suspensionReason         String?
+  /// 25 Nov (rev 211, B1): the business runs from the owner's home (a home kitchen, tiffin or
+  /// tailoring business): the second owner photo is the owner holding the FSSAI licence with
+  /// his face visible, instead of the shop's name board. Households hiring help are the
+  /// business type "household" instead, and keep the visit and the Team Lead check.
+  runsFromHome             Boolean   @default(false)
+  /// B2: a Google Maps link as a proof, resolved to its pin by src/modules/maps-link.
+  mapsLink                 String?
+  mapsLatitude             Float?
+  mapsLongitude            Float?
+  mapsPlaceName            String?
+  /// B3: the automatic verification check (who: "automatic"): passed or failed, when, and
+  /// every condition with its result (BusinessAutoCheckReason[] as JSON). Re-run when a
+  /// missing proof or photo is added; a failed check waits in pending_tl_check.
+  autoCheckStatus          String?
+  autoCheckedAt            DateTime?
+  autoCheckReasons         Json?
+  /// Metres between the shop photo's location and the Maps pin, when both exist.
+  autoCheckDistanceMeters  Int?
+  /// Set when the automatic check verified the business (no Team Lead).
+  autoVerifiedAt           DateTime?
+  /// 25 Nov (rev 212, B9): standard (2 or more proofs, checked automatically) or small_business
+  /// (fewer than 2 proofs: the owner's ID, an address proof, one business proof and a video call
+  /// with the Team Lead instead). Set by the automatic check.
+  verificationPath         String?
+  ownerPhotos   BusinessOwnerPhoto[]
+  ownerCheck    BusinessOwnerCheck?
   branches      BusinessBranch[]
   vacancies     Vacancy[]
   /// The business's own shifts (17 Nov): a vacancy picks one of them.
@@ -543,6 +569,86 @@ model Business {
   @@index([city])
   @@index([accountAgentId])
   @@index([verificationStatus])
+}
+
+/// 25 Nov (rev 211, B1): the owner's live photos before he signs the agreement — a selfie and
+/// the shop's name board (for a home business: holding the FSSAI licence, face visible). Taken
+/// with the camera only (no gallery) on the agreement link (P04) or in Laboura Field (FA07b).
+/// The phone's location is recorded with the shop photo (refused location: still taken, the
+/// location check then fails and the Team Lead looks). Private storage, signed links only;
+/// kept like the business profile (23 months after the last activity, then removed).
+model BusinessOwnerPhoto {
+  id              String    @id @default(uuid())
+  businessId      String
+  business        Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  /// owner_selfie, shop_board or fssai_with_owner
+  kind            String
+  storagePath     String
+  photoHash       String
+  latitude        Float?
+  longitude       Float?
+  accuracyMeters  Float?
+  /// recorded, refused or unavailable (only the shop photo asks for a location)
+  locationStatus  String?
+  /// agreement_link or field_app
+  takenVia        String
+  takenByStaffId  String?
+  takenAt         DateTime
+  createdAt       DateTime  @default(now())
+
+  @@index([businessId, kind])
+  @@index([photoHash])
+}
+
+/// 25 Nov (rev 212, B9): the small-business checks for a business with fewer than 2 proofs —
+/// the owner as a person and the place he works from. Kept: the ID type, last 4 characters,
+/// the name on it and the result; that an address proof was checked, its type and the address
+/// as matched; the business proof given; the Team Lead's video call. The ID card photo and the
+/// address proof image are deleted after the Team Lead's check (30 days at most).
+model BusinessOwnerCheck {
+  id                       String    @id @default(uuid())
+  businessId               String    @unique
+  business                 Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  /// aadhaar_qr (in-house UIDAI Secure QR check) or other_id (a live card photo the Team Lead checks)
+  idMethod                 String?
+  /// aadhaar, pan, driving_licence or voter_id
+  idType                   String?
+  idLast4                  String?
+  idName                   String?
+  /// verified, pending (waits for the Team Lead), rejected or failed
+  idResult                 String?
+  idFailureReason          String?
+  idPhotoPath              String?
+  idSubmittedAt            DateTime?
+  idCheckedAt              DateTime?
+  idCheckedByStaffId       String?
+  idPhotoDeletedAt         DateTime?
+  idAttempts               Int       @default(0)
+  idAttemptsDay            String?
+  /// gst, udyam, fssai, licence, other_registration, bank_upi or website_listing
+  businessProofKind        String?
+  businessProofValue       String?
+  businessProofAt          DateTime?
+  /// bank_statement, electricity_bill, rent_agreement or other
+  addressDocType           String?
+  addressPhotoPath         String?
+  addressSubmittedAt       DateTime?
+  /// pending, checked or rejected
+  addressResult            String?
+  /// The address as the Team Lead matched it on the document.
+  addressMatched           String?
+  addressCheckedAt         DateTime?
+  addressCheckedByStaffId  String?
+  addressPhotoDeletedAt    DateTime?
+  /// The Team Lead's short video call through Laboura that showed the workspace.
+  videoCallDoneAt          DateTime?
+  videoCallByStaffId       String?
+  videoCallNote            String?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  @@index([idPhotoPath])
+  @@index([addressPhotoPath])
 }
 
 model BusinessBranch {
@@ -665,6 +771,13 @@ model Vacancy {
   belowLegalMinimum           Boolean     @default(false)
   ownerToldMinimumWage        Boolean     @default(false)
   legalMinimumPaise           Int?
+  /// 25 Nov (rev 211, B4): an unusual vacancy (salary far above its trade's usual range, or
+  /// more than 5 openings) waits in status pending_tl_check after the owner's confirmation:
+  /// why (JSON list), and the Team Lead's decision.
+  tlCheckReasons              Json?
+  tlCheckedAt                 DateTime?
+  tlCheckedByStaffId          String?
+  tlCheckDecision             String?
   createdAt                   DateTime    @default(now())
   updatedAt                   DateTime    @updatedAt
 
@@ -735,6 +848,16 @@ model Interview {
   selectedJoiningDate      DateTime?
   candidateCheckAnswer     String?
   candidateCheckAt         DateTime?
+  /// 25 Nov (rev 211, B6): "Was the shop real, at this address, and was the job as described?"
+  /// asked with "Did they offer you?" until a candidate has said yes for this business.
+  shopCheckAsked           Boolean   @default(false)
+  /// yes or no
+  shopCheckAnswer          String?
+  shopCheckAt              DateTime?
+  /// link (P06), call (the agent recorded it) or whatsapp (his reply, recorded by the agent)
+  shopCheckChannel         String?
+  shopCheckByStaffId       String?
+  shopCheckNote            String?
   cancelReason             String?
   /// How the interview happens (guide, "Confirming in the shop", decided 9 Nov):
   /// in_shop_call (the phone talk in the shop is the first interview), at_shop,

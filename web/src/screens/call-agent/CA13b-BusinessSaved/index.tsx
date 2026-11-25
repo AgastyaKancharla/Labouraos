@@ -120,7 +120,21 @@ export default function BusinessSaved() {
             detail={agreementDetail}
             action={s.agreement.state !== 'done' ? <Button onClick={() => setPreview(true)}>{t('reg.biz.previewAgreement')}</Button> : undefined}
           />
-          <StepRow state={s.visit.state} title={`2 · ${t('reg.biz.stepVisit')}`} detail={visitDetail} />
+          {b.household === false && s.autoCheck ? (
+            <StepRow
+              state={s.autoCheck.state}
+              title={`2 · ${t('reg.biz.stepAutoCheck')}`}
+              detail={
+                s.autoCheck.state === 'done'
+                  ? t('reg.biz.autoPassed')
+                  : s.autoCheck.state === 'stuck'
+                    ? s.autoCheck.smallBusiness ? t('reg.biz.autoSmall') : t('reg.biz.autoFailed')
+                    : t('reg.biz.autoAfterSigning')
+              }
+            />
+          ) : (
+            <StepRow state={s.visit.state} title={`2 · ${t('reg.biz.stepVisit')}`} detail={visitDetail} />
+          )}
           <StepRow state={s.teamLeadApproval.state} title={`3 · ${t('reg.biz.stepTl')}`} detail={tlDetail} />
           <StepRow state={s.verified.state} title={t('reg.biz.stepVerified')} detail={s.verified.state === 'done' ? at(s.verified.time) ?? '' : '–'} />
         </ul>

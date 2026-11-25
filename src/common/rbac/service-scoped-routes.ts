@@ -299,6 +299,11 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
     test: 'common/rbac/service-scoped-routes.e2e.spec.ts',
     proof: 'another agent cannot record a reply on someone else\'s offer call (POST /interviews/:id/call-reply, 403)',
   },
+  'InterviewController.recordShopCheck': {
+    reason: "25 Nov (B6): an agent records the shop answer only on his own answered call to that candidate after the interview, or from his own WhatsApp conversation with him (InterviewService.recordShopCheckByStaff); Team Leads and above may record it.",
+    test: 'modules/business/business-auto-verification.e2e.spec.ts',
+    proof: "// shop check: another agent's call is refused (403)",
+  },
   'FollowUpController.getIntroducedBusinesses': {
     reason: 'Only introductions by the caller or their team, unless the task is theirs (FollowUpService).',
     test: 'modules/follow-up/introduced-businesses-scope.spec.ts',
@@ -551,6 +556,11 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
     reason: "Team Lead portal records (rev 194): only his team's records or unowned ones in his city (RecordSectionsService viewable filter); anything else is 404.",
     test: 'modules/screens-team-lead/team-lead-records.e2e.spec.ts',
     proof: '// TL records: visit photos',
+  },
+  'TeamLeadRecordsController.ownerPhotos': {
+    reason: "25 Nov (rev 211): the owner's photos of a business in the Team Lead's view only (RecordSectionsService viewable filter); anything else is 404.",
+    test: 'modules/business/business-auto-verification.e2e.spec.ts',
+    proof: "// TL owner photos: another team's business is 404",
   },
   'TeamLeadRecordsController.vacancy': {
     reason: "Team Lead portal records (rev 194): only his team's records or unowned ones in his city (RecordSectionsService viewable filter); anything else is 404.",

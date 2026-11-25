@@ -6,6 +6,7 @@ import { JobSeekerService } from '../job-seeker/job-seeker.service';
 import { PAID_WAITING_ID, PAID_WAITING_ID_LABEL } from '../job-seeker/job-seeker.status';
 import { ManagerRecordsService } from '../screens-manager/manager-records.service';
 import { TeamLeadRecordsService } from '../screens-team-lead/team-lead-records.service';
+import { isHouseholdBusiness } from '../business/business-auto-check.service';
 
 export type StuckKind = 'job_seeker' | 'business' | 'referral';
 const KINDS: readonly StuckKind[] = ['job_seeker', 'business', 'referral'];
@@ -28,7 +29,7 @@ export interface StuckView {
   name: string;
   /** Who holds the record: the agent it was assigned to, else the agent who registered it (or the account agent / lead creator). */
   owner: { name: string; code: string } | null;
-  /** The step the person is on (job seeker: consent, selfie, payment, id_check (rev 211 order); business: agreement, visit, team_lead_check; partner: terms, selfie, id_check, upi), or complete. */
+  /** The step the person is on (job seeker: consent, selfie, payment, id_check (rev 211 order); business: agreement, automatic_check, team_lead_check — households: agreement, visit, team_lead_check; partner: terms, selfie, id_check, upi), or complete. */
   step: string;
   /** done, in_progress, stuck or not_started (of that step). */
   state: string;
@@ -262,7 +263,7 @@ export class ProfileStuckService {
       where,
       select: {
         id: true, code: true, name: true, verificationStatus: true, verifiedAt: true, inPersonOnboardedAt: true,
-        accountAgentId: true, leadCreatedByStaffId: true,
+        accountAgentId: true, leadCreatedByStaffId: true, businessType: true, autoCheckStatus: true, autoCheckReasons: true,
         agreements: { orderBy: { signedAt: 'desc' }, take: 1, select: { signedAt: true } },
         visits: { orderBy: { visitedAt: 'desc' }, take: 1, select: { visitedAt: true } },
         visitAssignments: { orderBy: { createdAt: 'desc' }, take: 1, select: { status: true, assignedStaff: STAFF, suggestedStaff: STAFF } },
@@ -279,7 +280,26 @@ export class ProfileStuckService {
     }
     if (verified) return { ...base, step: 'complete', state: 'done', reason: null, waitingForTeamLead: false, actions: [] };
     if (status === 'rejected') return { ...base, step: 'team_lead_check', state: 'stuck', reason: 'The Team Lead rejected the verification', waitingForTeamLead: false, actions: [] };
-    if (status === 'pending_tl_check') return { ...base, step: 'team_lead_check', state: 'in_progress', reason: 'Waiting for the Team Lead to approve the verification', waitingForTeamLead: true, actions: [] };
+    // 25 Nov (rev 211, B5): agreement → automatic check → Team Lead check only when the check failed.
+    const failed = Array.isArray(business.autoCheckReasons)
+      ? (business.autoCheckReasons as Array<{ ok?: boolean; detail?: string }>).filter((r) => r && r.ok === false).map((r) => r.detail).filter(Boolean)
+      : [];
+    if (status === 'pending_tl_check') {
+      return {
+        ...base,
+        step: 'team_lead_check',
+        state: 'in_progress',
+        reason: business.autoCheckStatus === 'failed' && failed.length
+          ? `The automatic check did not pass (${failed.join('; ')}): waiting for the Team Lead`
+          : 'Waiting for the Team Lead to approve the verification',
+        waitingForTeamLead: true,
+        actions: [],
+      };
+    }
+    if (!isHouseholdBusiness(business.businessType)) {
+      // Signed, not checked yet (an agreement signed before 25 Nov): the check runs when a proof or photo is added.
+      return { ...base, step: 'automatic_check', state: 'in_progress', reason: 'Signed: the automatic check runs once the owner photos and 2 proofs are in', waitingForTeamLead: false, actions: [] };
+    }
     const assignment = business.visitAssignments[0];
     const who = assignment?.assignedStaff ?? assignment?.suggestedStaff;
     return {

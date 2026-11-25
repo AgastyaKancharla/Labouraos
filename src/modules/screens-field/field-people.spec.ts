@@ -134,7 +134,7 @@ describe('Laboura Field lists (22 Nov): GET /field-work/businesses, /field-work/
   function signAgreement(businessId: string) {
     return prisma.businessAgreement.create({
       data: {
-        businessId, version: '1.1', termsHash: 'h', noBypassMonths: 12, noBypassPenaltyPercent: 50, feePercent: 50, gstPercent: 18,
+        businessId, version: '1.2', termsHash: 'h', noBypassMonths: 12, noBypassPenaltyPercent: 50, feePercent: 50, gstPercent: 18,
         signedName: 'Owner Name', signedPhone: '+919999999999', otpRequestId: 'otp', signedAt: new Date(NOON.getTime() - DAY), documentStoragePath: 'x',
       },
     });

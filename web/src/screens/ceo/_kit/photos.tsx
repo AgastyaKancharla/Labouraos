@@ -163,3 +163,44 @@ export function VisitPhotos({ businessId, businessName, visit }: { businessId: s
     </figure>
   );
 }
+
+interface OwnerPhoto extends Photo {
+  kind: string;
+  takenAt: string | null;
+  takenVia: string | null;
+  locationStatus: string | null;
+}
+
+const SHOP_WORD: Record<string, string> = { shop_board: 'Name board', fssai_with_owner: 'Owner with FSSAI licence', workspace: 'Workspace' };
+
+/**
+ * 25 Nov (rev 211–212): the owner's live selfie and the shop photo taken before signing (name
+ * board, FSSAI licence held by the owner, or the workspace), and — only while a small business
+ * waits for the Team Lead's check — the ID card photo and the address proof. Short-lived links.
+ */
+export function OwnerPhotos({ businessId, businessName }: { businessId: string; businessName: string }) {
+  const { api: base } = useRecordsPortal();
+  const query = useQuery({
+    queryKey: [base, 'business', businessId, 'owner-photos'],
+    queryFn: () => api.get<{ selfie: OwnerPhoto; shop: OwnerPhoto; idCard?: { url: string } | null; addressProof?: { url: string } | null }>(`${base}/businesses/${businessId}/owner-photos`),
+    staleTime: LINK_FRESH_MS,
+    refetchInterval: LINK_FRESH_MS,
+    refetchIntervalInBackground: false,
+  });
+  const d = query.data;
+  const asPhoto = (p: { url: string } | null | undefined): Photo => (p ? { kept: true, url: p.url, expiresInSeconds: 300 } : NO_PHOTO);
+  return (
+    <figure style={{ margin: 0, display: 'grid', gap: 6 }} data-testid="owner-photos">
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <Thumb photo={query.isError ? NO_PHOTO : d?.selfie} alt={`Owner's live selfie, ${businessName}`} size={84} />
+        <Thumb photo={query.isError ? NO_PHOTO : d?.shop} alt={`${SHOP_WORD[d?.shop?.kind ?? ''] ?? 'Shop photo'}, ${businessName}`} size={84} />
+        {d?.idCard && <Thumb photo={asPhoto(d.idCard)} alt={`Owner's ID card (deleted after the check), ${businessName}`} size={84} />}
+        {d?.addressProof && <Thumb photo={asPhoto(d.addressProof)} alt={`Address proof (deleted after the check), ${businessName}`} size={84} />}
+      </div>
+      <figcaption className="ceo-sub" style={{ fontSize: 11.5 }}>
+        {d?.selfie?.takenAt ? `Taken ${formatDateIST(d.selfie.takenAt)}${d.selfie.takenVia === 'field_app' ? ' in Laboura Field' : ' on the agreement link'}` : 'No owner photos yet'}
+        {d?.shop?.locationStatus === 'refused' ? ' · location refused' : d?.shop?.locationStatus === 'recorded' ? ' · location recorded' : ''}
+      </figcaption>
+    </figure>
+  );
+}

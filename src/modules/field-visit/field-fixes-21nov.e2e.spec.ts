@@ -502,7 +502,9 @@ describe('Laboura Field fixes of 21 Nov (server)', () => {
     await makeBusiness({ suffix: '12', name: 'Lakshmi Tiffin Centre', latitude: 12.9316, longitude: 77.6301 });
     // Not seen anywhere today yet: nothing (the check is never a way to search the map).
     expect((await http().get('/field-work/similar-shops').query({ name: 'Lakshmi Tiffin', lat: 12.9316, lng: 77.6301 }).set(authOf(fb1)).expect(200)).body.matches).toEqual([]);
-    await prisma.fieldCheckIn.create({ data: { staffId: fa1.id, latitude: 12.9316, longitude: 77.6301, accuracyMeters: 8, checkedInAt: clock.at } });
+    // Later than every visit this suite wrote (rows made without visitedAt carry the real time, which is
+    // after the frozen clock once the calendar passes START): the check-in is his latest position today.
+    await prisma.fieldCheckIn.create({ data: { staffId: fa1.id, latitude: 12.9316, longitude: 77.6301, accuracyMeters: 8, checkedInAt: new Date(Math.max(Date.now(), clock.at.getTime()) + 60_000) } });
     expect((await http().get('/field-work/similar-shops').query({ name: 'Lak', lat: 12.9316, lng: 77.6301 }).set(authOf(fa1)).expect(200)).body.matches).toEqual([]);
     const near = await http().get('/field-work/similar-shops').query({ name: 'Lakshmi Tiffin', lat: 12.9316, lng: 77.6301 }).set(authOf(fa1)).expect(200);
     expect(near.body.matches[0]).toMatchObject({ name: 'Lakshmi Tiffin Centre', distanceMeters: 0 });

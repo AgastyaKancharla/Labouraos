@@ -22,7 +22,8 @@ export type BusinessType = string;
  * visit is required anyway"). Both need the shop photo, the selfie, GPS and
  * the owner's OTP, and both move the business on to the Team Lead's check.
  */
-export const VERIFICATION_VISIT_PURPOSES = ['verification', 'business_signup'] as const;
+// candidate_report (25 Nov, rev 211 B6): the check visit after a candidate said the shop or job was not real.
+export const VERIFICATION_VISIT_PURPOSES = ['verification', 'business_signup', 'candidate_report'] as const;
 
 export function isVerificationVisitPurpose(purpose: string | null | undefined): boolean {
   return (VERIFICATION_VISIT_PURPOSES as readonly string[]).includes(purpose ?? '');

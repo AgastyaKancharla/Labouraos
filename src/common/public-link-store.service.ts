@@ -80,6 +80,18 @@ export class PublicLinkStoreService {
     return { ...row, phone: row.phone ? normaliseIndianMobile(decryptCallRoutingPhone(row.phone)) : null };
   }
 
+  /**
+   * 25 Nov (rev 212, B9): an agreement link after signing still opens the small-business steps
+   * (owner's ID, address proof, business proof) until it expires; revoked or expired links never.
+   */
+  async findByTokenAllowingUsed(token: string, now = new Date()) {
+    const row = await this.prisma.publicLink.findUnique({ where: { tokenHash: this.hashToken(token) } });
+    if (!row) throw new NotFoundException('Public link token not found');
+    if (row.revokedAt) throw new BadRequestException('Public link has been revoked');
+    if (row.expiresAt.getTime() <= now.getTime()) throw new BadRequestException('Public link has expired');
+    return { ...row, phone: row.phone ? normaliseIndianMobile(decryptCallRoutingPhone(row.phone)) : null };
+  }
+
   async markUsed(token: string, now = new Date(), context: PublicLinkContext = {}): Promise<void> {
     const changed = await this.prisma.publicLink.updateMany({
       where: {

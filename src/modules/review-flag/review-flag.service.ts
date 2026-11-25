@@ -81,6 +81,29 @@ export class ReviewFlagService {
   }
 
   /**
+   * 25 Nov (rev 211): closes an open flag the software itself answered (the automatic business
+   * check passed after a missing proof or photo was added). No staff member resolves it: the
+   * audit row's actor is "system". A flag no longer open is left as it is.
+   */
+  async resolveAutomatically(flagId: string, resolution: string): Promise<void> {
+    const changed = await this.prisma.reviewFlag.updateMany({
+      where: { id: flagId, status: 'open' },
+      data: { status: 'resolved', resolution, resolvedAt: new Date(), resolvedByStaffId: null },
+    });
+    if (changed.count !== 1) return;
+    const flag = await this.prisma.reviewFlag.findUnique({ where: { id: flagId }, select: { code: true } });
+    await this.auditService.log({
+      actorId: 'system',
+      action: 'review_flag.resolved',
+      entityType: 'review_flag',
+      entityCode: flag?.code ?? flagId,
+      before: { status: 'open' },
+      after: { status: 'resolved', resolution, resolvedBy: 'automatic' },
+    });
+    await this.syncBell(flagId);
+  }
+
+  /**
    * Raises a flag. With `options.tx` the flag is written on that transaction's
    * connection (e.g. while an advisory lock is held, so a check-then-raise
    * can't race) and its bell is left to the caller, who calls
