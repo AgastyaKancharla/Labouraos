@@ -299,6 +299,11 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
     test: 'common/rbac/service-scoped-routes.e2e.spec.ts',
     proof: 'another agent cannot record a reply on someone else\'s offer call (POST /interviews/:id/call-reply, 403)',
   },
+  'InterviewController.recordShopCheck': {
+    reason: "25 Nov (B6): an agent records the shop answer only on his own answered call to that candidate after the interview, or from his own WhatsApp conversation with him (InterviewService.recordShopCheckByStaff); Team Leads and above may record it.",
+    test: 'modules/vacancy/shop-check.e2e.spec.ts',
+    proof: "// shop check: another agent's call is refused (403)",
+  },
   'FollowUpController.getIntroducedBusinesses': {
     reason: 'Only introductions by the caller or their team, unless the task is theirs (FollowUpService).',
     test: 'modules/follow-up/introduced-businesses-scope.spec.ts',

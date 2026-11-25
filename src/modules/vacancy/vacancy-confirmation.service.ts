@@ -16,6 +16,8 @@ import { PricingService } from '../pricing/pricing.service';
 import { tradeNameKey } from '../trade/trade.service';
 import { DEFAULT_MINIMUM_WAGE_ZONE, isMinimumWageZone, legalMinimumFor, MinimumWageLevel, MinimumWageZone } from '../trade/minimum-wage';
 import { testModeFields } from '../../common/otp/otp-test-mode';
+import { ReviewFlagService } from '../review-flag/review-flag.service';
+import { VACANCY_PENDING_TL_CHECK, vacancyCheckReasons } from './vacancy-tl-check';
 
 /** A vacancy may only be matched, introduced or interviewed for once it is `open`. */
 export const UNCONFIRMED_VACANCY_STATUSES = ['draft', 'awaiting_confirmation'] as const;
@@ -56,6 +58,13 @@ export function isUnconfirmedVacancyStatus(status: string | null | undefined): b
   return (UNCONFIRMED_VACANCY_STATUSES as readonly string[]).includes(status ?? '');
 }
 
+/** 25 Nov (rev 211, B4): confirmed, but an unusual vacancy waits for the Team Lead before candidates. */
+export const VACANCY_WAITS_FOR_TEAM_LEAD_MESSAGE = 'This vacancy waits for the Team Lead’s check (unusual salary or many openings): no candidates until it is approved';
+
+export function isVacancyWaitingForTeamLead(status: string | null | undefined): boolean {
+  return status === 'pending_tl_check';
+}
+
 function last4(phone: string): string {
   return phone.replace(/\D/g, '').slice(-4);
 }
@@ -71,6 +80,7 @@ export class VacancyConfirmationService {
     private readonly pricingService: PricingService,
     private readonly otpLimiter: PublicOtpLimiter,
     @Optional() private readonly customerNotifications?: CustomerNotificationHooks,
+    @Optional() private readonly reviewFlags?: ReviewFlagService,
   ) {}
 
   /**
@@ -413,6 +423,20 @@ export class VacancyConfirmationService {
     expectedRound: string,
   ) {
     const now = new Date();
+    // 25 Nov (rev 211, B4): an unusual vacancy (salary far above its trade's usual range, or more
+    // than 5 openings) waits for the Team Lead before any candidate is shown; replacements never do.
+    const policy = await this.pricingService.current();
+    const trade = await this.prisma.trade.findUnique({ where: { nameKey: tradeNameKey(vacancy.tradeSkill) }, select: { salaryMaxPaise: true, active: true } });
+    const heldReasons = vacancy.replacementForPlacementId ? [] : vacancyCheckReasons({
+      headcount: vacancy.headcount,
+      salaryMinPaise: vacancy.salaryMinPaise,
+      salaryMaxPaise: vacancy.salaryMaxPaise,
+      salaryPeriod: vacancy.salaryPeriod,
+      tradeSalaryMaxPaise: trade?.active ? trade.salaryMaxPaise : null,
+      salaryDaysPerMonth: policy.salaryDaysPerMonth,
+    });
+    const held = heldReasons.length > 0;
+    const nextStatus = held ? VACANCY_PENDING_TL_CHECK : 'open';
     const confirmed = await this.prisma.$transaction(async (tx) => {
       // M2-R1: lock the row (an edit locks it too), then check that the details are still the
       // ones the code or link was for: same round, unchanged since they were loaded.
@@ -423,7 +447,11 @@ export class VacancyConfirmationService {
       const changed = await tx.vacancy.updateMany({
         where: { id: vacancy.id, status: 'awaiting_confirmation', updatedAt: vacancy.updatedAt },
         data: {
-          status: 'open',
+          status: nextStatus,
+          tlCheckReasons: held ? (heldReasons as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+          tlCheckedAt: null,
+          tlCheckedByStaffId: null,
+          tlCheckDecision: null,
           confirmedAt: now,
           confirmationMethod: method,
           confirmedByName: contact.name,
@@ -439,9 +467,9 @@ export class VacancyConfirmationService {
         subjectType: 'vacancy',
         subjectId: vacancy.id,
         fromStatus: 'awaiting_confirmation',
-        toStatus: 'open',
+        toStatus: nextStatus,
         changedByStaffId: recordedByStaffId,
-        reason: `confirmed_by_contact:${method}`,
+        reason: held ? `confirmed_by_contact:${method}; waits for the Team Lead: ${heldReasons.map((r) => r.code).join(', ')}` : `confirmed_by_contact:${method}`,
       });
       return tx.vacancy.findUniqueOrThrow({ where: { id: vacancy.id }, include: { business: true, branch: true } });
     });
@@ -452,7 +480,8 @@ export class VacancyConfirmationService {
       entityCode: vacancy.code,
       before: { status: 'awaiting_confirmation' },
       after: {
-        status: 'open',
+        status: nextStatus,
+        ...(held ? { tlCheckReasons: heldReasons.map((r) => r.code) } : {}),
         confirmationMethod: method,
         confirmedByRole: contact.role,
         confirmedPhoneLast4: last4(contact.phone),
@@ -460,9 +489,66 @@ export class VacancyConfirmationService {
       changedFields: ['status', 'confirmedAt', 'confirmationMethod'],
       city: vacancy.city,
     });
+    if (held) {
+      await this.reviewFlags?.raise({
+        kind: 'vacancy_tl_check',
+        subjectType: 'vacancy',
+        subjectId: vacancy.id,
+        raisedForStaffId: vacancy.capturedByStaffId ?? confirmed.business.accountAgentId ?? confirmed.business.leadCreatedByStaffId,
+        details: { vacancyCode: vacancy.code, businessId: vacancy.businessId, reasons: heldReasons },
+      });
+    }
     // Customer app notification (Agent C).
     await this.customerNotifications?.vacancyConfirmed(vacancy.id);
     return confirmed;
+  }
+
+  /**
+   * 25 Nov (rev 211, B4): the Team Lead (of the vacancy's team; the route's vacancy write scope),
+   * a Manager or the CEO decides a vacancy held for an unusual salary or many openings:
+   * approve → open (candidates can be shown); reject → cancelled, with a reason. Audited.
+   */
+  async decideTeamLeadCheck(vacancyId: string, actor: ConfirmationActor, decision: 'approve' | 'reject', reason: string | undefined) {
+    if (!['team_lead', 'manager', 'ceo'].includes(actor.role)) throw new ForbiddenException('Only a Team Lead, Manager or the CEO checks a vacancy');
+    if (decision !== 'approve' && decision !== 'reject') throw new BadRequestException('decision must be approve or reject');
+    const trimmed = reason?.trim() ?? '';
+    if (decision === 'reject' && !trimmed) throw new BadRequestException('A reason is required to reject a vacancy');
+    const vacancy = await this.prisma.vacancy.findUnique({ where: { id: vacancyId } });
+    if (!vacancy) throw new NotFoundException(`Vacancy '${vacancyId}' not found`);
+    if (vacancy.status !== 'pending_tl_check') throw new BadRequestException('This vacancy is not waiting for the Team Lead’s check');
+    const now = new Date();
+    const next = decision === 'approve' ? 'open' : 'cancelled';
+    await this.prisma.$transaction(async (tx) => {
+      const changed = await tx.vacancy.updateMany({
+        where: { id: vacancy.id, status: 'pending_tl_check' },
+        data: { status: next, tlCheckedAt: now, tlCheckedByStaffId: actor.id, tlCheckDecision: decision },
+      });
+      if (changed.count !== 1) throw new BadRequestException('This vacancy was already decided');
+      await recordStatusChange(tx as Prisma.TransactionClient, {
+        subjectType: 'vacancy',
+        subjectId: vacancy.id,
+        fromStatus: 'pending_tl_check',
+        toStatus: next,
+        changedByStaffId: actor.id,
+        reason: decision === 'approve' ? `Team Lead approved the vacancy check${trimmed ? `: ${trimmed}` : ''}` : `Team Lead rejected the vacancy: ${trimmed}`,
+      });
+    });
+    await this.auditService.log({
+      actorId: actor.id,
+      action: decision === 'approve' ? 'vacancy.tl_check_approved' : 'vacancy.tl_check_rejected',
+      entityType: 'vacancy',
+      entityCode: vacancy.code,
+      before: { status: 'pending_tl_check' },
+      after: { status: next, tlCheckDecision: decision },
+      changedFields: ['status', 'tlCheckedAt', 'tlCheckedByStaffId', 'tlCheckDecision'],
+      reason: trimmed || 'Vacancy check approved',
+      city: vacancy.city,
+    });
+    const flag = await this.prisma.reviewFlag.findFirst({ where: { kind: 'vacancy_tl_check', subjectType: 'vacancy', subjectId: vacancy.id, status: 'open' }, select: { id: true } });
+    if (flag && this.reviewFlags) {
+      await this.reviewFlags.resolve(flag.id, actor, { status: 'resolved', resolution: decision === 'approve' ? 'Vacancy approved by the Team Lead' : `Vacancy rejected: ${trimmed}` }, { closedByOwnWork: true });
+    }
+    return this.prisma.vacancy.findUniqueOrThrow({ where: { id: vacancy.id } });
   }
 
   /** Below-minimum vacancies for Team Leads (their team's businesses), Managers and the CEO. */

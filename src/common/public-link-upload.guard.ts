@@ -9,6 +9,8 @@ interface LinkKind {
   purpose: string;
   subjectType: string;
   message: string;
+  /** 25 Nov (B9): a used (signed) agreement link still takes the small-business photos. */
+  allowUsed?: boolean;
 }
 
 /**
@@ -30,7 +32,7 @@ export class PublicLinkUploadGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<Request>();
     const token = (request.params as Record<string, string | undefined>)?.token;
     if (!token) throw new BadRequestException(kind.message);
-    const link = await this.links.findByToken(token);
+    const link = kind.allowUsed ? await this.links.findByTokenAllowingUsed(token) : await this.links.findByToken(token);
     if (link.purpose !== kind.purpose || link.subjectType !== kind.subjectType || !link.phone) {
       throw new BadRequestException(kind.message);
     }
@@ -39,6 +41,6 @@ export class PublicLinkUploadGuard implements CanActivate {
 }
 
 /** Checks the `:token` link (purpose and subject) before any upload is read. */
-export function CheckLinkBeforeUpload(purpose: string, subjectType: string, message: string) {
-  return applyDecorators(SetMetadata(LINK_KIND_KEY, { purpose, subjectType, message }), UseGuards(PublicLinkUploadGuard));
+export function CheckLinkBeforeUpload(purpose: string, subjectType: string, message: string, options: { allowUsed?: boolean } = {}) {
+  return applyDecorators(SetMetadata(LINK_KIND_KEY, { purpose, subjectType, message, allowUsed: options.allowUsed === true }), UseGuards(PublicLinkUploadGuard));
 }

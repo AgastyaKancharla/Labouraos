@@ -20,6 +20,7 @@ import { BusinessVerificationModule } from './business-verification.module';
 import { FieldVisitModule } from '../field-visit/field-visit.module';
 import { MessageModule } from '../message/message.module';
 import { MapsLinkModule } from '../maps-link/maps-link.module';
+import { BusinessOwnerCheckModule } from './business-owner-check.module';
 
 import { BusinessShiftController } from './business-shift.controller';
 import { BusinessShiftService } from './business-shift.service';
@@ -41,6 +42,7 @@ import { BusinessShiftService } from './business-shift.service';
     MessageModule,
     // 25 Nov (rev 211, B2): the Google Maps link proof is read to its pin.
     MapsLinkModule,
+    BusinessOwnerCheckModule,
   ],
   controllers: [BusinessController, BusinessShiftController],
   providers: [

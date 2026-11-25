@@ -89,7 +89,7 @@ export function decideAutoCheck(f: AutoCheckFacts): AutoCheckResult {
     'proofs',
     proofsOk,
     [
-      `${valid.length} of 3 proofs valid${valid.length ? ` (${valid.map((p) => PROOF_NAMES[p.key]).join(', ')})` : ''}; at least ${MIN_VALID_PROOFS} needed`,
+      `${valid.length} of 3 proofs valid${valid.length ? ` (${valid.map((p) => PROOF_NAMES[p.key]).join(', ')})` : ''}; at least ${MIN_VALID_PROOFS} needed${proofsOk ? '' : ' — small business checks instead: owner\'s ID, workspace photo, one business proof, an address proof and a video call with the Team Lead'}`,
       ...invalid.map((p) => `${PROOF_NAMES[p.key]}: ${p.detail ?? 'not valid'}`),
     ].join('. '),
   );

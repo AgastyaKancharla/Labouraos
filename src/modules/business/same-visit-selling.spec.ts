@@ -12,6 +12,7 @@ import { ConsentLinkService } from '../consent/consent-link.service';
 import { InterviewService } from '../vacancy/interview.service';
 import { BUSINESS_PHOTO_STORAGE, MemoryBusinessPhotoStorage } from './storefront-photo.storage';
 import { businessCandidateAccess } from './business-candidate-access';
+import { seedOwnerPhotos } from '../../test-support/owner-photos';
 
 /**
  * Master Guide, "A new business that calls in" (decided 9 Nov): a business a field agent
@@ -46,6 +47,7 @@ describe('Same-visit selling, Team Lead pause and business edit rights', () => {
   }
 
   async function signAgreement(businessId: string, staffId: string) {
+    await seedOwnerPhotos(prisma, businessId);
     const link = await consentLinks.createAgreementLink(businessId, staffId, 'en');
     const signingOtp = await consentLinks.sendOtp(link.token);
     const code = (otp.getProvider() as MockOtpProvider).getCode(signingOtp.requestId)!;

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { isHouseholdBusiness } from '../business/business-auto-check.service';
 import { REFUND_FORFEITING_HIT_REASONS } from '../job-seeker/job-seeker-refund-guards';
 import { isBusinessSuspended } from '../business/business-candidate-access';
 import { Optional } from '@nestjs/common';
@@ -203,7 +204,7 @@ export class CustomerHomeService {
     const [business, branch, agreement, visit, doneVisit, vacancies, drafts, workersPlaced] = await Promise.all([
       this.prisma.business.findUniqueOrThrow({
         where: { id: businessId },
-        select: { code: true, name: true, verificationStatus: true, verifiedAt: true, inPersonOnboardedAt: true, suspendedAt: true, suspendedUntil: true, suspensionReason: true },
+        select: { code: true, name: true, verificationStatus: true, verifiedAt: true, inPersonOnboardedAt: true, suspendedAt: true, suspendedUntil: true, suspensionReason: true, businessType: true },
       }),
       branchId ? this.prisma.businessBranch.findUnique({ where: { id: branchId }, select: { name: true } }) : null,
       this.prisma.businessAgreement.findFirst({ where: { businessId }, select: { signedAt: true } }),
@@ -244,9 +245,11 @@ export class CustomerHomeService {
       interviewsUpcoming: v.interviews.length,
       placements: v._count.placements,
     }));
+    // 25 Nov (rev 211, B5): only households wait for a visit; others are checked automatically after signing.
+    const needsVisit = isHouseholdBusiness(business.businessType);
     const nextAction = !agreement
       ? (profile.role === 'owner' && !branchId ? 'sign_agreement' : 'wait_for_approval')
-      : !visitDone
+      : needsVisit && !visitDone
         ? 'wait_for_visit'
         : !verified
           ? 'wait_for_approval'

@@ -69,7 +69,8 @@ export const VACANCY_SALARY_PERIODS = ['monthly', 'daily'] as const;
 const MINIMUM_WAGE_FIELDS = ['tradeSkill', 'salaryMinPaise', 'salaryMaxPaise', 'salaryPeriod', 'headcount'];
 
 /** Statuses a vacancy can be closed from (POST /vacancies/:id/close). */
-export const CLOSABLE_VACANCY_STATUSES = ['open', 'draft', 'awaiting_confirmation'];
+// pending_tl_check (25 Nov, B4): confirmed, waiting for the Team Lead's vacancy check.
+export const CLOSABLE_VACANCY_STATUSES = ['open', 'draft', 'awaiting_confirmation', 'pending_tl_check'];
 
 @Injectable()
 export class VacancyService {

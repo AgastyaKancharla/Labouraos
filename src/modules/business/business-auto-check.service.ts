@@ -11,17 +11,13 @@ import { AutoCheckFacts, AutoCheckResult, decideAutoCheck, failedReasonText, SAM
 import { isBusinessSuspended } from './business-candidate-access';
 import { BusinessClock } from './business-clock';
 import { normaliseRegistrationNumber } from './business-proofs';
-import { shopPhotoKind } from './business-owner-photo.service';
+import { allowedShopKinds, isHouseholdBusiness, verificationPathOf } from './business-paths';
 
 /**
  * Households hiring help (a maid, cook or driver at home; a villa) keep today's verification
  * visit and Team Lead check until the household research is decided (guide, 25 Nov).
  */
-export const HOUSEHOLD_BUSINESS_TYPES = ['household', 'villa_gated_community'] as const;
-
-export function isHouseholdBusiness(businessType: string | null | undefined): boolean {
-  return (HOUSEHOLD_BUSINESS_TYPES as readonly string[]).includes(businessType ?? '');
-}
+export { HOUSEHOLD_BUSINESS_TYPES, isHouseholdBusiness } from './business-paths';
 
 /** The review flag the Team Lead's bell and queue show for a failed automatic check. */
 export const AUTO_CHECK_FLAG = 'business_auto_check_failed';
@@ -59,9 +55,9 @@ export class BusinessAutoCheckService {
       },
     });
     if (!business) return null;
-    const shopKind = shopPhotoKind(business.runsFromHome);
+    const shopKinds: string[] = allowedShopKinds(business);
     const selfie = business.ownerPhotos.find((p) => p.kind === 'owner_selfie');
-    const shop = business.ownerPhotos.find((p) => p.kind === shopKind);
+    const shop = business.ownerPhotos.find((p) => shopKinds.includes(p.kind));
     const now = this.clock.now();
     const ban = await findBan(this.prisma, {
       phone: business.phone,
@@ -172,6 +168,7 @@ export class BusinessAutoCheckService {
     const evaluated = await this.evaluate(businessId);
     if (!evaluated) return { ran: false, why: 'not_found' };
     const { result } = evaluated;
+    const path = verificationPathOf({ ...evaluated.facts, businessType: business.businessType });
     const now = this.clock.now();
     const reasonsJson = result.reasons.map((r) => ({ code: r.code, ok: r.ok, detail: r.detail })) as unknown as Prisma.InputJsonValue;
 
@@ -184,6 +181,7 @@ export class BusinessAutoCheckService {
             verifiedAt: now,
             verifiedByStaffId: null,
             autoVerifiedAt: now,
+            verificationPath: path,
             autoCheckStatus: 'passed',
             autoCheckedAt: now,
             autoCheckReasons: reasonsJson,
@@ -236,6 +234,7 @@ export class BusinessAutoCheckService {
         where: { id: businessId },
         data: {
           verificationStatus: 'pending_tl_check',
+          verificationPath: path,
           autoCheckStatus: 'failed',
           autoCheckedAt: now,
           autoCheckReasons: reasonsJson,
@@ -270,7 +269,7 @@ export class BusinessAutoCheckService {
     if (existing) {
       await this.prisma.reviewFlag.update({
         where: { id: existing.id },
-        data: { details: { businessCode: business.code, failed, distanceMeters: result.distanceMeters } as unknown as Prisma.InputJsonValue },
+        data: { details: { businessCode: business.code, failed, distanceMeters: result.distanceMeters, smallBusiness: path === 'small_business' } as unknown as Prisma.InputJsonValue },
       });
     } else {
       await this.reviewFlags.raise({
@@ -278,7 +277,7 @@ export class BusinessAutoCheckService {
         subjectType: 'business',
         subjectId: businessId,
         raisedForStaffId: business.accountAgentId ?? business.leadCreatedByStaffId,
-        details: { businessCode: business.code, failed, distanceMeters: result.distanceMeters },
+        details: { businessCode: business.code, failed, distanceMeters: result.distanceMeters, smallBusiness: path === 'small_business' },
       });
     }
     return { ran: true, passed: false, result };

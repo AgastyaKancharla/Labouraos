@@ -49,3 +49,45 @@ ALTER TABLE "Interview" ADD COLUMN "shopCheckAt" TIMESTAMP(3);
 ALTER TABLE "Interview" ADD COLUMN "shopCheckChannel" TEXT;
 ALTER TABLE "Interview" ADD COLUMN "shopCheckByStaffId" TEXT;
 ALTER TABLE "Interview" ADD COLUMN "shopCheckNote" TEXT;
+
+-- B9 (rev 212, same day): small businesses with little paperwork.
+ALTER TABLE "Business" ADD COLUMN "verificationPath" TEXT;
+CREATE TABLE "BusinessOwnerCheck" (
+    "id" TEXT NOT NULL,
+    "businessId" TEXT NOT NULL,
+    "idMethod" TEXT,
+    "idType" TEXT,
+    "idLast4" TEXT,
+    "idName" TEXT,
+    "idResult" TEXT,
+    "idFailureReason" TEXT,
+    "idPhotoPath" TEXT,
+    "idSubmittedAt" TIMESTAMP(3),
+    "idCheckedAt" TIMESTAMP(3),
+    "idCheckedByStaffId" TEXT,
+    "idPhotoDeletedAt" TIMESTAMP(3),
+    "idAttempts" INTEGER NOT NULL DEFAULT 0,
+    "idAttemptsDay" TEXT,
+    "businessProofKind" TEXT,
+    "businessProofValue" TEXT,
+    "businessProofAt" TIMESTAMP(3),
+    "addressDocType" TEXT,
+    "addressPhotoPath" TEXT,
+    "addressSubmittedAt" TIMESTAMP(3),
+    "addressResult" TEXT,
+    "addressMatched" TEXT,
+    "addressCheckedAt" TIMESTAMP(3),
+    "addressCheckedByStaffId" TEXT,
+    "addressPhotoDeletedAt" TIMESTAMP(3),
+    "videoCallDoneAt" TIMESTAMP(3),
+    "videoCallByStaffId" TEXT,
+    "videoCallNote" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "BusinessOwnerCheck_pkey" PRIMARY KEY ("id")
+);
+CREATE UNIQUE INDEX "BusinessOwnerCheck_businessId_key" ON "BusinessOwnerCheck"("businessId");
+CREATE INDEX "BusinessOwnerCheck_idPhotoPath_idx" ON "BusinessOwnerCheck"("idPhotoPath");
+CREATE INDEX "BusinessOwnerCheck_addressPhotoPath_idx" ON "BusinessOwnerCheck"("addressPhotoPath");
+ALTER TABLE "BusinessOwnerCheck" ADD CONSTRAINT "BusinessOwnerCheck_businessId_fkey" FOREIGN KEY ("businessId") REFERENCES "Business"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "BusinessOwnerCheck" ENABLE ROW LEVEL SECURITY;

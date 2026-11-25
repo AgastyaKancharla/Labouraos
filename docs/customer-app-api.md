@@ -550,11 +550,18 @@ Households are hidden in v1 (C24). → `201`
 { "profileId": "uuid", "kind": "business", "code": "BZ-00456", "verificationStatus": "lead", "next": "agreement" }
 ```
 
-The server (A) creates the verification visit request at once (proposal 4.2):
-a `VisitAssignment` with purpose `business_signup`, status `pending`,
-`requestedFor` = `visitPreferredAt` and `signupTrackerId` set, with no field
-agent yet. **The back office (D) suggests and assigns the field agent on that
-row and never creates a second one.** Branches, a visit, a selfie or a
+**Changed 25 Nov (Master Guide rev 211, automatic business verification).** Two optional
+fields are accepted: `runsFromHome` (boolean — the business runs from the owner's home, so
+the second owner photo on the agreement page is the owner holding the FSSAI licence) and
+`mapsLink` (a Google Maps link to the shop, one of the proofs; the server reads its pin).
+Only a **household** (`businessType` `household` or `villa_gated_community`) still gets the
+verification visit request at once (proposal 4.2): a `VisitAssignment` with purpose
+`business_signup`, status `pending`, `requestedFor` = `visitPreferredAt` and
+`signupTrackerId` set, with no field agent yet; **the back office (D) suggests and assigns
+the field agent on that row and never creates a second one.** Every other business gets
+**no visit request**: after it signs the agreement (owner selfie and shop photo taken on the
+agreement page first, see §16) the automatic check verifies it, or sends it to a Team Lead
+when something is missing; `visitPreferredAt` is then ignored. Branches, a visit, a selfie or a
 household cannot be sent from the app (an agent adds branches; households wait, C24).
 Errors: `409 PROFILE_EXISTS` (my mobile already has a business: linked);
 `409 VALIDATION_FAILED` with the generic message "We couldn't finish this
@@ -690,7 +697,8 @@ The answer depends on the profile kind (`kind`).
 A branch manager sees only that branch's vacancies, drafts and counts, and
 `tracker.agreement` only as true/false. **No candidate is listed here in v1**, and
 never a phone number. `nextAction`: `sign_agreement`, `wait_for_visit`,
-`wait_for_approval`, `add_vacancy`, `none`. `counts.workersPlaced`: workers whose
+`wait_for_approval`, `add_vacancy`, `none` (25 Nov: `wait_for_visit` only for households; a
+signed business that is not verified yet answers `wait_for_approval`). `counts.workersPlaced`: workers whose
 fee is paid (working now, or due to join); the app shows "Report a worker left"
 when it is above 0 (§8.2).
 
@@ -1361,3 +1369,30 @@ its API is `GET /referral-links/:slug`, `POST /referral-links/:slug/send-code { 
 `POST /referral-links/:slug/leads { name, phone, lookingFor: job|staff, area?, consent: true, requestId, code }`
 (always `{ received: true }`, no oracle; at most 30 leads and 60 codes a day per link,
 the usual public-page code limits per number). The app does not need these.
+
+
+## 16. Automatic business verification (changed 25 Nov, Master Guide rev 211)
+
+What changed on the server for the app (no app change is required):
+
+- **Agreement page (`/p/agreement/<token>`, the same link the app opens).** Before signing,
+  the page asks for the owner's live selfie and a live photo of the shop's name board (home
+  business: the owner holding the FSSAI licence), camera only, with the phone's location on
+  the shop photo: `POST /consent/:token/owner-photo` (multipart `photo`, `kind` = `selfie` |
+  `shop`, `captureSource=live_camera`, `latitude`, `longitude`, `accuracyMeters` or
+  `locationStatus=refused`). `GET /consent/:token` now carries
+  `ownerPhotos: { selfie, shop, shopKind }`; `POST /consent/submit` answers
+  `400 OWNER_PHOTOS_REQUIRED` until both photos exist.
+- **Business agreement version 1.2** (clauses 3.2–3.4). A business that signed 1.1 is asked to
+  sign 1.2 like any re-consent (`needsReconsent` on Home).
+- **Verification.** Right after signing, the business is verified automatically (no visit)
+  when every condition holds, else it waits for a Team Lead (`verificationStatus`
+  `pending_tl_check`). Home's `nextAction` follows (above).
+- **Vacancies.** A vacancy with a salary more than 1.5 times its trade's usual top, or more
+  than 5 openings, goes to `status: "pending_tl_check"` after the owner confirms it (instead
+  of `open`) until a Team Lead approves it (`open`) or rejects it (`cancelled`). The app shows
+  any status it does not know as text.
+- **Interviews.** The candidate page "Did they offer you the job?" may also ask "Was the shop
+  real, at this address, and was the job as described?" (`askShopCheck` on
+  `GET /interviews/check/:token`, `shopAnswer` on `POST /interviews/check/:token`). A "No"
+  pauses the business (the existing paused state).

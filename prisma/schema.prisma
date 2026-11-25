@@ -533,7 +533,12 @@ model Business {
   autoCheckDistanceMeters  Int?
   /// Set when the automatic check verified the business (no Team Lead).
   autoVerifiedAt           DateTime?
+  /// 25 Nov (rev 212, B9): standard (2 or more proofs, checked automatically) or small_business
+  /// (fewer than 2 proofs: the owner's ID, an address proof, one business proof and a video call
+  /// with the Team Lead instead). Set by the automatic check.
+  verificationPath         String?
   ownerPhotos   BusinessOwnerPhoto[]
+  ownerCheck    BusinessOwnerCheck?
   branches      BusinessBranch[]
   vacancies     Vacancy[]
   /// The business's own shifts (17 Nov): a vacancy picks one of them.
@@ -586,6 +591,57 @@ model BusinessOwnerPhoto {
 
   @@index([businessId, kind])
   @@index([photoHash])
+}
+
+/// 25 Nov (rev 212, B9): the small-business checks for a business with fewer than 2 proofs —
+/// the owner as a person and the place he works from. Kept: the ID type, last 4 characters,
+/// the name on it and the result; that an address proof was checked, its type and the address
+/// as matched; the business proof given; the Team Lead's video call. The ID card photo and the
+/// address proof image are deleted after the Team Lead's check (30 days at most).
+model BusinessOwnerCheck {
+  id                       String    @id @default(uuid())
+  businessId               String    @unique
+  business                 Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  /// aadhaar_qr (in-house UIDAI Secure QR check) or other_id (a live card photo the Team Lead checks)
+  idMethod                 String?
+  /// aadhaar, pan, driving_licence or voter_id
+  idType                   String?
+  idLast4                  String?
+  idName                   String?
+  /// verified, pending (waits for the Team Lead), rejected or failed
+  idResult                 String?
+  idFailureReason          String?
+  idPhotoPath              String?
+  idSubmittedAt            DateTime?
+  idCheckedAt              DateTime?
+  idCheckedByStaffId       String?
+  idPhotoDeletedAt         DateTime?
+  idAttempts               Int       @default(0)
+  idAttemptsDay            String?
+  /// gst, udyam, fssai, licence, other_registration, bank_upi or website_listing
+  businessProofKind        String?
+  businessProofValue       String?
+  businessProofAt          DateTime?
+  /// bank_statement, electricity_bill, rent_agreement or other
+  addressDocType           String?
+  addressPhotoPath         String?
+  addressSubmittedAt       DateTime?
+  /// pending, checked or rejected
+  addressResult            String?
+  /// The address as the Team Lead matched it on the document.
+  addressMatched           String?
+  addressCheckedAt         DateTime?
+  addressCheckedByStaffId  String?
+  addressPhotoDeletedAt    DateTime?
+  /// The Team Lead's short video call through Laboura that showed the workspace.
+  videoCallDoneAt          DateTime?
+  videoCallByStaffId       String?
+  videoCallNote            String?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  @@index([idPhotoPath])
+  @@index([addressPhotoPath])
 }
 
 model BusinessBranch {

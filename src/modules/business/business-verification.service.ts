@@ -2,6 +2,7 @@ import { OwnTeam, businessOwners, businessesOwnedBy } from '../../common/rbac/ow
 import {
   BadRequestException,
   ForbiddenException,
+  HttpStatus,
   Injectable,
   NotFoundException,
   Optional,
@@ -27,6 +28,10 @@ import { tradeNameKey } from '../trade/trade.service';
 import { ownerVisitOtpPurpose } from '../../common/otp/bound-otp-purposes';
 import { onApprovedLeave } from '../field-visit/field-handover.service';
 import { AUTO_CHECK_FLAG, BusinessAutoCheckService, isHouseholdBusiness } from './business-auto-check.service';
+import { allowedShopKinds } from './business-paths';
+import { validProofCount } from './business-proofs';
+import { smallBusinessMissing } from './business-owner-check.service';
+import { codedError } from '../../common/http/coded-error';
 
 /**
  * 21 Nov: a verification visit proven to be at the shop: GPS inside the geofence (geofenceFlag
@@ -257,6 +262,36 @@ export class BusinessVerificationService {
       },
       changedFields: ['purpose', 'suggestedStaffId', 'status'],
       city: business.city,
+    });
+    return assignment;
+  }
+
+  /**
+   * 25 Nov (rev 211, B6): a candidate said after the first interview that the shop or job was not
+   * real: a field visit request (purpose candidate_report) with the nearest available field agent
+   * suggested; the Team Lead confirms or changes it. One open request per business.
+   */
+  async requestCandidateReportVisit(businessId: string, interviewId: string) {
+    const business = await this.prisma.business.findUnique({ where: { id: businessId } });
+    if (!business) return null;
+    const open = await this.prisma.visitAssignment.findFirst({
+      where: { businessId, purpose: 'candidate_report', status: { in: ['pending', 'assigned'] } },
+      select: { id: true },
+    });
+    if (open) return open;
+    const suggestedStaffId = await this.suggestFieldAgent(business);
+    const assignment = await this.prisma.visitAssignment.create({
+      data: { businessId, purpose: 'candidate_report', suggestedStaffId, relatedType: 'interview', relatedId: interviewId, status: 'pending' },
+    });
+    await this.auditService.log({
+      actorId: 'system',
+      action: 'business.visit_assignment_created',
+      entityType: 'visit_assignment',
+      entityCode: assignment.id,
+      after: { businessId, purpose: 'candidate_report', suggestedStaffId, relatedType: 'interview', relatedId: interviewId, status: 'pending' },
+      changedFields: ['purpose', 'suggestedStaffId', 'relatedType', 'relatedId', 'status'],
+      city: business.city,
+      reason: 'A candidate said the shop or job was not real: field visit to check it',
     });
     return assignment;
   }
@@ -767,6 +802,23 @@ export class BusinessVerificationService {
     }
     const agreement = await this.prisma.businessAgreement.findFirst({ where: { businessId } });
     if (!agreement) throw new BadRequestException('A signed business agreement is required before approval');
+    // 25 Nov (rev 212, B9): a small business is approved only once the owner's ID, the photos, one
+    // business proof, the checked address proof and the Team Lead's video call are all in.
+    if (business.verificationPath === 'small_business' && !isHouseholdBusiness(business.businessType)) {
+      const [check, photos] = await Promise.all([
+        this.prisma.businessOwnerCheck.findUnique({ where: { businessId } }),
+        this.prisma.businessOwnerPhoto.findMany({ where: { businessId }, select: { kind: true } }),
+      ]);
+      const shopKinds: string[] = allowedShopKinds(business);
+      const missing = smallBusinessMissing({
+        ownerId: { method: check?.idMethod ?? null, type: check?.idType ?? null, result: check?.idResult ?? null, last4: null, failureReason: null },
+        businessProof: { given: Boolean(check?.businessProofKind) || validProofCount(business) >= 1, kind: check?.businessProofKind ?? null, fromProofs: validProofCount(business) >= 1 },
+        addressProof: { submitted: Boolean(check?.addressSubmittedAt), docType: check?.addressDocType ?? null, result: check?.addressResult ?? null },
+        videoCall: { done: Boolean(check?.videoCallDoneAt), at: null },
+        photos: { selfie: photos.some((p) => p.kind === 'owner_selfie'), workspace: photos.some((p) => shopKinds.includes(p.kind)) },
+      });
+      if (missing.length) throw codedError(HttpStatus.BAD_REQUEST, 'SMALL_BUSINESS_CHECKS_MISSING', `Before approving this small business: ${missing.join(', ')}`, { missing });
+    }
     const finalAccountAgentId = accountAgentId ?? visitStaffId;
     if (finalAccountAgentId && (accountAgentId || finalAccountAgentId !== business.accountAgentId)) {
       const accountAgent = await this.prisma.staff.findUnique({ where: { id: finalAccountAgentId } });

@@ -10,8 +10,10 @@ import type { SignupStage } from '../../common/customer-auth/customer-app.consta
  * | A     | phone verified, role     | phone verified              | phone verified   |
  * | B     | profile filled           | business form filled        | details filled   |
  * | C     | consent given            | agreement signed            | terms accepted   |
- * | D     | selfie and ID done       | visit booked                | selfie and ID    |
- * | E     | terms agreed, pay pending| visit done, TL approval     | UPI added        |
+ * | D     | selfie and ID done       | visit booked (households)   | selfie and ID    |
+ * | E     | terms agreed, pay pending| TL check (households: after | UPI added        |
+ * |       |                          | the visit; others: only when|                  |
+ * |       |                          | the automatic check failed) |                  |
  * | done  | ₹499 received            | verified                    | active (UPI ok)  |
  */
 export const STAGE_ORDER: readonly SignupStage[] = ['A', 'B', 'C', 'D', 'E', 'done'];
@@ -37,6 +39,10 @@ export interface SeekerFacts {
 
 export interface BusinessFacts {
   agreementSigned: boolean;
+  /** 25 Nov (rev 211): a household hiring help keeps the visit; every other business is checked automatically. */
+  household?: boolean;
+  /** The automatic check failed: waiting for the Team Lead. */
+  autoCheckFailed?: boolean;
   /** A verification or app sign-up visit has a field agent assigned (or is done). */
   visitBooked: boolean;
   /** The visit request exists but nobody is assigned yet. */
@@ -88,6 +94,21 @@ export function seekerStage(f: SeekerFacts): StageResult {
 }
 
 export function businessStage(f: BusinessFacts): StageResult {
+  // 25 Nov (rev 211, B5): agreement (with the owner photos) → automatic check → Team Lead check
+  // only when it failed → verified. Households keep the visit stages below.
+  if (f.household === false) {
+    const missing: string[] = [];
+    if (!f.agreementSigned) missing.push('agreement');
+    if (!f.verified) missing.push('approval');
+    let stage: SignupStage = 'B';
+    if (f.verified) stage = 'done';
+    else if (f.agreementSigned && f.autoCheckFailed) stage = 'E';
+    else if (f.agreementSigned) stage = 'C';
+    let stuckReason: string | null = null;
+    if (f.rejected) stuckReason = 'Rejected at verification';
+    else if (f.autoCheckFailed && !f.verified) stuckReason = 'Automatic check did not pass: Team Lead checking';
+    return { stage, step: missing[0] ?? 'complete', missing, stuckReason };
+  }
   const missing: string[] = [];
   if (!f.agreementSigned) missing.push('agreement');
   if (!f.visitBooked && !f.visitDone && !f.verified) missing.push('visit_booked');

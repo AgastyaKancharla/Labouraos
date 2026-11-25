@@ -14,7 +14,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CheckLinkBeforeUpload } from '../../common/public-link-upload.guard';
-import { parseOwnerPhotoLocation, parseOwnerPhotoSlot } from '../business/business-owner-photo.service';
+import { parseOwnerPhotoLocation, parseOwnerPhotoSlot, parseShopVariant } from '../business/business-owner-photo.service';
 import { Response } from 'express';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
@@ -170,10 +170,65 @@ export class ConsentController {
   ) {
     return this.consentLinkService.saveAgreementOwnerPhoto(token, {
       slot: parseOwnerPhotoSlot(body?.kind),
+      shopVariant: parseShopVariant(body?.shopVariant),
       photo: photo?.buffer ?? Buffer.alloc(0),
       captureSource: typeof body?.captureSource === 'string' ? body.captureSource : undefined,
       location: parseOwnerPhotoLocation(body ?? {}),
     });
+  }
+
+  // ---- 25 Nov (rev 212, B9): small businesses with little paperwork, on the agreement link ----
+
+  /** Which small-business steps are done (works before and after signing, until the link expires). */
+  @Get(':token/small-business')
+  @Public('token page: the business owner proves who he is with the agreement link token')
+  async smallBusiness(@Param('token') token: string) {
+    return this.consentLinkService.smallBusinessState(token);
+  }
+
+  /** (a) The owner's Aadhaar Secure QR text, read on his phone (only the result, last 4 and name are kept). */
+  @Post(':token/small-business/aadhaar-qr')
+  @Public('token page: the business owner proves who he is with the agreement link token')
+  async smallBusinessAadhaar(@Param('token') token: string, @Body() body: { qrText?: unknown }) {
+    return this.consentLinkService.smallBusinessAadhaar(token, body?.qrText);
+  }
+
+  /** (a) A live photo of PAN, driving licence or voter ID with the number and name typed: the Team Lead checks it. */
+  @Post(':token/small-business/other-id')
+  @Public('token page: the business owner proves who he is with the agreement link token')
+  @CheckLinkBeforeUpload('business_agreement', 'business', 'A valid business agreement link is required', { allowUsed: true })
+  @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  async smallBusinessOtherId(
+    @Param('token') token: string,
+    @UploadedFile() photo: { buffer: Buffer; mimetype: string } | undefined,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.consentLinkService.smallBusinessOtherId(token, {
+      idType: body?.idType, idNumber: body?.idNumber, nameOnId: body?.nameOnId,
+      photo: photo?.buffer ?? Buffer.alloc(0), captureSource: typeof body?.captureSource === 'string' ? body.captureSource : undefined,
+    });
+  }
+
+  /** (d) One address proof photo (bank statement, electricity bill, rent agreement or similar). */
+  @Post(':token/small-business/address-proof')
+  @Public('token page: the business owner proves who he is with the agreement link token')
+  @CheckLinkBeforeUpload('business_agreement', 'business', 'A valid business agreement link is required', { allowUsed: true })
+  @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  async smallBusinessAddressProof(
+    @Param('token') token: string,
+    @UploadedFile() photo: { buffer: Buffer; mimetype: string } | undefined,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.consentLinkService.smallBusinessAddressProof(token, {
+      docType: body?.docType, photo: photo?.buffer ?? Buffer.alloc(0), captureSource: typeof body?.captureSource === 'string' ? body.captureSource : undefined,
+    });
+  }
+
+  /** (c) One business proof: a registration number, a business bank / UPI account, or a website or listing link. */
+  @Post(':token/small-business/business-proof')
+  @Public('token page: the business owner proves who he is with the agreement link token')
+  async smallBusinessProof(@Param('token') token: string, @Body() body: { kind?: unknown; value?: unknown }) {
+    return this.consentLinkService.smallBusinessProof(token, { kind: body?.kind, value: body?.value });
   }
 
   /** "We've updated our terms": accept the current version on the job seeker's or partner's link (rev 176). */

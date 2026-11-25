@@ -48,8 +48,8 @@ const text = (html: string) => html.replace(/<[^>]+>/g, '').replace(/&quot;/g, '
 
 describe('Legal documents v1.1 (Master Guide rev 176)', () => {
   it('has the approved versions: job seeker terms 1.1, business agreement 1.1, referral partner terms 1.0, consent notice 1.2', () => {
-    expect(LEGAL_DOCUMENT_VERSIONS).toEqual({ job_seeker_terms: '1.1', business_agreement: '1.1', referral_terms: '1.0' });
-    expect(BUSINESS_AGREEMENT_VERSION).toBe('1.1');
+    expect(LEGAL_DOCUMENT_VERSIONS).toEqual({ job_seeker_terms: '1.1', business_agreement: '1.2', referral_terms: '1.0' });
+    expect(BUSINESS_AGREEMENT_VERSION).toBe('1.2');
     expect(REFERRAL_TERMS_VERSION).toBe('1.0');
     expect(DEFAULT_NOTICE_VERSION).toBe('1.2');
   });

@@ -178,6 +178,18 @@ export class VacancyController {
     return this.vacancyService.findById(id);
   }
 
+  /** 25 Nov (rev 211, B4): the Team Lead approves or rejects a vacancy held for an unusual salary or many openings. */
+  @Post(':id/tl-check')
+  @RequireRoles('manager', 'ceo', 'team_lead')
+  @RequirePermission('vacancy', 'write')
+  async tlCheck(
+    @Param('id') id: string,
+    @Body() body: { decision?: 'approve' | 'reject'; reason?: string },
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.confirmationService.decideTeamLeadCheck(id, { id: req.user.sub, role: req.user.role }, body?.decision as 'approve' | 'reject', body?.reason);
+  }
+
   @Post(':id/close')
   @RequireRoles('manager', 'ceo', 'team_lead')
   @RequirePermission('vacancy', 'write')

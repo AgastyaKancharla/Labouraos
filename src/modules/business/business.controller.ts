@@ -33,7 +33,8 @@ import {
 } from './business-verification.service';
 import { CandidateIntroductionService } from '../vacancy/candidate-introduction.service';
 import { STAFF_PHOTO_MAX_BYTES } from '../../common/upload-limits';
-import { BusinessOwnerPhotoService, parseOwnerPhotoLocation, parseOwnerPhotoSlot } from './business-owner-photo.service';
+import { BusinessOwnerPhotoService, parseOwnerPhotoLocation, parseOwnerPhotoSlot, parseShopVariant } from './business-owner-photo.service';
+import { BusinessOwnerCheckService } from './business-owner-check.service';
 
 @Controller('businesses')
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -46,6 +47,7 @@ export class BusinessController {
     private readonly verificationService: BusinessVerificationService,
     private readonly candidateIntroductionService: CandidateIntroductionService,
     private readonly ownerPhotos: BusinessOwnerPhotoService,
+    private readonly ownerChecks: BusinessOwnerCheckService,
   ) {}
 
   @Post()
@@ -319,6 +321,7 @@ export class BusinessController {
   ) {
     const saved = await this.ownerPhotos.save(businessId, {
       slot: parseOwnerPhotoSlot(body?.kind),
+      shopVariant: parseShopVariant(body?.shopVariant),
       photo: photo?.buffer ?? Buffer.alloc(0),
       captureSource: typeof body?.captureSource === 'string' ? body.captureSource : undefined,
       location: parseOwnerPhotoLocation(body ?? {}),
@@ -329,6 +332,32 @@ export class BusinessController {
     // A photo added after the owner signed may complete the automatic check.
     await this.verificationService.advanceToPendingTlCheckIfReady(businessId, req.user.sub);
     return { ...saved, ownerPhotos: await this.ownerPhotos.state(businessId) };
+  }
+
+  // ---- 25 Nov (rev 212, B9): the Team Lead's small-business checks ----
+
+  /** The owner's ID card photo (PAN, driving licence, voter ID): approve or reject; the photo is deleted. */
+  @Post(':id/small-business/owner-id')
+  @RequireRoles('team_lead', 'manager', 'ceo')
+  @RequirePermission('business', 'write')
+  decideOwnerId(@Param('id') businessId: string, @Body() body: { decision?: unknown; reason?: unknown }, @Req() req: Request & { user: JwtPayload }) {
+    return this.ownerChecks.decideOwnerId(businessId, { id: req.user.sub, role: req.user.role }, body?.decision, body?.reason);
+  }
+
+  /** The address proof: approve with the address as matched, or reject; the image is deleted. */
+  @Post(':id/small-business/address-proof')
+  @RequireRoles('team_lead', 'manager', 'ceo')
+  @RequirePermission('business', 'write')
+  decideAddress(@Param('id') businessId: string, @Body() body: { decision?: unknown; addressMatched?: unknown; reason?: unknown }, @Req() req: Request & { user: JwtPayload }) {
+    return this.ownerChecks.decideAddress(businessId, { id: req.user.sub, role: req.user.role }, body?.decision, body?.addressMatched, body?.reason);
+  }
+
+  /** "Video call done": the Team Lead saw the workspace on a short video call through Laboura (with a note). */
+  @Post(':id/small-business/video-call')
+  @RequireRoles('team_lead', 'manager', 'ceo')
+  @RequirePermission('business', 'write')
+  videoCall(@Param('id') businessId: string, @Body() body: { note?: unknown }, @Req() req: Request & { user: JwtPayload }) {
+    return this.ownerChecks.recordVideoCall(businessId, { id: req.user.sub, role: req.user.role }, body?.note);
   }
 
   @Post(':id/erase')

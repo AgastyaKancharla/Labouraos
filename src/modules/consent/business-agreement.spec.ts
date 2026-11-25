@@ -17,6 +17,7 @@ import {
 } from './agreement-document.storage';
 import { ConsentLinkService } from './consent-link.service';
 import { MessagingService } from '../message/messaging.service';
+import { seedOwnerPhotos } from '../../test-support/owner-photos';
 
 class AgreementTestClock extends ConsentClock {
   current = new Date('2026-11-05T10:00:00.000Z');
@@ -168,6 +169,17 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
     const code = provider.getCode(otp.body.requestId);
     expect(code).toBeDefined();
 
+    // 25 Nov (rev 211, B1): no signing before the owner's live selfie and shop photo (the code is not used up).
+    // No proofs on this business: the small-business path (rev 212) — the second photo may be the workspace.
+    expect(page.body.ownerPhotos).toEqual({ selfie: false, shop: false, shopKind: 'shop_board', shopKinds: ['shop_board', 'workspace'], smallBusiness: true });
+    const noPhotos = await request(app.getHttpServer())
+      .post('/consent/submit')
+      .send({ token: linkToken, otpRequestId: otp.body.requestId, otpCode: code, signedName: 'Owner Test', purposes: ['agreement_terms', 'agreement_authority', 'call_recording'] })
+      .expect(400);
+    expect(noPhotos.body.code).toBe('OWNER_PHOTOS_REQUIRED');
+    expect(noPhotos.body.message).toMatch(/selfie.*place you work from/);
+    await seedOwnerPhotos(prisma, businessId);
+
     const signed = await request(app.getHttpServer())
       .post('/consent/submit')
       .send({
@@ -208,8 +220,8 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
 
     // S1 (rev 176): the stored signed copy holds the FULL v1.1 agreement exactly as shown (its hash
     // frozen on the link), followed by the acceptance record (OTP reference, masked phone, ticks).
-    expect(agreement.version).toBe('1.1');
-    expect(page.body.version).toBe('1.1');
+    expect(agreement.version).toBe('1.2');
+    expect(page.body.version).toBe('1.2');
     expect(page.body.agreementSummaryHtml).toContain('In short');
     expect(createHash('sha256').update(page.body.agreementTermsHtml, 'utf8').digest('hex')).toBe(agreement.termsHash);
     const storedDocument = await storage.get(agreement.documentStoragePath);
@@ -222,7 +234,7 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
     expect(stored).toContain(otp.body.requestId);
     expect(stored).not.toContain(ownerPhone.replace(/\D/g, '').slice(-10));
     const acceptance = await prisma.legalAcceptance.findFirstOrThrow({ where: { subjectType: 'business', subjectId: businessId } });
-    expect(acceptance).toMatchObject({ documentKey: 'business_agreement', version: '1.1', language: 'en', textHash: agreement.termsHash, otpRequestId: otp.body.requestId, context: 'agreement' });
+    expect(acceptance).toMatchObject({ documentKey: 'business_agreement', version: '1.2', language: 'en', textHash: agreement.termsHash, otpRequestId: otp.body.requestId, context: 'agreement' });
     expect(acceptance.purposes).toEqual(['agreement_terms', 'agreement_authority', 'call_recording']);
     await request(app.getHttpServer()).get(`/consent/${linkToken}`).expect(400);
     currentSpy.mockRestore();
@@ -282,6 +294,7 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
         leadCreatedByStaffId: staffId, leadChannel: 'phone_call', verificationStatus: 'lead',
       },
     });
+    await seedOwnerPhotos(prisma, contactBusiness.id);
     const before = process.env.OTP_TEST_MODE;
     process.env.OTP_TEST_MODE = 'on';
     try {
