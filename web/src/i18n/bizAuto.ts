@@ -12,6 +12,11 @@ export const bizAutoEn = {
   'reg.biz.runsFromHome': "Runs from the owner's home (home kitchen, tiffin, tailoring): not a household hiring help",
   'reg.biz.proofsEnough': '{count} of 3 proofs: checked automatically after the owner signs.',
   'reg.biz.proofsSmall': '{count} of 3 proofs: the small-business checks apply (owner ID, address proof, video call with the Team Lead).',
+  'reg.biz.stepAutoCheck': 'Automatic check (no visit)',
+  'reg.biz.autoPassed': 'Passed: verified without a visit',
+  'reg.biz.autoFailed': 'Something was missing: the Team Lead is checking',
+  'reg.biz.autoSmall': 'Fewer than 2 proofs: owner ID, address proof and a video call with the Team Lead',
+  'reg.biz.autoAfterSigning': 'Runs when the owner signs (with his selfie and shop photo)',
   // Agreement page (P04): owner photos before signing
   'pub.owner.title': 'Before you sign: two live photos',
   'pub.owner.body': "Laboura checks every business. Take a live selfie, then the second photo. Your phone's location is saved with the second photo.",
