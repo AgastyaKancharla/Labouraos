@@ -498,6 +498,8 @@ export class FollowUpService {
     const candidates = await this.prisma.jobSeeker.findMany({
       where: {
         paymentReceivedAt: { not: null },
+        // Rev 211: the refund check comes near the end of his 30 days, which start when paid AND ID passed.
+        guaranteeStartsAt: { not: null },
         status: { notIn: ['placed', 'deactivated', 'closed', 'refunded'] },
       },
       include: {
@@ -517,7 +519,7 @@ export class FollowUpService {
     for (const candidate of candidates) {
       if (candidate.hits.length > 0) continue;
       const daysElapsed = Math.floor(
-        (now.getTime() - candidate.paymentReceivedAt!.getTime()) / (24 * 60 * 60 * 1000),
+        (now.getTime() - candidate.guaranteeStartsAt!.getTime()) / (24 * 60 * 60 * 1000),
       );
 
       if (daysElapsed >= guaranteeDays - 2) {
@@ -557,7 +559,7 @@ export class FollowUpService {
               kind: 'refund_check',
               subjectType: 'job_seeker',
               subjectId: candidate.id,
-              dueAt: new Date(candidate.paymentReceivedAt!.getTime() + guaranteeDays * 24 * 60 * 60 * 1000),
+              dueAt: new Date(candidate.guaranteeStartsAt!.getTime() + guaranteeDays * 24 * 60 * 60 * 1000),
               assignedStaffId,
               status: 'pending',
             },

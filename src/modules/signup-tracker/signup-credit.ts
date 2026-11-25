@@ -6,7 +6,9 @@ type Reader = Pick<PrismaClient, 'signupTracker' | 'jobSeeker' | 'staff'>;
 /**
  * "Candidates activated" from app sign-ups (question 13, confirmed 14 Nov):
  * job seekers who signed up in the app, were helped by this call agent, and
- * whose ₹499 arrived in the period. A sign-up counts as assisted only when the
+ * whose 30 days started in the period (Master Guide rev 211, 25 Nov: the credit
+ * counts when the ID check passes / the guarantee starts — paid AND ID passed —
+ * not at payment; JobSeeker.guaranteeStartsAt). A sign-up counts as assisted only when the
  * tracker recorded the assigned agent's answered call (60 seconds or more)
  * between the assignment and the payment (SignupTrackerService.creditFor); a self-finished sign-up credits
  * nobody. A record this agent registered is already counted by the normal
@@ -25,11 +27,12 @@ export async function assistedActivations(prisma: Reader, staffId: string, from:
   const paid = await prisma.jobSeeker.findMany({
     where: {
       id: { in: [...assignedAt.keys()] },
-      paymentReceivedAt: { not: null, gte: from, lte: to },
+      paymentReceivedAt: { not: null },
+      guaranteeStartsAt: { not: null, gte: from, lte: to },
       OR: [{ registeredByStaffId: null }, { registeredByStaffId: { not: staffId } }],
     },
     select: { id: true, paymentReceivedAt: true },
   });
-  // The ₹499 must have arrived after the sign-up was given to this agent.
+  // The ₹499 must have arrived after the sign-up was given to this agent (his help led to the payment).
   return paid.filter((s) => s.paymentReceivedAt! > assignedAt.get(s.id)!).length;
 }

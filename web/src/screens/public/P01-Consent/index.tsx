@@ -4,12 +4,12 @@ import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../../../i18n/I18nProvider';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { registrationApi } from '../shared/api';
-import { LegalSummary, useLegalDocument } from '../shared/legal';
+import { ConsentNotice, LegalSummary, useLegalDocument } from '../shared/legal';
 import { useStepGuard } from '../shared/registration';
-import { ActionError, Choice, isOtpExpired, LinkProblem, Loading, Muted, PageTitle, StepsBar } from '../shared/ui';
+import { ActionError, Choice, isOtpExpired, LinkProblem, Loading, Muted, PageTitle, StepsBar, Warn } from '../shared/ui';
 
 /**
- * P01-Consent: Job Seeker Terms v1.1 (rev 176) — "In short" first, the full
+ * P01-Consent: Job Seeker Terms (v1.2, rev 211) — "In short" first, the full
  * terms behind "Read the full terms", then the six itemised ticks word for
  * word from Part B (notice 1.2, served by the server). The five required ones
  * are never pre-ticked — she ticks each herself; promotions is optional.
@@ -29,7 +29,20 @@ export default function Consent() {
 
   if (query.error) return <LinkProblem error={query.error} onRetry={() => void query.refetch()} />;
   if (doc.error) return <LinkProblem error={doc.error} onRetry={() => void doc.refetch()} />;
-  if (!status || !doc.data) return <Loading />;
+  if (!status) return <Loading />;
+  // A10: under 18 by his date of birth — registration stops here, before any payment.
+  if (status.stopped === 'under_18' && !status.steps.payment) {
+    return (
+      <>
+        <StepsBar current={1} label={t('pub.consent.stepLabel')} />
+        <PageTitle emoji="🤝">{t('pub.consent.title')}</PageTitle>
+        <Warn>
+          <strong>{t('pub.id.under18Title')}</strong> {t('pub.id.under18Body')}
+        </Warn>
+      </>
+    );
+  }
+  if (!doc.data) return <Loading />;
   const PURPOSES = doc.data.consents.map((c) => ({ id: c.purpose, title: c.title, text: c.description, required: c.required }));
   // 17 Nov: an item he already gave (and did not withdraw) — on an earlier link — is shown as given, not asked again.
   const given = new Set(status.consentGiven ?? []);
@@ -59,6 +72,7 @@ export default function Consent() {
       <PageTitle emoji="🤝">{t('pub.consent.title')}</PageTitle>
       <Muted>{t('pub.consent.intro')}</Muted>
       <LegalSummary summaryHtml={doc.data.summaryHtml} bodyHtml={doc.data.bodyHtml} version={doc.data.version} />
+      {doc.data.consentNotice && <ConsentNotice text={doc.data.consentNotice} />}
       {someGiven && <Muted>{t('pub.consent.givenNote')}</Muted>}
       {PURPOSES.map((p) =>
         given.has(p.id) ? (

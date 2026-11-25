@@ -4,22 +4,23 @@ import { calculateAge } from './job-seeker.validator';
 import type { PrismaService } from '../../common/prisma/prisma.service';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 
+/** The ID check is waiting for the Team Lead (shown on the ID step; no longer stops the payment, rev 211). */
 export const ID_WAITING_FOR_TEAM_LEAD = 'The Team Lead is checking the photo of your ID card. Open this link again once it is checked.';
-export const ID_CHECK_FIRST = 'Finish the ID check first';
 export const UNDER_18_BY_DATE_OF_BIRTH = 'Registration stops before payment: the job seeker is under 18';
 
 type GatePrisma = Pick<PrismaService, 'identityVerification'>;
 
 /**
- * One ID gate before any ₹499 activation request (Fable final re-check, L-5): the first payment,
+ * One gate before any ₹499 activation request (Fable final re-check, L-5): the first payment,
  * the terms page, a reactivation, a re-sent link and the payment-only link all ask the same thing.
  *
- * - Under 18 by his date of birth, or a standing under-18 stop from a signed Aadhaar QR (sticky,
- *   rev 154, until a Manager or the CEO lifts it): refused.
- * - Any verified ID check (name matches and 18+) lets him pay — even when a later check failed or
- *   waits. A later name mismatch alone doesn't un-verify him; the QR check raises a name check for
- *   his Team Lead instead.
- * - Otherwise an ID that waits for the Team Lead, or no ID check yet: refused with the reason.
+ * Master Guide rev 211 (25 Nov): the order is Consent → Selfie → Payment → ID check, so the ₹499 no
+ * longer waits for a verified ID. What still stops it before any money:
+ * - Under 18 by his typed date of birth (stops at consent, before payment).
+ * - A standing under-18 stop from a signed Aadhaar QR (sticky, rev 154, until a Manager or the CEO
+ *   lifts it) — an ID check done before payment (a field agent scanning in person) still counts.
+ * An ID that waits for the Team Lead, or no ID check yet, no longer stops the payment: he pays and
+ * is "Paid, waiting for ID" until it passes (guarantee-start.ts).
  */
 export async function assertIdReadyForPayment(
   prisma: GatePrisma,
@@ -35,17 +36,6 @@ export async function assertIdReadyForPayment(
     select: { id: true },
   });
   if (stop) throw new BadRequestException(UNDER_18_STOP_MESSAGE);
-  const verified = await prisma.identityVerification.findFirst({
-    where: { jobSeekerId: jobSeeker.id, status: 'verified', nameMatches: true, isAdult: true },
-    select: { id: true },
-  });
-  if (verified) return;
-  const pending = await prisma.identityVerification.findFirst({
-    where: { jobSeekerId: jobSeeker.id, status: 'pending' },
-    select: { id: true },
-  });
-  if (pending) throw new BadRequestException(ID_WAITING_FOR_TEAM_LEAD);
-  throw new BadRequestException(ID_CHECK_FIRST);
 }
 
 /** What the public payment page says when a ₹499 can no longer go ahead (owner rule: under 18 stops before payment). */
@@ -56,8 +46,8 @@ export const PAYMENT_STOPPED_REASON = 'id_gate_stopped';
 type StopPrisma = Pick<PrismaService, 'identityVerification' | 'jobSeeker' | 'payment' | '$transaction'>;
 
 /**
- * The public payment page, the card start and the UPI reference hint ask the ID gate again before a
- * pending ₹499 activation goes any further. If he now has an under-18 stop (or no verified ID), the
+ * The public payment page, the card start and the UPI reference hint ask the gate again before a
+ * pending ₹499 activation goes any further. If he now has an under-18 stop, the
  * request is closed (status failed, reason id_gate_stopped) so it can't be paid later, and the
  * caller shows PAYMENT_STOPPED_MESSAGE. Anything else (placement fees, paid or closed requests) is
  * left alone. A ₹499 that already arrived is never reversed here (see PaymentService).

@@ -427,8 +427,10 @@ export interface JobSeekerStatus {
   name: string;
   phone: string;
   phoneVerifiedAt: string | null;
-  stage: 'registered' | 'in_progress' | 'active';
-  nextStep: 'consent' | 'selfie' | 'id_check' | 'payment' | 'complete';
+  /** Rev 211: paid_waiting_id — paid, the ID check has not passed (not active, the 30 days have not started). */
+  stage: 'registered' | 'in_progress' | 'paid_waiting_id' | 'active';
+  /** Rev 211 order: consent → selfie → payment → id_check. */
+  nextStep: 'consent' | 'selfie' | 'payment' | 'id_check' | 'complete';
   steps: { phone: Step; consent: Step; selfie: Step; idCheck: Step; payment: Step };
   consent: { requiredGiven: number; requiredTotal: number; promotions: boolean };
   /** Which terms version he accepted (legal documents v1.1, rev 176). */

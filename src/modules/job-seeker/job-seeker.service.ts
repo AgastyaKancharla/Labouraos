@@ -41,7 +41,7 @@ import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { ApproveJobSeekerRefundDto } from './dto/approve-refund.dto';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { ReconsentRequiredException } from '../legal/legal-status';
-import { REACTIVATABLE_STATUSES, isJobSeekerStatus } from './job-seeker.status';
+import { PAID_WAITING_ID, REACTIVATABLE_STATUSES, isJobSeekerStatus } from './job-seeker.status';
 import { assertRejectionOverride, findRefundRejection, refundLockKey } from '../refund/refund-rejection';
 import { markJobSeekerRefunded } from './job-seeker-refunded';
 import { validateJobSeekerAge } from './job-seeker.validator';
@@ -68,7 +68,17 @@ import {
 import { IdCheckAccessService } from '../aadhaar-qr/id-check-access.service';
 import { verifiedByUidai } from '../aadhaar-qr/id-check-photo.service';
 import { maskedAadhaarReference } from '../aadhaar-qr/secure-qr.parser';
-import { assertIdReadyForPayment, ID_WAITING_FOR_TEAM_LEAD } from './id-payment-gate';
+import { assertIdReadyForPayment } from './id-payment-gate';
+import { JobSeekerFlowEvents } from './job-seeker-flow-events';
+import {
+  evaluateIdNotVerifiedRefund,
+  ID_NOT_VERIFIED_REFUND_KIND,
+  ID_NOT_VERIFIED_REFUND_LABEL,
+  idCheckStateOf,
+  loadForgedIdGuards,
+  maskedPayerPhone,
+  otherPayerLink,
+} from './refund-id-not-verified';
 
 /** Another ID waits for the Team Lead's check before terms and payment (rev 154). */
 export { ID_WAITING_FOR_TEAM_LEAD } from './id-payment-gate';
@@ -153,6 +163,7 @@ export class JobSeekerService {
     @Optional() private readonly messagingService?: MessagingService,
     // Required (no @Optional): the re-consent guard never fails open.
     private readonly legalDocuments?: LegalDocumentService,
+    @Optional() private readonly flowEvents?: JobSeekerFlowEvents,
   ) {}
 
   private async getPolicy() {
@@ -473,11 +484,12 @@ export class JobSeekerService {
     }
 
     const policy = await this.getPolicy();
-    const deadline = jobSeeker.paymentReceivedAt
-      ? refundGuaranteeDeadline(jobSeeker.paymentReceivedAt, policy.jobSeekerGuaranteeDays)
+    // Rev 211: the 30 days run from guaranteeStartsAt (paid AND ID passed), never from the payment alone.
+    const deadline = jobSeeker.guaranteeStartsAt
+      ? refundGuaranteeDeadline(jobSeeker.guaranteeStartsAt, policy.jobSeekerGuaranteeDays)
       : null;
-    const isWithinGuarantee = jobSeeker.paymentReceivedAt
-      ? isWithinRefundGuarantee(jobSeeker.paymentReceivedAt, now, jobSeeker.status, false, policy.jobSeekerGuaranteeDays)
+    const isWithinGuarantee = jobSeeker.guaranteeStartsAt
+      ? isWithinRefundGuarantee(jobSeeker.guaranteeStartsAt, now, jobSeeker.status, false, policy.jobSeekerGuaranteeDays)
       : false;
 
     return {
@@ -501,6 +513,10 @@ export class JobSeekerService {
     if (jobSeeker.status === 'active') {
       throw new BadRequestException('Job seeker is already active');
     }
+    // Rev 211: paid, waiting for the ID check — nothing more to pay.
+    if (jobSeeker.status === PAID_WAITING_ID) {
+      throw new BadRequestException('Job seeker has already paid; only the ID check is left');
+    }
     await this.assertTermsCurrent(jobSeeker.id);
 
     if (jobSeeker.status === 'deactivated' || jobSeeker.status === 'refunded') {
@@ -510,8 +526,8 @@ export class JobSeekerService {
     }
 
     const policy = await this.getPolicy();
-    // The same rule as his own link: nobody is charged before a verified ID — the Aadhaar QR passed,
-    // or another ID approved by the Team Lead (name and 18+ confirmed) — or past an under-18 stop.
+    // The same rule as his own link (rev 211): payment comes before the ID check; only an under-18
+    // stop (typed date of birth, or a signed Aadhaar QR) refuses it.
     await this.assertIdReadyForPayment(jobSeeker, policy.adultMinimumAge);
 
     const upiRequest = await this.upiCollectionService.createRequest({
@@ -553,9 +569,9 @@ export class JobSeekerService {
   }
 
   /**
-   * The registration link's last step (Phase 20 Task 5): the exact terms he agrees to before paying —
-   * trade, distance, shift and the salary floor. Refused until consent, selfie and ID are done, and while his
-   * only trade is an unlisted Other (no floor yet).
+   * The registration link's payment step (Phase 20 Task 5): the exact terms he agrees to before paying —
+   * trade, distance, shift and the salary floor. Refused until consent and selfie are done (rev 211: the
+   * ID check comes after the payment), under 18, and while his only trade is an unlisted Other (no floor yet).
    */
   async registrationTerms(jobSeekerId: string) {
     const seeker = await this.prisma.jobSeeker.findUnique({
@@ -781,6 +797,10 @@ export class JobSeekerService {
 
       if (jobSeeker.status === 'deactivated') {
         throw new BadRequestException('Job seeker is already deactivated');
+      }
+      // Rev 211: "Paid, waiting for ID" — no matching, no offers, no hits until the ID check passes.
+      if (jobSeeker.status === PAID_WAITING_ID) {
+        throw new BadRequestException('He is paid and waiting for the ID check: no hits until his 30 days start');
       }
 
       let qualifyingAttemptIds: string[] = [];
@@ -1038,6 +1058,9 @@ export class JobSeekerService {
     // A caller's asOf stands in for the clock only in tests; production uses the server clock.
     const now = decisionTime(dto?.asOf);
 
+    // Rev 211: a refund before a passed ID check, only when he asked (its own rules, refund-id-not-verified.ts).
+    if (dto?.idNotVerified === true) return this.approveIdNotVerifiedRefund(jobSeeker, actor, dto, now);
+
     const guards = await loadJobSeekerRefundGuards(this.prisma, jobSeeker);
 
     const policy = await this.getPolicy();
@@ -1126,6 +1149,7 @@ export class JobSeekerService {
           {
             code: jobSeeker.code,
             paymentReceivedAt: jobSeeker.paymentReceivedAt,
+            guaranteeStartsAt: jobSeeker.guaranteeStartsAt,
             status: jobSeeker.status,
             hasOfferRejectedHit: guards.hasOfferRejectedHit,
             hasExistingRefund: Boolean(existingRefund),
@@ -1239,6 +1263,120 @@ export class JobSeekerService {
     return payment;
   }
 
+  /**
+   * "Refund requested by the job seeker (ID not verified)" (Master Guide rev 211): he paid, no ID
+   * check passed (under 18, failed, name mismatch or never finished) and he asked for his ₹499 back.
+   * The CEO or Finance records and approves it in one step, as with the usual refund; never
+   * automatic. Full ₹499 (the stored amount), to whoever paid; refused for a forged ID.
+   */
+  private async approveIdNotVerifiedRefund(
+    jobSeeker: { id: string; code: string; city: string; status: string; paymentReceivedAt: Date | null; guaranteeStartsAt: Date | null },
+    actor: { id: string; role: string },
+    dto: ApproveJobSeekerRefundDto,
+    now: Date,
+  ) {
+    const note = typeof dto?.reason === 'string' && dto.reason.trim() ? dto.reason.trim().slice(0, 500) : null;
+    const activationPayment = await this.prisma.payment.findFirst({
+      where: { jobSeekerId: jobSeeker.id, type: { in: ['activation', 'reactivation'] }, status: { in: ['completed', 'succeeded'] } },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
+    const existingRefundWhere = currentGuaranteeRefundWhere(jobSeeker.id, {
+      latestPaidActivationId: activationPayment?.id ?? null,
+      paymentReceivedAt: jobSeeker.paymentReceivedAt,
+    });
+    const [existingRefund, forged, idCheckState] = await Promise.all([
+      this.prisma.payment.findFirst({ where: existingRefundWhere }),
+      loadForgedIdGuards(this.prisma, jobSeeker.id),
+      idCheckStateOf(this.prisma, jobSeeker.id),
+    ]);
+    const verdict = evaluateIdNotVerifiedRefund({
+      code: jobSeeker.code,
+      status: jobSeeker.status,
+      paymentReceivedAt: jobSeeker.paymentReceivedAt,
+      guaranteeStartsAt: jobSeeker.guaranteeStartsAt,
+      activationPaymentPaise: activationPayment?.amount ?? null,
+      hasExistingRefund: Boolean(existingRefund),
+      ...forged,
+    });
+    if (!verdict.eligible) {
+      if (existingRefund) throw alreadyExists(`A refund for job seeker ${jobSeeker.code}`, existingRefund);
+      throw new BadRequestException(verdict.reason!);
+    }
+    const payer = await otherPayerLink(this.prisma, jobSeeker.id, activationPayment!.id);
+    const paymentCode = await this.idService.generateCode('payment');
+    let payment;
+    try {
+      payment = await this.prisma.$transaction(async (tx) => {
+        await lockSubject(tx, refundLockKey.jobSeeker(jobSeeker.id));
+        const again = await tx.payment.findFirst({ where: existingRefundWhere });
+        if (again) throw alreadyExists(`A refund for job seeker ${jobSeeker.code}`, again);
+        // The ID may have passed a moment ago (then the 30 days run instead): read him again under the lock.
+        const fresh = await tx.jobSeeker.findUniqueOrThrow({ where: { id: jobSeeker.id }, select: { status: true, guaranteeStartsAt: true } });
+        if (fresh.status !== PAID_WAITING_ID || fresh.guaranteeStartsAt) {
+          throw new BadRequestException(`Job seeker '${jobSeeker.code}' is not waiting for his ID check any more`);
+        }
+        const p = await tx.payment.create({
+          data: {
+            code: paymentCode,
+            city: jobSeeker.city,
+            type: 'refund',
+            amount: verdict.amountPaise,
+            status: 'approved',
+            approvedByStaffId: actor.id,
+            approvedAt: now,
+            gatewayReference: null,
+            subjectType: 'job_seeker',
+            subjectId: jobSeeker.id,
+            jobSeekerId: jobSeeker.id,
+            refundsPaymentId: activationPayment!.id,
+            outsideRules: false,
+            approvalNote: note,
+            refundKind: ID_NOT_VERIFIED_REFUND_KIND,
+            refundPayerLinkId: payer?.id ?? null,
+          },
+        });
+        await recordStatusChange(tx, {
+          subjectType: 'payment', subjectId: p.id, fromStatus: null, toStatus: 'approved',
+          changedByStaffId: actor.id, reason: 'job_seeker_refund_id_not_verified',
+        });
+        await markJobSeekerRefunded(tx, { id: jobSeeker.id, status: fresh.status }, actor.id, now);
+        return p;
+      });
+    } catch (error) {
+      if (isDuplicatePayout(error)) {
+        throw alreadyExists(`A refund for job seeker ${jobSeeker.code}`, await this.prisma.payment.findFirst({ where: existingRefundWhere }));
+      }
+      throw error;
+    }
+    await this.auditService.log({
+      action: 'refund_approved',
+      entityType: 'JobSeeker',
+      entityCode: jobSeeker.code,
+      actorId: actor.id,
+      city: jobSeeker.city,
+      after: {
+        paymentId: payment.id,
+        paymentCode: payment.code,
+        amount: payment.amount,
+        type: 'refund',
+        refundKind: ID_NOT_VERIFIED_REFUND_KIND,
+        idCheckState,
+        refundToOtherPayer: Boolean(payer),
+        approvedByRole: actor.role,
+        refundsPaymentId: payment.refundsPaymentId,
+      },
+      reason: note ? `${ID_NOT_VERIFIED_REFUND_LABEL}: ${note}` : ID_NOT_VERIFIED_REFUND_LABEL,
+    });
+    // The payout details link goes to him only when he paid himself; a payer's refund is paid out by Finance to the payer.
+    if (!payer && this.paymentService?.sendPayoutDetailsLinkIfNoAccount) {
+      await this.paymentService.sendPayoutDetailsLinkIfNoAccount('job_seeker', jobSeeker.id, actor.id, actor.role, now);
+    }
+    return {
+      ...payment,
+      refundTo: payer ? { kind: 'other_payer' as const, maskedPhone: maskedPayerPhone(payer.phone), relation: payer.relation } : { kind: 'job_seeker' as const },
+    };
+  }
+
   async erase(id: string, actorId: string) {
     const actor = await this.prisma.staff.findUnique({
       where: { id: actorId },
@@ -1346,6 +1484,10 @@ export class JobSeekerService {
     if (targetStatus === 'deactivated') {
       throw new BadRequestException('A profile is deactivated only by the third hit');
     }
+    // Rev 211: "paid, waiting for ID" comes only from the ₹499 arriving before a passed ID check.
+    if (targetStatus === PAID_WAITING_ID) {
+      throw new BadRequestException('A profile is paid and waiting for the ID check only when his ₹499 arrives before the ID check');
+    }
 
     const seeker = await this.prisma.jobSeeker.findUnique({
       where: { id: jobSeekerId },
@@ -1359,6 +1501,11 @@ export class JobSeekerService {
       throw new BadRequestException(
         `A ${seeker.status} profile becomes active again only when he pays ₹499 again: use /job-seekers/:id/reactivate`,
       );
+    }
+
+    // Rev 211: he leaves "paid, waiting for ID" only when the ID check passes (that starts his 30 days).
+    if (seeker.status === PAID_WAITING_ID) {
+      throw new BadRequestException('He is paid and waiting for the ID check: he becomes active when the ID check passes');
     }
 
     validateJobSeekerAge(seeker.dateOfBirth, targetStatus);
@@ -1576,6 +1723,8 @@ export class JobSeekerService {
       changedFields: ['photoStoragePath', 'photoTakenAt'],
       city: seeker.city,
     });
+    // Rev 211: consent and selfie done → "your details are saved, next pay ₹499" with his link.
+    await this.flowEvents?.selfieSaved({ jobSeekerId: seeker.id, now: photoTakenAt });
     return { jobSeekerId: updated.id, photoTakenAt: updated.photoTakenAt, expiresInSeconds: CANDIDATE_PHOTO_LINK_TTL_SECONDS };
   }
 
@@ -1608,7 +1757,7 @@ export class JobSeekerService {
         where: { jobSeekerId: seeker.id, method: 'aadhaar_qr', vendor: 'uidai_secure_qr', isAdult: false, under18LiftedAt: null },
         select: { id: true },
       }),
-      // As the payment gate (id-payment-gate.ts): any verified check counts, not only the latest.
+      // Any verified check counts, not only the latest (guarantee-start.ts PASSED_ID_WHERE).
       this.prisma.identityVerification.findFirst({
         where: { jobSeekerId: seeker.id, status: 'verified', nameMatches: true, isAdult: true },
         select: { id: true },
@@ -1657,9 +1806,16 @@ export class JobSeekerService {
       time: latestPayment?.confirmedAt ?? latestPayment?.createdAt ?? null,
       reason: seeker.guaranteeFloorPaise === null ? 'Waiting for the new trade to be added in the Command Center' : null,
     };
+    const policyNow = await this.pricingService.current();
     return {
       jobSeekerId: seeker.id,
-      steps: { phone, consent, selfie, idCheck, payment },
+      // Rev 211 (25 Nov): Consent → Selfie → Payment → ID check (the keys in that order).
+      steps: { phone, consent, selfie, payment, idCheck },
+      /** Paid, and no ID check has passed yet: "Paid, waiting for ID" (not active, no clock). */
+      paidWaitingForId: seeker.status === PAID_WAITING_ID,
+      /** When his 30 days started (paid and ID passed) and when they end; null until then. */
+      guaranteeStartsAt: seeker.guaranteeStartsAt,
+      guaranteeEndsAt: seeker.guaranteeStartsAt ? refundGuaranteeDeadline(seeker.guaranteeStartsAt, policyNow.jobSeekerGuaranteeDays) : null,
       registrationLinkExpiresAt: link?.expiresAt ?? null,
       paymentOnlyLink: {
         live: Boolean(paymentOnlyLink),
@@ -1690,14 +1846,8 @@ export class JobSeekerService {
         'Someone else can pay once the job seeker has opened the payment step on his link and agreed to the terms there. Ask him to open his link, then send the payment-only link again.',
       );
     }
-    try {
-      await this.assertIdReadyForPayment(seeker);
-    } catch (error) {
-      if (error instanceof BadRequestException && error.message === ID_WAITING_FOR_TEAM_LEAD) {
-        throw new BadRequestException('Someone else can pay after the Team Lead has checked the photo of his ID card (it is waiting for the check now).');
-      }
-      throw error;
-    }
+    // Rev 211: payment comes before the ID check, so only an under-18 stop refuses someone else paying.
+    await this.assertIdReadyForPayment(seeker);
     await this.assertTermsCurrent(seeker.id);
 
     const now = this.consentClock?.now() ?? new Date();

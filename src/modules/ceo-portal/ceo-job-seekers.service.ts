@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { PAID_WAITING_ID, PAID_WAITING_ID_LABEL } from '../job-seeker/job-seeker.status';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -57,7 +58,11 @@ export interface JobSeekerRow {
   maxHits: number;
   kyc: 'verified' | 'pending' | 'failed' | 'none';
   paidAt: string | null;
+  /** Rev 211: when his 30 days started (paid and ID passed). */
+  guaranteeStartsAt: string | null;
   guaranteeDaysLeft: number | null;
+  /** Rev 211: "Paid, waiting for ID" while he is paid and the ID check has not passed. */
+  stage: string | null;
   registeredAt: string;
   registeredBy: string | null;
   locality: string | null;
@@ -70,6 +75,8 @@ export interface JobSeekerListSummary {
   withinFiveDaysOfRefund: number;
   atTwoOfThreeHits: number;
   deactivatedThisMonth: number;
+  /** Rev 211: paid, waiting for the ID check (not active, no clock). */
+  paidWaitingForId: number;
 }
 
 export interface NearRefundRow {
@@ -146,6 +153,10 @@ export class CeoJobSeekersService {
       case 'refunded':
         and.push({ status: 'refunded' });
         break;
+      // Rev 211: "Paid, waiting for ID".
+      case 'paid_waiting_id':
+        and.push({ status: PAID_WAITING_ID });
+        break;
       // The tiles' own rows (clicking a tile sets its filter; same rules as summary()).
       case 'waiting_kyc':
         and.push({ status: { notIn: [...ENDED_STATUSES, 'lead'] }, identityVerifications: { none: { status: 'verified' } } });
@@ -202,7 +213,8 @@ export class CeoJobSeekersService {
     ]);
 
     const rows: JobSeekerRow[] = seekers.map((s) => {
-      const counting = s.paymentReceivedAt && !ENDED_STATUSES.includes(s.status);
+      // Rev 211: the 30 days count from guaranteeStartsAt (paid AND ID passed).
+      const counting = s.guaranteeStartsAt && !ENDED_STATUSES.includes(s.status);
       return {
         id: s.id,
         code: s.code,
@@ -217,7 +229,10 @@ export class CeoJobSeekersService {
         maxHits: policy.maxHits,
         kyc: this.kycOf(s.identityVerifications),
         paidAt: s.paymentReceivedAt?.toISOString() ?? null,
-        guaranteeDaysLeft: counting ? daysLeft(s.paymentReceivedAt as Date, policy.jobSeekerGuaranteeDays, now) : null,
+        guaranteeStartsAt: s.guaranteeStartsAt?.toISOString() ?? null,
+        guaranteeDaysLeft: counting ? daysLeft(s.guaranteeStartsAt as Date, policy.jobSeekerGuaranteeDays, now) : null,
+        /** "Paid, waiting for ID" (rev 211). */
+        stage: s.status === PAID_WAITING_ID ? PAID_WAITING_ID_LABEL : null,
         registeredAt: s.createdAt.toISOString(),
         registeredBy: s.registeredBy?.name ?? null,
         locality: s.locality,
@@ -231,7 +246,7 @@ export class CeoJobSeekersService {
     const base: Prisma.JobSeekerWhereInput = scope ? { anonymisedAt: null, AND: [scope] } : { anonymisedAt: null };
     const fiveDayStart = new Date(now.getTime() - (guaranteeDays - 5) * DAY_MS);
     const guaranteeStart = new Date(now.getTime() - guaranteeDays * DAY_MS);
-    const [activeInPool, registeredNotPaid, waitingOnKyc, withinFiveDaysOfRefund, atTwoOfThreeHits, deactivatedThisMonth] =
+    const [activeInPool, registeredNotPaid, waitingOnKyc, withinFiveDaysOfRefund, atTwoOfThreeHits, deactivatedThisMonth, paidWaitingForId] =
       await Promise.all([
         this.prisma.jobSeeker.count({ where: { ...base, status: 'active' } }),
         this.prisma.jobSeeker.count({ where: { ...base, status: { in: NOT_PAID_STATUSES } } }),
@@ -246,7 +261,7 @@ export class CeoJobSeekersService {
           where: {
             ...base,
             status: { notIn: ENDED_STATUSES },
-            paymentReceivedAt: { gt: guaranteeStart, lte: fiveDayStart },
+            guaranteeStartsAt: { gt: guaranteeStart, lte: fiveDayStart },
           },
         }),
         this.prisma.jobSeeker.count({ where: { ...base, status: { notIn: ENDED_STATUSES }, hitCount: Math.max(0, maxHits - 1) } }),
@@ -260,8 +275,9 @@ export class CeoJobSeekersService {
           : this.prisma.statusHistory.count({
               where: { subjectType: 'job_seeker', toStatus: 'deactivated', changedAt: { gte: istStartOfMonth(now), lte: now } },
             }),
+        this.prisma.jobSeeker.count({ where: { ...base, status: PAID_WAITING_ID } }),
       ]);
-    return { activeInPool, registeredNotPaid, waitingOnKyc, withinFiveDaysOfRefund, atTwoOfThreeHits, deactivatedThisMonth };
+    return { activeInPool, registeredNotPaid, waitingOnKyc, withinFiveDaysOfRefund, atTwoOfThreeHits, deactivatedThisMonth, paidWaitingForId };
   }
 
   /** Everything the CEO's job seeker page shows, with its history. */
@@ -305,7 +321,8 @@ export class CeoJobSeekersService {
 
     const activation = seeker.payments.find((p) => (p.type === 'activation' || p.type === 'reactivation') && RECEIVED_STATUSES.includes(p.status));
     const refunds = seeker.payments.filter((p) => p.type === 'refund' && !['failed', 'rejected', 'reversed'].includes(p.status));
-    const counting = seeker.paymentReceivedAt && !ENDED_STATUSES.includes(seeker.status);
+    const counting = seeker.guaranteeStartsAt && !ENDED_STATUSES.includes(seeker.status);
+    // Offers made in this ₹499's cycle (since he paid; offers only come once his 30 days run).
     const sinceGuarantee = seeker.paymentReceivedAt ?? new Date(0);
     const offers = seeker.interviews.filter((i) => OFFER_STATUSES.includes(i.status) && i.offerSentAt >= sinceGuarantee);
     const activeHits = seeker.hits.filter((h) => !h.reversedAt && !h.supersededAt);
@@ -379,7 +396,10 @@ export class CeoJobSeekersService {
       guarantee: {
         days: policy.jobSeekerGuaranteeDays,
         paidAt: seeker.paymentReceivedAt?.toISOString() ?? null,
-        daysLeft: counting ? daysLeft(seeker.paymentReceivedAt as Date, policy.jobSeekerGuaranteeDays, now) : null,
+        // Rev 211: when his 30 days started (paid and ID passed); null while "Paid, waiting for ID".
+        startsAt: seeker.guaranteeStartsAt?.toISOString() ?? null,
+        paidWaitingForId: seeker.status === PAID_WAITING_ID,
+        daysLeft: counting ? daysLeft(seeker.guaranteeStartsAt as Date, policy.jobSeekerGuaranteeDays, now) : null,
         floorPaise: seeker.guaranteeFloorPaise,
       },
       hits: { count: activeHits.length, max: policy.maxHits },
@@ -457,7 +477,9 @@ export class CeoJobSeekersService {
       where: {
         anonymisedAt: null,
         status: { notIn: ENDED_STATUSES },
-        paymentReceivedAt: { gt: oldest, lte: newest },
+        // Rev 211: close to a refund counts from the start of his 30 days (paid and ID passed).
+        paymentReceivedAt: { not: null },
+        guaranteeStartsAt: { gt: oldest, lte: newest },
       },
       include: {
         trades: { select: { trade: true, isPrimary: true } },
@@ -476,7 +498,7 @@ export class CeoJobSeekersService {
       const sinceGuarantee = s.interviews.filter((i) => i.offerSentAt >= paidAt);
       const suitableOffered = sinceGuarantee.some((i) => OFFER_STATUSES.includes(i.status));
       if (suitableOffered) continue;
-      const left = daysLeft(paidAt, guaranteeDays, now);
+      const left = daysLeft(s.guaranteeStartsAt as Date, guaranteeDays, now);
       const bucket = refundBucket(left, windowDays);
       if (!bucket) continue;
       const activation = s.payments.find((p) => (p.type === 'activation' || p.type === 'reactivation') && RECEIVED_STATUSES.includes(p.status));

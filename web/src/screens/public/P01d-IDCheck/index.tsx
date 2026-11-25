@@ -8,17 +8,19 @@ import { useScreenPath } from '../../../portals/PortalContext';
 import { registrationApi, type AadhaarQrResult, type OtherIdResult } from '../shared/api';
 import { IdCheckPanel } from '../shared/IdCheckPanel';
 import { useStepGuard } from '../shared/registration';
-import { ActionError, isOtpExpired, LinkProblem, Loading, PageTitle, StepsBar, Warn } from '../shared/ui';
+import { ActionError, isOtpExpired, LinkProblem, Loading, Muted, Ok, PageTitle, StepsBar, Warn } from '../shared/ui';
 
 /**
  * P01d-IDCheck (guide, "Aadhaar verification", 14 Nov): Aadhaar by its Secure
  * QR — scanned with his phone's camera, or read from his e-Aadhaar PDF opened
  * in the browser — or another government ID (PAN, driving licence, voter ID).
  * Only the QR's text is sent; UIDAI's signature, 18+, the name and the phone
- * link are checked by the server. Under 18 stops here, before any payment —
- * and stays stopped (only a Manager or the CEO can lift it). Another ID is a
- * live photo of the card and its number, checked by a Team Lead by eye (rev
- * 154): until then the page says so and payment waits.
+ * link are checked by the server. Rev 211 (25 Nov): this is the last step,
+ * after the payment — his 30 days start when it passes. Under 18 stops here
+ * and stays stopped (only a Manager or the CEO can lift it); having paid, he
+ * can ask Laboura for the ₹499 back. Another ID is a live photo of the card
+ * and its number, checked by a Team Lead by eye (rev 154): until then the
+ * page says so.
  */
 export default function IdCheck() {
   const t = useT();
@@ -39,10 +41,11 @@ export default function IdCheck() {
   if (status.stopped === 'under_18' || qrResult?.isAdult === false) {
     return (
       <>
-        <StepsBar current={3} label={t('pub.id.stepLabel')} />
+        <StepsBar current={4} label={t('pub.id.stepLabel')} />
         <PageTitle emoji="🆔">{t('pub.id.title')}</PageTitle>
         <Warn>
-          <strong>{t('pub.id.under18Title')}</strong> {t(qrResult?.dateOfBirthUnreadable ? 'pub.id.dobUnreadable' : 'pub.id.under18Body')}
+          <strong>{t('pub.id.under18Title')}</strong>{' '}
+          {t(qrResult?.dateOfBirthUnreadable ? 'pub.id.dobUnreadable' : status.steps.payment ? 'pub.id.under18PaidBody' : 'pub.id.under18Body')}
         </Warn>
       </>
     );
@@ -96,8 +99,9 @@ export default function IdCheck() {
 
   return (
     <>
-      <StepsBar current={3} label={t('pub.id.stepLabel')} />
+      <StepsBar current={4} label={t('pub.id.stepLabel')} />
       <PageTitle emoji="🆔">{t('pub.id.title')}</PageTitle>
+      {status.steps.payment && <Ok emoji="✅">{t('pub.id.paidBanner')}</Ok>}
       <IdCheckPanel
         busy={busy}
         qrResult={qrResult}
@@ -105,10 +109,11 @@ export default function IdCheck() {
         onQr={(text) => void checkQr(text)}
         onOtherId={sendOtherId}
         getCaptureNonce={getCaptureNonce}
-        onContinue={() => void refresh().then(() => navigate(to('P02-Payment', { token })))}
+        onContinue={() => void refresh().then(() => navigate(to('P02b-Paid', { token })))}
         pending={pending}
       />
       <ActionError error={error} />
+      {status.steps.payment && otherIdFailed && <Muted>{t('pub.id.refundNote')}</Muted>}
     </>
   );
 }

@@ -21,7 +21,7 @@ function initials(name: string): string {
     .join('');
 }
 
-const SEEKER_STATUSES = ['lead', 'consented', 'pending_activation', 'active', 'paused', 'deactivated', 'placed', 'closed', 'refunded'];
+const SEEKER_STATUSES = ['lead', 'consented', 'pending_activation', 'paid_waiting_id', 'active', 'paused', 'deactivated', 'placed', 'closed', 'refunded'];
 
 /** The header card: avatar, name, masked phone · trade · languages · salary, status · ID. */
 export function ProfileHeader({ profile }: { profile: Profile }) {
@@ -189,6 +189,10 @@ function historyText(row: HistoryRow, t: ReturnType<typeof useT>): string {
       return t('ca.history.registered', { by: (row.by as string | null) ?? '—' });
     case 'payment_link_after_id':
       return t(row.sent ? 'ca.history.linkAfterIdSent' : 'ca.history.linkAfterIdNotSent');
+    case 'paid_waiting_id':
+      return t('ca.history.paidWaitingId');
+    case 'guarantee_started':
+      return t('ca.history.guaranteeStarted');
     default:
       return row.kind;
   }

@@ -20,13 +20,23 @@ export const registrationSession = {
   clear: (token: string) => tabMemory.remove(otpKey(token)),
 };
 
+/** Rev 211 (25 Nov): Consent → Selfie → Payment → ID check. */
 export const STEP_SCREEN: Record<RegistrationStep, string> = {
   consent: 'P01-Consent',
   selfie: 'P01c-Selfie',
-  id_check: 'P01d-IDCheck',
   payment: 'P02-Payment',
+  id_check: 'P01d-IDCheck',
   complete: 'P02b-Paid',
 };
+
+/**
+ * The page he belongs on. Under 18 by his typed date of birth (or a standing under-18 stop) before
+ * paying: registration stops at consent, before any payment (A10). After paying, the ID check page
+ * shows the stop.
+ */
+export function targetStep(data: Pick<RegistrationOpen, 'currentStep' | 'stopped' | 'steps'>): RegistrationStep {
+  return data.stopped === 'under_18' && !data.steps.payment ? 'consent' : data.currentStep;
+}
 
 export function useRegistrationToken(): string {
   return useParams<{ token: string }>().token ?? '';
@@ -74,8 +84,9 @@ export function useStepGuard(step: RegistrationStep): {
       navigate(to('P-Reconsent', { token }), { replace: true });
       return;
     }
-    if (data.currentStep !== step && !(step === 'id_check' && data.stopped === 'under_18')) {
-      navigate(to(STEP_SCREEN[data.currentStep], { token }), { replace: true });
+    const target = targetStep(data);
+    if (target !== step && !(step === 'id_check' && data.stopped === 'under_18')) {
+      navigate(to(STEP_SCREEN[target], { token }), { replace: true });
     }
   }, [data, navigate, query.requestId, step, to, token]);
 
@@ -84,7 +95,7 @@ export function useStepGuard(step: RegistrationStep): {
     navigate(to('P00-Open', { token }), { replace: true });
   }, [navigate, to, token]);
 
-  const open = data && !data.otpRequired && data.reconsent?.needsReconsent ? undefined : data && !data.otpRequired && data.currentStep === step ? data : data && !data.otpRequired && step === 'id_check' && data.stopped ? data : undefined;
+  const open = data && !data.otpRequired && data.reconsent?.needsReconsent ? undefined : data && !data.otpRequired && targetStep(data) === step ? data : data && !data.otpRequired && step === 'id_check' && data.stopped ? data : undefined;
   return {
     token,
     requestId: query.requestId ?? '',

@@ -396,7 +396,7 @@ export class CeoMoneyService {
             replacementClaims: { orderBy: { reportedAt: 'desc' }, take: 1 },
           },
         },
-        jobSeeker: { select: { id: true, code: true, name: true, status: true, paymentReceivedAt: true, hitCount: true } },
+        jobSeeker: { select: { id: true, code: true, name: true, status: true, paymentReceivedAt: true, guaranteeStartsAt: true, hitCount: true } },
       },
     });
     const seekerIds = refunds.map((r) => r.jobSeekerId).filter((x): x is string => Boolean(x));
@@ -470,7 +470,8 @@ export class CeoMoneyService {
           maxHits: policy.maxHits,
           forfeitingHitAt: forfeiting[0]?.recordedAt.toISOString() ?? null,
           forfeitingHitReason: forfeiting[0]?.reason ?? null,
-          guaranteeOver: s?.paymentReceivedAt ? daysSince(s.paymentReceivedAt, now) >= policy.jobSeekerGuaranteeDays : false,
+          // Rev 211: the 30 days run from guaranteeStartsAt (paid and ID passed).
+          guaranteeOver: s?.guaranteeStartsAt ? daysSince(s.guaranteeStartsAt, now) >= policy.jobSeekerGuaranteeDays : false,
         },
         check: { eligible: forfeiting.length === 0 && !['placed', 'deactivated', 'closed'].includes(s?.status ?? ''), reason: forfeiting[0]?.reason ?? (s && ['placed', 'deactivated', 'closed'].includes(s.status) ? s.status : null) },
       };
@@ -589,7 +590,7 @@ export class CeoMoneyService {
       include: {
         jobSeekers: {
           orderBy: { createdAt: 'desc' },
-          select: { id: true, code: true, name: true, status: true, paymentReceivedAt: true, placements: { orderBy: { createdAt: 'desc' }, take: 1, select: { id: true, code: true, joinedDate: true, status: true } } },
+          select: { id: true, code: true, name: true, status: true, paymentReceivedAt: true, guaranteeStartsAt: true, placements: { orderBy: { createdAt: 'desc' }, take: 1, select: { id: true, code: true, joinedDate: true, status: true } } },
         },
         payments: { where: { type: 'referral_payout' }, orderBy: { createdAt: 'desc' }, include: { placement: { select: { id: true, code: true, jobSeeker: { select: { name: true } } } } } },
         identityVerifications: { orderBy: { createdAt: 'desc' }, take: 1 },
@@ -640,7 +641,7 @@ export class CeoMoneyService {
         code: j.code,
         name: j.name,
         status: j.status,
-        guaranteeDay: j.paymentReceivedAt && j.status === 'active' ? daysSince(j.paymentReceivedAt, now) + 1 : null,
+        guaranteeDay: j.guaranteeStartsAt && j.status === 'active' ? daysSince(j.guaranteeStartsAt, now) + 1 : null,
         placement: j.placements[0] ? { id: j.placements[0].id, code: j.placements[0].code, joinedDate: j.placements[0].joinedDate?.toISOString() ?? null } : null,
       })),
     };

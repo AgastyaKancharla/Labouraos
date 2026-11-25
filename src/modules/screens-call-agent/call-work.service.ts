@@ -14,6 +14,8 @@ import { productionTargetSeconds } from '../attendance/day-rules';
 import { CallService } from '../call/call.service';
 import { parseClock } from '../call/call-window';
 import { FINAL_CALL_STATUSES } from '../call/call-status';
+import { PAID_WAITING_ID } from '../job-seeker/job-seeker.status';
+import { GUARANTEE_STARTED_REASON, PAID_WAITING_ID_REASON } from '../job-seeker/guarantee-start';
 import { MatchingService } from '../vacancy/matching.service';
 import { InboundCallRouter } from '../telephony/inbound-call-router.service';
 import { TargetOverviewService } from '../target/target-overview.service';
@@ -63,6 +65,8 @@ interface SeekerSummary {
   preferredCallWindowStart: string;
   preferredCallWindowEnd: string;
   paymentReceivedAt: Date | null;
+  /** Rev 211: when his 30 days started (paid and ID passed). */
+  guaranteeStartsAt: Date | null;
   trades: Array<{ trade: string; isPrimary: boolean; yearsExperience: number }>;
 }
 
@@ -157,6 +161,7 @@ export class CallWorkService {
         preferredCallWindowStart: true,
         preferredCallWindowEnd: true,
         paymentReceivedAt: true,
+        guaranteeStartsAt: true,
         trades: { select: { trade: true, isPrimary: true, yearsExperience: true } },
       },
     });
@@ -223,7 +228,8 @@ export class CallWorkService {
    * suitable offer (interview) since paying.
    */
   private async refundInfo(seekers: SeekerSummary[], ctx: QueueContext): Promise<Map<string, RefundInfo>> {
-    const paid = seekers.filter((s) => s.paymentReceivedAt && !CLOSED_SEEKER.includes(s.status));
+    // Rev 211: on the 30-day clock only once it runs (paid and ID passed; guaranteeStartsAt).
+    const paid = seekers.filter((s) => s.paymentReceivedAt && s.guaranteeStartsAt && !CLOSED_SEEKER.includes(s.status));
     const map = new Map<string, RefundInfo>();
     if (paid.length === 0) return map;
     const ids = paid.map((s) => s.id);
@@ -249,7 +255,7 @@ export class CallWorkService {
     );
     const ended = new Set([...hits.map((h) => h.jobSeekerId), ...currentRefunds.map((r) => r.jobSeekerId!)]);
     for (const s of paid) {
-      const deadline = refundGuaranteeDeadline(s.paymentReceivedAt!, ctx.guaranteeDays);
+      const deadline = refundGuaranteeDeadline(s.guaranteeStartsAt!, ctx.guaranteeDays);
       const msLeft = deadline.getTime() - ctx.now.getTime();
       const daysLeft = Math.ceil(msLeft / DAY_MS);
       const day = Math.min(ctx.guaranteeDays, Math.max(1, ctx.guaranteeDays - daysLeft + 1));
@@ -315,14 +321,16 @@ export class CallWorkService {
         where: {
           // A Team Lead's Assign reaches the assigned agent (21 Nov fixes): assigned, else the registering agent.
           OR: [{ assignedStaffId: staffId }, { assignedStaffId: null, registeredByStaffId: staffId }],
-          paymentReceivedAt: {
+          // Rev 211: close to a refund counts from the start of his 30 days (paid and ID passed).
+          paymentReceivedAt: { not: null },
+          guaranteeStartsAt: {
             not: null,
             gt: new Date(ctx.now.getTime() - ctx.guaranteeDays * DAY_MS),
             lte: new Date(ctx.now.getTime() - (ctx.guaranteeDays - ctx.windowDays) * DAY_MS),
           },
           status: { notIn: CLOSED_SEEKER },
         },
-        select: { id: true, paymentReceivedAt: true },
+        select: { id: true, paymentReceivedAt: true, guaranteeStartsAt: true },
       }),
       this.prisma.interview.findMany({
         where: { proposedByStaffId: staffId, status: 'offered', replyDueAt: { gt: ctx.now } },
@@ -442,7 +450,7 @@ export class CallWorkService {
         key: `refund:${s.id}`,
         type: 'job_seeker',
         id: s.id,
-        dueAt: s.paymentReceivedAt!,
+        dueAt: s.guaranteeStartsAt!,
         purpose: 'general',
         relatedType: null,
         relatedId: null,
@@ -606,9 +614,11 @@ export class CallWorkService {
   private async stuckRegistrations(staffId: string, ctx: QueueContext): Promise<StuckRow[]> {
     const seekers = await this.prisma.jobSeeker.findMany({
       where: {
-        OR: [{ assignedStaffId: staffId }, { assignedStaffId: null, registeredByStaffId: staffId }],
-        paymentReceivedAt: null,
-        status: { in: STUCK_STATUSES },
+        AND: [
+          { OR: [{ assignedStaffId: staffId }, { assignedStaffId: null, registeredByStaffId: staffId }] },
+          // Rev 211: paid but waiting for the ID check is stuck too (at the ID check).
+          { OR: [{ paymentReceivedAt: null, status: { in: STUCK_STATUSES } }, { status: PAID_WAITING_ID }] },
+        ],
         anonymisedAt: null,
       },
       select: {
@@ -616,6 +626,7 @@ export class CallWorkService {
         code: true,
         name: true,
         phone: true,
+        status: true,
         createdAt: true,
         photoStoragePath: true,
         guaranteeFloorPaise: true,
@@ -656,13 +667,13 @@ export class CallWorkService {
       const consentDone = REQUIRED_CONSENTS.every((p) => given.has(p));
       const idv = verifications.find((v) => v.jobSeekerId === s.id);
       const failures = payments.filter((p) => p.jobSeekerId === s.id && p.status === 'failed').length;
+      // Rev 211: Consent → Selfie → Payment → ID check.
       let step: string;
       if (!consentDone) step = 'consent';
       else if (!s.photoStoragePath) step = 'selfie';
-      // Another government ID waits for the Team Lead's check by eye (guide, 14 Nov).
-      else if (idv?.status !== 'verified') step = idv?.status === 'pending' ? 'id_team_lead_check' : 'id_check';
-      else if (s.guaranteeFloorPaise === null) step = 'trade_pending';
-      else step = failures > 0 ? 'payment_failed' : 'payment';
+      else if (s.status !== PAID_WAITING_ID) step = s.guaranteeFloorPaise === null ? 'trade_pending' : failures > 0 ? 'payment_failed' : 'payment';
+      // Paid: another government ID waits for the Team Lead's check by eye (guide, 14 Nov), or no ID check yet.
+      else step = idv?.status === 'pending' ? 'id_team_lead_check' : 'id_check';
       const latest = links.find((l) => l.subjectId === s.id) ?? null;
       const linkLive = Boolean(latest && !latest.usedAt && !latest.revokedAt && latest.expiresAt > ctx.now);
       return {
@@ -1033,6 +1044,8 @@ export class CallWorkService {
         consentsRequired: REQUIRED_CONSENTS.length,
         callRecordingConsent: given.has('call_recording'),
         paid: Boolean(s.paymentReceivedAt),
+        /** Rev 211: paid, waiting for the ID check — not active, the 30 days have not started. */
+        paidWaitingForId: s.status === PAID_WAITING_ID,
         guaranteeDay: r?.day ?? null,
         guaranteeDays: ctx.guaranteeDays,
         daysLeft: r?.daysLeft ?? null,
@@ -1153,9 +1166,10 @@ export class CallWorkService {
       // 22 Nov: the payment link sent by itself after another ID was approved (or why it was not).
       type === 'job_seeker'
         ? this.prisma.statusHistory.findMany({
-            where: { subjectType: 'job_seeker', subjectId: id, reason: { startsWith: 'payment_link_after_id_approval:' } },
+            // Rev 211: also "paid, waiting for ID" and "30 days started" (codes only).
+            where: { subjectType: 'job_seeker', subjectId: id, OR: [{ reason: { startsWith: 'payment_link_after_id_approval:' } }, { reason: { in: [PAID_WAITING_ID_REASON, GUARANTEE_STARTED_REASON] } }] },
             orderBy: { changedAt: 'desc' },
-            take: 5,
+            take: 8,
             select: { reason: true, changedAt: true },
           })
         : Promise.resolve([]),
@@ -1180,6 +1194,8 @@ export class CallWorkService {
       ...payments.map((p) => ({ kind: 'payment_confirmed', at: (p.confirmedAt ?? p.createdAt).toISOString(), feePaise: p.amount })),
       ...(seeker ? [{ kind: 'registered', at: seeker.createdAt.toISOString(), by: seeker.registeredBy?.name ?? null }] : []),
       ...linkAfterId.map((h) => {
+        if (h.reason === PAID_WAITING_ID_REASON) return { kind: 'paid_waiting_id', at: h.changedAt.toISOString() };
+        if (h.reason === GUARANTEE_STARTED_REASON) return { kind: 'guarantee_started', at: h.changedAt.toISOString() };
         const [, outcome, why] = (h.reason ?? '').split(':');
         return { kind: 'payment_link_after_id', at: h.changedAt.toISOString(), sent: outcome === 'sent', reason: why ?? null };
       }),
@@ -1402,7 +1418,7 @@ export class CallWorkService {
         hasOffer: Boolean(offer),
         trade: primaryTrade(seeker.trades),
       };
-      if (STUCK_STATUSES.includes(seeker.status)) likelyAbout = 'registration';
+      if (STUCK_STATUSES.includes(seeker.status) || seeker.status === PAID_WAITING_ID) likelyAbout = 'registration';
       else if (offer) likelyAbout = 'offer';
       else if (seeker.status === 'placed') likelyAbout = 'job';
       else if (seeker.paymentReceivedAt) likelyAbout = 'job_search_refund';

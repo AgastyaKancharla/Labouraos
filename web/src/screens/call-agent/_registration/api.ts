@@ -49,8 +49,10 @@ export interface JobSeekerStatus {
   maxSalary?: number;
   trades: { trade: string; yearsExperience: number; isPrimary: boolean; listed: boolean }[];
   status: string;
-  stage: 'registered' | 'in_progress' | 'active';
-  nextStep: 'consent' | 'selfie' | 'id_check' | 'payment' | 'complete';
+  /** Rev 211: paid_waiting_id — paid, the ID check has not passed (not active, the 30 days have not started). */
+  stage: 'registered' | 'in_progress' | 'paid_waiting_id' | 'active';
+  /** Rev 211 order: consent → selfie → payment → id_check. */
+  nextStep: 'consent' | 'selfie' | 'payment' | 'id_check' | 'complete';
   steps: { phone: Step; consent: Step; selfie: Step; idCheck: Step; payment: Step };
   consent: { requiredGiven: number; requiredTotal: number; promotions: boolean };
   registrationLinkExpiresAt: string | null;
@@ -59,6 +61,8 @@ export interface JobSeekerStatus {
   paymentOnlyLink: { payerPhone: string | null; relation: string | null; sentAt: string; expiresAt: string; live: boolean; used: boolean } | null;
   paymentConfirmedAt: string | null;
   paymentReceivedAt: string | null;
+  /** Rev 211: when the 30 days started (paid and ID passed). */
+  guaranteeStartsAt?: string | null;
   guaranteeEndsAt: string | null;
 }
 

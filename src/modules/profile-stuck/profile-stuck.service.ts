@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { eitherWheres, RecordWheres } from '../ceo-portal/record-scope';
 import { JobSeekerService } from '../job-seeker/job-seeker.service';
+import { PAID_WAITING_ID, PAID_WAITING_ID_LABEL } from '../job-seeker/job-seeker.status';
 import { ManagerRecordsService } from '../screens-manager/manager-records.service';
 import { TeamLeadRecordsService } from '../screens-team-lead/team-lead-records.service';
 
@@ -27,7 +28,7 @@ export interface StuckView {
   name: string;
   /** Who holds the record: the agent it was assigned to, else the agent who registered it (or the account agent / lead creator). */
   owner: { name: string; code: string } | null;
-  /** The step the person is on (job seeker: consent, selfie, id_check, payment; business: agreement, visit, team_lead_check; partner: terms, selfie, id_check, upi), or complete. */
+  /** The step the person is on (job seeker: consent, selfie, payment, id_check (rev 211 order); business: agreement, visit, team_lead_check; partner: terms, selfie, id_check, upi), or complete. */
   step: string;
   /** done, in_progress, stuck or not_started (of that step). */
   state: string;
@@ -38,6 +39,8 @@ export interface StuckView {
   actions: StuckAction[];
   /** The owner's staff id (assigned ?? registered; business: account agent ?? lead creator), for "Remind". */
   ownerId?: string | null;
+  /** Rev 211: a job seeker who has paid and waits for the ID check — shown as "Paid, waiting for ID". */
+  stage?: 'paid_waiting_id';
 }
 
 /** One row of a "Stuck registrations" list (22 Nov): a stuck job seeker, business or partner. */
@@ -48,6 +51,7 @@ export interface StuckListRow extends StuckView {
 
 /** Job seekers who have not paid yet and may be stuck in registration. */
 const OPEN_SEEKER_STATUSES = ['lead', 'consented', 'pending_activation'];
+/** Rev 211: paid, but the ID check has not passed — still stuck (at the ID check), "Paid, waiting for ID". */
 /** At most this many of each kind are looked at (newest first). */
 const LIST_CAP = 40;
 
@@ -131,7 +135,13 @@ export class ProfileStuckService {
     const scope = await this.ownerScope(actor);
     const [seekers, businesses, referrals] = await Promise.all([
       this.prisma.jobSeeker.findMany({
-        where: { AND: [scope.seeker, { status: { in: OPEN_SEEKER_STATUSES }, paymentReceivedAt: null, anonymisedAt: null }] },
+        where: {
+          AND: [
+            scope.seeker,
+            { anonymisedAt: null },
+            { OR: [{ status: { in: OPEN_SEEKER_STATUSES }, paymentReceivedAt: null }, { status: PAID_WAITING_ID }] },
+          ],
+        },
         select: { id: true, createdAt: true },
         orderBy: { createdAt: 'desc' },
         take: LIST_CAP,
@@ -217,22 +227,27 @@ export class ProfileStuckService {
       owner: staffLabel(seeker.assignedStaff ?? seeker.registeredBy), ownerId: seeker.assignedStaffId ?? seeker.registeredByStaffId ?? null,
     };
     const { steps } = await this.jobSeekers.getRegistrationStatus(seeker.id);
-    if (seeker.status === 'active' || (seeker.paymentReceivedAt && steps.payment.state === 'done')) {
+    const paidWaitingForId = seeker.status === PAID_WAITING_ID;
+    if (seeker.status === 'active' || (seeker.paymentReceivedAt && steps.payment.state === 'done' && !paidWaitingForId)) {
       return { ...base, step: 'complete', state: 'done', reason: null, waitingForTeamLead: false, actions: [] };
     }
     if (['banned', 'deactivated', 'refunded', 'anonymised'].includes(seeker.status)) {
       return { ...base, step: 'closed', state: 'stuck', reason: `Status: ${seeker.status}`, waitingForTeamLead: false, actions: [] };
     }
+    // Rev 211 (25 Nov): Consent → Selfie → Payment → ID check.
     const order: Array<[string, { state: string; reason: string | null }]> = [
-      ['consent', steps.consent], ['selfie', steps.selfie], ['id_check', steps.idCheck], ['payment', steps.payment],
+      ['consent', steps.consent], ['selfie', steps.selfie], ['payment', steps.payment], ['id_check', steps.idCheck],
     ];
     const current = order.find(([, s]) => s.state !== 'done');
     if (!current) return { ...base, step: 'complete', state: 'done', reason: null, waitingForTeamLead: false, actions: [] };
     const [step, s] = current;
     if (step === 'id_check') {
       const waiting = s.state === 'in_progress' && /Team Lead/i.test(s.reason ?? '');
-      if (waiting || s.state === 'stuck') return { ...base, step, state: s.state, reason: s.reason, waitingForTeamLead: waiting, actions: [] };
-      return { ...base, step, state: s.state, reason: s.reason, waitingForTeamLead: false, actions: ['registration_link'] };
+      // Paid and waiting for the ID check: the stage staff see is "Paid, waiting for ID" (view only for TL / Manager).
+      const reason = paidWaitingForId ? [PAID_WAITING_ID_LABEL, s.reason].filter(Boolean).join(' — ') : s.reason;
+      const stage = paidWaitingForId ? { stage: 'paid_waiting_id' as const } : {};
+      if (waiting || s.state === 'stuck') return { ...base, ...stage, step, state: s.state, reason, waitingForTeamLead: waiting, actions: [] };
+      return { ...base, ...stage, step, state: s.state, reason, waitingForTeamLead: false, actions: ['registration_link'] };
     }
     if (step === 'payment') {
       // Waiting for a new trade to be added: nothing to send until it is.

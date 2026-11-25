@@ -30,6 +30,7 @@ import {
 } from './secure-qr.parser';
 import { loadUidaiCertificates } from './uidai-certificates';
 import { Under18StopService } from './under18-stop.service';
+import { JobSeekerFlowEvents } from '../job-seeker/job-seeker-flow-events';
 
 /** Lets the tests trust a throw-away key instead of UIDAI's certificates. Refused in production. */
 export const AADHAAR_QR_TRUSTED_KEYS = 'AADHAAR_QR_TRUSTED_KEYS';
@@ -125,6 +126,7 @@ export class AadhaarQrService {
     private readonly idPhotos: IdCheckPhotoService,
     private readonly stops: Under18StopService,
     @Optional() @Inject(AADHAAR_QR_TRUSTED_KEYS) keys?: TrustedKey[],
+    @Optional() private readonly flowEvents?: JobSeekerFlowEvents,
   ) {
     if (keys?.length && process.env.NODE_ENV === 'production') {
       throw new Error('Test keys for the Aadhaar QR check are never allowed in production');
@@ -343,6 +345,15 @@ export class AadhaarQrService {
       });
     }
     if (passed && dob) await this.flagDuplicatePerson(subject, verificationId, parsed.referenceLast4, dob.value, parsed.name);
+    // Rev 211 (25 Nov): a passed check starts the 30 days of a job seeker who has paid; a failed one
+    // (under 18 or a name that doesn't match) tells a paid job seeker what went wrong and how a refund works.
+    if (subject.type === 'job_seeker' && this.flowEvents) {
+      const actor = context.staffId ? { id: context.staffId, role: context.channel === 'field' ? 'field_agent' : 'staff' } : null;
+      if (passed) await this.flowEvents.idPassed({ jobSeekerId: subject.id, actor, now });
+      else if (result === 'under_18' || result === 'name_mismatch') {
+        await this.flowEvents.idFailed({ jobSeekerId: subject.id, verificationId, result, now });
+      }
+    }
 
     return {
       verificationId,

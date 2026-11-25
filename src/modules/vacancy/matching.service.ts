@@ -43,6 +43,8 @@ type MatchCandidate = {
   salaryPeriod: string | null;
   guaranteeFloorPaise: number | null;
   paymentReceivedAt: Date | null;
+  /** Rev 211: when his 30 days started (paid and ID passed); the clock factor counts from here. */
+  guaranteeStartsAt: Date | null;
   dateOfBirth: Date | null;
   gender: string | null;
   latitude: number | null;
@@ -587,7 +589,7 @@ export class MatchingService {
     const matchedTrade = seeker.trades.find((trade) => trade.trade.trim().toLowerCase() === vacancy.tradeSkill.trim().toLowerCase());
     const experience = matchedTrade?.yearsExperience ?? 0;
     const travelDistance = seeker.travelDistanceKm ?? 0;
-    const deadline = seeker.paymentReceivedAt ? refundGuaranteeDeadline(seeker.paymentReceivedAt, guaranteeDays) : null;
+    const deadline = seeker.guaranteeStartsAt ? refundGuaranteeDeadline(seeker.guaranteeStartsAt, guaranteeDays) : null;
     const daysLeft = deadline ? Math.ceil((deadline.getTime() - now.getTime()) / DAY_MS) : guaranteeDays;
     const clockScore = deadline && now > deadline && this.refundStillOwed(seeker) ? 1 : clip((guaranteeDays - daysLeft) / guaranteeDays);
     const experienceScore = vacancy.experienceRequiredYears
@@ -654,6 +656,8 @@ export class MatchingService {
   }
 
   private refundStillOwed(seeker: MatchCandidate): boolean {
+    // A day-30 refund can only be owed once his 30 days started (rev 211).
+    if (!seeker.guaranteeStartsAt) return false;
     const hasPaidActivation = seeker.paymentReceivedAt !== null || seeker.payments.some((payment) => payment.type === 'activation' && ['succeeded', 'completed'].includes(payment.status));
     const alreadyRefunded = seeker.payments.some((payment) => payment.type === 'refund' && ['succeeded', 'completed'].includes(payment.status));
     const refundForfeitingHit = seeker.hits.some((hit) => !hit.reversedAt && (REFUND_FORFEITING_HIT_REASONS as readonly string[]).includes(hit.reason));

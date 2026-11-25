@@ -245,7 +245,8 @@ export class CeoTeamService {
       const [placements, activations] = ids.length
         ? await Promise.all([
             this.prisma.placement.count({ where: { createdByStaffId: { in: ids }, createdAt: { gte: monthStart, lte: now }, status: { not: 'cancelled' } } }),
-            this.prisma.jobSeeker.count({ where: { registeredByStaffId: { in: ids }, paymentReceivedAt: { gte: monthStart, lte: now } } }),
+            // Rev 211: activations count when the 30 days start (paid AND ID passed).
+            this.prisma.jobSeeker.count({ where: { registeredByStaffId: { in: ids }, guaranteeStartsAt: { gte: monthStart, lte: now } } }),
           ])
         : [0, 0];
       let behind = 0;
@@ -257,7 +258,7 @@ export class CeoTeamService {
         const achieved =
           agent.role === 'field_agent'
             ? await this.prisma.placement.count({ where: { createdByStaffId: agent.id, createdAt: { gte: monthStart, lte: now }, status: { not: 'cancelled' } } })
-            : await this.prisma.jobSeeker.count({ where: { registeredByStaffId: agent.id, paymentReceivedAt: { gte: monthStart, lte: now } } });
+            : await this.prisma.jobSeeker.count({ where: { registeredByStaffId: agent.id, guaranteeStartsAt: { gte: monthStart, lte: now } } });
         const goal = agent.role === 'field_agent' ? t.placementsClosed : t.candidatesActivated;
         if (paceFor(achieved, goal, day, daysInMonth) === 'behind') behind += 1;
       }
@@ -517,7 +518,7 @@ export class CeoTeamService {
     const within = { gte: range.from, lte: range.to };
     const [leads, activated, vacancies, closed, fees] = await Promise.all([
       leadIds.length ? this.prisma.staff.findMany({ where: { id: { in: leadIds } }, select: { id: true, name: true, teamName: true } }) : [],
-      this.prisma.jobSeeker.groupBy({ by: ['registeredByStaffId'], where: { registeredByStaffId: { in: ids }, paymentReceivedAt: within }, _count: { _all: true } }),
+      this.prisma.jobSeeker.groupBy({ by: ['registeredByStaffId'], where: { registeredByStaffId: { in: ids }, guaranteeStartsAt: within }, _count: { _all: true } }),
       this.prisma.vacancy.groupBy({ by: ['capturedByStaffId'], where: { capturedByStaffId: { in: ids }, createdAt: within }, _count: { _all: true } }),
       this.prisma.placement.groupBy({ by: ['createdByStaffId'], where: { createdByStaffId: { in: ids }, joinedDate: within, paidAt: { not: null } }, _count: { _all: true } }),
       this.prisma.placement.groupBy({ by: ['createdByStaffId'], where: { createdByStaffId: { in: ids }, paidAt: within }, _sum: { placementFee: true } }),

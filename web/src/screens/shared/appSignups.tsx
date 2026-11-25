@@ -15,7 +15,8 @@ export const KIND_LABEL: Record<string, string> = { job_seeker: 'Job seeker', bu
 
 /** What each stage means for each kind (proposal 4.1). */
 export const STAGE_LABEL: Record<SignupKind, Record<string, string>> = {
-  job_seeker: { A: 'Phone verified', B: 'Profile filled', C: 'Consent given', D: 'Selfie and ID done', E: 'Payment pending', done: '₹499 received' },
+  // Rev 211: Consent → Selfie → Payment → ID check.
+  job_seeker: { A: 'Phone verified', B: 'Profile filled', C: 'Consent given', D: 'Selfie done, payment pending', E: 'Paid, waiting for ID', done: 'Paid and ID verified' },
   business: { A: 'Phone verified', B: 'Business form filled', C: 'Agreement signed', D: 'Visit booked', E: 'Visit done, approval', done: 'Verified' },
   referral: { A: 'Phone verified', B: 'Details filled', C: 'Terms accepted', D: 'Selfie and ID done', E: 'UPI added', done: 'Active' },
 };

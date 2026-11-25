@@ -143,6 +143,7 @@ export const callAgentEn = {
   'ca.seekerStatus.lead': 'Lead',
   'ca.seekerStatus.consented': 'Consent given',
   'ca.seekerStatus.pending_activation': 'Payment pending',
+  'ca.seekerStatus.paid_waiting_id': 'Paid, waiting for ID',
   'ca.seekerStatus.active': 'Active',
   'ca.seekerStatus.paused': 'Paused',
   'ca.seekerStatus.deactivated': 'Deactivated',
@@ -220,6 +221,8 @@ export const callAgentEn = {
   'ca.history.registered': 'Registered by {by}',
   'ca.history.linkAfterIdSent': 'ID approved · payment link sent by itself',
   'ca.history.linkAfterIdNotSent': 'ID approved · payment link not sent by itself (use Resend)',
+  'ca.history.paidWaitingId': 'Paid · waiting for the ID check (30 days not started)',
+  'ca.history.guaranteeStarted': 'ID verified · 30 days started',
 
   'ca.intro.title': 'Jobs and businesses',
   'ca.intro.none': 'Not introduced to any business yet.',

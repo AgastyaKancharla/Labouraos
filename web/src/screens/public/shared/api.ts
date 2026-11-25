@@ -14,7 +14,8 @@ export type PublicLanguage = 'en';
 
 // ---- Registration link (RegistrationController, ConsentController) ----
 
-export type RegistrationStep = 'consent' | 'selfie' | 'id_check' | 'payment' | 'complete';
+/** Rev 211 (25 Nov): Consent → Selfie → Payment → ID check. */
+export type RegistrationStep = 'consent' | 'selfie' | 'payment' | 'id_check' | 'complete';
 export type RegistrationPaymentState = 'not_started' | 'pending' | 'confirming' | 'failed' | 'confirmed';
 
 export interface RegistrationLocked {
@@ -34,9 +35,11 @@ export interface RegistrationOpen {
   steps: { consent: boolean; selfie: boolean; idCheck: boolean; payment: boolean };
   /** Consent items already given and not withdrawn: not asked again (17 Nov). */
   consentGiven?: string[];
-  /** Another ID waits for the Team Lead's check (rev 154): no payment until it is approved. */
+  /** Another ID waits for the Team Lead's check (rev 154); the 30 days start when it is approved (rev 211). */
   idCheck: { waitingForTeamLead: boolean; lastResult: IdLastResult };
   stopped: 'under_18' | null;
+  /** Rev 211: paid, and no ID check has passed yet (older servers leave it out). */
+  paidWaitingForId?: boolean;
   waitingForTrade: boolean;
   termsAcceptedAt: string | null;
   /** Accepted an older version of the terms (rev 176): the blocking re-consent page first. */
@@ -46,6 +49,8 @@ export interface RegistrationOpen {
     amountPaise: number;
     upiReference: string | null;
     confirmedAt: string | null;
+    /** Rev 211: when the 30 days started (paid and ID passed); null until then. */
+    guaranteeStartsAt?: string | null;
     guaranteeEndsAt: string | null;
     paymentId: string | null;
   };

@@ -14,7 +14,7 @@ import { MessageModule } from '../message/message.module';
 import { OtpModule } from '../../common/otp/otp.module';
 import { AadhaarQrModule } from '../aadhaar-qr/aadhaar-qr.module';
 import { NotificationModule } from '../notification/notification.module';
-import { IdApprovedPaymentLinkService } from './id-approved-payment-link.service';
+import { JobSeekerFlowService } from './job-seeker-flow.service';
 import {
   CANDIDATE_PHOTO_STORAGE,
   sharedCandidatePhotoStorage,
@@ -27,7 +27,7 @@ import {
   providers: [
     JobSeekerService,
     RegistrationJourneyService,
-    IdApprovedPaymentLinkService,
+    JobSeekerFlowService,
     {
       provide: CANDIDATE_PHOTO_STORAGE,
       useFactory: () => process.env.CANDIDATE_PHOTO_STORAGE_MODE === 'supabase'

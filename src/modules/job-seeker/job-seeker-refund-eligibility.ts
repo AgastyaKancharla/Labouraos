@@ -3,6 +3,12 @@ import { refundGuaranteeDeadline } from '../../common/money/money';
 export interface JobSeekerRefundEligibilityInput {
   code: string;
   paymentReceivedAt: Date | null;
+  /**
+   * Rev 211 (25 Nov): when his 30 days started — paid AND ID passed. The day-30 refund counts from
+   * here, never from the payment alone. Null while "paid, waiting for ID": no day-30 refund (a refund
+   * before a passed ID check is a separate request, refund-id-not-verified.ts).
+   */
+  guaranteeStartsAt: Date | null;
   status: string;
   hasOfferRejectedHit: boolean;
   hasExistingRefund: boolean;
@@ -43,7 +49,8 @@ export interface JobSeekerRefundEligibilityResult {
  * - Must NOT be 'closed' (found a job on his own: no refund).
  * - Must NOT be 'refunded' (already refunded in this guarantee; paying again starts a new one).
  * - Must NOT have any 'offer_rejected' hit (rejecting a suitable offer forfeits guarantee).
- * - Refund can only be approved after guaranteeDays have elapsed from payment receipt (now > deadline).
+ * - The 30 days must have started (guaranteeStartsAt: paid and ID passed, rev 211); refund only after
+ *   guaranteeDays have elapsed from that start (now > deadline).
  * - No refund has already been issued.
  * - At approval: no offer still waiting for his reply, and the refund-check call recorded
  *   (an answer of "working elsewhere" means a job found on his own: no refund).
@@ -155,15 +162,26 @@ export function evaluateJobSeekerRefundEligibility(
   if (input.guaranteeDays === undefined) {
     throw new Error('guaranteeDays must be read from PricingPolicy');
   }
+  if (!input.guaranteeStartsAt) {
+    return {
+      eligible: false,
+      ineligibleReason: `Job seeker '${input.code}' has paid but his ID check has not passed, so his 30 days have not started. A refund before a passed ID check is recorded only when he asks (ID not verified).`,
+      amountPaise: 0,
+      daysOwed: 0,
+      daysElapsed: 0,
+      deadline: null,
+    };
+  }
+  const guaranteeStartsAt = input.guaranteeStartsAt;
   const guaranteeDays = input.guaranteeDays;
-  const deadline = refundGuaranteeDeadline(input.paymentReceivedAt, guaranteeDays);
+  const deadline = refundGuaranteeDeadline(guaranteeStartsAt, guaranteeDays);
   if (now.getTime() <= deadline.getTime()) {
     return {
       eligible: false,
-      ineligibleReason: `Refund can only be approved after ${guaranteeDays} days have elapsed from payment receipt (${deadline.toISOString()})`,
+      ineligibleReason: `Refund can only be approved after ${guaranteeDays} days have elapsed from the start of his 30 days (${deadline.toISOString()})`,
       amountPaise: 0,
       daysOwed: 0,
-      daysElapsed: Math.floor((now.getTime() - input.paymentReceivedAt.getTime()) / (24 * 60 * 60 * 1000)),
+      daysElapsed: Math.floor((now.getTime() - guaranteeStartsAt.getTime()) / (24 * 60 * 60 * 1000)),
       deadline,
     };
   }
@@ -213,7 +231,7 @@ export function evaluateJobSeekerRefundEligibility(
   }
 
   const daysOwed = Math.floor((now.getTime() - deadline.getTime()) / (24 * 60 * 60 * 1000));
-  const daysElapsed = Math.floor((now.getTime() - input.paymentReceivedAt.getTime()) / (24 * 60 * 60 * 1000));
+  const daysElapsed = Math.floor((now.getTime() - guaranteeStartsAt.getTime()) / (24 * 60 * 60 * 1000));
 
   if (input.activationPaymentPaise === undefined) {
     return {

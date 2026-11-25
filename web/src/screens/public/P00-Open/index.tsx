@@ -101,7 +101,7 @@ export default function RegistrationOpen() {
 
 function Resume({ status, onContinue }: { status: RegistrationOpen; onContinue: () => void }) {
   const t = useT();
-  const done = [status.steps.consent, status.steps.selfie, status.steps.idCheck, status.steps.payment].filter(Boolean).length;
+  const done = [status.steps.consent, status.steps.selfie, status.steps.payment, status.steps.idCheck].filter(Boolean).length;
   const paymentTag =
     status.payment.state === 'failed'
       ? { cls: 'tag ta', text: t('pub.resume.lastTryFailed') }
@@ -124,10 +124,11 @@ function Resume({ status, onContinue }: { status: RegistrationOpen; onContinue: 
       <div className="card lb-pub-steps">
         <Row label={t('pub.open.step1')}>{tag(status.steps.consent)}</Row>
         <Row label={t('pub.resume.selfie')}>{tag(status.steps.selfie)}</Row>
-        <Row label={t('pub.resume.id')}>{tag(status.steps.idCheck)}</Row>
-        <Row label={t('pub.open.step4')}>
+        {/* Rev 211: Consent → Selfie → Payment → ID check. */}
+        <Row label={t('pub.open.step3')}>
           {status.steps.payment ? <span className="tag tg">{t('pub.resume.done')}</span> : <span className={paymentTag.cls}>{paymentTag.text}</span>}
         </Row>
+        <Row label={t('pub.resume.id')}>{tag(status.steps.idCheck)}</Row>
       </div>
       <button type="button" className="btn bp full" onClick={onContinue}>
         {nextLabel[status.currentStep] ?? t('common.continue')}

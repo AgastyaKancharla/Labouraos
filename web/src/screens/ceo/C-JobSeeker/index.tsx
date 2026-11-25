@@ -32,7 +32,8 @@ interface Detail {
   phone: string;
   status: string;
   createdAt: string;
-  guarantee: { days: number; paidAt: string | null; daysLeft: number | null; floorPaise: number | null };
+  /** Rev 211: startsAt = when his 30 days started (paid and ID passed); paidWaitingForId while the ID check has not passed. */
+  guarantee: { days: number; paidAt: string | null; startsAt?: string | null; paidWaitingForId?: boolean; daysLeft: number | null; floorPaise: number | null };
   hits: { count: number; max: number };
   offersMade: number;
   interviews: number;
@@ -165,7 +166,9 @@ export default function JobSeekerDetail() {
       ? `${primary} · ${statusLabel.toLowerCase()} · ${g.daysLeft} days left on his ${g.days}-day guarantee${
           g.daysLeft <= 15 ? (ceo ? ` — needs a suitable offer now or he can claim ${formatINR(d.activation?.amountPaise ?? 0)}.` : ' — needs a suitable offer now.') : '.'
         }`
-      : `${primary} · ${statusLabel.toLowerCase()}`;
+      : g.paidWaitingForId
+        ? `${primary} · paid, waiting for ID — his ${g.days} days start when the ID check passes`
+        : `${primary} · ${statusLabel.toLowerCase()}`;
   const liveHits = d.hitList.filter((h) => !h.reversed && !h.superseded);
   // A Manager's answer carries no payments or refunds (no money for Managers).
   const refundsActive = (d.refunds ?? []).filter((r) => !['failed', 'rejected', 'reversed'].includes(r.status));
@@ -208,6 +211,17 @@ export default function JobSeekerDetail() {
                 success="Refund approved — Finance pays it and records the UTR"
               />
             )}
+            {ceo && g.paidWaitingForId && (
+              <ActionButton
+                label="Refund requested (ID not verified)"
+                title="Refund requested by the job seeker (ID not verified)"
+                description="Only when he contacted us and asked. Under 18, or an ID that could not be verified: the full ₹499 goes back to whoever paid. Never for a forged or altered ID."
+                disabled={!activation || refundsActive.length > 0}
+                reason={{ label: 'Note (optional)' }}
+                run={({ reason }) => api.post(`/job-seekers/${d.id}/refund`, { idNotVerified: true, ...(reason ? { reason } : {}) })}
+                success="Refund approved — Finance pays it to whoever paid"
+              />
+            )}
             {(role === 'ceo' || role === 'manager') && <BanButton subjectType="job_seeker" subjectId={d.id} name={d.name} />}
           </div>
         }
@@ -221,7 +235,7 @@ export default function JobSeekerDetail() {
       <StatGrid>
         <StatTile
           label={g.daysLeft !== null ? `${g.days}-day guarantee · ${g.daysLeft} days left` : `${g.days}-day guarantee`}
-          value={day !== null ? `Day ${Math.max(1, day)} of ${g.days}` : 'Not started'}
+          value={day !== null ? `Day ${Math.max(1, day)} of ${g.days}` : g.paidWaitingForId ? 'Paid, waiting for ID' : 'Not started'}
           tone={g.daysLeft !== null && g.daysLeft <= 5 ? 'orange' : 'cyan'}
         />
         <StatTile label="Hits" value={`${d.hits.count} of ${d.hits.max}`} tone={d.hits.count >= d.hits.max - 1 ? 'gold' : 'royal'} />
@@ -237,7 +251,7 @@ export default function JobSeekerDetail() {
             <StatTile label="Refunds" value={refundsActive.length} tone={refundsActive.length ? 'red' : 'royal'} />
           </>
         ) : (
-          <StatTile label="Registration" value={d.registration.paymentAt ? 'Complete' : 'In progress'} tone="good" />
+          <StatTile label="Registration" value={g.paidWaitingForId ? 'Paid, waiting for ID' : d.registration.paymentAt ? 'Complete' : 'In progress'} tone="good" />
         )}
       </StatGrid>
 

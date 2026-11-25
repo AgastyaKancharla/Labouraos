@@ -40,6 +40,7 @@ const SEEKER_STATUS: Record<string, [MessageKey, Tone]> = {
   lead: ['search.js.lead', 'amber'],
   consented: ['search.js.consented', 'amber'],
   pending_activation: ['search.js.pending_activation', 'amber'],
+  paid_waiting_id: ['search.js.paid_waiting_id', 'amber'],
   active: ['search.js.active', 'green'],
   paused: ['search.js.paused', 'neutral'],
   deactivated: ['search.js.deactivated', 'tomato'],

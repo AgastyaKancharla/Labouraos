@@ -17,6 +17,9 @@ export interface WaitingSeekerRow {
   locality: string | null;
   status: string;
   paidAt: string;
+  /** Rev 211: when his 30 days started (paid and ID passed). */
+  guaranteeStartsAt: string;
+  /** Days since his 30 days started (rev 211; the name is kept for the screens). */
   daysSincePaid: number;
   daysLeftOnGuarantee: number;
   registeredBy: { id: string; code: string; name: string } | null;
@@ -97,6 +100,8 @@ export class DaysToFirstInterviewService {
     const where: Prisma.JobSeekerWhereInput = {
       status: { in: ['active', 'paused'] },
       paymentReceivedAt: { not: null, lte: now },
+      // Rev 211: waiting for work counts from the start of his 30 days (paid and ID passed).
+      guaranteeStartsAt: { not: null, lte: now },
       anonymisedAt: null,
     };
     if (scope) where.registeredByStaffId = { in: scope };
@@ -110,6 +115,7 @@ export class DaysToFirstInterviewService {
         status: true,
         locality: true,
         paymentReceivedAt: true,
+        guaranteeStartsAt: true,
         trades: { select: { trade: true, isPrimary: true } },
         registeredBy: { select: { id: true, code: true, name: true } },
       },
@@ -133,7 +139,8 @@ export class DaysToFirstInterviewService {
       if (interviews.some((i) => i.jobSeekerId === seeker.id && i.proposedAt >= paidAt)) continue;
       // Refunded in this guarantee: no longer a paying job seeker waiting for work.
       if (refunds.some((r) => r.jobSeekerId === seeker.id && r.createdAt >= paidAt)) continue;
-      const daysSincePaid = Math.floor((now.getTime() - paidAt.getTime()) / DAY_MS);
+      // Days into his 30 days (from guaranteeStartsAt, rev 211); the field keeps its old name for the screens.
+      const daysSincePaid = Math.floor((now.getTime() - seeker.guaranteeStartsAt!.getTime()) / DAY_MS);
       rows.push({
         jobSeekerId: seeker.id,
         code: seeker.code,
@@ -142,6 +149,7 @@ export class DaysToFirstInterviewService {
         locality: seeker.locality,
         status: seeker.status,
         paidAt: paidAt.toISOString(),
+        guaranteeStartsAt: seeker.guaranteeStartsAt!.toISOString(),
         daysSincePaid,
         daysLeftOnGuarantee: policy.jobSeekerGuaranteeDays - daysSincePaid,
         registeredBy: seeker.registeredBy,

@@ -38,6 +38,8 @@ export interface RefundDueRow {
   phone?: string;
   tradeSkill?: string;
   paymentReceivedAt?: string;
+  /** Rev 211: when his 30 days started (paid and ID passed); the day-30 refund counts from here. */
+  guaranteeStartsAt?: string;
   joinedDate?: string | null;
   dropoutReportedAt?: string | null;
   dropoutDateCallerSupplied?: boolean;

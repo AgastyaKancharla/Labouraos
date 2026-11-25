@@ -37,7 +37,8 @@ export default function OtherPayer() {
   const s = status.data;
   const first = s?.name.split(/\s+/)[0] ?? '';
   const minutes = s?.paymentOnlyLinkMinutes ?? 15;
-  const reached = s ? [s.steps.consent, s.steps.selfie, s.steps.idCheck].every((step) => step.state === 'done') : true;
+  // Rev 211: Consent → Selfie → Payment → ID check — someone else can pay once consent and selfie are done.
+  const reached = s ? [s.steps.consent, s.steps.selfie].every((step) => step.state === 'done') : true;
 
   const send = useMutation({
     mutationFn: () => api.post<{ expiresAt: string; validMinutes?: number }>(`/job-seekers/${s!.id}/payment-only-link`, { phone: mobile, relation: relation || undefined }),

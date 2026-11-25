@@ -30,7 +30,7 @@ function rupees(paise: number | null | undefined): string | null {
 export function jobSeekerConsentScript(terms: ScriptTerms): string {
   const fee = rupees(terms.activationFeePaise);
   const days = terms.jobSeekerGuaranteeDays;
-  return `“This call is recorded. Laboura uses your details only to find you a job. Businesses see your first name, photo, age and experience — never your phone number. We check your ID and keep only the result, never your Aadhaar number. We send job updates by SMS and WhatsApp.\n\nYou’ll get one link. On it you tick these permissions yourself, take a selfie, check your ID and pay ${fee ?? 'the registration fee'}. If we don’t offer you a suitable job within ${days} days, you get ${fee ? `your ${fee}` : 'the fee'} back. If you turn down a suitable offer or stop answering, the guarantee ends.”`;
+  return `“This call is recorded. Laboura uses your details only to find you a job. Businesses see your first name, photo, age and experience — never your phone number. We check your ID and keep only the result, never your Aadhaar number. We send job updates by SMS and WhatsApp.\n\nYou’ll get one link. On it you tick these permissions yourself, take a selfie, pay ${fee ?? 'the registration fee'} and then check your ID. Your ${days} days start only after your government ID is verified. If we don’t offer you a suitable job within those ${days} days, you get ${fee ? `your ${fee}` : 'the fee'} back. If you turn down a suitable offer or stop answering, the guarantee ends.”`;
 }
 
 export function businessScript(terms: ScriptTerms): string {

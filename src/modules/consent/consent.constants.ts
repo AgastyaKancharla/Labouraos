@@ -33,7 +33,10 @@ export type ConsentMethod = (typeof CONSENT_METHODS)[number];
 /**
  * 1.1 (rev 154): the ID check notice names the live photo of another ID card.
  * 1.2 (rev 176, 15 Nov): the six ticks word for word from Job Seeker Terms
- * v1.1, Part B. Consents given under 1.0 / 1.1 stay valid until the person
- * accepts 1.2 (re-consent).
+ * v1.1, Part B.
+ * 1.3 (rev 211, 25 Nov): adds the line "Your 30 days start only after your
+ * government ID is verified. Until then your registration is paused."
+ * (GUARANTEE_START_NOTICE). Consents given under an older notice stay valid
+ * until the person accepts 1.3 (re-consent).
  */
-export const DEFAULT_NOTICE_VERSION = '1.2';
+export const DEFAULT_NOTICE_VERSION = '1.3';

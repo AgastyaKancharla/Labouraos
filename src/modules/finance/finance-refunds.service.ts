@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ID_NOT_VERIFIED_REFUND_KIND, ID_NOT_VERIFIED_REFUND_LABEL, maskedPayerPhone } from '../job-seeker/refund-id-not-verified';
 import { claimClockPaused, claimPausedMs } from '../placement/claim-clock';
 import { chainRefundOf, refundBasis } from '../placement/chain-refund';
 import { AuditService } from '../../common/audit/audit.service';
@@ -269,7 +270,7 @@ export class FinanceRefundsService {
         subject: business ? { id: biz?.id ?? null, code: biz?.code ?? null, name: biz?.name ?? null } : { id: p.jobSeeker?.id ?? null, code: p.jobSeeker?.code ?? null, name: p.jobSeeker?.name ?? null },
         placement: p.placement ? { id: p.placement.id, code: p.placement.code } : null,
         amountPaise: p.amount,
-        why: p.type === 'duplicate_refund' ? 'paid ₹499 twice' : p.outsideRules ? 'outside the rules (goodwill)' : business ? `no replacement in ${policy.replacementSearchDays} days` : `${policy.jobSeekerGuaranteeDays}-day guarantee ran out`,
+        why: p.type === 'duplicate_refund' ? 'paid ₹499 twice' : p.refundKind === ID_NOT_VERIFIED_REFUND_KIND ? ID_NOT_VERIFIED_REFUND_LABEL.toLowerCase() : p.outsideRules ? 'outside the rules (goodwill)' : business ? `no replacement in ${policy.replacementSearchDays} days` : `${policy.jobSeekerGuaranteeDays}-day guarantee ran out`,
         check: p.outsideRules ? { eligible: false, text: 'Outside the rules' } : { eligible: true, text: p.status === 'approved' ? 'Approved · ready to pay' : 'Eligible · checked by the system' },
         approval: withCeo ? 'with_ceo' : 'within_limit',
         approvalText: withCeo ? (CEO_REASON_TEXT[ceoReason ?? 'goodwill'] ?? 'Needs the CEO') : p.status === 'approved' && p.approvedByStaffId ? 'Approved' : 'Within your limit',
@@ -379,15 +380,46 @@ export class FinanceRefundsService {
     }
 
     if (!jobSeekerId) throw new NotFoundException('Refund not found');
-    const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: jobSeekerId }, select: { id: true, code: true, name: true, status: true, paymentReceivedAt: true } });
+    const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: jobSeekerId }, select: { id: true, code: true, name: true, status: true, paymentReceivedAt: true, guaranteeStartsAt: true } });
     if (!seeker) throw new NotFoundException('Job seeker not found');
     const [hits, account] = await Promise.all([
       this.prisma.jobSeekerHit.findMany({ where: { jobSeekerId, reversedAt: null, supersededAt: null }, select: { reason: true } }),
       this.prisma.payoutAccount.findFirst({ where: { ownerType: 'job_seeker', ownerId: jobSeekerId, status: { not: 'superseded' } }, orderBy: { createdAt: 'desc' }, select: { method: true, maskedValue: true, verifiedName: true, status: true } }),
     ]);
     const forfeiting = hits.filter((h) => ['offer_declined', 'offer_no_reply', 'interview_no_show', 'offer_rejected'].includes(h.reason)).length;
-    const ends = seeker.paymentReceivedAt ? new Date(seeker.paymentReceivedAt.getTime() + policy.jobSeekerGuaranteeDays * 86_400_000) : null;
+    // Rev 211: the 30 days run from guaranteeStartsAt (paid and ID passed), not from the payment.
+    const ends = seeker.guaranteeStartsAt ? new Date(seeker.guaranteeStartsAt.getTime() + policy.jobSeekerGuaranteeDays * 86_400_000) : null;
     const amount = row?.amountPaise ?? payment?.amount ?? policy.activationFeePaise;
+    // Rev 211: a refund before a passed ID check, recorded because he asked; it goes back to whoever paid.
+    const idNotVerified = payment?.refundKind === ID_NOT_VERIFIED_REFUND_KIND;
+    const payerLink = payment?.refundPayerLinkId
+      ? await this.prisma.publicLink.findUnique({ where: { id: payment.refundPayerLinkId }, select: { phone: true, metadata: true } })
+      : null;
+    const refundTo = payerLink
+      ? { kind: 'other_payer' as const, maskedPhone: maskedPayerPhone(payerLink.phone), relation: typeof (payerLink.metadata as { relation?: unknown } | null)?.relation === 'string' ? String((payerLink.metadata as { relation: string }).relation) : null }
+      : { kind: 'job_seeker' as const };
+    if (idNotVerified) {
+      return {
+        ref,
+        kind: 'job_seeker' as const,
+        row,
+        decided,
+        jobSeeker: { id: seeker.id, code: seeker.code, name: seeker.name, status: seeker.status },
+        why: ID_NOT_VERIFIED_REFUND_LABEL,
+        refundKind: ID_NOT_VERIFIED_REFUND_KIND,
+        refundTo,
+        amountPaise: amount,
+        checks: [
+          { ok: Boolean(seeker.paymentReceivedAt), text: seeker.paymentReceivedAt ? `Paid ${this.rupees(amount)} on ${seeker.paymentReceivedAt.toISOString().slice(0, 10)}` : 'No registration payment found' },
+          { ok: !seeker.guaranteeStartsAt, text: seeker.guaranteeStartsAt ? 'His ID check passed: the day-30 rules apply' : 'No ID check passed (his 30 days never started)' },
+          { ok: true, text: 'Asked for by the job seeker; never automatic' },
+          { ok: true, text: refundTo.kind === 'other_payer' ? `Goes back to the person who paid (${refundTo.maskedPhone ?? 'number not kept'}${refundTo.relation ? `, ${refundTo.relation}` : ''})` : 'Goes back to the job seeker (he paid himself)' },
+        ],
+        payTo: refundTo.kind === 'other_payer' ? null : account ? { method: account.method, masked: account.maskedValue, verifiedName: account.verifiedName, status: account.status } : null,
+        withinLimit: true,
+        limitPaise: limit,
+      };
+    }
     return {
       ref,
       kind: 'job_seeker' as const,
@@ -398,7 +430,7 @@ export class FinanceRefundsService {
       amountPaise: amount,
       checks: [
         { ok: Boolean(seeker.paymentReceivedAt), text: seeker.paymentReceivedAt ? `Paid ${this.rupees(policy.activationFeePaise)} on ${seeker.paymentReceivedAt.toISOString().slice(0, 10)}` : 'No registration payment found' },
-        { ok: Boolean(ends && ends <= now), text: ends ? `${policy.jobSeekerGuaranteeDays} days ended on ${ends.toISOString().slice(0, 10)}` : 'Guarantee not started' },
+        { ok: Boolean(ends && ends <= now), text: ends ? `${policy.jobSeekerGuaranteeDays} days ended on ${ends.toISOString().slice(0, 10)}` : 'Guarantee not started (ID check not passed)' },
         { ok: forfeiting === 0, text: forfeiting ? `${forfeiting} suitable offer${forfeiting === 1 ? '' : 's'} turned down or missed` : 'No suitable offer turned down' },
         { ok: hits.length < policy.maxHits && seeker.status !== 'deactivated', text: `Not deactivated (${hits.length} of ${policy.maxHits} hits)` },
         { ok: seeker.status !== 'placed', text: seeker.status === 'placed' ? 'Placed in a job' : 'Not placed' },

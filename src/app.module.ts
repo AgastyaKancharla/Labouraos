@@ -10,6 +10,7 @@ import { AnonymisationModule } from './common/anonymisation/anonymisation.module
 import { OtpModule } from './common/otp/otp.module';
 import { BypassChargeModule } from './modules/bypass-charge/bypass-charge.module';
 import { JobSeekerModule } from './modules/job-seeker/job-seeker.module';
+import { JobSeekerFlowEventsModule } from './modules/job-seeker/job-seeker-flow-events';
 import { ReferralModule } from './modules/referral/referral.module';
 import { PaymentModule } from './modules/payment/payment.module';
 import { JobsModule } from './jobs/jobs.module';
@@ -89,6 +90,7 @@ import { PublicRateLimitGuard } from './common/http/public-rate-limit.guard';
     RetentionModule,
     OtpModule,
     WhatsAppModule,
+    JobSeekerFlowEventsModule,
     JobSeekerModule,
     ReferralModule,
     PaymentModule,
