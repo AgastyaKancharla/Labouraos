@@ -15,11 +15,11 @@ import { PayoutAccountController } from './payout-account.controller';
  * Bank and UPI details, 11 Nov; Managers see no money).
  */
 describe('Payout account endpoints: CEO and Finance only', () => {
-  it('the routes declare exactly CEO and Finance', () => {
-    for (const handler of ['createPayoutLink', 'listAccountsForOwner'] as const) {
-      const roles = Reflect.getMetadata(ROLES_METADATA_KEY, PayoutAccountController.prototype[handler]);
-      expect([...roles].sort()).toEqual(['ceo', 'finance']);
-    }
+  it('the routes declare exactly CEO and Finance; only Finance sends the link (rev 211: no send buttons for the CEO)', () => {
+    const list = Reflect.getMetadata(ROLES_METADATA_KEY, PayoutAccountController.prototype.listAccountsForOwner);
+    expect([...list].sort()).toEqual(['ceo', 'finance']);
+    const send = Reflect.getMetadata(ROLES_METADATA_KEY, PayoutAccountController.prototype.createPayoutLink);
+    expect([...send]).toEqual(['finance']);
   });
 
   describe('over HTTP', () => {
@@ -96,12 +96,23 @@ describe('Payout account endpoints: CEO and Finance only', () => {
       expect(Array.isArray(list.body)).toBe(true);
     });
 
-    it('Finance sends a payout details link', async () => {
+    it('Finance sends a payout details link (WhatsApp first, or by SMS); the CEO cannot', async () => {
       const link = await request(app.getHttpServer())
         .post('/payout-accounts/links')
         .set('Authorization', `Bearer ${tokens.finance}`)
         .send({ ownerType: 'job_seeker', ownerId: seekerId });
       expect(link.status).toBe(201);
+      expect(link.body).toMatchObject({ linkSent: true, sentBy: 'whatsapp' });
+      const ceo = await request(app.getHttpServer())
+        .post('/payout-accounts/links')
+        .set('Authorization', `Bearer ${tokens.ceo}`)
+        .send({ ownerType: 'job_seeker', ownerId: seekerId, channel: 'sms' });
+      expect(ceo.status).toBe(403);
+      const bad = await request(app.getHttpServer())
+        .post('/payout-accounts/links')
+        .set('Authorization', `Bearer ${tokens.finance}`)
+        .send({ ownerType: 'job_seeker', ownerId: seekerId, channel: 'fax' });
+      expect(bad.status).toBe(400);
     });
   });
 });

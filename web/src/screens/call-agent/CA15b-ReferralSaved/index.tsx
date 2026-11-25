@@ -1,19 +1,18 @@
+import { SendLinkButtons } from '../../../components/SendLinkButtons';
 import { useSearchParams } from 'react-router-dom';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, ButtonLink } from '../../../components/Button';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { ButtonLink } from '../../../components/Button';
 import { Card } from '../../../components/Card';
 import { EmptyState, ErrorState } from '../../../components/ErrorState';
 import { SkeletonCard } from '../../../components/Skeleton';
 import { TopBar } from '../../../components/TopBar';
-import { useToast } from '../../../components/Toast';
 import { useT } from '../../../i18n/I18nProvider';
 import { api } from '../../../lib/api/client';
-import { isApiError } from '../../../lib/api/errors';
 import { formatTimeIST } from '../../../lib/format/date';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { qk, type ReferralHeader, type ReferralStatus, type Step } from '../_registration/api';
 import { StepLegend, StepRow } from '../_registration/kit';
-import { PartnerShareLink, SendOnWhatsAppButton } from '../CA18-WhatsApp/SendOnWhatsApp';
+import { PartnerShareLink } from '../CA18-WhatsApp/SendOnWhatsApp';
 import '../CA18-WhatsApp/whatsapp.css';
 import '../_registration/registration.css';
 
@@ -25,7 +24,6 @@ import '../_registration/registration.css';
 export default function ReferralSaved() {
   const t = useT();
   const to = useScreenPath();
-  const toast = useToast();
   const queryClient = useQueryClient();
   const [params] = useSearchParams();
   const id = params.get('id') ?? '';
@@ -41,14 +39,9 @@ export default function ReferralSaved() {
     enabled: Boolean(referralId),
     refetchInterval: (q) => (q.state.data?.currentStep === 'complete' ? false : 5000),
   });
-  const resend = useMutation({
-    mutationFn: () => api.post(`/referrals/${referralId}/terms-links`, { language: header.data?.language ?? 'en' }),
-    onSuccess: () => {
-      toast.success(t('reg.ref.linkResent'));
-      void queryClient.invalidateQueries({ queryKey: qk.referral(id) });
-    },
-    onError: (e) => toast.error(isApiError(e) ? e.message : t('error.server')),
-  });
+  // Rev 211: "Send on WhatsApp" (SMS as backup) or "Send by SMS".
+  const sendTerms = (channel: 'whatsapp' | 'sms') => api.post(`/referrals/${referralId}/terms-links`, { language: header.data?.language ?? 'en', channel });
+  const afterSend = () => void queryClient.invalidateQueries({ queryKey: qk.referral(id) });
 
   if (!id) return <div className="reg"><TopBar icon="referrals" iconTone="good" title={t('screen.CA15b-ReferralSaved')} /><EmptyState emoji="🤝" title={t('reg.ref.noneOpen')} /></div>;
   if (header.isLoading) return <div className="reg"><TopBar icon="referrals" iconTone="good" title={t('screen.CA15b-ReferralSaved')} /><SkeletonCard height={320} /></div>;
@@ -99,11 +92,8 @@ export default function ReferralSaved() {
         </ul>
         <div className="reg-actions" style={{ marginTop: 14 }}>
           {status.data?.currentStep !== 'complete' && (
-            <Button variant="primary" onClick={() => resend.mutate()} loading={resend.isPending}>
-              {t('reg.ref.resend')}
-            </Button>
+            <SendLinkButtons label={t('reg.ref.resend')} run={sendTerms} onSent={afterSend} disabled={!referralId} />
           )}
-          {status.data?.currentStep !== 'complete' && <SendOnWhatsAppButton kind="referral_terms" id={referralId} />}
           <ButtonLink to={to('CA03-Home')}>{t('reg.backHome')}</ButtonLink>
         </div>
         <p className="muted" style={{ marginTop: 10 }}>

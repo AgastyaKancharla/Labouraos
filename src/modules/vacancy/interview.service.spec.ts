@@ -1,3 +1,4 @@
+import { withSendingRules } from '../../test-support/messaging-double';
 import { BadRequestException } from '@nestjs/common';
 import { InterviewService, publicOwnerResult } from './interview.service';
 
@@ -96,7 +97,7 @@ describe('InterviewService booking', () => {
       businessBranch: { findUnique: jest.fn().mockResolvedValue(null) },
       $transaction: jest.fn().mockImplementation((callback: (client: TxMock) => unknown) => callback(tx)),
     };
-    messaging = { send: jest.fn().mockImplementation(({ channel }) => Promise.resolve({ id: `msg-${channel}`, status: 'sent' })) };
+    messaging = withSendingRules({ send: jest.fn().mockImplementation(({ channel }) => Promise.resolve({ id: `msg-${channel}`, status: 'sent' })) });
     matching = { match: jest.fn().mockResolvedValue({ total: 1, pageSize: 10, matches: [match] }) };
     hits = { recordHit: jest.fn().mockResolvedValue({}) };
     calls = { recordOutcome: jest.fn().mockResolvedValue({}) };
@@ -230,15 +231,18 @@ describe('InterviewService booking', () => {
 
     expect(result.status).toBe('confirmed');
     expect(tx.interview.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'confirmed' }) }));
-    expect(messaging.send).toHaveBeenCalledTimes(4);
+    // WhatsApp first, SMS as backup (rev 211): one message each to the candidate and the owner.
+    expect(messaging.send).toHaveBeenCalledTimes(2);
     const candidateMessages = messaging.send.mock.calls.filter(([input]) => input.subjectType === 'job_seeker');
-    expect(candidateMessages).toHaveLength(2);
+    expect(candidateMessages).toHaveLength(1);
+    expect(candidateMessages[0][0]).toMatchObject({ channel: 'whatsapp' });
     expect(candidateMessages[0][0]).toMatchObject({ template: 'interview_booked', variables: { businessName: 'PRIVATE BUSINESS', address: 'PRIVATE ADDRESS' } });
     const ownerMessages = messaging.send.mock.calls.filter(([input]) => input.subjectType === 'business');
-    expect(ownerMessages).toHaveLength(2);
+    expect(ownerMessages).toHaveLength(1);
     expect(ownerMessages[0][0]).toMatchObject({
       template: 'interview_candidate_for_owner',
-      variables: { firstName: 'Candidate', photoLink: '', interviewTime: expect.any(String) },
+      // No photo yet: Meta refuses an empty parameter, so the text says so.
+      variables: { firstName: 'Candidate', photoLink: 'not available yet.', interviewTime: expect.any(String) },
     });
     expect(Object.keys(ownerMessages[0][0].variables).sort()).toEqual(['firstName', 'interviewTime', 'photoLink']);
     expect(linkService.consumeInterviewActionToken).toHaveBeenCalledWith('single-use-token', 'candidate_reply');
@@ -430,9 +434,10 @@ describe('InterviewService booking', () => {
     prisma.interview.findMany.mockResolvedValue([interview]);
     const result = await service.processResultDeadlines(new Date('2026-11-12T06:30:00.000Z'));
     expect(result).toMatchObject({ requestsSent: 1, dueNotices: 1, overdueFlags: 1, closed: 1 });
-    expect(messaging.send).toHaveBeenCalledTimes(4);
-    expect(messaging.send.mock.calls.filter(([input]) => input.template === 'interview_result_request')).toHaveLength(2);
-    expect(messaging.send.mock.calls.filter(([input]) => input.template === 'candidate_offer_check')).toHaveLength(2);
+    // WhatsApp first, SMS as backup (rev 211): one message each.
+    expect(messaging.send).toHaveBeenCalledTimes(2);
+    expect(messaging.send.mock.calls.filter(([input]) => input.template === 'interview_result_request')).toHaveLength(1);
+    expect(messaging.send.mock.calls.filter(([input]) => input.template === 'candidate_offer_check')).toHaveLength(1);
     expect(reviewFlags.raise).toHaveBeenCalledWith(expect.objectContaining({ kind: 'interview_result_due' }));
     expect(reviewFlags.raise).toHaveBeenCalledWith(expect.objectContaining({ kind: 'interview_result_overdue' }));
     expect(reviewFlags.raise).toHaveBeenCalledWith(expect.objectContaining({ kind: 'interview_no_result' }));

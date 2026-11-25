@@ -33,7 +33,9 @@ describe('Business saved (CA13b)', () => {
     expect(screen.getByText(/waiting for Shankar to agree by OTP/)).toBeInTheDocument();
     expect(screen.getByText('Suggested: Kiran Kumar · Team Lead confirms')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Cook × 2 · ₹16,000–20,000 · from 16 Nov/ })).toHaveAttribute('href', '/call-agent/vacancies/new?draft=v1');
-    await user.click(screen.getByRole('button', { name: 'Resend agreement link' }));
-    await waitFor(() => expect(api.calls('POST /businesses/biz-1/agreement-links')[0]?.body).toEqual({}));
+    // Rev 211: "Send on WhatsApp" under the link's name (SMS as backup), or the small "Send by SMS".
+    expect(screen.getByText('Resend agreement link')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Send on WhatsApp' }));
+    await waitFor(() => expect(api.calls('POST /businesses/biz-1/agreement-links')[0]?.body).toEqual({ channel: 'whatsapp' }));
   });
 });

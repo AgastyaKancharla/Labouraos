@@ -67,6 +67,11 @@ export class WhatsAppFirstOtpProvider implements OtpProvider {
     private readonly now: () => Date = () => new Date(),
   ) {}
 
+  /** The SMS sender behind it (the mock or the real OTP vendor). */
+  get smsSender(): OtpProvider {
+    return this.inner;
+  }
+
   async sendOtp(phone: string, options?: OtpSendOptions): Promise<OtpSendResult> {
     const purpose = options?.purpose ?? 'job_seeker';
     if (options?.requestId?.startsWith(WHATSAPP_OTP_PREFIX)) {

@@ -9,7 +9,8 @@ import { OtpInput } from './OtpInput';
 
 /**
  * Send OTP → Verify → Resend after 30 seconds, at most 3 resends
- * (guide, Forms). The screen supplies how to send and verify — usually
+ * (guide, Forms). Codes go on WhatsApp first; after the same 30 seconds
+ * "Send by SMS" asks for the code by SMS instead (rev 211). The screen supplies how to send and verify — usually
  * `useStaffOtp(purpose)` below — and gets `onVerified(requestId)`.
  *
  * When the send call answers "already registered", the component shows
@@ -26,7 +27,7 @@ export type OtpSendResult =
 export interface OtpVerificationProps {
   /** 10-digit mobile number the code goes to. */
   mobile: string;
-  onSend: (mobile: string, previousRequestId?: string) => Promise<OtpSendResult>;
+  onSend: (mobile: string, previousRequestId?: string, channel?: 'sms') => Promise<OtpSendResult>;
   onVerify: (requestId: string, code: string) => Promise<void>;
   onVerified: (requestId: string) => void;
   onAlreadyRegistered?: (record: { type?: string; code?: string }) => void;
@@ -67,12 +68,13 @@ export function OtpVerification({ mobile, onSend, onVerify, onVerified, onAlread
     setError(null);
   }, [mobile]);
 
-  const send = async () => {
+  const [bySms, setBySms] = useState(false);
+  const send = async (channel?: 'sms') => {
     setBusy('send');
     setError(null);
     try {
       const previous = state.step === 'sent' ? state.requestId : undefined;
-      const result = await onSend(mobile, previous);
+      const result = channel ? await onSend(mobile, previous, channel) : await onSend(mobile, previous);
       if (result && 'alreadyRegistered' in result && result.alreadyRegistered) {
         setState({ step: 'duplicate', type: result.type, code: result.code });
         return;
@@ -88,6 +90,7 @@ export function OtpVerification({ mobile, onSend, onVerify, onVerified, onAlread
         result.resendsLeft ?? (state.step === 'sent' ? Math.max(0, state.resendsLeft - 1) : MAX_RESENDS);
       setNow(current);
       setCode('');
+      setBySms(channel === 'sms');
       setState({
         step: 'sent',
         requestId: result.requestId,
@@ -140,7 +143,7 @@ export function OtpVerification({ mobile, onSend, onVerify, onVerified, onAlread
   return (
     <div className="lb-otpflow">
       {state.step === 'idle' && (
-        <Button variant="primary" onClick={send} disabled={!canSend} loading={busy === 'send'}>
+        <Button variant="primary" onClick={() => void send()} disabled={!canSend} loading={busy === 'send'}>
           {t('form.otp.send')}
         </Button>
       )}
@@ -148,6 +151,7 @@ export function OtpVerification({ mobile, onSend, onVerify, onVerified, onAlread
         <>
           <span className="sub" id={statusId}>
             {t('form.otp.sentTo', { mobile: maskMobile(mobile) })}
+            {bySms ? ` ${t('otp.sentBySms')}` : ''}
           </span>
           <div className="lb-otpflow__row">
             <OtpInput
@@ -171,9 +175,12 @@ export function OtpVerification({ mobile, onSend, onVerify, onVerified, onAlread
               <span className="sub">{t('form.otp.resendIn', { seconds: Math.ceil((state.resendAt - now) / 1000) })}</span>
             ) : (
               <>
-                <Button onClick={send} loading={busy === 'send'}>
+                <Button onClick={() => void send()} loading={busy === 'send'}>
                   {t('form.otp.resend')}
                 </Button>
+                <button type="button" className="lb-send__sms" onClick={() => void send('sms')} disabled={busy === 'send'}>
+                  {t('otp.sendBySms')}
+                </button>
                 <span className="sub">{t('form.otp.resendsLeft', { count: state.resendsLeft })}</span>
               </>
             )}
@@ -195,8 +202,8 @@ export type OtpPurpose = 'job_seeker' | 'business_contact' | 'referral' | 'vacan
 
 export function useStaffOtp(purpose: OtpPurpose) {
   return {
-    send: (mobile: string, previousRequestId?: string) =>
-      api.post<OtpSendResult>('/otp/send', { phone: mobile, purpose, requestId: previousRequestId }),
+    send: (mobile: string, previousRequestId?: string, channel?: 'sms') =>
+      api.post<OtpSendResult>('/otp/send', { phone: mobile, purpose, requestId: previousRequestId, ...(channel ? { channel } : {}) }),
     verify: async (requestId: string, code: string) => {
       await api.post('/otp/verify', { requestId, code });
     },

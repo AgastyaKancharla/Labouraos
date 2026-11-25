@@ -60,8 +60,10 @@ describe('Registration step panel (CA08b / CA08c / CA08f)', () => {
     expect(screen.getByText(/Laundry \/ ironing 2 yrs \(new trade\)/)).toBeInTheDocument();
     expect(screen.getAllByText('Not sent yet')).toHaveLength(4);
     expect(screen.queryByRole('link', { name: 'Send payment link to another number' })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Send registration link' }));
-    await waitFor(() => expect(api.calls('POST /consent/links')[0]?.body).toEqual({ jobSeekerId: 'js-uuid' }));
+    // Rev 211: "Send on WhatsApp" under the link's name (SMS as backup), with a small "Send by SMS".
+    expect(screen.getByText('Send registration link')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Send on WhatsApp' }));
+    await waitFor(() => expect(api.calls('POST /consent/links')[0]?.body).toEqual({ jobSeekerId: 'js-uuid', channel: 'whatsapp' }));
     expect(await screen.findByText(/Registration link sent by SMS to \*\*\*\*\*\*2345/)).toBeInTheDocument();
   });
 
@@ -86,7 +88,8 @@ describe('Registration step panel (CA08b / CA08c / CA08f)', () => {
     render();
     expect(await screen.findByText(/All 5 required given · offers and news: no · 10:42/i)).toBeInTheDocument();
     expect(screen.getByText('Stuck: UPI failed twice (bank declined)')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Resend link — continues from ₹499 payment' })).toBeInTheDocument();
+    expect(screen.getByText('Resend link — continues from ₹499 payment')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send by SMS' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Send payment link to another number' })).toHaveAttribute('href', '/call-agent/register/job-seeker/js-uuid/other-payer');
     expect(screen.getByRole('link', { name: 'View signed consent' })).toHaveAttribute('href', '/call-agent/register/job-seeker/js-uuid/consent');
   });

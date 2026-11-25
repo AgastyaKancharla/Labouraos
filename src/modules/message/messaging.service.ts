@@ -375,7 +375,7 @@ export class MessagingService {
         status,
         deliveredAt: status === 'delivered' || status === 'read' ? existing.deliveredAt ?? now : existing.deliveredAt,
         failedAt: status === 'failed' ? now : existing.failedAt,
-        ...(status === 'failed' && errorCode ? { errorCode: String(errorCode) } : {}),
+        errorCode: status === 'failed' && errorCode ? String(errorCode) : existing.errorCode,
       },
     });
     if (status === 'delivered' || status === 'read') {

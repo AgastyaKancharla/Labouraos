@@ -65,9 +65,11 @@ describe('My job seekers (call agent console lists, 23 Nov)', () => {
     renderScreen(<MyJobSeekers />, path);
     await userEvent.click(within(await screen.findByTestId('seeker-row-JS-00101')).getByRole('button', { name: 'Send link' }));
     await waitFor(() => expect(api.calls('POST /consent/links')).toHaveLength(1));
-    expect(api.calls('POST /consent/links')[0]!.body).toEqual({ jobSeekerId: 'js1' });
-    await userEvent.click(within(screen.getByTestId('seeker-row-JS-00102')).getByRole('button', { name: 'Send payment link' }));
+    // Rev 211: the row's button sends on WhatsApp first; the small "Send by SMS" sends by SMS only.
+    expect(api.calls('POST /consent/links')[0]!.body).toEqual({ jobSeekerId: 'js1', channel: 'whatsapp' });
+    await userEvent.click(within(screen.getByTestId('seeker-row-JS-00102')).getByRole('button', { name: 'Send by SMS' }));
     await waitFor(() => expect(api.calls('POST /job-seekers/js2/resend-payment')).toHaveLength(1));
+    expect(api.calls('POST /job-seekers/js2/resend-payment')[0]!.body).toEqual({ channel: 'sms' });
     // The list is read again so the status line follows.
     await waitFor(() => expect(api.calls('GET /call-work/my/job-seekers').length).toBeGreaterThan(1));
   });

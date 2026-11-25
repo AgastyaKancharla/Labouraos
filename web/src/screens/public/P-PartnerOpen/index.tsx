@@ -92,7 +92,7 @@ export default function PartnerOpenPage() {
       </div>
       <OtpBlock
         maskedPhone={data.maskedPhone}
-        send={() => partnerApi.sendOtp(token)}
+        send={(channel) => partnerApi.sendOtp(token, channel)}
         requestId={requestId}
         onRequestId={setRequestId}
         code={code}

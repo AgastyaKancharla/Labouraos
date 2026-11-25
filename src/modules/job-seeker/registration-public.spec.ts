@@ -90,6 +90,6 @@ describe('Registration link endpoints for the public pages', () => {
     expect(sendOtp).not.toHaveBeenCalled();
     await controller.sendPaymentOnlyOtp('pay-tok');
     expect(limiter.claimSend).toHaveBeenLastCalledWith('hash-pay-tok', '+919811100000');
-    expect(sendOtp).toHaveBeenCalledWith('+919811100000', 'pay-tok');
+    expect(sendOtp).toHaveBeenCalledWith('+919811100000', 'pay-tok', undefined);
   });
 });

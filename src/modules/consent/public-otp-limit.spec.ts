@@ -37,7 +37,7 @@ describe('Public OTP sends through the consent link service', () => {
     await expect(service.sendOtp(token)).resolves.toMatchObject({ success: true, requestId: 'req-1' });
     expect(limiter.claimSend).toHaveBeenCalledWith(`hash-${token}`, phone, now);
     // AC-3: the code is bound to this link, never a plain (staff-style) code.
-    expect(otp.sendPublicPageOtp).toHaveBeenCalledWith(phone, token);
+    expect(otp.sendPublicPageOtp).toHaveBeenCalledWith(phone, token, undefined);
     expect(otp.sendOtp).not.toHaveBeenCalled();
   });
 
