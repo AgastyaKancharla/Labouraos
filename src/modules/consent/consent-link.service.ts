@@ -691,7 +691,7 @@ export class ConsentLinkService {
         },
         ownerPhotos: this.ownerPhotos
           ? await this.ownerPhotos.state(business.id)
-          : { selfie: true, shop: true, shopKind: business.runsFromHome ? 'fssai_with_owner' : 'shop_board', shopKinds: [], smallBusiness: false },
+          : { selfie: true, shop: true, shopKind: business.runsFromHome ? 'fssai_with_owner' : 'shop_board', shopKinds: [], smallBusiness: false, fromFieldVisit: false },
       };
     }
 

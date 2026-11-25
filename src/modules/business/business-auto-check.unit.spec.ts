@@ -71,6 +71,13 @@ function pass(): AutoCheckFacts {
 const failedCodes = (f: AutoCheckFacts) => decideAutoCheck(f).reasons.filter((r) => !r.ok).map((r) => r.code);
 
 describe('B3 automatic decision: every condition passes, or each failure is named', () => {
+  it('rev 213: an in-person field visit stands in for the owner photos and says so', () => {
+    const result = decideAutoCheck({ ...pass(), photosFromFieldVisit: true });
+    expect(result.passed).toBe(true);
+    expect(result.reasons.find((r) => r.code === 'owner_selfie')?.detail).toMatch(/in-person visit/);
+    expect(result.reasons.find((r) => r.code === 'shop_photo')?.detail).toMatch(/at the visit/);
+  });
+
   it('passes when everything holds, with the distance to the Maps pin', () => {
     const result = decideAutoCheck(pass());
     expect(result.passed).toBe(true);
@@ -181,6 +188,8 @@ describe('B9 small businesses with little paperwork', () => {
     };
     expect(smallBusinessMissing(done)).toEqual([]);
     expect(smallBusinessMissing({ ...done, videoCall: { done: false, at: null } })).toEqual(['the video call with the Team Lead']);
+    // Rev 213: onboarded in person by a field agent, no video call is needed.
+    expect(smallBusinessMissing({ ...done, videoCall: { done: false, at: null }, fieldVisit: true })).toEqual([]);
     expect(smallBusinessMissing({ ...done, ownerId: { ...done.ownerId, result: 'pending' } })).toEqual(["the Team Lead's check of the owner's ID"]);
     expect(smallBusinessMissing({ ...done, addressProof: { submitted: false, docType: null, result: null } })).toEqual(['an address proof']);
   });

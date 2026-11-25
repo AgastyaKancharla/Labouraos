@@ -30,6 +30,7 @@ import { onApprovedLeave } from '../field-visit/field-handover.service';
 import { AUTO_CHECK_FLAG, BusinessAutoCheckService, isHouseholdBusiness } from './business-auto-check.service';
 import { allowedShopKinds } from './business-paths';
 import { validProofCount } from './business-proofs';
+import { findFieldVisitProof } from './business-field-proof';
 import { smallBusinessMissing } from './business-owner-check.service';
 import { codedError } from '../../common/http/coded-error';
 
@@ -810,12 +811,17 @@ export class BusinessVerificationService {
         this.prisma.businessOwnerPhoto.findMany({ where: { businessId }, select: { kind: true } }),
       ]);
       const shopKinds: string[] = allowedShopKinds(business);
+      const fieldVisit = Boolean(await findFieldVisitProof(this.prisma, businessId));
       const missing = smallBusinessMissing({
+        fieldVisit,
         ownerId: { method: check?.idMethod ?? null, type: check?.idType ?? null, result: check?.idResult ?? null, last4: null, failureReason: null },
         businessProof: { given: Boolean(check?.businessProofKind) || validProofCount(business) >= 1, kind: check?.businessProofKind ?? null, fromProofs: validProofCount(business) >= 1 },
         addressProof: { submitted: Boolean(check?.addressSubmittedAt), docType: check?.addressDocType ?? null, result: check?.addressResult ?? null },
         videoCall: { done: Boolean(check?.videoCallDoneAt), at: null },
-        photos: { selfie: photos.some((p) => p.kind === 'owner_selfie'), workspace: photos.some((p) => shopKinds.includes(p.kind)) },
+        photos: {
+          selfie: fieldVisit || photos.some((p) => p.kind === 'owner_selfie'),
+          workspace: fieldVisit || photos.some((p) => shopKinds.includes(p.kind)),
+        },
       });
       if (missing.length) throw codedError(HttpStatus.BAD_REQUEST, 'SMALL_BUSINESS_CHECKS_MISSING', `Before approving this small business: ${missing.join(', ')}`, { missing });
     }

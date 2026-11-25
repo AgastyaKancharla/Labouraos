@@ -171,7 +171,7 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
 
     // 25 Nov (rev 211, B1): no signing before the owner's live selfie and shop photo (the code is not used up).
     // No proofs on this business: the small-business path (rev 212) — the second photo may be the workspace.
-    expect(page.body.ownerPhotos).toEqual({ selfie: false, shop: false, shopKind: 'shop_board', shopKinds: ['shop_board', 'workspace'], smallBusiness: true });
+    expect(page.body.ownerPhotos).toEqual({ selfie: false, shop: false, shopKind: 'shop_board', shopKinds: ['shop_board', 'workspace'], smallBusiness: true, fromFieldVisit: false });
     const noPhotos = await request(app.getHttpServer())
       .post('/consent/submit')
       .send({ token: linkToken, otpRequestId: otp.body.requestId, otpCode: code, signedName: 'Owner Test', purposes: ['agreement_terms', 'agreement_authority', 'call_recording'] })
