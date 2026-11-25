@@ -61,7 +61,7 @@ describe('FA10e the job seeker profile (Laboura Field lists, 22 Nov evening)', (
     expect(screen.getByTestId('fa10e-step-consent')).toHaveTextContent(/^✓Consent/);
     expect(screen.getByTestId('fa10e-step-idCheck')).toHaveTextContent(/^…ID check/);
     expect(screen.getByTestId('fa10e-details')).toHaveTextContent(/Also.*Helper.*Age.*27.*Speaks.*Kannada, Telugu.*Last job.*Cook · Udupi Hotel.*by you/);
-    expect(screen.getByTestId('fa10e-guarantee')).toHaveTextContent(/Starts when he pays/);
+    expect(screen.getByTestId('fa10e-guarantee')).toHaveTextContent(/Starts when he has paid and his ID is verified/);
     expect(screen.getByTestId('fa10e-history')).toHaveTextContent(/ID sent for checking.*Consent given.*Registration link sent.*Registered/);
     // No rupee amounts on the profile.
     expect(screen.queryByText(/₹/)).toBeNull();

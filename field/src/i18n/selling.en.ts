@@ -559,7 +559,7 @@ export const sellingEn = {
   'fa10b.paymentOnlyNote': 'It shows only the first name, JS- ID and ₹499, and works for {minutes} minutes.',
   'fa10b.paymentLinkLive': 'A payment-only link is live on another number.',
   'fa10b.preview': 'Preview what they’ll see',
-  'fa10b.previewBody': 'One SMS link. After an OTP to their own number: 1 consent (each purpose ticked separately) → 2 selfie (live camera) → 3 ID check → 4 terms and ₹499.',
+  'fa10b.previewBody': 'One SMS link. After an OTP to their own number: 1 consent (each purpose ticked separately) → 2 selfie (live camera) → 3 terms and ₹499 → 4 ID check. The 30 days start only after the ID check passes.',
   'fa10b.preview.she': 'Preview what she’ll see',
   'fa10b.preview.he': 'Preview what he’ll see',
   'fa10b.preview.consent': '1 Consent — each purpose ticked separately by them, confirmed by an OTP to their own number.',
