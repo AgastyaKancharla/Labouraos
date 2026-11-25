@@ -907,7 +907,7 @@ export class BusinessService {
         ? { gstVerified: result.verified, gstLegalName: result.legalName, gstStatus: result.status, gstCheckedAt: this.clock.now() }
         : { gstVerified: false, gstLegalName: null, gstStatus: 'lookup_failed', gstCheckedAt: this.clock.now() };
     }
-    const updated = await this.prisma.business.update({
+    await this.prisma.business.update({
       where: { id: businessId },
       data: {
         gstNumber: 'gstNumber' in next ? next.gstNumber : undefined,

@@ -1,7 +1,12 @@
-import { AutoCheckFacts, decideAutoCheck, failedReasonText, metresBetween, SHOP_PHOTO_MAX_METERS_FROM_PIN } from './business-auto-check';
-import { evaluateProofs, gstinCheckCharacter, isValidFssai, isValidGstin, isValidTradeLicence, isValidUdyam, proofFormatError, validProofCount } from './business-proofs';
 import { isHouseholdBusiness } from './business-auto-check.service';
 import { parseOwnerPhotoLocation, shopPhotoKind } from './business-owner-photo.service';
+import { vacancyCheckReasons } from '../vacancy/vacancy-tl-check';
+import { homeWorkplaceInterviewAllowed } from '../vacancy/interview.service';
+import { smallBusinessMissing } from './business-owner-check.service';
+import { allowedShopKinds, verificationPathOf } from './business-paths';
+import { businessStage } from '../signup-tracker/signup-stage';
+import { AutoCheckFacts, decideAutoCheck, failedReasonText, metresBetween, SHOP_PHOTO_MAX_METERS_FROM_PIN } from './business-auto-check';
+import { evaluateProofs, gstinCheckCharacter, isValidFssai, isValidGstin, isValidTradeLicence, isValidUdyam, proofFormatError, validProofCount } from './business-proofs';
 
 /** 25 Nov (rev 211): B2 proofs and the B3 automatic decision, as pure functions. */
 describe('B2 proofs: formats and the GSTIN check digit', () => {
@@ -136,5 +141,68 @@ describe('B3 automatic decision: every condition passes, or each failure is name
     expect(parseOwnerPhotoLocation({ latitude: '12.97', longitude: '77.59', accuracyMeters: '15' })).toEqual({ latitude: 12.97, longitude: 77.59, accuracyMeters: 15, status: 'recorded' });
     expect(parseOwnerPhotoLocation({ locationStatus: 'refused' })).toEqual(expect.objectContaining({ latitude: null, status: 'refused' }));
     expect(parseOwnerPhotoLocation({ latitude: 'abc', longitude: 77 })).toEqual(expect.objectContaining({ status: 'refused' }));
+  });
+});
+
+
+describe('B4 vacancy check: unusual salary for the trade or more than 5 openings', () => {
+  const base = { headcount: 1, salaryMinPaise: 1500000, salaryMaxPaise: 1800000, salaryPeriod: 'monthly', tradeSalaryMaxPaise: 2000000, salaryDaysPerMonth: 26 };
+  it('a normal vacancy goes live; 6 openings or a salary above 1.5 × the trade top waits for the Team Lead', () => {
+    expect(vacancyCheckReasons(base)).toEqual([]);
+    expect(vacancyCheckReasons({ ...base, headcount: 5 })).toEqual([]);
+    expect(vacancyCheckReasons({ ...base, headcount: 6 }).map((r) => r.code)).toEqual(['many_openings']);
+    expect(vacancyCheckReasons({ ...base, salaryMaxPaise: 3000000 })).toEqual([]); // exactly 1.5×
+    expect(vacancyCheckReasons({ ...base, salaryMaxPaise: 3000100 }).map((r) => r.code)).toEqual(['salary_high']);
+    // A daily wage is compared as a month (× salary days).
+    expect(vacancyCheckReasons({ ...base, salaryMinPaise: 120000, salaryMaxPaise: 120000, salaryPeriod: 'daily' }).map((r) => r.code)).toEqual(['salary_high']);
+    // A typed trade with no usual range: only the openings rule.
+    expect(vacancyCheckReasons({ ...base, salaryMaxPaise: 9000000, tradeSalaryMaxPaise: null })).toEqual([]);
+  });
+});
+
+describe('B9 small businesses with little paperwork', () => {
+  it('fewer than 2 proofs is the small-business path (households never); the workspace photo counts there', () => {
+    expect(verificationPathOf({ businessType: 'restaurant', gstNumber: '27AAPFU0939F1ZV' })).toBe('small_business');
+    expect(verificationPathOf({ businessType: 'restaurant', gstNumber: '27AAPFU0939F1ZV', fssaiNumber: '11521999000123' })).toBe('standard');
+    expect(verificationPathOf({ businessType: 'household' })).toBe('household');
+    expect(allowedShopKinds({ businessType: 'restaurant', runsFromHome: false, gstNumber: '27AAPFU0939F1ZV', fssaiNumber: '11521999000123' })).toEqual(['shop_board']);
+    expect(allowedShopKinds({ businessType: 'tailoring', runsFromHome: false })).toEqual(['shop_board', 'workspace']);
+    // A home food business may show the FSSAI licence held by the owner, or the workspace.
+    expect(allowedShopKinds({ businessType: 'catering', runsFromHome: true })).toEqual(['fssai_with_owner', 'workspace']);
+  });
+
+  it('the Team Lead approves only when ID, photos, a business proof, the checked address proof and the video call are in', () => {
+    const done = {
+      ownerId: { method: 'aadhaar_qr', type: 'aadhaar', result: 'verified', last4: '1234', failureReason: null },
+      businessProof: { given: true, kind: 'bank_upi', fromProofs: false },
+      addressProof: { submitted: true, docType: 'electricity_bill', result: 'checked' },
+      videoCall: { done: true, at: '2026-11-25T10:00:00Z' },
+      photos: { selfie: true, workspace: true },
+    };
+    expect(smallBusinessMissing(done)).toEqual([]);
+    expect(smallBusinessMissing({ ...done, videoCall: { done: false, at: null } })).toEqual(['the video call with the Team Lead']);
+    expect(smallBusinessMissing({ ...done, ownerId: { ...done.ownerId, result: 'pending' } })).toEqual(["the Team Lead's check of the owner's ID"]);
+    expect(smallBusinessMissing({ ...done, addressProof: { submitted: false, docType: null, result: null } })).toEqual(['an address proof']);
+  });
+
+  it('a workplace inside the owner\'s home: the first interview is by phone or at the Laboura office', () => {
+    expect(homeWorkplaceInterviewAllowed(true, 0, undefined)).toBe(false);
+    expect(homeWorkplaceInterviewAllowed(true, 0, 'at_shop')).toBe(false);
+    expect(homeWorkplaceInterviewAllowed(true, 0, 'phone')).toBe(true);
+    expect(homeWorkplaceInterviewAllowed(true, 0, 'laboura_office')).toBe(true);
+    expect(homeWorkplaceInterviewAllowed(true, 1, 'at_shop')).toBe(true);
+    expect(homeWorkplaceInterviewAllowed(false, 0, 'at_shop')).toBe(true);
+  });
+});
+
+describe('B5 signup stages: agreement → automatic check → Team Lead only when it failed', () => {
+  const f = { agreementSigned: false, visitBooked: false, visitRequested: false, visitDone: false, verified: false, rejected: false, household: false };
+  it('no visit steps for a business that is not a household', () => {
+    expect(businessStage(f)).toMatchObject({ stage: 'B', step: 'agreement', missing: ['agreement', 'approval'] });
+    expect(businessStage({ ...f, agreementSigned: true })).toMatchObject({ stage: 'C', step: 'approval' });
+    expect(businessStage({ ...f, agreementSigned: true, autoCheckFailed: true })).toMatchObject({ stage: 'E', stuckReason: 'Automatic check did not pass: Team Lead checking' });
+    expect(businessStage({ ...f, agreementSigned: true, verified: true })).toMatchObject({ stage: 'done', step: 'complete' });
+    // Households keep the visit stages.
+    expect(businessStage({ ...f, household: true, agreementSigned: true }).missing).toContain('visit_booked');
   });
 });
