@@ -1,3 +1,4 @@
+import { withSendingRules } from '../../test-support/messaging-double';
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { JobSeekerService } from './job-seeker.service';
 import { ReferralService } from '../referral/referral.service';
@@ -156,7 +157,7 @@ describe('Payment link to another number records who it is (CA08e)', () => {
 
   it('stores the relation with the link and in the audit row', async () => {
     const publicLinks = { revokeActive: jest.fn(), create: jest.fn().mockResolvedValue({ token: 'tok' }) };
-    const messaging = { send: jest.fn() };
+    const messaging = withSendingRules({ send: jest.fn() });
     const audit = { log: jest.fn() };
     const { service } = jobSeekerService(prisma(), { publicLinks, messaging, audit });
     const result = await service.createPaymentOnlyLink('s1', '9886041207', 'staff-1', 'brother');
@@ -167,14 +168,14 @@ describe('Payment link to another number records who it is (CA08e)', () => {
 
   it('still works without a relation', async () => {
     const publicLinks = { revokeActive: jest.fn(), create: jest.fn().mockResolvedValue({ token: 'tok' }) };
-    const { service } = jobSeekerService(prisma(), { publicLinks, messaging: { send: jest.fn() } });
+    const { service } = jobSeekerService(prisma(), { publicLinks, messaging: withSendingRules({ send: jest.fn() }) });
     await service.createPaymentOnlyLink('s1', '9886041207', 'staff-1');
     expect(publicLinks.create).toHaveBeenCalledWith(expect.objectContaining({ metadata: { paymentId: 'p1' } }));
   });
 
   it('saves the payer number as +91 and 10 digits and refuses the job seeker\'s own number in another spelling', async () => {
     const publicLinks = { revokeActive: jest.fn(), create: jest.fn().mockResolvedValue({ token: 'tok' }) };
-    const messaging = { send: jest.fn() };
+    const messaging = withSendingRules({ send: jest.fn() });
     const { service } = jobSeekerService(prisma(), { publicLinks, messaging });
     await service.createPaymentOnlyLink('s1', '098860-41207', 'staff-1');
     expect(publicLinks.create).toHaveBeenCalledWith(expect.objectContaining({ phone: '+919886041207' }));

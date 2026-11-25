@@ -5,7 +5,6 @@ import { apiError, mockApi, renderScreen, signInAs } from '../../../test/utils';
 import { NOW } from '../_lib/fixtures';
 import { draftKey, readDraft } from '../_registration/useDraft';
 import WhatsAppTab from './index';
-import { SendOnWhatsAppButton } from './SendOnWhatsApp';
 
 const row = (over: Record<string, unknown> = {}) => ({
   id: 'w1',
@@ -151,16 +150,5 @@ describe('WhatsApp tab (CA18, rev 202)', () => {
     expect(readDraft<Record<string, unknown>>(draftKey('job-seeker', staff.id))).toEqual({
       name: 'Manju Nath', heardFrom: 'referral_partner', prefillRef: 'ref-lead', referredBy: { id: 'rf1', code: 'RF-00007', name: 'Suresh Babu' },
     });
-  });
-});
-
-describe('Send on WhatsApp (next to Resend)', () => {
-  it('says when WhatsApp did not take it and it went by SMS', async () => {
-    const api = mockApi({ 'POST /whatsapp/send-link/referral-terms/rf1': { sentBy: 'sms' } });
-    signInAs('call_agent');
-    renderScreen(<SendOnWhatsAppButton kind="referral_terms" id="rf1" />, { portal: 'call-agent', path: '/call-agent/register/referral/saved' });
-    await userEvent.click(await screen.findByRole('button', { name: 'Send on WhatsApp' }));
-    expect(await screen.findByText('WhatsApp did not take it, so it went by SMS')).toBeInTheDocument();
-    expect(api.calls('POST /whatsapp/send-link/referral-terms/rf1')).toHaveLength(1);
   });
 });

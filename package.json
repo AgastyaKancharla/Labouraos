@@ -16,6 +16,7 @@
     "migrate:deploy": "prisma migrate deploy",
     "break-glass:ceo": "sh scripts/break-glass-ceo.sh",
     "backfill:pay-page-tokens": "sh scripts/backfill-pay-page-tokens.sh",
+    "whatsapp:sheet": "ts-node src/scripts/whatsapp-sheet.ts",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\"",
     "test": "jest --runInBand",
     "test:watch": "jest --watch",

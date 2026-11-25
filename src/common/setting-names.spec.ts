@@ -73,7 +73,7 @@ const RETIRED_NAMES = [
   'OVSE_KYC_API_KEY',
   'OVSE_KYC_API_URL',
   'WHATSAPP_API_KEY',
-  'WHATSAPP_BUSINESS_ACCOUNT_ID',
+  // WHATSAPP_BUSINESS_ACCOUNT_ID is back (Master Guide rev 211, 25 Nov): the provider reads the templates' review state with it.
   'TELEPHONY_API_KEY',
   'TRUSTED_PROXY_HOPS',
   // The outside ID-check provider is gone (guide, 14 Nov): Aadhaar by its QR in-house, other IDs by the Team Lead.

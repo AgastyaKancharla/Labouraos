@@ -499,14 +499,15 @@ describe('Laboura Field fixes of 21 Nov (server)', () => {
   // ------------------------------------------------------------- similar shop
 
   it('similar shop nearby: a business with a similar name within the duplicate radius is shown before a second record', async () => {
-    await makeBusiness({ suffix: '12', name: 'Lakshmi Tiffin Centre', latitude: 12.9316, longitude: 77.6301 });
+    // A spot no other test uses (the lookup reads at most 200 businesses in the box).
+    await makeBusiness({ suffix: '12', name: 'Lakshmi Tiffin Centre', latitude: 13.1037, longitude: 77.4129 });
     // Not seen anywhere today yet: nothing (the check is never a way to search the map).
-    expect((await http().get('/field-work/similar-shops').query({ name: 'Lakshmi Tiffin', lat: 12.9316, lng: 77.6301 }).set(authOf(fb1)).expect(200)).body.matches).toEqual([]);
+    expect((await http().get('/field-work/similar-shops').query({ name: 'Lakshmi Tiffin', lat: 13.1037, lng: 77.4129 }).set(authOf(fb1)).expect(200)).body.matches).toEqual([]);
     // Later than every visit this suite wrote (rows made without visitedAt carry the real time, which is
     // after the frozen clock once the calendar passes START): the check-in is his latest position today.
-    await prisma.fieldCheckIn.create({ data: { staffId: fa1.id, latitude: 12.9316, longitude: 77.6301, accuracyMeters: 8, checkedInAt: new Date(Math.max(Date.now(), clock.at.getTime()) + 60_000) } });
-    expect((await http().get('/field-work/similar-shops').query({ name: 'Lak', lat: 12.9316, lng: 77.6301 }).set(authOf(fa1)).expect(200)).body.matches).toEqual([]);
-    const near = await http().get('/field-work/similar-shops').query({ name: 'Lakshmi Tiffin', lat: 12.9316, lng: 77.6301 }).set(authOf(fa1)).expect(200);
+    await prisma.fieldCheckIn.create({ data: { staffId: fa1.id, latitude: 13.1037, longitude: 77.4129, accuracyMeters: 8, checkedInAt: new Date(Math.max(Date.now(), clock.at.getTime()) + 60_000) } });
+    expect((await http().get('/field-work/similar-shops').query({ name: 'Lak', lat: 13.1037, lng: 77.4129 }).set(authOf(fa1)).expect(200)).body.matches).toEqual([]);
+    const near = await http().get('/field-work/similar-shops').query({ name: 'Lakshmi Tiffin', lat: 13.1037, lng: 77.4129 }).set(authOf(fa1)).expect(200);
     expect(near.body.matches[0]).toMatchObject({ name: 'Lakshmi Tiffin Centre', distanceMeters: 0 });
     const far = await http().get('/field-work/similar-shops').query({ name: 'Lakshmi Tiffin', lat: 12.99, lng: 77.70 }).set(authOf(fa1)).expect(200);
     expect(far.body.matches).toEqual([]);

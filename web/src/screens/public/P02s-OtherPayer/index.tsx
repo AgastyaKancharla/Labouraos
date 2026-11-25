@@ -69,7 +69,7 @@ export default function OtherPayer() {
         <Muted>{t('pub.other.lockedIntro')}</Muted>
         <OtpBlock
           maskedPhone={info.data.maskedPhone}
-          send={() => paymentOnlyApi.sendOtp(token)}
+          send={(channel) => paymentOnlyApi.sendOtp(token, channel)}
           requestId={requestId}
           onRequestId={setRequestId}
           code={code}

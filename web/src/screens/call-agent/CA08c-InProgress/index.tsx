@@ -1,24 +1,22 @@
+import { SendLinkButtons } from '../../../components/SendLinkButtons';
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button, ButtonLink } from '../../../components/Button';
 import { Card } from '../../../components/Card';
 import { ErrorState } from '../../../components/ErrorState';
 import { Modal } from '../../../components/Modal';
 import { SkeletonCard } from '../../../components/Skeleton';
 import { TopBar } from '../../../components/TopBar';
-import { useToast } from '../../../components/Toast';
 import { useT } from '../../../i18n/I18nProvider';
 import type { MessageKey } from '../../../i18n/en';
 import { api } from '../../../lib/api/client';
-import { isApiError } from '../../../lib/api/errors';
 import { formatDateIST, formatDateTimeIST, formatTimeIST } from '../../../lib/format/date';
 import { formatINR } from '../../../lib/format/money';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { qk, useJobSeekerStatus, type JobSeekerStatus, type Step } from '../_registration/api';
 import { StepLegend, StepRow } from '../_registration/kit';
 import { GENDERS, PAYER_RELATIONS, SHIFT_PREFERENCES } from '../_registration/options';
-import { SendOnWhatsAppButton } from '../CA18-WhatsApp/SendOnWhatsApp';
 import '../_registration/registration.css';
 
 /**
@@ -44,21 +42,17 @@ export default function RegistrationProgress() {
   const t = useT();
   const { id = '' } = useParams();
   const to = useScreenPath();
-  const toast = useToast();
   const queryClient = useQueryClient();
   const status = useJobSeekerStatus(id);
   const [sent, setSent] = useState<{ expiresAt: string } | null>(null);
   const [preview, setPreview] = useState(false);
 
-  const sendLink = useMutation({
-    mutationFn: () => api.post<{ expiresAt: string }>('/consent/links', { jobSeekerId: status.data!.id }),
-    onSuccess: (res) => {
-      setSent(res);
-      toast.success(t('reg.status.linkSentToast'));
-      void queryClient.invalidateQueries({ queryKey: qk.jobSeeker(id) });
-    },
-    onError: (e) => toast.error(isApiError(e) ? e.message : t('error.server')),
-  });
+  // Rev 211: "Send on WhatsApp" (SMS as backup) or "Send by SMS"; the line under the buttons says which carried it.
+  const sendLink = (channel: 'whatsapp' | 'sms') => api.post<{ expiresAt: string }>('/consent/links', { jobSeekerId: status.data!.id, channel });
+  const afterSend = (res: unknown) => {
+    setSent(res as { expiresAt: string });
+    void queryClient.invalidateQueries({ queryKey: qk.jobSeeker(id) });
+  };
 
   if (status.isLoading) {
     return (
@@ -203,10 +197,11 @@ export default function RegistrationProgress() {
             </ButtonLink>
           ) : (
             <>
-              <Button variant="primary" onClick={() => sendLink.mutate()} loading={sendLink.isPending}>
-                {anySent ? t('reg.status.resendFrom', { step: t(NEXT_STEP_LABEL[s.nextStep]) }) : t('reg.status.sendLink')}
-              </Button>
-              <SendOnWhatsAppButton kind="registration" id={s.id} onSent={() => void queryClient.invalidateQueries({ queryKey: qk.jobSeeker(id) })} />
+              <SendLinkButtons
+                label={anySent ? t('reg.status.resendFrom', { step: t(NEXT_STEP_LABEL[s.nextStep]) }) : t('reg.status.sendLink')}
+                run={sendLink}
+                onSent={afterSend}
+              />
               {reachedPayment && steps.payment.state !== 'done' && (
                 <ButtonLink to={to('CA08e-OtherPayer', { id: s.id })}>{t('reg.status.otherNumber')}</ButtonLink>
               )}

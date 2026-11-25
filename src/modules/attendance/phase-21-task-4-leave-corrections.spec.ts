@@ -234,7 +234,8 @@ describe('Phase 21 Task 4: leave and corrections', () => {
     expect(month.body.paidLeaveDays).toEqual({ casual: 1, emergency: 1, total: 2 });
     expect(month.body.unpaidLeaveDays).toBe(3);
     const sms = await prisma.messageLog.findMany({
-      where: { subjectType: 'staff', subjectId: agent.id, template: 'attendance_leave_decision' },
+      // WhatsApp first, SMS as backup (rev 211): one WhatsApp per decision.
+      where: { subjectType: 'staff', subjectId: agent.id, template: 'attendance_leave_decision', channel: 'whatsapp' },
     });
     expect(sms.length).toBe(3);
   });

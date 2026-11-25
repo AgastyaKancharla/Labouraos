@@ -1,3 +1,4 @@
+import { linkChannel } from '../message/link-channel';
 import {
   Body,
   Controller,
@@ -104,12 +105,13 @@ export class PaymentController {
    */
   @Post(':id/resend')
   @UseGuards(JwtAuthGuard, RbacGuard)
-  @RequireRoles('ceo', 'call_agent', 'field_agent', 'finance')
-  async resendPayment(@Param('id') id: string, @Req() req: Request & { user: JwtPayload }) {
+  // Rev 211: the CEO has no send buttons; Finance and the account's agent do.
+  @RequireRoles('call_agent', 'field_agent', 'finance')
+  async resendPayment(@Param('id') id: string, @Req() req: Request & { user: JwtPayload }, @Body('channel') channel?: unknown) {
     if (req.user.role === 'call_agent' || req.user.role === 'field_agent') {
       await this.upiCollectionService.assertAccountAgentForPayment(id, req.user.sub);
     }
-    return this.upiCollectionService.resendRequest(id);
+    return this.upiCollectionService.resendRequest(id, undefined, undefined, undefined, linkChannel(channel));
   }
 
   @Post('request/:token/utr-hint')

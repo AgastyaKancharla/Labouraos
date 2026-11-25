@@ -90,6 +90,11 @@ export class WhatsAppEventsService {
     return { quietHours: false, done, ...nudges, leadNotices };
   }
 
+  /** WhatsApp first (rev 211): the SMS backups that are due (MessagingService.sweepSmsBackups). */
+  async sweepSmsBackups(now: Date = this.clock.now()) {
+    return this.messaging.sweepSmsBackups(now);
+  }
+
   private async alreadySent(subjectType: string, subjectId: string, templates: string[]) {
     return this.prisma.messageLog.findMany({
       where: { subjectType, subjectId, template: { in: templates }, status: { notIn: ['failed', 'blocked'] } },

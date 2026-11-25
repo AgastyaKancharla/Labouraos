@@ -115,7 +115,7 @@ export interface OtpSent {
 export const registrationApi = {
   status: (token: string, requestId?: string | null) =>
     api.get<RegistrationStatus>(`/registration/${enc(token)}/status`, { ...PUBLIC, query: { requestId: requestId ?? undefined } }),
-  sendOtp: (token: string) => api.post<OtpSent>('/consent/send-otp', { token }, PUBLIC),
+  sendOtp: (token: string, channel?: 'sms') => api.post<OtpSent>('/consent/send-otp', { token, ...(channel ? { channel } : {}) }, PUBLIC),
   verifyOtp: (token: string, requestId: string, code: string) =>
     api.post<RegistrationOpen>(`/registration/${enc(token)}/verify-otp`, { requestId, code }, PUBLIC),
   /** textHash: the hash of the terms text the page showed (the server refuses a text that changed meanwhile). */
@@ -224,7 +224,7 @@ export type PartnerPayout = { method: 'upi'; upiId: string } | { method: 'bank';
 export const partnerApi = {
   status: (token: string, requestId?: string | null) =>
     api.get<PartnerStatus>(`/referral-registration/${enc(token)}/status`, { ...PUBLIC, query: { requestId: requestId ?? undefined } }),
-  sendOtp: (token: string) => api.post<OtpSent>('/consent/send-otp', { token }, PUBLIC),
+  sendOtp: (token: string, channel?: 'sms') => api.post<OtpSent>('/consent/send-otp', { token, ...(channel ? { channel } : {}) }, PUBLIC),
   verifyOtp: (token: string, requestId: string, code: string) =>
     api.post<PartnerOpen>(`/referral-registration/${enc(token)}/verify-otp`, { requestId, code }, PUBLIC),
   terms: (token: string, requestId: string) => api.get<PartnerTerms>(`/referral-registration/${enc(token)}/terms`, { ...PUBLIC, query: { requestId } }),
@@ -318,7 +318,7 @@ export interface PaymentOnlyDetails {
 
 export const paymentOnlyApi = {
   info: (token: string) => api.get<PaymentOnlyInfo>(`/registration/payment/${enc(token)}/info`, PUBLIC),
-  sendOtp: (token: string) => api.post<OtpSent>(`/registration/payment/${enc(token)}/send-otp`, {}, PUBLIC),
+  sendOtp: (token: string, channel?: 'sms') => api.post<OtpSent>(`/registration/payment/${enc(token)}/send-otp`, channel ? { channel } : {}, PUBLIC),
   verify: (token: string, requestId: string, code: string) =>
     api.post<PaymentOnlyDetails>(`/registration/payment/${enc(token)}/verify-otp`, { requestId, code }, PUBLIC),
   details: (token: string, requestId: string) =>
@@ -392,7 +392,7 @@ export const interviewApi = {
   reply: (token: string, answer: 'yes' | 'no') =>
     api.post<{ status: string; booked?: BookedDetails }>(`/interviews/reply/${enc(token)}`, { answer }, PUBLIC),
   ownerResult: (token: string) => api.get<OwnerResultDetails>(`/interviews/result/${enc(token)}`, PUBLIC),
-  sendOwnerOtp: (token: string) => api.post<OtpSent>(`/interviews/result/${enc(token)}/otp`, {}, PUBLIC),
+  sendOwnerOtp: (token: string, channel?: 'sms') => api.post<OtpSent>(`/interviews/result/${enc(token)}/otp`, channel ? { channel } : {}, PUBLIC),
   submitOwnerResult: (
     token: string,
     body: { otpRequestId: string; otpCode: string; result: OwnerResult; resultReason?: string; selectedSalaryPaise?: number; selectedJoiningDate?: string },
@@ -497,7 +497,7 @@ export const agreementApi = {
   details: (token: string) => api.get<AgreementDetails>(`/consent/${enc(token)}`, PUBLIC),
   signed: (token: string) => api.get<SignedAgreement>(`/consent/${enc(token)}/signed`, PUBLIC),
   copyHref: (token: string) => `/consent/${enc(token)}/signed/copy`,
-  sendOtp: (token: string) => api.post<OtpSent>('/consent/send-otp', { token }, PUBLIC),
+  sendOtp: (token: string, channel?: 'sms') => api.post<OtpSent>('/consent/send-otp', { token, ...(channel ? { channel } : {}) }, PUBLIC),
   sign: (token: string, otpRequestId: string, otpCode: string, signedName: string) =>
     api.post<{ signedAt: string }>(
       '/consent/submit',
@@ -538,7 +538,7 @@ export interface VacancyConfirmed {
 
 export const vacancyConfirmApi = {
   details: (token: string) => api.get<VacancyConfirmDetails>(`/vacancy-confirm/${enc(token)}`, PUBLIC),
-  sendOtp: (token: string) => api.post<OtpSent>(`/vacancy-confirm/${enc(token)}/send-otp`, {}, PUBLIC),
+  sendOtp: (token: string, channel?: 'sms') => api.post<OtpSent>(`/vacancy-confirm/${enc(token)}/send-otp`, channel ? { channel } : {}, PUBLIC),
   confirm: (token: string, otpRequestId: string, code: string) =>
     api.post<VacancyConfirmed>(`/vacancy-confirm/${enc(token)}`, { otpRequestId, code }, PUBLIC),
 };

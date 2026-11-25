@@ -12,6 +12,8 @@ export interface WhatsAppMessageResult {
   phone: string;
   templateName: string;
   error?: string;
+  /** Meta's error code when it refused the message (131026: the number cannot get WhatsApp). */
+  errorCode?: string;
   timestamp: Date;
 }
 

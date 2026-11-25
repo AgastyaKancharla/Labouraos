@@ -190,12 +190,13 @@ export class CallFollowThroughService {
     });
     if (!seeker) return;
     const trade = seeker.trades.find((t) => t.isPrimary)?.trade ?? seeker.trades[0]?.trade ?? '';
-    await this.messaging.send({
-      channel: 'whatsapp',
+    // An exception to WhatsApp first (rev 211): "we tried to call you" always goes on WhatsApp and SMS.
+    await this.messaging.sendBoth({
       template: NO_ANSWER_WHATSAPP_TEMPLATE,
       subjectType: 'job_seeker',
       subjectId: jobSeekerId,
-      variables: { candidateName: seeker.name, trade },
+      // Meta refuses an empty parameter.
+      variables: { candidateName: seeker.name, trade: trade || 'suitable' },
     });
   }
 

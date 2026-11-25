@@ -432,7 +432,8 @@ describe('Call agent console: work queue, Call next, search, live channel, no-an
     // Missed at 11:30 IST: tried again this afternoon, at noon IST.
     expect(retries[0]!.dueAt.toISOString()).toBe('2026-11-11T06:30:00.000Z');
     const messages = await prisma.messageLog.findMany({ where: { subjectId: nearRefund.id, template: 'call_attempt_notice' } });
-    expect(messages).toHaveLength(1);
+    // "We tried to call you" goes on WhatsApp and SMS together, once (rev 211).
+    expect(messages.map((m) => m.channel).sort()).toEqual(['sms', 'whatsapp']);
 
     const screen = await request(app.getHttpServer())
       .get(`/call-work/calls/${call.id}`)

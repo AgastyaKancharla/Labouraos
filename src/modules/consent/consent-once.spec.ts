@@ -87,7 +87,18 @@ describe('Consent once per item, resume on a new link (17 Nov)', () => {
     return row;
   }
 
-  async function openLink(token: string, jobSeekerId: string) {
+  /** Rev 211: links are sent by agents (the CEO has no send buttons). */
+  async function agent() {
+    const suffix = randomUUID().replace(/-/g, '').slice(0, 10);
+    const row = await prisma.staff.create({
+      data: { code: `COA-${suffix}`, name: 'Consent once agent', email: `coa-${suffix}@laboura.local`, passwordHash: await bcrypt.hash('Consent-Password-1', 4), role: 'call_agent', status: 'active' },
+    });
+    staffIds.push(row.id);
+    return jwt.sign({ sub: row.id, role: row.role, code: row.code, email: row.email });
+  }
+
+  async function openLink(_ceoToken: string, jobSeekerId: string) {
+    const token = await agent();
     const { token: linkToken } = await withIssuedLinkToken(app, () => request(app.getHttpServer()).post('/consent/links').set('Authorization', `Bearer ${token}`).send({ jobSeekerId }));
     const sent = await request(app.getHttpServer()).post('/consent/send-otp').send({ token: linkToken });
     const requestId = sent.body.requestId as string;

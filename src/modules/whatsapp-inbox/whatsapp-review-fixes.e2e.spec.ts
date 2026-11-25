@@ -368,7 +368,7 @@ describe('WhatsApp review fixes (21 Nov): heard-from, linking, failed links, cal
     expect(JSON.stringify(prefill.body)).not.toContain(lead.phone.slice(3));
   });
 
-  it('S4: WhatsApp fails a link later: a fresh link goes by SMS and the agent who sent it gets a bell; the earlier link keeps working', async () => {
+  it('S4: WhatsApp fails a link later: the same link goes by SMS (its backup, rev 211) and the agent who sent it gets a bell; the link keeps working', async () => {
     const s = await makeSeeker({ registeredByStaffId: agentA.id });
     await app.get(ConsentLinkService).createLink(s.id, { sms: false });
     const before = await prisma.publicLink.count({ where: { subjectId: s.id, revokedAt: null } });
@@ -383,7 +383,9 @@ describe('WhatsApp review fixes (21 Nov): heard-from, linking, failed links, cal
     expect(smsLogs).toHaveLength(1);
     const bell = await prisma.notification.findFirst({ where: { recipientStaffId: agentA.id, kind: 'whatsapp_link_failed' } });
     expect(bell?.title).toContain('went by SMS');
-    expect(await prisma.publicLink.count({ where: { subjectId: s.id, revokedAt: null } })).toBe(before + 2);
+    // Rev 211: the backup SMS carries the same link (no second link is made).
+    expect(await prisma.publicLink.count({ where: { subjectId: s.id, revokedAt: null } })).toBe(before + 1);
+    expect((await prisma.messageLog.findUniqueOrThrow({ where: { id: waLog.id } })).smsBackup).toBe('sent');
     // Neither the WhatsApp link nor its SMS fallback is the message leg of a no-pickup hit.
     expect(await prisma.contactAttempt.count({ where: { jobSeekerId: s.id } })).toBe(0);
   });

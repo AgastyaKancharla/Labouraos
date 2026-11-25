@@ -1,16 +1,15 @@
+import { SendLinkButtons } from '../../../components/SendLinkButtons';
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, ButtonLink } from '../../../components/Button';
 import { Card } from '../../../components/Card';
 import { EmptyState, ErrorState } from '../../../components/ErrorState';
 import { Modal } from '../../../components/Modal';
 import { SkeletonCard } from '../../../components/Skeleton';
 import { TopBar } from '../../../components/TopBar';
-import { useToast } from '../../../components/Toast';
 import { useT } from '../../../i18n/I18nProvider';
 import { api } from '../../../lib/api/client';
-import { isApiError } from '../../../lib/api/errors';
 import { formatDayMonthIST, formatTimeIST } from '../../../lib/format/date';
 import { formatINR } from '../../../lib/format/money';
 import { useScreenPath } from '../../../portals/PortalContext';
@@ -18,7 +17,6 @@ import { qk, useScriptTerms, type BusinessStatus } from '../_registration/api';
 import { StepLegend, StepRow } from '../_registration/kit';
 import { CONTACT_ROLES } from '../_registration/options';
 import { businessScript } from '../_registration/scripts';
-import { SendOnWhatsAppButton } from '../CA18-WhatsApp/SendOnWhatsApp';
 import '../_registration/registration.css';
 
 /**
@@ -32,7 +30,6 @@ export default function BusinessSaved() {
   const t = useT();
   const scriptTerms = useScriptTerms();
   const to = useScreenPath();
-  const toast = useToast();
   const queryClient = useQueryClient();
   const [params] = useSearchParams();
   const id = params.get('id') ?? '';
@@ -44,15 +41,12 @@ export default function BusinessSaved() {
     enabled: Boolean(id),
     refetchInterval: (q) => (q.state.data?.steps.verified.state === 'done' ? false : 15000),
   });
-  const resend = useMutation({
-    mutationFn: () => api.post(`/businesses/${business.data!.id}/agreement-links`, {}),
-    onSuccess: () => {
-      setJustSent(true);
-      toast.success(t('reg.biz.agreementResent'));
-      void queryClient.invalidateQueries({ queryKey: qk.business(id) });
-    },
-    onError: (e) => toast.error(isApiError(e) ? e.message : t('error.server')),
-  });
+  // Rev 211: "Send on WhatsApp" (SMS as backup) or "Send by SMS"; the line under the buttons says which carried it.
+  const sendAgreement = (channel: 'whatsapp' | 'sms') => api.post(`/businesses/${business.data!.id}/agreement-links`, { channel });
+  const afterSend = () => {
+    setJustSent(true);
+    void queryClient.invalidateQueries({ queryKey: qk.business(id) });
+  };
 
   if (!id) return <div className="reg"><TopBar icon="businesses" iconTone="good" title={t('screen.CA13b-BusinessSaved')} /><EmptyState emoji="🏪" title={t('reg.biz.noneOpen')} /></div>;
   if (business.isLoading) return <div className="reg"><TopBar icon="businesses" iconTone="good" title={t('screen.CA13b-BusinessSaved')} /><SkeletonCard height={360} /></div>;
@@ -140,11 +134,13 @@ export default function BusinessSaved() {
         </ul>
         <div className="reg-actions" style={{ marginTop: 14 }}>
           {s.agreement.state !== 'done' && (
-            <Button variant="primary" onClick={() => resend.mutate()} loading={resend.isPending}>
-              {s.agreement.state === 'not_started' ? t('reg.biz.sendAgreement') : t('reg.biz.resendAgreement')}
-            </Button>
+            <SendLinkButtons
+              label={s.agreement.state === 'not_started' ? t('reg.biz.sendAgreement') : t('reg.biz.resendAgreement')}
+              run={sendAgreement}
+              onSent={afterSend}
+              disabled={!business.data?.id}
+            />
           )}
-          {s.agreement.state !== 'done' && <SendOnWhatsAppButton kind="agreement" id={business.data?.id} />}
           <ButtonLink to={to('CA03-Home')}>{t('reg.backHome')}</ButtonLink>
         </div>
         <p className="muted" style={{ marginTop: 10 }}>

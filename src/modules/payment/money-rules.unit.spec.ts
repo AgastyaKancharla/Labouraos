@@ -1,3 +1,4 @@
+import { withSendingRules } from '../../test-support/messaging-double';
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { idPassedMock } from '../../test-support/id-passed-mock';
 import * as crypto from 'crypto';
@@ -84,7 +85,7 @@ describe('Money rules (payment service)', () => {
       {} as PaymentProvider,
       new MockBankFeedProvider(),
       { current: jest.fn().mockResolvedValue(policy) } as unknown as PricingService,
-      { send: jest.fn().mockResolvedValue({ status: 'sent' }) } as unknown as MessagingService,
+      withSendingRules({ send: jest.fn().mockResolvedValue({ status: 'sent' }) }) as unknown as MessagingService,
       { raise } as unknown as ReviewFlagService,
     );
   });

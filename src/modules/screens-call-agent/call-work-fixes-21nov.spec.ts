@@ -468,7 +468,8 @@ describe('21 Nov fixes: call work and leads', () => {
     expect(await prisma.messageLog.count({ where: { subjectId: blocked.id, template: 'call_attempt_notice' } })).toBe(0);
     expect(await prisma.jobSeekerHit.count({ where: { jobSeekerId: blocked.id } })).toBe(0);
     // Someone not blocked gets the notice once, never again on the next run.
-    expect(await prisma.messageLog.count({ where: { subjectId: free.id, template: 'call_attempt_notice' } })).toBe(1);
+    // "We tried to call you" goes on WhatsApp and SMS together (rev 211), once.
+    expect(await prisma.messageLog.count({ where: { subjectId: free.id, template: 'call_attempt_notice' } })).toBe(2);
 
     // POST /consent/links (Resend): refused with a clear message.
     const resend = await request(app.getHttpServer()).post('/consent/links').set('Authorization', `Bearer ${token(agentA)}`).send({ jobSeekerId: blocked.id }).expect(409);

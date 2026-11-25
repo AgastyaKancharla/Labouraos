@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useI18n, type MessageKey } from '@/i18n';
-import { Banner, Button, Card, EmptyState, ErrorState, Icon, IconTile, ListRow, LoadingState, Screen, StatusChip, Text } from '@/components';
+import { Banner, Button, Card, EmptyState, ErrorState, Icon, IconTile, ListRow, LoadingState, Screen, StatusChip, Text, SendLinkButtons, type SendChannel } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { useAfterSave } from '@/api/refresh';
@@ -106,8 +106,9 @@ function StuckBox({ p, openScan, refetch }: { p: SeekerPage; openScan: boolean; 
     refetch();
     afterSave();
   };
-  const link = useMutation({ mutationFn: () => queue.live(() => selling.sendRegistrationLink(p.id)), onSuccess: done });
-  const pay = useMutation({ mutationFn: () => queue.live(() => people.sendPaymentLink(p.id)), onSuccess: done });
+  // Rev 211: "Send on WhatsApp" (SMS as backup) or the small "Send by SMS".
+  const link = useMutation({ mutationFn: (channel: SendChannel) => queue.live(() => selling.sendRegistrationLink(p.id, channel)), onSuccess: done });
+  const pay = useMutation({ mutationFn: (channel: SendChannel) => queue.live(() => people.sendPaymentLink(p.id, channel)), onSuccess: done });
   const registering = !['complete', 'closed'].includes(p.stuck.step) && !p.guarantee;
   const allDone = p.row.done && !p.row.action;
   return (
@@ -139,15 +140,14 @@ function StuckBox({ p, openScan, refetch }: { p: SeekerPage; openScan: boolean; 
             </>
           ) : null}
           {p.stuck.actions.includes('payment_link') ? (
-            <Button label={pay.isSuccess ? t('lists.sent') : t('lists.js.action.payment_link')} loading={pay.isPending} disabled={pay.isSuccess} onPress={() => pay.mutate()} testID="fa10e-payment-link" />
+            <SendLinkButtons label={pay.isSuccess ? t('lists.sent') : t('lists.js.action.payment_link')} disabled={pay.isSuccess || pay.isPending} run={(channel) => pay.mutateAsync(channel)} onError={() => undefined} testID="fa10e-payment-link" />
           ) : null}
           {p.stuck.actions.includes('registration_link') ? (
-            <Button
+            <SendLinkButtons
               label={link.isSuccess ? t('lists.sent') : p.row.status === 'link_not_sent' ? t('lists.js.action.sendLink') : t('lists.js.action.registration_link')}
-              variant={p.row.action === 'registration_link' ? 'primary' : 'secondary'}
-              loading={link.isPending}
-              disabled={link.isSuccess}
-              onPress={() => link.mutate()}
+              disabled={link.isSuccess || link.isPending}
+              run={(channel) => link.mutateAsync(channel)}
+              onError={() => undefined}
               testID="fa10e-resend"
             />
           ) : null}

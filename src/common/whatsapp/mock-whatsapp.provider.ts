@@ -11,12 +11,29 @@ export function maskForLog(phone: string): string {
 export class MockWhatsAppProvider implements WhatsAppProvider {
   private readonly logger = new Logger(MockWhatsAppProvider.name);
   public readonly sentMessages: WhatsAppMessageResult[] = [];
+  /** Tests only: numbers Meta would refuse, with Meta's error code (131026: not on WhatsApp). */
+  private readonly refused = new Map<string, string>();
+
+  /** Tests only: the next template messages to this number are refused with this Meta error code. */
+  refuseNumber(phone: string, errorCode = '131026'): void {
+    this.refused.set(String(phone ?? '').replace(/\D/g, '').slice(-10), errorCode);
+  }
+
+  /** Tests only: forget every refused number. */
+  clearRefused(): void {
+    this.refused.clear();
+  }
 
   async sendTemplateMessage(
     phone: string,
     templateName: string,
     params: Record<string, string>,
   ): Promise<WhatsAppMessageResult> {
+    const refusedCode = this.refused.get(String(phone ?? '').replace(/\D/g, '').slice(-10));
+    if (refusedCode) {
+      this.logger.log(`[MOCK WHATSAPP] Refused template '${templateName}' to ${maskForLog(phone)} (error ${refusedCode})`);
+      return { messageId: '', status: 'failed', phone, templateName, error: 'Message undeliverable', errorCode: refusedCode, timestamp: new Date() };
+    }
     const messageId = `wamid_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
     // M5: the log never carries the full number or any variable's value:
     // variables hold live link tokens (registration, payment, consent links)

@@ -365,16 +365,17 @@ export class ConsentLinkService {
   }
 
   /**
-   * Sends a link message: by SMS as before, or with `channel: 'whatsapp'` on
-   * WhatsApp first and by SMS when WhatsApp is not available or fails (21 Nov).
-   * Returns the channel that carried it, or null when nothing went out.
+   * Sends a link message (rev 211): WhatsApp first with SMS as backup
+   * (MessagingService.sendPreferWhatsApp), or by SMS only with `channel: 'sms'`
+   * ("Send by SMS", and the fallback for a WhatsApp that failed before the
+   * backup existed). Returns the channel that carried it, or null when nothing went out.
    */
   private async sendLinkMessage(
     channel: LinkSendChannel | undefined,
     message: { template: string; subjectType: string; subjectId: string; variables: Record<string, string> },
     extras: LinkSendExtras = {},
   ): Promise<'sms' | 'whatsapp' | null> {
-    if (channel === 'whatsapp') {
+    if (channel !== 'sms') {
       const result = await this.messagingService.sendPreferWhatsApp({
         ...message,
         contactAttempt: false,
@@ -790,7 +791,7 @@ export class ConsentLinkService {
     return status.needsReconsent ? status : null;
   }
 
-  async sendOtp(token: string) {
+  async sendOtp(token: string, channel?: 'whatsapp' | 'sms') {
     const record = await this.validateToken(token);
     let phone: string;
     if (record.subjectType === 'interview') {
@@ -814,7 +815,7 @@ export class ConsentLinkService {
     // Every public "Send code" costs an SMS: limited per link and per phone on the server.
     await this.otpLimiter.claimSend(this.publicLinks.hashToken(token), phone, this.clock.now());
     // AC-3: a code bound to this link; staff-sent codes are never accepted on it.
-    const otp = await this.otpService.sendPublicPageOtp(phone, token);
+    const otp = await this.otpService.sendPublicPageOtp(phone, token, channel);
     return { success: true, requestId: otp.requestId, phone: maskAgreementPhone(phone), ...testModeFields(otp) };
   }
 

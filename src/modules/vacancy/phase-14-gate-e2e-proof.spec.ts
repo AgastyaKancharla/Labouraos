@@ -1,3 +1,4 @@
+import { withSendingRules } from '../../test-support/messaging-double';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ConsentClock } from '../consent/consent-clock';
 import { PricingService } from '../pricing/pricing.service';
@@ -157,7 +158,7 @@ describe('Phase 14 gate end-to-end proof', () => {
       }),
     } as unknown as PricingService;
     const matching = new MatchingService(prisma, pricing, clock);
-    const messaging = { send: jest.fn().mockResolvedValue({ id: 'message-proof-1', status: 'sent' }) };
+    const messaging = withSendingRules({ send: jest.fn().mockResolvedValue({ id: 'message-proof-1', status: 'sent' }) });
     const introductions = new CandidateIntroductionService(prisma, matching, messaging as never, clock);
 
     const shortlist = await matching.match(vacancyId, { page: 1 });

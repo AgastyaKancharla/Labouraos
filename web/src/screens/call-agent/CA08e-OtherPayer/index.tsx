@@ -1,6 +1,7 @@
+import { SendLinkButtons, sentResultKey, type SendChannel } from '../../../components/SendLinkButtons';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button, ButtonLink } from '../../../components/Button';
 import { Card } from '../../../components/Card';
 import { Modal } from '../../../components/Modal';
@@ -9,7 +10,6 @@ import { useToast } from '../../../components/Toast';
 import { MobileField, SelectField } from '../../../components/fields';
 import { useT } from '../../../i18n/I18nProvider';
 import { api } from '../../../lib/api/client';
-import { isApiError } from '../../../lib/api/errors';
 import { isValidMobile } from '../../../lib/format/phone';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { qk, useJobSeekerStatus } from '../_registration/api';
@@ -40,15 +40,19 @@ export default function OtherPayer() {
   // Rev 211: Consent → Selfie → Payment → ID check — someone else can pay once consent and selfie are done.
   const reached = s ? [s.steps.consent, s.steps.selfie].every((step) => step.state === 'done') : true;
 
-  const send = useMutation({
-    mutationFn: () => api.post<{ expiresAt: string; validMinutes?: number }>(`/job-seekers/${s!.id}/payment-only-link`, { phone: mobile, relation: relation || undefined }),
-    onSuccess: (res) => {
-      toast.success(t('reg.payer.sent', { minutes: res?.validMinutes ?? minutes }));
-      void queryClient.invalidateQueries({ queryKey: qk.jobSeeker(id) });
-      navigate(to('CA08c-InProgress', { id }));
-    },
-    onError: (e) => setError(isApiError(e) ? e.message : t('error.server')),
-  });
+  // Rev 211: "Send on WhatsApp" (SMS as backup) or "Send by SMS"; the toast says which carried it.
+  const send = (channel: SendChannel) =>
+    api.post<{ expiresAt: string; validMinutes?: number; sentBy?: string | null }>(`/job-seekers/${s!.id}/payment-only-link`, { phone: mobile, relation: relation || undefined, channel });
+  const afterSend = (res: unknown, channel: SendChannel) => {
+    const key = sentResultKey(channel, res);
+    if (key === 'send.result.none') {
+      setError(t(key));
+      return;
+    }
+    toast.success(`${t('reg.payer.sent', { minutes: (res as { validMinutes?: number } | undefined)?.validMinutes ?? minutes })} ${t(key)}`);
+    void queryClient.invalidateQueries({ queryKey: qk.jobSeeker(id) });
+    navigate(to('CA08c-InProgress', { id }));
+  };
 
   return (
     <div className="reg">
@@ -69,9 +73,7 @@ export default function OtherPayer() {
         </div>
       )}
       <div className="reg-actions">
-        <Button variant="primary" onClick={() => send.mutate()} loading={send.isPending} disabled={!s || !reached || !isValidMobile(mobile)}>
-          {t('reg.payer.send')}
-        </Button>
+        <SendLinkButtons label={t('reg.payer.send')} run={send} onSent={afterSend} disabled={!s || !reached || !isValidMobile(mobile)} />
         <Button onClick={() => setPreview(true)}>{t('reg.payer.see')}</Button>
         <ButtonLink to={to('CA08c-InProgress', { id })}>{t('common.cancel')}</ButtonLink>
       </div>

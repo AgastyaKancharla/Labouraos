@@ -1,3 +1,4 @@
+import { withSendingRules } from '../../test-support/messaging-double';
 import { BadRequestException } from '@nestjs/common';
 import { PayoutAccountService } from './payout-account.service';
 import {
@@ -163,9 +164,9 @@ describe('Phase 18 Task 1: Payout Accounts', () => {
         (mockPrisma as typeof mockPrisma & { publicLinkRows: Map<string, unknown> }).publicLinkRows.get(where.tokenHash) ?? null,
       ));
 
-      mockMessagingService = {
+      mockMessagingService = withSendingRules({
         send: jest.fn().mockResolvedValue({ id: 'msg-1' }),
-      };
+      });
 
       mockAuditService = {
         log: jest.fn().mockResolvedValue(undefined),
@@ -208,7 +209,8 @@ describe('Phase 18 Task 1: Payout Accounts', () => {
       expect(res.linkSent).toBe(true);
       expect(mockMessagingService.send).toHaveBeenCalledWith(
         expect.objectContaining({
-          channel: 'sms',
+          // WhatsApp first, SMS as backup (rev 211).
+          channel: 'whatsapp',
           template: 'payout_details_link',
           subjectType: 'job_seeker',
           subjectId: 'js-1',
@@ -241,7 +243,7 @@ describe('Phase 18 Task 1: Payout Accounts', () => {
       const otp = await service.sendOtp(token);
       expect(otp.success).toBe(true);
       expect(otp.requestId).toBe('otp-req-123');
-      expect(mockOtpService.sendPublicPageOtp).toHaveBeenCalledWith('+919876543211', token);
+      expect(mockOtpService.sendPublicPageOtp).toHaveBeenCalledWith('+919876543211', token, undefined);
       expect(mockOtpService.sendOtp).not.toHaveBeenCalled();
     });
 

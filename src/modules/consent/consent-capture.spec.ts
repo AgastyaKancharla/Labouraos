@@ -213,7 +213,8 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
       where: { subjectId: candidateId, template: 'consent_link' },
     });
     expect(msg).not.toBeNull();
-    expect(msg?.channel).toBe('sms');
+    // WhatsApp first, SMS as backup (rev 211).
+    expect(msg?.channel).toBe('whatsapp');
     expect(messagingSend).toHaveBeenCalledWith(expect.objectContaining({
       template: 'consent_link',
       variables: { token: resToken, link: `https://app.laboura.in/p/register/${resToken}` },

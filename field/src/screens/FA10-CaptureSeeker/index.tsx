@@ -179,8 +179,8 @@ export default function CaptureSeekerScreen() {
               sendLabel={t('fa10.sendOtp')}
               verifyLabel={t('fa10.verify')}
               intro={() => t('fa10.otpSent', { last4: form.mobile.slice(-4) })}
-              send={async (prev) => {
-                const outcome = readOtpSend(await selling.sendOtp(form.mobile, prev));
+              send={async (prev, channel) => {
+                const outcome = readOtpSend(await selling.sendOtp(form.mobile, prev, channel));
                 if (outcome.kind === 'duplicate') {
                   setDuplicate({ code: outcome.code ?? undefined, type: outcome.type });
                   throw new UserFacingError(t('fa10.alreadyTitle'));

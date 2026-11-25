@@ -6,7 +6,7 @@ import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { useAfterSave } from '@/api/refresh';
 import type { JobSeekerStatus, Step } from '@/api/endpoints';
-import { Banner, Button, Card, Icon, IconTile, Text } from '@/components';
+import { Banner, Button, Card, Icon, IconTile, Text, SendLinkButtons, type SendChannel } from '@/components';
 import { MobileField, SelectField } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useI18n, type MessageKey } from '@/i18n';
@@ -77,15 +77,16 @@ function Panel({ status: s, variant, refetch: refetchStatus }: { status: JobSeek
   const [relation, setRelation] = useState('');
   const now = useNow();
   const linkLive = !!s.registrationLinkExpiresAt && new Date(s.registrationLinkExpiresAt).getTime() > now;
+  // Rev 211: "Send on WhatsApp" (SMS as backup) or the small "Send by SMS".
   const send = useMutation({
-    mutationFn: () => queue.live(() => selling.sendRegistrationLink(s.id)),
+    mutationFn: (channel: SendChannel) => queue.live(() => selling.sendRegistrationLink(s.id, channel)),
     onSuccess: () => {
       refetch();
       if (variant === 'saved') router.replace(pageRoutes.seekerProgress(s.id));
     },
   });
   const other = useMutation({
-    mutationFn: () => queue.live(() => selling.paymentOnlyLink(s.id, payer, relation || undefined)),
+    mutationFn: (channel: SendChannel) => queue.live(() => selling.paymentOnlyLink(s.id, payer, relation || undefined, channel)),
     onSuccess: () => {
       setOtherOpen(false);
       refetch();
@@ -176,10 +177,11 @@ function Panel({ status: s, variant, refetch: refetchStatus }: { status: JobSeek
       ) : null}
       {s.stage !== 'active' ? (
         <>
-          <Button
+          <SendLinkButtons
             label={linkLive ? t('fa10b.resend', { step: t(NEXT_STEP_KEYS[s.nextStep]) }) : t('fa10b.send')}
-            loading={send.isPending}
-            onPress={() => send.mutate()}
+            disabled={send.isPending}
+            run={(channel) => send.mutateAsync(channel)}
+            onError={() => undefined}
             testID="send-link"
           />
           {s.nextStep === 'payment' ? (
@@ -190,7 +192,13 @@ function Panel({ status: s, variant, refetch: refetchStatus }: { status: JobSeek
               <View style={styles.gap}>
                 <MobileField label={t('fa10b.payerMobile')} required value={payer} onChange={setPayer} testID="payer-mobile" />
                 <SelectField label={t('fa10b.relation')} value={relation} choices={RELATIONS.map((r) => ({ value: r, label: t(`fa10b.relation.${r}` as MessageKey) }))} onChange={setRelation} />
-                <Button label={t('fa10b.sendPaymentLink')} disabled={!/^[6-9]\d{9}$/.test(payer)} loading={other.isPending} onPress={() => other.mutate()} testID="send-payment-link" />
+                <SendLinkButtons
+                  label={t('fa10b.sendPaymentLink')}
+                  disabled={!/^[6-9]\d{9}$/.test(payer) || other.isPending}
+                  run={(channel) => other.mutateAsync(channel)}
+                  onError={() => undefined}
+                  testID="send-payment-link"
+                />
                 <Note>{t('fa10b.paymentOnlyNote', { minutes: s.paymentOnlyLinkMinutes ?? 15 })}</Note>
               </View>
             </Card>

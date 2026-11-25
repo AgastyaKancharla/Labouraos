@@ -1,3 +1,5 @@
+import { otpChannel } from '../../common/otp/otp.controller';
+import { LINK_SENDING_ROLES, linkChannel } from '../message/link-channel';
 import {
   BadRequestException,
   Body,
@@ -81,10 +83,10 @@ export class VacancyController {
   @RequirePermission('vacancy', 'write')
   async sendConfirmationCode(
     @Param('id') id: string,
-    @Body() body: { otpRequestId?: string },
+    @Body() body: { otpRequestId?: string; channel?: string },
     @Req() req: Request & { user: JwtPayload },
   ) {
-    return this.confirmationService.sendCode(id, { id: req.user.sub, role: req.user.role }, body?.otpRequestId);
+    return this.confirmationService.sendCode(id, { id: req.user.sub, role: req.user.role }, body?.otpRequestId, otpChannel(body?.channel));
   }
 
   @Post(':id/confirm')
@@ -99,13 +101,15 @@ export class VacancyController {
   }
 
   @Post(':id/confirmation-link')
-  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'team_lead')
+  // Rev 211: only agents press send buttons; Team Leads, Managers and the CEO keep the stuck view.
+  @RequireRoles(...LINK_SENDING_ROLES)
   @RequirePermission('vacancy', 'write')
   async sendConfirmationLink(
     @Param('id') id: string,
     @Req() req: Request & { user: JwtPayload },
+    @Body('channel') channel?: unknown,
   ) {
-    return this.confirmationService.sendLink(id, { id: req.user.sub, role: req.user.role });
+    return this.confirmationService.sendLink(id, { id: req.user.sub, role: req.user.role }, linkChannel(channel));
   }
 
   @Get(':id/candidates')
@@ -165,7 +169,8 @@ export class VacancyController {
       id,
       body?.jobSeekerIds ?? [],
       req.user.sub,
-      body?.channel ?? 'sms',
+      // WhatsApp first with SMS as backup unless 'Send by SMS' was picked (rev 211).
+      body?.channel ?? 'whatsapp',
     );
   }
 

@@ -91,6 +91,16 @@ const STAFF = { select: { name: true, code: true } } as const;
  * Lead: his team plus not-assigned in his city; a call agent: the city-wide
  * read call agents have for these records).
  */
+/**
+ * Team Leads, Managers and the CEO keep the view of where each person is stuck
+ * but get no send buttons (Master Guide rev 211): their answers list no actions,
+ * and the sending routes refuse them (link-channel.ts LINK_SENDING_ROLES).
+ */
+const NO_SEND_BUTTON_ROLES = new Set(['team_lead', 'manager', 'ceo']);
+function viewFor<T extends { actions: StuckAction[] }>(actor: { role: string }, view: T): T {
+  return NO_SEND_BUTTON_ROLES.has(actor.role) ? { ...view, actions: [] } : view;
+}
+
 @Injectable()
 export class ProfileStuckService {
   constructor(
@@ -105,9 +115,9 @@ export class ProfileStuckService {
     if (typeof ref !== 'string' || !ref.trim() || ref.length > 64) throw new BadRequestException('id is required');
     const scope = await this.scopeFor(actor);
     const byRef = isUuid(ref) ? { id: ref } : { code: ref.trim() };
-    if (kind === 'job_seeker') return this.jobSeeker(scope ? { AND: [scope.seeker, byRef] } : byRef);
-    if (kind === 'business') return this.business(scope ? { AND: [scope.business, byRef] } : byRef);
-    return this.referral(scope ? { AND: [scope.referral, byRef] } : byRef);
+    if (kind === 'job_seeker') return viewFor(actor, await this.jobSeeker(scope ? { AND: [scope.seeker, byRef] } : byRef));
+    if (kind === 'business') return viewFor(actor, await this.business(scope ? { AND: [scope.business, byRef] } : byRef));
+    return viewFor(actor, await this.referral(scope ? { AND: [scope.referral, byRef] } : byRef));
   }
 
   /**
@@ -182,7 +192,7 @@ export class ProfileStuckService {
       if (view.step !== 'complete') rows.push({ ...view, since: r.createdAt.toISOString() });
     }
     rows.sort((a, b) => b.since.localeCompare(a.since));
-    return { rows };
+    return { rows: rows.map((row) => viewFor(actor, row)) };
   }
 
   /** Whose records a "Stuck registrations" list holds (owner rules of own-team.ts / record-scope.ts). */

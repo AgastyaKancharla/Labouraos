@@ -18,6 +18,6 @@ describe('Branch vacancy payment links', () => {
     await service.resendPaymentLink('placement-id');
 
     expect(prisma.businessBranch.findUnique).toHaveBeenCalledWith({ where: { id: 'branch-id' } });
-    expect(upi.resendRequest).toHaveBeenCalledWith('payment-id', 'business', 'business-id', '+919999999999');
+    expect(upi.resendRequest).toHaveBeenCalledWith('payment-id', 'business', 'business-id', '+919999999999', undefined);
   });
 });

@@ -5,6 +5,7 @@ import { PrismaModule } from '../../common/prisma/prisma.module';
 import { WhatsAppModule } from '../../common/whatsapp/whatsapp.module';
 import { MessageController } from './message.controller';
 import { MessagingService } from './messaging.service';
+import { NoWhatsAppService } from './no-whatsapp.service';
 import { MockSmsProvider, RealSmsProvider, SMS_PROVIDER } from './sms.provider';
 
 @Module({
@@ -12,6 +13,7 @@ import { MockSmsProvider, RealSmsProvider, SMS_PROVIDER } from './sms.provider';
   controllers: [MessageController],
   providers: [
     MessagingService,
+    NoWhatsAppService,
     // Test site only: answers carry the link an SMS would have carried (common/test-mode-link.ts).
     { provide: APP_INTERCEPTOR, useClass: TestModeLinkInterceptor },
     {

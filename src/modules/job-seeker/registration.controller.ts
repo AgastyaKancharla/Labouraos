@@ -1,3 +1,4 @@
+import { otpChannel } from '../../common/otp/otp.controller';
 import {
   BadRequestException,
   Body,
@@ -197,11 +198,12 @@ export class RegistrationController {
 
   @Post('payment/:token/send-otp')
   @Public('token page: the job seeker, business or partner proves who they are with the link token')
-  async sendPaymentOnlyOtp(@Param('token') token: string) {
+  async sendPaymentOnlyOtp(@Param('token') token: string, @Body('channel') channel?: unknown) {
     const link = await this.requirePaymentLink(token);
     await this.otpLimiter.claimSend(this.publicLinks.hashToken(token), link.phone!);
     // AC-3: a code bound to this payment link; staff-sent codes are never accepted on it.
-    const result = await this.otp.sendPublicPageOtp(link.phone!, token);
+    // "Send by SMS" (rev 211) after 30 seconds; otherwise WhatsApp first.
+    const result = await this.otp.sendPublicPageOtp(link.phone!, token, otpChannel(channel));
     return { success: true, requestId: result.requestId, phone: maskPhone(link.phone!), resendAvailableAt: result.resendAvailableAt, ...testModeFields(result) };
   }
 
