@@ -110,6 +110,7 @@ export const managerSidebar: SidebarConfig = {
       label: 'navSection.admin',
       items: [
         { screen: 'MG-Flags', label: 'nav.flags', icon: 'flags', badge: { tone: 'tomato', source: 'review-flags' } },
+        { screen: 'T-Checks', label: 'nav.businessChecks', icon: 'businesses' },
         { screen: 'MG-LoginCodes', label: 'nav.loginCodes', icon: 'loginCodes', badge: { tone: 'gold', source: 'login-codes' } },
         { screen: 'MG-Staff', label: 'nav.staffAndAccess', icon: 'teamAndAccess' },
       ],
@@ -147,6 +148,7 @@ export const teamLeadSidebar: SidebarConfig = {
       items: [
         { screen: 'T-Quality', label: 'nav.listenToCalls', icon: 'listenToCalls', badge: { tone: 'gold', source: 'calls-to-review' } },
         { screen: 'T-Verify', label: 'nav.checkRegistrations', icon: 'checkRegistrations', badge: { tone: 'gold', source: 'registrations-to-check' } },
+        { screen: 'T-Checks', label: 'nav.businessChecks', icon: 'businesses' },
         { screen: 'T-Visits', label: 'nav.visitProof', icon: 'fieldOps', badge: { tone: 'tomato', source: 'visit-proof-to-check' } },
       ],
     },

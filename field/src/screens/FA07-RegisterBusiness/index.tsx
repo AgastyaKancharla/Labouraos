@@ -25,7 +25,7 @@ import { DatePicker } from '../_visits/DatePicker';
 import { useVisit } from '../_visits/useVisit';
 import { updateDraft, type VisitDraft } from '../_visits/visitDraft';
 import { StepHeader } from '../_visits/StepHeader';
-import { businessBody, DEFAULT_CITY, formErrors, type FormState, type MobileState, type StaffRow } from './form';
+import { businessBody, DEFAULT_CITY, formErrors, proofCount, type FormState, type MobileState, type StaffRow } from './form';
 
 const ROLES = ['owner', 'manager', 'hr', 'supervisor', 'other'] as const;
 const HEARD = ['toll_free_missed_call', 'ad', 'referral_partner', 'field_visit', 'social_media', 'whatsapp', 'walk_in', 'other'] as const;
@@ -588,6 +588,12 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
               </>
             ) : null}
             <Toggle label={t('fa07.noDocuments')} value={form.noDocuments} onChange={(v) => set({ noDocuments: v })} />
+            {/* 25 Nov (rev 211–212): the Maps link proof, a business run from home, and the proof count. */}
+            <TextField label={t('fa07.mapsLink')} placeholder="https://maps.app.goo.gl/…" value={form.mapsLink ?? ''} autoCapitalize="none" onChangeText={(v) => set({ mapsLink: v })} testID="fa07-maps-link" />
+            <Toggle label={t('fa07.runsFromHome')} value={Boolean(form.runsFromHome)} onChange={(v) => set({ runsFromHome: v })} />
+            <Text variant="muted" testID="fa07-proof-count">
+              {proofCount(form) >= 2 ? t('fa07.proofsEnough', { count: proofCount(form) }) : t('fa07.proofsSmall', { count: proofCount(form) })}
+            </Text>
           </Card>
         ) : null}
 

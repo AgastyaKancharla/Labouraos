@@ -10,6 +10,7 @@ import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { ConsentLinkService } from '../consent/consent-link.service';
 import { BusinessClock } from './business-clock';
+import { seedOwnerPhotos } from '../../test-support/owner-photos';
 
 class VerificationTestClock extends BusinessClock {
   current = new Date('2026-11-05T10:00:00.000Z');
@@ -113,9 +114,13 @@ describe('Phase 13 Task 5 — verification visits and verified gate', () => {
         verificationStatus: 'lead',
         leadCreatedByStaffId: nearestAgent.id,
         leadChannel: 'phone_call',
+        // 25 Nov (rev 211): a household keeps the verification visit and the Team Lead check unchanged.
+        businessType: 'household',
+        familyName: 'Verification Family',
       },
     });
     businessId = business.id;
+    await seedOwnerPhotos(prisma, business.id);
 
     const candidate = await prisma.jobSeeker.create({
       data: {

@@ -71,7 +71,8 @@ export default function VisitsScreen() {
               {q.data.planned.length === 0 ? <EmptyState compact emoji="🗓️" message={t('fa05.noPlanned')} /> : null}
               {q.data.planned.map((p, i) => {
                 // An app sign-up's visit (business_signup) is its verification visit: the same steps.
-                const verify = p.purpose === 'verification' || p.purpose === 'business_signup';
+                // 25 Nov (B6): a candidate-report check is a verification visit too (GPS, photos, owner code).
+                const verify = p.purpose === 'verification' || p.purpose === 'business_signup' || p.purpose === 'candidate_report';
                 const signup = p.purpose === 'business_signup';
                 // 21 Nov (M12): a verification visit is a job card with the address, owner, Call owner and Open in Maps.
                 if (verify && p.job) return <VerificationJobCard key={p.assignmentId} job={p.job} testID={`fa05-planned-${p.assignmentId}`} />;
@@ -96,7 +97,7 @@ export default function VisitsScreen() {
                     trailing={
                       <StatusChip
                         tone={signup ? 'green' : verify ? 'blue' : 'cyan'}
-                        label={signup ? t('fa05.signupVisit') : verify ? t('fa05.verification') : t('fa05.attendInterview')}
+                        label={signup ? t('fa05.signupVisit') : p.purpose === 'candidate_report' ? t('fa05.candidateReport') : verify ? t('fa05.verification') : t('fa05.attendInterview')}
                       />
                     }
                     onPress={() =>

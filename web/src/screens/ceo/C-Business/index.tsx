@@ -17,7 +17,7 @@ import type { ReactNode } from 'react';
 import { useRecordsPortal } from '../_kit/records';
 import { AssignmentLine, type Assignment } from '../_kit/assign';
 import { StuckBox } from '../../shared/StuckBox';
-import { ProfileHero, VisitPhotos } from '../_kit/photos';
+import { OwnerPhotos, ProfileHero, VisitPhotos } from '../_kit/photos';
 import { ActionButton } from '../_kit/actions';
 import { Kv, Timeline, dateOrDash, humanize } from '../_kit/kit';
 import { BUSINESS_STATUS, VACANCY_STATUS } from '../_kit/labels';
@@ -53,6 +53,15 @@ interface Detail {
   /** D6 (rev 176): CEO suspension. */
   suspension?: { since: string | null; until: string | null; permanent: boolean; reason: string | null } | null;
   noDocuments: boolean;
+  /** 25 Nov (rev 211–212): the automatic verification, the proofs and which owner photos exist. */
+  verification?: {
+    household: boolean;
+    runsFromHome: boolean;
+    autoCheck: { status: string; checkedAt: string | null; verifiedAutomatically: boolean; distanceMeters: number | null; reasons: { code: string; ok: boolean; detail: string }[]; failed: string[] } | null;
+    proofs: { key: string; label: string; given: boolean; valid: boolean; detail: string | null }[];
+    mapsPlaceName: string | null;
+    ownerPhotos: { selfie: { takenAt: string } | null; shop: { kind: string; takenAt: string } | null };
+  };
   createdAt: string;
   /** Money fields (fees, fee terms) are the CEO's only: a Manager's answer leaves them out. */
   tiles: { openVacancies: number; openPositions: number; candidatesShown: number; noBypassMonths: number; interviews: number; placements: number; feesPaidPaise?: number; replacementsUsed: number };
@@ -267,6 +276,32 @@ export default function BusinessDetail() {
           )}
         </Card>
       </div>
+      {d.verification && (
+        <Card title="Verification">
+          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'minmax(0, 1fr) auto' }} data-testid="verification-card">
+            <div>
+              <Kv
+                rows={[
+                  [
+                    'Automatic check',
+                    d.verification.household
+                      ? 'Household: verification visit and Team Lead check'
+                      : d.verification.autoCheck
+                        ? d.verification.autoCheck.status === 'passed'
+                          ? `Passed${d.verification.autoCheck.checkedAt ? ` ${formatDateIST(d.verification.autoCheck.checkedAt)}` : ''}${d.verification.autoCheck.verifiedAutomatically ? ' · verified automatically' : ''}`
+                          : `Did not pass: ${d.verification.autoCheck.failed.join('; ')}`
+                        : 'Not run yet (runs after the agreement)',
+                  ],
+                  ['Proofs', d.verification.proofs.map((p) => `${p.label}: ${p.valid ? 'valid' : p.given ? 'not valid' : 'not given'}`).join(' · ')],
+                  ['Shop photo to Maps pin', d.verification.autoCheck?.distanceMeters != null ? `${d.verification.autoCheck.distanceMeters} m` : '—'],
+                  ...(d.verification.runsFromHome ? ([['Workplace', "Inside the owner's home: first interview by phone or at the Laboura office"]] as [string, string][]) : []),
+                ]}
+              />
+            </div>
+            <OwnerPhotos businessId={d.id} businessName={d.name} />
+          </div>
+        </Card>
+      )}
       <Card title="Vacancies" flush>
         <div className="scrollx">
           <table>

@@ -6,6 +6,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { codedError } from '../../common/http/coded-error';
 import { createHash } from 'crypto';
@@ -31,6 +32,8 @@ import { formatIstDateTime } from '../legal/legal-dates';
 import { AGREEMENT_DOCUMENT_STORAGE, AgreementDocumentStorage } from './agreement-document.storage';
 import { AuditService } from '../../common/audit/audit.service';
 import { BusinessVerificationService } from '../business/business-verification.service';
+import { BusinessOwnerPhotoService, OwnerPhotoState } from '../business/business-owner-photo.service';
+import { BusinessOwnerCheckService } from '../business/business-owner-check.service';
 import { publicPageLink, PublicPage } from '../../common/public-pages';
 import { PublicOtpLimiter } from '../../common/public-otp-limiter.service';
 import { testModeFields } from '../../common/otp/otp-test-mode';
@@ -155,6 +158,8 @@ export type ConsentLinkDetails =
       /** The numbers frozen when the link was sent, for the summary cards (P04). */
       terms: { feePercent: number; gstPercent: number; noBypassMonths: number; noBypassPenaltyPercent: number };
       guarantee: { replacementWindowDays: number; maxFreeReplacements: number; replacementSearchDays: number };
+      /** 25 Nov (rev 211, B1): the owner's live photos taken so far; signing waits for both. */
+      ownerPhotos: OwnerPhotoState;
     }
   | {
       valid: true;
@@ -240,6 +245,8 @@ export class ConsentLinkService {
     @Inject(AGREEMENT_DOCUMENT_STORAGE) private readonly agreementStorage: AgreementDocumentStorage,
     private readonly otpLimiter: PublicOtpLimiter,
     private readonly legal: LegalDocumentService,
+    @Optional() private readonly ownerPhotos?: BusinessOwnerPhotoService,
+    @Optional() private readonly ownerChecks?: BusinessOwnerCheckService,
   ) {}
 
   setTtlMs(ttlMs: number) {
@@ -681,6 +688,9 @@ export class ConsentLinkService {
           maxFreeReplacements: policy.maxFreeReplacements,
           replacementSearchDays: policy.replacementSearchDays,
         },
+        ownerPhotos: this.ownerPhotos
+          ? await this.ownerPhotos.state(business.id)
+          : { selfie: true, shop: true, shopKind: business.runsFromHome ? 'fssai_with_owner' : 'shop_board', shopKinds: [], smallBusiness: false },
       };
     }
 
@@ -952,6 +962,8 @@ export class ConsentLinkService {
     }
     const signedName = dto.signedName?.trim();
     if (!signedName) throw new BadRequestException('signedName is required');
+    // 25 Nov (rev 211, B1): both owner photos first — before the code is used up.
+    await this.assertOwnerPhotosTaken(record.businessId);
     const otpValid = dto.otpCode
       ? await this.otpService.verifyOtp(dto.otpRequestId, dto.otpCode)
       : false;
@@ -1059,6 +1071,93 @@ export class ConsentLinkService {
       signedAt,
       grantedPurposes: requiredPurposes,
     };
+  }
+
+  /**
+   * 25 Nov (rev 211, B1): signing is refused until the owner's live selfie and the shop photo
+   * (name board; for a home business the owner holding the FSSAI licence) exist — taken on
+   * this page or by the field agent in Laboura Field (FA07b). Checked before the code is used up.
+   */
+  private async assertOwnerPhotosTaken(businessId: string): Promise<void> {
+    if (!this.ownerPhotos) return;
+    const state = await this.ownerPhotos.state(businessId);
+    if (state.selfie && state.shop) return;
+    const missing = [
+      state.selfie ? null : 'your live selfie',
+      state.shop ? null : state.smallBusiness || state.shopKinds.includes('workspace') ? 'a live photo of the place you work from' : "a live photo of the shop's name board",
+    ].filter(Boolean).join(' and ');
+    throw codedError(HttpStatus.BAD_REQUEST, 'OWNER_PHOTOS_REQUIRED', `Take ${missing} before signing`, { ownerPhotos: state });
+  }
+
+  /** 25 Nov (rev 211, B1): a live photo on the agreement link, before signing (the token proves the owner). */
+  async saveAgreementOwnerPhoto(token: string, input: { slot: 'selfie' | 'shop'; shopVariant?: string | null; photo: Buffer; captureSource: string | undefined; location: { latitude?: number | null; longitude?: number | null; accuracyMeters?: number | null; status?: string | null } }) {
+    const record = await this.validateToken(token);
+    if (record.subjectType !== 'business') throw new BadRequestException('A valid business agreement link is required');
+    if (!this.ownerPhotos) throw new BadRequestException('Owner photos are not available');
+    const saved = await this.ownerPhotos.save(record.businessId, {
+      slot: input.slot,
+      shopVariant: input.shopVariant ?? null,
+      photo: input.photo,
+      captureSource: input.captureSource,
+      location: input.location,
+      takenVia: 'agreement_link',
+      takenByStaffId: null,
+      auditActorId: record.createdByStaffId || 'system',
+    });
+    // A photo added after signing (an older agreement) may complete the automatic check.
+    await this.businessVerificationService.advanceToPendingTlCheckIfReady(record.businessId);
+    return { ...saved, ownerPhotos: await this.ownerPhotos.state(record.businessId) };
+  }
+
+  /**
+   * 25 Nov (rev 212, B9): the business an agreement link belongs to, for the small-business steps
+   * (owner's ID, address proof, business proof). Works before and after signing until the link
+   * expires; a revoked link or one without the owner's phone opens nothing.
+   */
+  async agreementBusinessForSmallBusinessSteps(token: string): Promise<{ businessId: string; createdByStaffId: string | null }> {
+    let row: Awaited<ReturnType<PublicLinkStoreService['findByTokenAllowingUsed']>>;
+    try {
+      row = await this.publicLinks.findByTokenAllowingUsed(token, this.clock.now());
+    } catch (error) {
+      if (error instanceof NotFoundException) throw new BadRequestException('Invalid consent link token');
+      throw error;
+    }
+    if (row.purpose !== 'business_agreement' || !row.phone) throw new BadRequestException('A valid business agreement link is required');
+    return { businessId: row.subjectId, createdByStaffId: row.createdByStaffId ?? null };
+  }
+
+  private requireOwnerChecks(): BusinessOwnerCheckService {
+    if (!this.ownerChecks) throw new BadRequestException('Small-business checks are not available');
+    return this.ownerChecks;
+  }
+
+  async smallBusinessState(token: string) {
+    const { businessId } = await this.agreementBusinessForSmallBusinessSteps(token);
+    return this.requireOwnerChecks().state(businessId);
+  }
+
+  async smallBusinessAadhaar(token: string, qrText: unknown) {
+    const { businessId, createdByStaffId } = await this.agreementBusinessForSmallBusinessSteps(token);
+    const result = await this.requireOwnerChecks().submitAadhaar(businessId, qrText, createdByStaffId || 'system');
+    return { ...result, state: await this.requireOwnerChecks().state(businessId) };
+  }
+
+  async smallBusinessOtherId(token: string, input: { idType: unknown; idNumber: unknown; nameOnId: unknown; photo: Buffer; captureSource: string | undefined }) {
+    const { businessId, createdByStaffId } = await this.agreementBusinessForSmallBusinessSteps(token);
+    await this.requireOwnerChecks().submitOtherId(businessId, input, createdByStaffId || 'system');
+    return this.requireOwnerChecks().state(businessId);
+  }
+
+  async smallBusinessAddressProof(token: string, input: { docType: unknown; photo: Buffer; captureSource: string | undefined }) {
+    const { businessId, createdByStaffId } = await this.agreementBusinessForSmallBusinessSteps(token);
+    await this.requireOwnerChecks().submitAddressProof(businessId, input, createdByStaffId || 'system');
+    return this.requireOwnerChecks().state(businessId);
+  }
+
+  async smallBusinessProof(token: string, input: { kind: unknown; value: unknown }) {
+    const { businessId, createdByStaffId } = await this.agreementBusinessForSmallBusinessSteps(token);
+    await this.requireOwnerChecks().setBusinessProof(businessId, input, createdByStaffId || 'system');
+    return this.requireOwnerChecks().state(businessId);
   }
 
   private async submitReferralTerms(

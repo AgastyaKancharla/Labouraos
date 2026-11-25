@@ -6,7 +6,7 @@ import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { useAfterSave } from '@/api/refresh';
 import type { BookingContext } from '@/api/endpoints';
-import { Button, Card, HeroCard, Screen } from '@/components';
+import { Button, Card, HeroCard, Screen, Banner } from '@/components';
 import { Checkbox, DateField, formatClock, SelectField, TimeField, todayKeyIst } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useI18n } from '@/i18n';
@@ -15,7 +15,7 @@ import { colors } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { ErrorBanner, Note, QueryView, useParam, useSellingSettings } from '../_selling';
 
-type InterviewType = 'at_shop' | 'walk_in' | 'phone';
+type InterviewType = 'at_shop' | 'walk_in' | 'phone' | 'laboura_office';
 
 /**
  * FA15g — Book interview. Date and time from a calendar and a clock (never
@@ -55,7 +55,9 @@ function Book({ ctx, jobSeekerId }: { ctx: BookingContext; jobSeekerId: string }
   const settings = useSellingSettings();
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
-  const [type, setType] = useState<InterviewType>('at_shop');
+  // 25 Nov (rev 212, B9f): a home workplace's first interview never takes the candidate to the home.
+  const homeFirst = Boolean(ctx.workplaceIsHome && ctx.firstInterviewHere);
+  const [type, setType] = useState<InterviewType>(homeFirst ? 'laboura_office' : 'at_shop');
   const [attend, setAttend] = useState(ctx.attendanceRequired);
   const willAttend = ctx.attendanceRequired || attend;
   const book = useMutation({
@@ -73,6 +75,7 @@ function Book({ ctx, jobSeekerId }: { ctx: BookingContext; jobSeekerId: string }
   return (
     <>
       <HeroCard title={t('fa15g.title')} subtitle={t('fa15g.who', { name: ctx.candidateFirstName, business: ctx.businessName, trade: ctx.trade })} emoji="📅" />
+      {ctx.workplaceIsHome ? <Banner tone="info" message={t('fa15g.homeWorkplace')} testID="fa15g-home-workplace" /> : null}
       <Card stripe accent="cyan">
         <View style={styles.gap}>
           <DateField label={t('fa15g.date')} required value={date} onChange={setDate} min={todayKeyIst()} testID="date" />
@@ -94,8 +97,13 @@ function Book({ ctx, jobSeekerId }: { ctx: BookingContext; jobSeekerId: string }
             onChange={setType}
             testID="type"
             choices={[
-              { value: 'at_shop', label: t('fa15g.atShop') },
-              { value: 'walk_in', label: t('fa15g.walkIn', { start: formatClock(ctx.walkInStart), end: formatClock(ctx.walkInEnd) }) },
+              ...(homeFirst
+                ? []
+                : [
+                    { value: 'at_shop' as const, label: t('fa15g.atShop') },
+                    { value: 'walk_in' as const, label: t('fa15g.walkIn', { start: formatClock(ctx.walkInStart), end: formatClock(ctx.walkInEnd) }) },
+                  ]),
+              { value: 'laboura_office' as const, label: t('fa15g.type.laboura_office') },
               ...(ctx.threeWayCalls ? [{ value: 'phone' as const, label: t('fa15g.phone') }] : []),
             ]}
             hint={ctx.threeWayCalls ? undefined : t('fa15g.phoneOff')}

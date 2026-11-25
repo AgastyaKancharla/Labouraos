@@ -1,4 +1,5 @@
 import { OwnTeam, businessesOwnedBy } from '../../common/rbac/own-team';
+import { isVacancyWaitingForTeamLead, VACANCY_WAITS_FOR_TEAM_LEAD_MESSAGE } from './vacancy-confirmation.service';
 import {
   BadRequestException,
   ConflictException,
@@ -69,7 +70,8 @@ export const VACANCY_SALARY_PERIODS = ['monthly', 'daily'] as const;
 const MINIMUM_WAGE_FIELDS = ['tradeSkill', 'salaryMinPaise', 'salaryMaxPaise', 'salaryPeriod', 'headcount'];
 
 /** Statuses a vacancy can be closed from (POST /vacancies/:id/close). */
-export const CLOSABLE_VACANCY_STATUSES = ['open', 'draft', 'awaiting_confirmation'];
+// pending_tl_check (25 Nov, B4): confirmed, waiting for the Team Lead's vacancy check.
+export const CLOSABLE_VACANCY_STATUSES = ['open', 'draft', 'awaiting_confirmation', 'pending_tl_check'];
 
 @Injectable()
 export class VacancyService {
@@ -671,6 +673,8 @@ export class VacancyService {
     if (vacancy.status === 'draft' || vacancy.status === 'awaiting_confirmation') {
       throw new BadRequestException('Candidates are shown only after the contact person confirms this vacancy by OTP');
     }
+    // 25 Nov (rev 211, B4): an unusual vacancy waits for the Team Lead's check first.
+    if (isVacancyWaitingForTeamLead(vacancy.status)) throw new BadRequestException(VACANCY_WAITS_FOR_TEAM_LEAD_MESSAGE);
 
     const businessAccess = businessCandidateAccess(vacancy.business);
     if (!businessAccess.allowed) {

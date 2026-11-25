@@ -65,6 +65,10 @@ export interface FormState {
   licenceNumber: string;
   pan: string;
   noDocuments: boolean;
+  /** 25 Nov (rev 211, B2): a Google Maps link to the shop, one of the proofs. Older drafts have none. */
+  mapsLink?: string;
+  /** 25 Nov (rev 211, B1): runs from the owner's home (not a household hiring help). Older drafts have none. */
+  runsFromHome?: boolean;
   staff: StaffRow[];
 }
 
@@ -73,6 +77,14 @@ export const DEFAULT_CITY = 'Bengaluru';
 const OTHER_TRADE = '__other__';
 const GSTIN = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 const PAN = /^[A-Z]{5}\d{4}[A-Z]$/;
+
+/** 25 Nov (rev 211, B2): how many of the 3 proofs the form has; fewer than 2 → the small-business checks. */
+export function proofCount(form: Pick<FormState, 'gstin' | 'fssai' | 'licenceNumber' | 'mapsLink'>): number {
+  const gst = GSTIN.test(form.gstin.trim().toUpperCase()) ? 1 : 0;
+  const licence = form.fssai.trim().length === 14 || form.licenceNumber.trim().length >= 5 ? 1 : 0;
+  const maps = /^https?:\/\/(www\.)?(google\.(com|co\.in)\/maps|maps\.google\.(com|co\.in)|maps\.app\.goo\.gl|goo\.gl\/maps)/i.test((form.mapsLink ?? '').trim()) ? 1 : 0;
+  return gst + licence + maps;
+}
 
 export function paise(rupeesText: string): number | null {
   const digits = rupeesText.replace(/\D/g, '');
@@ -166,6 +178,8 @@ export function businessBody(form: FormState, visitId: string | null): Record<st
           ...(form.licenceNumber.trim() ? { [form.licenceKind]: form.licenceNumber.trim() } : {}),
           ...(form.pan.trim() ? { pan: form.pan.trim() } : {}),
         }),
+    ...(!household && (form.mapsLink ?? '').trim() ? { mapsLink: (form.mapsLink ?? '').trim() } : {}),
+    ...(!household && form.runsFromHome ? { runsFromHome: true } : {}),
     ...(form.branches.length
       ? {
           branches: form.branches.map((b) => ({

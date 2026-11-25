@@ -1,5 +1,6 @@
 import { StaffPhotoModule } from '../staff/staff-photo.module';
 import { Module } from '@nestjs/common';
+import { BusinessChecksService } from './business-checks.service';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { AuditModule } from '../../common/audit/audit.module';
 import { IdModule } from '../../common/id/id.module';
@@ -25,6 +26,8 @@ import { BUSINESS_PHOTO_STORAGE, MemoryBusinessPhotoStorage, SupabaseBusinessPho
   imports: [PrismaModule, AuditModule, IdModule, PricingModule, RefundModule, TargetModule, AttendanceModule, JobSeekerModule, StaffPhotoModule],
   controllers: [CeoPortalController],
   providers: [
+    // 25 Nov (rev 211): the Team Lead's check queue (businesses and vacancies), also the CEO's and the Manager's.
+    BusinessChecksService,
     CeoCommandCenterService,
     CeoJobSeekersService,
     CeoBusinessesService,
@@ -48,6 +51,6 @@ import { BUSINESS_PHOTO_STORAGE, MemoryBusinessPhotoStorage, SupabaseBusinessPho
   ],
   // The Manager portal reuses the list and profile services, scoped to the Manager's tree (record-scope.ts).
   // Profile photos (RecordPhotosService) are shared the same way, each portal passing its own filter.
-  exports: [CeoCommandCenterService, CeoJobSeekersService, CeoBusinessesService, CeoPlacementsService, CeoMoneyService, RecordPhotosService],
+  exports: [CeoCommandCenterService, CeoJobSeekersService, CeoBusinessesService, CeoPlacementsService, CeoMoneyService, RecordPhotosService, BusinessChecksService],
 })
 export class CeoPortalModule {}

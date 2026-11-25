@@ -1,6 +1,11 @@
 import type { LegalDocumentSource } from '../legal-document.types';
 
-/** Owner-approved English text (Master Guide rev 176, 15 Nov). Numbers in {{…}} come from Settings. */
+/**
+ * Owner-approved English text (Master Guide rev 176, 15 Nov). Numbers in {{…}} come from Settings.
+ * v1.2 (Master Guide rev 211–212, 25 Nov): clauses 3.2–3.4 rewritten for the automatic verification
+ * (owner photos before signing, 2 proofs, Team Lead check when anything is missing), small
+ * businesses with little paperwork, households and the check after the first interview.
+ */
 export const BUSINESS_AGREEMENT_EN: LegalDocumentSource = {
   title: "Business Hiring Agreement",
   summary: [
@@ -21,7 +26,7 @@ export const BUSINESS_AGREEMENT_EN: LegalDocumentSource = {
 | **GSTIN** | {{company.gstin}} |
 | **Grievance Officer** | {{grievance}} |
 | **Document** | Business Hiring Agreement |
-| **Version** | 1.1 |
+| **Version** | 1.2 |
 | **Effective date** | {{company.effective}} |
 | **Languages** | Kannada, Hindi and English. If the versions differ, the version in the language the signer chose is the one agreed. |
 
@@ -48,11 +53,11 @@ This agreement is between **Laboura Private Limited** and the business, shop, fi
 
 3.1 **Documents are optional.** If you have them, we record your GSTIN (checked online), Udyam registration, Shops and Establishments or trade licence, FSSAI licence (for food businesses) or PAN.
 
-3.2 **Verification visit.** A Laboura field agent visits your premises and records: the **GPS location**, a **live photo of your storefront** with its name board, **the agent's selfie** at the shop, and **your contact person's OTP**. A **Team Lead** then checks the visit.
+3.2 **Owner photos and proofs.** Before signing, the person signing takes, with the phone's camera (not from the gallery), **a live selfie** and **a live photo of your shop's name board**; the phone's location is recorded with the shop photo. If your business runs from your home, the second photo is **you holding your FSSAI licence with your face visible**. You also give **at least 2 of these proofs**: your **GST number**, your **FSSAI licence, trade licence or Udyam registration**, and a **Google Maps link** to your shop. When a field agent registers you at your shop, the agent takes the same photos in the Laboura Field app.
 
-3.3 **No candidates are shown until the visit is done and the Team Lead approves it.** The one exception: when a field agent onboards you **in person** (GPS check, live storefront photo, and this agreement signed by OTP during the visit), candidates may be shown and interviews booked in the same visit. The Team Lead reviews it the same day and can pause it if something is wrong.
+3.3 **Automatic verification.** Right after you sign, Laboura checks automatically that: your mobile and this agreement were confirmed **by OTP**; both photos were taken; at least 2 proofs are valid (GST and FSSAI numbers are checked for the right format); if you gave a Google Maps link, the shop photo was taken **within about 200 metres** of the place on the map; and no other business already uses the same GST, licence, Maps place or mobile number, and you are not blocked. If everything is in order your business is **verified straight away, without a visit**. **If you can't give 2 proofs** (for example a home-run, new or unregistered business), Laboura verifies **you as a person and the place you work from** instead: your **government ID** (Aadhaar QR, or a live photo of your PAN, driving licence or voter ID checked by a Team Lead), a live photo of your **workspace**, **one business proof** (a registration, a business bank or UPI account, or a website or listing page), **one address proof** (such as a bank statement, electricity bill or rent agreement) and a **short video call with a Team Lead** showing your workspace. We keep only the ID type, its last 4 characters, the name and the result, and that your address proof was checked with the address it shows; the card and document images are deleted after the check (within 30 days at most). If anything is missing or does not match, a **Team Lead** checks it (and may call you or send a field agent) before your business is verified. **No candidates are shown until your business is verified.** A vacancy with an unusually high salary for the job, or more than 5 openings, is also checked by a Team Lead before candidates are shown for it.
 
-3.4 **Businesses with no documents** are labelled **"No documents"** and get extra checks: the field agent must be at the shop, the shop photo is taken live in the app, the Team Lead checks the photo and pin and calls you through Laboura's system, and a field agent attends your interviews in person.
+3.4 **Households and later checks.** A **household** hiring a maid, cook, driver or other help at home is verified by a **field agent's visit** (GPS location, live photos and your OTP) and a **Team Lead's check**. Businesses with no documents get the Team Lead's check and call. If the job is **inside your home**, candidates are told so before the interview, and the **first interview is by phone or at Laboura's office**. After a candidate's first interview with you, Laboura also asks the candidate: **"Was the shop real, at this address, and was the job as described?"** If the answer is no, your business is **paused at once** (no new candidates or interviews) while a Team Lead and a field agent check it; it is unpaused if everything is in order.
 
 3.5 Laboura may refuse or pause a business that gives false details or whose premises or business cannot be verified.
 
