@@ -1,3 +1,4 @@
+import { withSendingRules } from '../../test-support/messaging-double';
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { claimClockPaused, claimPausedMs, claimRefundPause, resumeEndedSuspensions } from './claim-clock';
 import { CLOCK_PAUSED_REASON, evaluatePlacementRefundEligibility } from './placement-refund-eligibility';
@@ -105,7 +106,7 @@ describe('M2 (rev 178): an unpaid salary difference cancels the replacement', ()
     Object.assign(prisma, { $transaction: jest.fn(async (cb: (tx: unknown) => unknown): Promise<unknown> => cb(prisma)) });
     const audit = { log: jest.fn() };
     const pricing = { current: jest.fn().mockResolvedValue({ upgradePaymentCancelDays: 7 }) };
-    const messaging = { send: jest.fn().mockResolvedValue({}) };
+    const messaging = withSendingRules({ send: jest.fn().mockResolvedValue({}) });
     const notifications = { notify: jest.fn().mockResolvedValue({}) };
     const scope = { peopleUnder: jest.fn().mockResolvedValue(['tl-9', 'fa-9']) };
     const service = new PlacementService(
@@ -128,7 +129,8 @@ describe('M2 (rev 178): an unpaid salary difference cancels the replacement', ()
     expect(prisma.jobSeeker.update).not.toHaveBeenCalled(); // never placed by an unpaid difference
     expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'placement.replacement_upgrade_cancelled', actorId: 'ceo', after: expect.objectContaining({ automatic: true }) }));
     expect(notifications.notify).toHaveBeenCalledWith({ businessId: 'bz-1' }, 'replacement_cancelled', {}, expect.anything());
-    expect(messaging.send).toHaveBeenCalledWith(expect.objectContaining({ channel: 'sms', template: 'replacement_upgrade_cancelled', subjectId: 'bz-1' }));
+    // WhatsApp first, SMS as backup (rev 211).
+    expect(messaging.send).toHaveBeenCalledWith(expect.objectContaining({ channel: 'whatsapp', template: 'replacement_upgrade_cancelled', subjectId: 'bz-1' }));
   });
 
   it('an older record that placed him puts him back to available — unless another placement of his is confirmed or running (H3)', async () => {

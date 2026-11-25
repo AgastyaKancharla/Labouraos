@@ -19,7 +19,8 @@ export const WHATSAPP_INBOX_SWEEP = 'sweep-whatsapp-inbox';
  * ones at shift start), counts working waiting time, rings the Team Lead after
  * 15 working minutes unanswered and the Manager after 2 hours, and sends the
  * automatic event messages (registration done, stopped part-way, stuck at
- * payment) with SMS as fallback.
+ * payment) with SMS as fallback, and sends the SMS backup of every WhatsApp
+ * not delivered within 1 working hour (rev 211).
  */
 @Injectable()
 export class WhatsAppInboxJob implements OnModuleInit, OnModuleDestroy {
@@ -59,7 +60,9 @@ export class WhatsAppInboxJob implements OnModuleInit, OnModuleDestroy {
   async process(now: Date = this.clock.now()) {
     const inbox = await this.inbox.sweep(now);
     const events = await this.events.sweep(now);
-    return { inbox, events };
+    // WhatsApp first, SMS as backup (rev 211): WhatsApps not delivered within 1 working hour get their SMS.
+    const smsBackups = await this.events.sweepSmsBackups(now);
+    return { inbox, events, smsBackups };
   }
 
   async onModuleInit(): Promise<void> {

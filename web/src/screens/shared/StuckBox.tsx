@@ -1,26 +1,24 @@
 import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../components/Button';
 import { MobileField } from '../../components/fields/MobileField';
 import { SelectField } from '../../components/fields';
-import { useToast } from '../../components/Toast';
 import { useT } from '../../i18n/I18nProvider';
 import type { MessageKey } from '../../i18n/en';
 import { api } from '../../lib/api/client';
-import { isApiError } from '../../lib/api/errors';
 import { PAYER_RELATIONS } from '../call-agent/_registration/options';
-import { SendOnWhatsAppButton } from '../call-agent/CA18-WhatsApp/SendOnWhatsApp';
-import type { LinkKind } from '../call-agent/CA18-WhatsApp/api';
+import { SendLinkButtons, type SendChannel } from '../../components/SendLinkButtons';
 
 /**
  * "Where they're stuck" (Master Guide rev 204, 21 Nov) on every job seeker,
  * business and referral partner profile in the call agent, Team Lead, Manager
- * and CEO views: the account owner, the step the person is on and the button
- * that matches it (with "Send on WhatsApp" beside the link buttons that have
- * one). Every button calls the existing route with its own
- * permissions; a refusal (for example a do-not-call or wrong-number block)
- * shows the server's message. Waiting for the Team Lead's ID check shows that,
- * with no resend.
+ * and CEO views: the account owner, the step the person is on and the link
+ * that matches it, with "Send on WhatsApp" and a small "Send by SMS" (rev 211).
+ * Team Leads, Managers and the CEO keep the view but get no buttons (the server
+ * lists no actions for them and refuses their sends). Every button calls the
+ * existing route with its own permissions; a refusal (for example a
+ * do-not-call or wrong-number block) shows the server's message. Waiting for
+ * the Team Lead's ID check shows that, with no resend.
  */
 export type StuckKind = 'job_seeker' | 'business' | 'referral';
 type StuckAction = 'registration_link' | 'payment_link' | 'someone_else_pays' | 'agreement_link' | 'partner_terms_link';
@@ -60,18 +58,12 @@ const STATE: Record<string, MessageKey> = {
   confirming: 'stuck.state.in_progress',
 };
 
-export const ACTION: Record<Exclude<StuckAction, 'someone_else_pays'>, { label: MessageKey; run: (id: string) => Promise<unknown> }> = {
-  registration_link: { label: 'stuck.action.registration_link', run: (id) => api.post('/consent/links', { jobSeekerId: id }) },
-  payment_link: { label: 'stuck.action.payment_link', run: (id) => api.post(`/job-seekers/${encodeURIComponent(id)}/resend-payment`, {}) },
-  agreement_link: { label: 'stuck.action.agreement_link', run: (id) => api.post(`/businesses/${encodeURIComponent(id)}/agreement-links`, {}) },
-  partner_terms_link: { label: 'stuck.action.partner_terms_link', run: (id) => api.post(`/referrals/${encodeURIComponent(id)}/terms-links`, {}) },
-};
-
-/** "Send on WhatsApp" next to the link buttons that have one (rev 202; same rights as Resend). */
-const WHATSAPP: Partial<Record<StuckAction, LinkKind>> = {
-  registration_link: 'registration',
-  agreement_link: 'agreement',
-  partner_terms_link: 'referral_terms',
+/** The link each action sends; `channel` undefined or 'whatsapp' = WhatsApp first (SMS as backup), 'sms' = by SMS only (rev 211). */
+export const ACTION: Record<Exclude<StuckAction, 'someone_else_pays'>, { label: MessageKey; run: (id: string, channel?: SendChannel) => Promise<unknown> }> = {
+  registration_link: { label: 'stuck.action.registration_link', run: (id, channel) => api.post('/consent/links', { jobSeekerId: id, channel }) },
+  payment_link: { label: 'stuck.action.payment_link', run: (id, channel) => api.post(`/job-seekers/${encodeURIComponent(id)}/resend-payment`, { channel }) },
+  agreement_link: { label: 'stuck.action.agreement_link', run: (id, channel) => api.post(`/businesses/${encodeURIComponent(id)}/agreement-links`, { channel }) },
+  partner_terms_link: { label: 'stuck.action.partner_terms_link', run: (id, channel) => api.post(`/referrals/${encodeURIComponent(id)}/terms-links`, { channel }) },
 };
 
 export function stuckQueryKey(kind: StuckKind, id: string) {
@@ -80,7 +72,6 @@ export function stuckQueryKey(kind: StuckKind, id: string) {
 
 export function StuckBox({ kind, id }: { kind: StuckKind; id: string }) {
   const t = useT();
-  const toast = useToast();
   const queryClient = useQueryClient();
   const stuck = useQuery({
     queryKey: stuckQueryKey(kind, id),
@@ -88,23 +79,12 @@ export function StuckBox({ kind, id }: { kind: StuckKind; id: string }) {
     enabled: Boolean(id),
     retry: false,
   });
-  const [problem, setProblem] = useState<string | null>(null);
   const [otherOpen, setOtherOpen] = useState(false);
   const [otherPhone, setOtherPhone] = useState('');
   const [relation, setRelation] = useState('');
-  const send = useMutation({
-    mutationFn: (fn: () => Promise<unknown>) => fn(),
-    onSuccess: () => {
-      setProblem(null);
-      setOtherOpen(false);
-      setOtherPhone('');
-      toast.success(t('stuck.sent'));
-      void queryClient.invalidateQueries({ queryKey: stuckQueryKey(kind, id) });
-    },
-    // The server's own words: a do-not-call or wrong-number block (409), a one-a-minute limit, a scope refusal.
-    onError: (e) => setProblem(isApiError(e) ? e.message : t('error.server')),
-  });
-
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: stuckQueryKey(kind, id) });
+  };
   if (stuck.isLoading || stuck.error || !stuck.data) return null;
   const s = stuck.data;
   const stepLabel = t(STEP[s.step] ?? 'stuck.step.unknown');
@@ -138,12 +118,7 @@ export function StuckBox({ kind, id }: { kind: StuckKind; id: string }) {
               </Button>
             ) : (
               <span key={action} className="lb-stuck__pair">
-                <Button variant="primary" loading={send.isPending} onClick={() => send.mutate(() => ACTION[action].run(s.id))}>
-                  {t(ACTION[action].label)}
-                </Button>
-                {WHATSAPP[action] && (
-                  <SendOnWhatsAppButton kind={WHATSAPP[action]!} id={s.id} onSent={() => void queryClient.invalidateQueries({ queryKey: stuckQueryKey(kind, id) })} />
-                )}
+                <SendLinkButtons label={t(ACTION[action].label)} run={(channel) => ACTION[action].run(s.id, channel)} onSent={refresh} testId={`stuck-send-${action}`} />
               </span>
             ),
           )}
@@ -158,24 +133,16 @@ export function StuckBox({ kind, id }: { kind: StuckKind; id: string }) {
             onChange={setRelation}
             options={PAYER_RELATIONS.map((r) => ({ value: r.value, label: t(r.label as MessageKey) }))}
           />
-          <Button
-            variant="primary"
+          <SendLinkButtons
+            label={t('stuck.otherSend')}
             disabled={otherPhone.length !== 10}
-            loading={send.isPending}
-            onClick={() =>
-              send.mutate(() =>
-                api.post(`/job-seekers/${encodeURIComponent(s.id)}/payment-only-link`, { phone: `+91${otherPhone}`, ...(relation ? { relation } : {}) }),
-              )
+            run={(channel) =>
+              api.post(`/job-seekers/${encodeURIComponent(s.id)}/payment-only-link`, { phone: `+91${otherPhone}`, channel, ...(relation ? { relation } : {}) })
             }
-          >
-            {t('stuck.otherSend')}
-          </Button>
+            onSent={refresh}
+            testId="stuck-send-other-payer"
+          />
         </div>
-      )}
-      {problem && (
-        <p className="vno" role="alert" data-testid="stuck-problem">
-          {problem}
-        </p>
       )}
     </section>
   );

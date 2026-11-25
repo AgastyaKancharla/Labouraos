@@ -1,3 +1,4 @@
+import { withSendingRules } from '../../test-support/messaging-double';
 import { BadRequestException, ConflictException, ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import * as crypto from 'crypto';
@@ -96,9 +97,9 @@ describe('Phase 16 Task 3: Bank Feed & Finance Confirmation', () => {
     const pricingService = {
       current: jest.fn().mockResolvedValue({ referralPayoutPaise: 20000 }),
     } as unknown as PricingService;
-    const messagingService = {
+    const messagingService = withSendingRules({
       send: jest.fn().mockResolvedValue({ status: 'sent' }),
-    } as unknown as MessagingService;
+    }) as unknown as MessagingService;
     reviewFlagService = {
       raise: jest.fn().mockResolvedValue({ id: 'flag-1', code: 'RF-0001' }),
       resolve: jest.fn().mockResolvedValue({ id: 'flag-1' }),

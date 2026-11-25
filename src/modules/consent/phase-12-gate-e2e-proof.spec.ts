@@ -195,7 +195,8 @@ describe('Phase 12 gate end-to-end proof', () => {
     const sms = await prisma.messageLog.findFirstOrThrow({
       where: { subjectId: jobSeekerId, template: 'consent_link' },
     });
-    expect(sms.channel).toBe('sms');
+    // WhatsApp first, SMS as backup (rev 211).
+    expect(sms.channel).toBe('whatsapp');
 
     // The SMS link opens the new registration page (P00); an old /consent link redirects there.
     const openedPage = await request(app.getHttpServer())

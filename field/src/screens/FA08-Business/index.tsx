@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useI18n, type MessageKey } from '@/i18n';
-import { Banner, Button, Card, EmptyState, ErrorState, HeroCard, Icon, IconTile, ListRow, LoadingState, Screen, StatusChip, Text } from '@/components';
+import { Banner, Button, Card, EmptyState, ErrorState, HeroCard, Icon, IconTile, ListRow, LoadingState, Screen, StatusChip, Text, SendLinkButtons, type SendChannel } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { isApiError } from '@/api/errors';
@@ -260,8 +260,9 @@ function Checklist({ b }: { b: BusinessPage }) {
   const queue = useOfflineQueue();
   const client = useQueryClient();
   const a = b.checklist.agreement;
+  // Rev 211: "Send on WhatsApp" (SMS as backup) or the small "Send by SMS".
   const resend = useMutation({
-    mutationFn: () => queue.live(() => redesign.resendAgreement(b.id)),
+    mutationFn: (channel: SendChannel) => queue.live(() => redesign.resendAgreement(b.id, channel)),
     onSettled: () => void client.invalidateQueries({ queryKey: ['field-work'] }),
   });
   const tl = b.checklist.teamLeadCheck.state;
@@ -288,12 +289,11 @@ function Checklist({ b }: { b: BusinessPage }) {
       />
       {b.actions.resendAgreement ? (
         <>
-          <Button
+          <SendLinkButtons
             label={resend.isSuccess ? t('fa07b.resent', { last4: resend.data.sentToLast4 }) : t('fa07b.resend')}
-            variant="secondary"
-            loading={resend.isPending}
-            disabled={resend.isSuccess || a.canResend === false}
-            onPress={() => resend.mutate()}
+            disabled={resend.isSuccess || a.canResend === false || resend.isPending}
+            run={(channel) => resend.mutateAsync(channel)}
+            onError={() => undefined}
             testID="fa08-resend"
           />
           {resend.error ? (

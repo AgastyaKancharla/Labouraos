@@ -208,7 +208,8 @@ export class ConductService {
   private async tellInterviewsCancelled(businessId: string, interviews: { id: string; jobSeekerId: string }[]) {
     for (const row of interviews) {
       await this.customerNotifications?.notify({ jobSeekerId: row.jobSeekerId }, 'interview_cancelled', {}, { dedupeKey: `interview_cancelled:${row.id}` }).catch(() => undefined);
-      await this.messaging?.send({ channel: 'sms', template: 'interview_cancelled', subjectType: 'job_seeker', subjectId: row.jobSeekerId, relatedType: 'interview', relatedId: row.id, variables: {} }).catch(() => undefined);
+      // WhatsApp first, SMS as backup (rev 211).
+      await this.messaging?.sendPreferWhatsApp({ template: 'interview_cancelled', subjectType: 'job_seeker', subjectId: row.jobSeekerId, relatedType: 'interview', relatedId: row.id, variables: {} }).catch(() => undefined);
     }
     if (interviews.length) {
       await this.customerNotifications?.notify({ businessId }, 'interview_cancelled', {}, { dedupeKey: `interview_cancelled:business:${businessId}:${interviews[0].id}` }).catch(() => undefined);

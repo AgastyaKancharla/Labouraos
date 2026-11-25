@@ -20,12 +20,15 @@ describe('Security M2: vacancy edits re-check the minimum wage and need the owne
   let app: INestApplication;
   let prisma: PrismaService;
   let token = '';
+  let agentToken = '';
   const suffix = Date.now().toString().slice(-7);
   const digits = suffix.slice(-5);
-  const ids = { staff: '', business: '', vacancies: [] as string[] };
+  const ids = { staff: '', agent: '', business: '', vacancies: [] as string[] };
 
   const server = () => app.getHttpServer();
   const auth = () => ({ Authorization: `Bearer ${token}` });
+  // Rev 211: links are sent by agents; the Manager keeps the view.
+  const agentAuth = () => ({ Authorization: `Bearer ${agentToken}` });
   const patch = (id: string, body: object) => request(server()).patch(`/vacancies/${id}`).set(auth()).send(body);
 
   async function vacancy(overrides: Record<string, unknown> = {}) {
@@ -50,6 +53,9 @@ describe('Security M2: vacancy edits re-check the minimum wage and need the owne
     const staff = await prisma.staff.create({ data: { code: `M2MG-${suffix}`, name: 'M2 Manager', email: `m2_${suffix}@laboura.local`, passwordHash: 'h', role: 'manager', city: 'Bengaluru' } });
     ids.staff = staff.id;
     token = await app.get(JwtService).signAsync({ sub: staff.id, role: 'manager', email: staff.email, code: staff.code });
+    const agent = await prisma.staff.create({ data: { code: `M2CA-${suffix}`, name: 'M2 Agent', email: `m2ca_${suffix}@laboura.local`, passwordHash: 'h', role: 'call_agent', city: 'Bengaluru' } });
+    ids.agent = agent.id;
+    agentToken = await app.get(JwtService).signAsync({ sub: agent.id, role: 'call_agent', email: agent.email, code: agent.code });
     const business = await prisma.business.create({
       data: { code: `BZ-M2-${suffix}`, name: `M2 Shop ${suffix}`, phone: `+9193${digits}210`, ownerName: 'M2 Owner', contactRole: 'owner', city: 'Bengaluru', verificationStatus: 'verified' },
     });
@@ -63,8 +69,8 @@ describe('Security M2: vacancy edits re-check the minimum wage and need the owne
       await prisma.vacancy.deleteMany({ where: { id: { in: ids.vacancies } } }).catch(() => undefined);
       await prisma.messageLog.deleteMany({ where: { subjectId: ids.business } }).catch(() => undefined);
       await prisma.business.deleteMany({ where: { id: ids.business } }).catch(() => undefined);
-      await prisma.auditLog.deleteMany({ where: { actorId: ids.staff } }).catch(() => undefined);
-      await prisma.staff.deleteMany({ where: { id: ids.staff } }).catch(() => undefined);
+      await prisma.auditLog.deleteMany({ where: { actorId: { in: [ids.staff, ids.agent] } } }).catch(() => undefined);
+      await prisma.staff.deleteMany({ where: { id: { in: [ids.staff, ids.agent] } } }).catch(() => undefined);
     } finally {
       await app?.close();
     }
@@ -112,7 +118,7 @@ describe('Security M2: vacancy edits re-check the minimum wage and need the owne
     const sent = await request(server()).post(`/vacancies/${v.id}/confirmation/send-code`).set(auth()).send({}).expect(201);
     const provider = app.get(OtpService).getProvider() as MockOtpProvider;
     const oldCode = provider.getCode(sent.body.otpRequestId)!;
-    await request(server()).post(`/vacancies/${v.id}/confirmation-link`).set(auth()).send({}).expect(201);
+    await request(server()).post(`/vacancies/${v.id}/confirmation-link`).set(agentAuth()).send({}).expect(201);
     expect(await prisma.publicLink.count({ where: { subjectId: v.id, purpose: 'vacancy_confirm', revokedAt: null } })).toBe(1);
 
     expect((await patch(v.id, { description: 'Night shift too', reason: 'owner asked' })).status).toBe(200);
@@ -183,7 +189,7 @@ describe('Security M2: vacancy edits re-check the minimum wage and need the owne
         token = made.token;
         return made;
       });
-      await request(server()).post(`/vacancies/${v.id}/confirmation-link`).set(auth()).send({}).expect(201);
+      await request(server()).post(`/vacancies/${v.id}/confirmation-link`).set(agentAuth()).send({}).expect(201);
       const sentOtp = await request(server()).post(`/vacancy-confirm/${token}/send-otp`).send({});
       const otp = app.get(OtpService);
       const requestId = sentOtp.body.otpRequestId as string;

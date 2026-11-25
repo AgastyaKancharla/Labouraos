@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { Button, CodeInput, Text } from '@/components';
 import type { OtpSent } from '@/api/endpoints';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useI18n } from '@/i18n';
 import { formatCountdown } from '@/lib/format';
-import { colors, fonts, radius } from '@/theme';
+import { colors, fonts, radius, touch } from '@/theme';
 import { ErrorBanner } from './index';
 
 export const RESEND_WAIT_MS = 30_000;
@@ -14,10 +14,11 @@ export const MAX_RESENDS = 3;
 /**
  * The owner's OTP in the shop: Send → he reads the code out → Verify;
  * Resend unlocks after 30 seconds, at most 3 times (guide, Forms). Needs
- * signal — the owner has to be there.
+ * signal — the owner has to be there. Codes go on WhatsApp first; with Resend,
+ * "Send by SMS" asks for the code by SMS instead (rev 211).
  */
 export function OtpStep({ send, verify, intro, sendLabel, verifyLabel, testID = 'otp', initial = null }: {
-  send: (previousRequestId?: string) => Promise<OtpSent>;
+  send: (previousRequestId?: string, channel?: 'sms') => Promise<OtpSent>;
   verify: (requestId: string, code: string) => Promise<unknown>;
   /** Text above the boxes once sent, e.g. "We sent an OTP to Ganesh (owner, ******3310)…". */
   intro: (sent: OtpSent) => string;
@@ -36,6 +37,7 @@ export function OtpStep({ send, verify, intro, sendLabel, verifyLabel, testID = 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [bySms, setBySms] = useState(false);
   const waiting = sent !== null && now - sentAt < RESEND_WAIT_MS;
   useEffect(() => {
     if (!waiting) return;
@@ -43,12 +45,13 @@ export function OtpStep({ send, verify, intro, sendLabel, verifyLabel, testID = 
     return () => clearInterval(id);
   }, [waiting]);
 
-  async function doSend() {
+  async function doSend(channel?: 'sms') {
     setBusy(true);
     setError(null);
     try {
-      const result = await queue.live(() => send(sent?.otpRequestId));
+      const result = await queue.live(() => (channel ? send(sent?.otpRequestId, channel) : send(sent?.otpRequestId)));
       if (sent) setResends((n) => n + 1);
+      setBySms(channel === 'sms');
       setSent(result);
       setSentAt(Date.now());
       setNow(Date.now());
@@ -84,6 +87,7 @@ export function OtpStep({ send, verify, intro, sendLabel, verifyLabel, testID = 
   return (
     <View style={styles.box} testID={`${testID}-sent`}>
       <Text>{intro(sent)}</Text>
+      {bySms ? <Text variant="muted" testID={`${testID}-by-sms`}>{t('otp.sentBySms')}</Text> : null}
       <CodeInput value={code} onChange={setCode} label={t('selling.otpCode')} onComplete={(v) => void doVerify(v)} testID={`${testID}-code`} />
       <Text variant="muted" testID={`${testID}-resend-note`}>
         {waiting
@@ -103,6 +107,18 @@ export function OtpStep({ send, verify, intro, sendLabel, verifyLabel, testID = 
         />
         <Button label={verifyLabel} style={styles.flex} disabled={code.length !== 6} loading={busy} onPress={() => void doVerify()} testID={`${testID}-verify`} />
       </View>
+      {!waiting && resends < MAX_RESENDS ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('otp.sendBySms')}
+          disabled={busy}
+          onPress={() => void doSend('sms')}
+          style={styles.sms}
+          testID={`${testID}-sms`}
+        >
+          <Text style={styles.smsText}>{t('otp.sendBySms')}</Text>
+        </Pressable>
+      ) : null}
       <ErrorBanner error={error} />
     </View>
   );
@@ -114,4 +130,6 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 10 },
   box: { gap: 10, padding: 14, borderRadius: radius.card, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   strong: { fontFamily: fonts.body700 },
+  sms: { minHeight: touch.min, alignItems: 'center', justifyContent: 'center' },
+  smsText: { fontFamily: fonts.body700, fontSize: 13, color: colors.blue, textDecorationLine: 'underline' },
 });

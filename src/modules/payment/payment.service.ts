@@ -550,11 +550,12 @@ export class PaymentService {
         }, city: transition.updatedSeeker.city,
       });
       const paymentReceiptLink = receiptLink(paymentId);
-      await Promise.all((['sms', 'whatsapp'] as const).map((channel) => this.messagingService.send({
-        channel, template: 'payment_receipt', subjectType: 'job_seeker',
+      // WhatsApp first, SMS as backup (rev 211).
+      await this.messagingService.sendPreferWhatsApp({
+        template: 'payment_receipt', subjectType: 'job_seeker',
         subjectId: transition.updatedSeeker!.id, relatedType: 'payment', relatedId: paymentId,
         variables: { link: paymentReceiptLink },
-      })));
+      });
       // Customer app notification (Agent C): extra to the SMS/WhatsApp above; never a contact attempt.
       await this.customerNotifications?.jobSeekerPaymentConfirmed(paymentId);      await this.flagPaidPastIdGate(paymentId, transition.updatedSeeker);
     }
@@ -571,18 +572,20 @@ export class PaymentService {
         const joiningDate = new Intl.DateTimeFormat('en-IN', {
           timeZone: 'Asia/Kolkata', dateStyle: 'medium',
         }).format(placement.joiningDate);
-        await Promise.all((['sms', 'whatsapp'] as const).map((channel) => this.messagingService.send({
-          channel, template: 'joining_confirmed', subjectType: 'job_seeker',
+        const business = await this.prisma.business.findUnique({ where: { id: placement.businessId }, select: { name: true } });
+        // WhatsApp first, SMS as backup (rev 211); the same variables as every joining_confirmed.
+        await this.messagingService.sendPreferWhatsApp({
+          template: 'joining_confirmed', subjectType: 'job_seeker',
           subjectId: placement.jobSeekerId, relatedType: 'placement', relatedId: placement.id,
-          variables: { joiningDate },
-        })));
+          variables: { candidateName: placement.jobSeeker.name, businessName: business?.name ?? 'the business', joiningDate },
+        });
       }
       const placementInvoiceLink = invoiceLink(placement.id);
-      await Promise.all((['sms', 'whatsapp'] as const).map((channel) => this.messagingService.send({
-        channel, template: 'placement_invoice', subjectType: 'business',
+      await this.messagingService.sendPreferWhatsApp({
+        template: 'placement_invoice', subjectType: 'business',
         subjectId: placement.businessId, relatedType: 'placement', relatedId: placement.id,
         variables: { link: placementInvoiceLink, invoiceCode },
-      })));
+      });
       // Customer app notification (Agent C): extra to the SMS/WhatsApp above; never a contact attempt.
       await this.customerNotifications?.placementFeePaid(paymentId);
     }
@@ -1609,8 +1612,8 @@ export class PaymentService {
       phone, expiresAt, metadata: { ownerName },
     });
 
-    await this.messagingService.send({
-      channel: 'sms',
+    // WhatsApp first, SMS as backup (rev 211).
+    await this.messagingService.sendPreferWhatsApp({
       template: 'payout_details_link',
       subjectType: ownerType,
       subjectId: ownerId,
@@ -2052,7 +2055,8 @@ export class PaymentService {
                 if (kind === 'replacement_cancelled') await this.customerNotifications!.upgradeCancelled(row);
               }
             : undefined,
-          sms: (m) => this.messagingService.send({ channel: 'sms', template: m.template, subjectType: m.subjectType, subjectId: m.subjectId, relatedType: 'placement', relatedId: m.relatedId, variables: m.variables }),
+          // WhatsApp first, SMS as backup (rev 211).
+          sms: (m) => this.messagingService.sendPreferWhatsApp({ template: m.template, subjectType: m.subjectType, subjectId: m.subjectId, relatedType: 'placement', relatedId: m.relatedId, variables: m.variables }),
         },
         row,
         { auditActorId: actorId, automatic: false, reason: 'The guarantee ended with a refund' },

@@ -29,6 +29,8 @@ export interface InboundWhatsAppMessage {
 export interface WhatsAppStatusUpdate {
   providerMessageId: string;
   status: 'sent' | 'delivered' | 'read' | 'failed';
+  /** A "failed" status's first error code (131026: the number cannot get WhatsApp). */
+  errorCode?: string;
 }
 
 export interface ParsedWhatsAppWebhook {
@@ -93,7 +95,9 @@ export function parseWhatsAppWebhook(payload: unknown): ParsedWhatsAppWebhook {
         const id = str(s.id);
         const status = str(s.status);
         if (id && (status === 'sent' || status === 'delivered' || status === 'read' || status === 'failed')) {
-          out.statuses.push({ providerMessageId: id, status });
+          const first = arr(s.errors).find(isObj);
+          const code = first && (typeof first.code === 'number' || typeof first.code === 'string') ? String(first.code) : '';
+          out.statuses.push({ providerMessageId: id, status, ...(status === 'failed' && code ? { errorCode: code } : {}) });
         }
       }
     }

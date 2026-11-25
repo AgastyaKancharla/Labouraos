@@ -224,14 +224,15 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
               : null;
           if (amCall && pmCall && !msgAttempt && !noticeSent) {
             if (this.messaging) {
-              await this.messaging.send({
-                channel: 'whatsapp',
+              // An exception to WhatsApp first (rev 211): "we tried to call you" goes on WhatsApp and SMS.
+              await this.messaging.sendBoth({
                 template: 'call_attempt_notice',
                 subjectType: 'job_seeker',
                 subjectId: js.id,
                 variables: {
                   candidateName: js.name,
-                  trade: primaryJobSeekerTrade(js) ?? '',
+                  // Meta refuses an empty parameter.
+                  trade: primaryJobSeekerTrade(js) || 'suitable',
                 },
               });
             } else if (this.whatsAppProvider) {

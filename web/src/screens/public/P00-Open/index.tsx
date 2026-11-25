@@ -81,7 +81,7 @@ export default function RegistrationOpen() {
       </div>
       <OtpBlock
         maskedPhone={data.maskedPhone}
-        send={() => registrationApi.sendOtp(token)}
+        send={(channel) => registrationApi.sendOtp(token, channel)}
         requestId={requestId}
         onRequestId={setRequestId}
         code={code}

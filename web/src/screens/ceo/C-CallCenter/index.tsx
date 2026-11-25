@@ -168,16 +168,14 @@ export default function CallCenterScreen() {
           ) : (
             <div className="scrollx">
               <table>
-                <thead><tr><th>Person</th><th>Stuck at</th><th>Since</th><th /></tr></thead>
+                {/* Rev 211: the CEO keeps the view of where each person is stuck; links are sent by agents only. */}
+                <thead><tr><th>Person</th><th>Stuck at</th><th>Since</th></tr></thead>
                 <tbody>
                   {d?.stuck.map((p) => (
                     <tr key={p.id}>
                       <td>{p.name} · {p.code}</td>
                       <td>{STEP[p.step] ?? humanize(p.step)}{p.reason ? ` · ${humanize(p.reason).toLowerCase()}` : ''}</td>
                       <td>{p.days} day{p.days === 1 ? '' : 's'}</td>
-                      <td>
-                        <ActionButton label="Resend" title={`Resend ${p.name}'s registration link`} description="A fresh link goes by SMS and WhatsApp; it resumes where they stopped." run={() => api.post('/consent/links', { jobSeekerId: p.id })} success="Link sent" />
-                      </td>
                     </tr>
                   ))}
                 </tbody>

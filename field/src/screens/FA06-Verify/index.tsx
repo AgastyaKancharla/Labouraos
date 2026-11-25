@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useI18n } from '@/i18n';
-import { Banner, Button, Card, CodeInput, EmptyState, ErrorState, IconTile, LoadingState, Screen, StatusChip, Text, TextField } from '@/components';
+import { Banner, Button, Card, CodeInput, EmptyState, ErrorState, IconTile, LoadingState, Screen, SendBySms, StatusChip, Text, TextField } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { useAfterSave } from '@/api/refresh';
@@ -72,7 +72,7 @@ export default function VerifyScreen() {
       void business.refetch();
     },
   });
-  const [otp, setOtp] = useState<{ requestId: string; phone: string } | null>(null);
+  const [otp, setOtp] = useState<{ requestId: string; phone: string; sentAt: number } | null>(null);
   const [code, setCode] = useState('');
   const [agreementSent, setAgreementSent] = useState(false);
   // One button, and "Signed" turns green live when the owner signs on his phone.
@@ -127,12 +127,12 @@ export default function VerifyScreen() {
     }
   }
 
-  async function sendCode() {
+  async function sendCode(channel?: 'sms') {
     setProblem(null);
     setBusy('otp');
     try {
-      const sent = await queue.live(() => visits.sendOwnerOtp(b.id, params.assignmentId!));
-      setOtp({ requestId: sent.requestId, phone: sent.phone });
+      const sent = await queue.live(() => visits.sendOwnerOtp(b.id, params.assignmentId!, channel));
+      setOtp({ requestId: sent.requestId, phone: sent.phone, sentAt: Date.now() });
     } catch (e) {
       explain(e);
     } finally {
@@ -263,6 +263,8 @@ export default function VerifyScreen() {
             onPress={() => void (otp ? sendCode() : sendBoth())}
             testID="fa06-send-code"
           />
+          {/* Rev 211: the code goes on WhatsApp first; "Send by SMS" after 30 seconds. */}
+          <SendBySms sentAt={otp?.sentAt ?? null} disabled={busy !== null} onPress={() => void sendCode('sms')} testID="fa06-sms" />
           {/* The code went but the agreement SMS did not: send the link again on its own. */}
           {otp && !signed && !agreementSent ? (
             <Button label={t('fa06.sendAgreement')} variant="secondary" loading={busy === 'agreement'} onPress={() => void sendAgreement()} testID="fa06-agreement" />

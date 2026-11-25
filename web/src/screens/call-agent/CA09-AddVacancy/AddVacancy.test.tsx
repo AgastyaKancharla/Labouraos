@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { mockApi, renderScreen, signInAs } from '../../../test/utils';
@@ -75,8 +75,11 @@ describe('Add a vacancy (CA09)', () => {
     sessionStorage.setItem('laboura.draft.vacancy.staff-ca', JSON.stringify({ ...form, salaryMinPaise: 2500000, salaryMaxPaise: 2800000 }));
     renderScreen(<AddVacancy />, { portal: 'call-agent', path: '/call-agent/vacancies/new', now: NOW });
     await user.click(await screen.findByRole('button', { name: 'Save vacancy' }));
-    await user.click(await screen.findByRole('button', { name: 'Send a link instead' }));
+    // Rev 211: the link goes with "Send on WhatsApp" (SMS as backup) or "Send by SMS".
+    expect(await screen.findByText('Send a link instead')).toBeInTheDocument();
+    await user.click(within(screen.getByTestId('vacancy-link-buttons')).getByRole('button', { name: 'Send by SMS' }));
     await waitFor(() => expect(api.calls('POST /vacancies/v1/confirmation-link')).toHaveLength(1));
+    expect(api.calls('POST /vacancies/v1/confirmation-link')[0]!.body).toEqual({ channel: 'sms' });
     expect(await screen.findByText(/Confirmation link sent to \*\*\*\*\*\*4321/)).toBeInTheDocument();
   });
 

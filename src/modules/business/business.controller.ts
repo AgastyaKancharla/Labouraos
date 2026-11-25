@@ -1,3 +1,5 @@
+import { otpChannel } from '../../common/otp/otp.controller';
+import { LINK_SENDING_ROLES, linkChannel } from '../message/link-channel';
 import { withoutLinkToken } from '../../common/public-link-response';
 import {
   BadRequestException,
@@ -116,16 +118,17 @@ export class BusinessController {
   }
 
   @Post(':id/agreement-links')
-  @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
+  // Rev 211: only agents press send buttons; Team Leads, Managers and the CEO keep the stuck view.
+  @RequireRoles(...LINK_SENDING_ROLES)
   @RequirePermission('business', 'write')
   async createAgreementLink(
     @Param('id') businessId: string,
-    @Body() body: { language?: string },
+    @Body() body: { language?: string; channel?: string },
     @Req() req: Request & { user: JwtPayload },
   ) {
-    // AC-3: the link goes to the owner by SMS; staff never get its token.
+    // AC-3: the link goes to the owner (WhatsApp first, SMS as backup; or "Send by SMS"); staff never get its token.
     // Rev 188: smsSent tells the screen whether the SMS went (false: offer "Resend agreement link").
-    const { linkId: _linkId, ...issued } = await this.consentLinkService.createAgreementLink(businessId, req.user.sub, body?.language);
+    const { linkId: _linkId, ...issued } = await this.consentLinkService.createAgreementLink(businessId, req.user.sub, body?.language, { channel: linkChannel(body?.channel), sentByStaffId: req.user.sub });
     void _linkId;
     return withoutLinkToken(issued);
   }
@@ -158,8 +161,10 @@ export class BusinessController {
     @Param('businessId') businessId: string,
     @Param('assignmentId') assignmentId: string,
     @Req() req: Request & { user: JwtPayload },
+    @Body('channel') channel?: unknown,
   ) {
-    return this.verificationService.sendOwnerOtp(businessId, assignmentId, req.user.sub);
+    // "Send by SMS" (rev 211) after 30 seconds; otherwise WhatsApp first.
+    return this.verificationService.sendOwnerOtp(businessId, assignmentId, req.user.sub, otpChannel(channel));
   }
 
   @Post(':id/verification/approve')

@@ -3,6 +3,11 @@ export const OTP_PROVIDER = 'OTP_PROVIDER';
 export interface OtpSendOptions {
   purpose?: string;
   requestId?: string;
+  /**
+   * Rev 211: codes go on WhatsApp first; 'sms' is "Send by SMS" (offered on the
+   * code screens after 30 seconds). Only the WhatsApp-first sender reads it.
+   */
+  channel?: 'whatsapp' | 'sms';
 }
 
 export interface OtpSendResult {
@@ -14,6 +19,8 @@ export interface OtpSendResult {
    * so testers can finish OTP steps. Never set by the real sender.
    */
   testModeCode?: string;
+  /** Rev 211: 'whatsapp' when the code went on WhatsApp; absent means the SMS sender's code. */
+  sentBy?: 'whatsapp' | 'sms';
 }
 
 export interface OtpProvider {

@@ -41,8 +41,8 @@ export const registrationApi = (api: ApiClient) => ({
   options: () => api.get<{ city: string; areas: Area[]; areaAutoFillMaxMeters?: number }>('/screens/call-registration/options'),
   trades: () => api.get<Trade[]>('/trades'),
   /** Live: the contact person reads the code out. */
-  sendOtp: (phone: string, requestId?: string) =>
-    api.post<OtpSendResult>('/otp/send', { phone, purpose: 'business_contact', ...(requestId ? { requestId } : {}) }),
+  sendOtp: (phone: string, requestId?: string, channel?: 'sms') =>
+    api.post<OtpSendResult>('/otp/send', { phone, purpose: 'business_contact', ...(requestId ? { requestId } : {}), ...(channel ? { channel } : {}) }),
   verifyOtp: (requestId: string, code: string) => api.post<{ verified: boolean }>('/otp/verify', { requestId, code }),
   createBusiness: (body: Record<string, unknown>) => api.post<{ id: string; code: string; name: string }>('/businesses', body),
 });

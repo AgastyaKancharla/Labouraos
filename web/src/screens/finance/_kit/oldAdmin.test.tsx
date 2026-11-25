@@ -272,7 +272,8 @@ describe('Finance resolves payment and payout flags', () => {
     const flags = await screen.findByRole('table', { name: 'Payout flags to resolve' });
     expect(within(flags).getByText('Payout account used by someone else too')).toBeInTheDocument();
     expect(within(flags).queryByText('Payment does not match')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Send details link' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send on WhatsApp' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send by SMS' })).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Resolve flag' }));
     const dialog = screen.getByRole('dialog', { name: 'Resolve RF-00012' });
     await userEvent.type(within(dialog).getByLabelText(/What you found and did/), 'Brothers sharing one account, checked on a call');

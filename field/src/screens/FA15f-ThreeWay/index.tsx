@@ -117,7 +117,7 @@ function Decide({ interview: i }: { interview: InterviewView }) {
               sendLabel={t('fa15f.sendReasonOtp', { owner })}
               verifyLabel={t('fa15f.confirmNotSelected')}
               intro={(s) => t('selling.otpSentTo', { name: s.contactName ?? owner, last4: s.sentToLast4 })}
-              send={(prev) => selling.ownerOtp(i.id, { decision: 'not_selected', reason, otpRequestId: prev })}
+              send={(prev, channel) => selling.ownerOtp(i.id, { decision: 'not_selected', reason, otpRequestId: prev, ...(channel ? { channel } : {}) })}
               verify={async (requestId, code) => {
                 await selling.decision(i.id, { decision: 'not_selected', reason, otpRequestId: requestId, code });
                 await client.invalidateQueries({ queryKey: ['selling', 'matches', i.vacancy.id] });

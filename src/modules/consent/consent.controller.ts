@@ -1,3 +1,5 @@
+import { otpChannel } from '../../common/otp/otp.controller';
+import { LINK_SENDING_ROLES, linkChannel } from '../message/link-channel';
 import {
   Body,
   Controller,
@@ -65,11 +67,12 @@ export class ConsentController {
    */
   @Post('links')
   @UseGuards(JwtAuthGuard, RbacGuard)
-  @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
+  // Rev 211: only agents press send buttons; Team Leads, Managers and the CEO keep the stuck view.
+  @RequireRoles(...LINK_SENDING_ROLES)
   @RequirePermission('job_seeker', 'write', { kind: 'job_seeker', from: 'body:jobSeekerId' })
-  async createLink(@Body('jobSeekerId') jobSeekerId: string) {
-    // AC-3: the link goes to the person by SMS; staff never get its token.
-    return withoutLinkToken(await this.consentLinkService.createLink(jobSeekerId));
+  async createLink(@Body('jobSeekerId') jobSeekerId: string, @Body('channel') channel: unknown, @Req() req: AuthenticatedRequest) {
+    // AC-3: the link goes to the person (WhatsApp first, SMS as backup; or "Send by SMS"); staff never get its token.
+    return withoutLinkToken(await this.consentLinkService.createLink(jobSeekerId, { channel: linkChannel(channel), sentByStaffId: req.user.sub }));
   }
 
   /**
@@ -138,8 +141,9 @@ export class ConsentController {
    */
   @Post('send-otp')
   @Public('token page: the job seeker, business or partner proves who they are with the link token')
-  async sendOtp(@Body('token') token: string) {
-    return this.consentLinkService.sendOtp(token);
+  async sendOtp(@Body('token') token: string, @Body('channel') channel?: unknown) {
+    // "Send by SMS" (rev 211) after 30 seconds; otherwise WhatsApp first.
+    return this.consentLinkService.sendOtp(token, otpChannel(channel));
   }
 
   /**

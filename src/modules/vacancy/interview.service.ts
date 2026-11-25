@@ -332,17 +332,16 @@ export class InterviewService {
       link,
     };
 
-    const messages = await Promise.all((['sms', 'whatsapp'] as const).map((channel) =>
-      this.messagingService.send({
-        channel,
-        template: 'interview_offer',
-        subjectType: 'job_seeker',
-        subjectId: seeker.id,
-        relatedType: 'interview',
-        relatedId: created.interview.id,
-        variables,
-      }),
-    ));
+    // An exception to WhatsApp first (rev 211): an offer always goes on both, the hit rule counts both.
+    const both = await this.messagingService.sendBoth({
+      template: 'interview_offer',
+      subjectType: 'job_seeker',
+      subjectId: seeker.id,
+      relatedType: 'interview',
+      relatedId: created.interview.id,
+      variables,
+    });
+    const messages = [both.sms, both.whatsapp];
     if (messages.some((message) => message.status === 'failed')) {
       await this.cancelFailedOffer(created.interview.id, actor.id, now);
       throw new ServiceUnavailableException('The interview offer could not be delivered by SMS and WhatsApp');
@@ -699,9 +698,9 @@ export class InterviewService {
     return this.consentLinks.validateInterviewActionToken(token, 'owner_result');
   }
 
-  async sendOwnerResultOtp(token: string) {
+  async sendOwnerResultOtp(token: string, channel?: 'whatsapp' | 'sms') {
     await this.validateOwnerResultLink(token);
-    return this.consentLinks.sendOtp(token);
+    return this.consentLinks.sendOtp(token, channel);
   }
 
   async validateCandidateCheckLink(token: string) {
@@ -881,21 +880,19 @@ export class InterviewService {
         timeZone: 'Asia/Kolkata',
         dateStyle: 'medium',
       }).format(joiningDate);
-      for (const channel of ['whatsapp', 'sms'] as const) {
-        await this.messagingService.send({
-          channel,
-          template: 'joining_confirmed',
-          subjectType: 'job_seeker',
-          subjectId: interview.jobSeekerId,
-          relatedType: 'placement',
-          relatedId: placement.id,
-          variables: {
-            candidateName: interview.jobSeeker.name,
-            businessName: interview.business.name,
-            joiningDate: joiningText,
-          },
-        });
-      }
+      // WhatsApp first, SMS as backup (rev 211).
+      await this.messagingService.sendPreferWhatsApp({
+        template: 'joining_confirmed',
+        subjectType: 'job_seeker',
+        subjectId: interview.jobSeekerId,
+        relatedType: 'placement',
+        relatedId: placement.id,
+        variables: {
+          candidateName: interview.jobSeeker.name,
+          businessName: interview.business.name,
+          joiningDate: joiningText,
+        },
+      });
     }
     return { id: interview.id, status, result: input.result, placement };
   }
@@ -1041,15 +1038,16 @@ export class InterviewService {
     const interviewTime = new Intl.DateTimeFormat('en-IN', {
       timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short',
     }).format(interview.slotStartsAt);
-    const [ownerMessages] = await Promise.all([
-      Promise.all((['sms', 'whatsapp'] as const).map((channel) => this.messagingService.send({
-        channel, template: 'interview_result_request', subjectType: 'business', subjectId: interview.businessId,
+    // WhatsApp first, SMS as backup (rev 211).
+    const [ownerMessage] = await Promise.all([
+      this.messagingService.sendPreferWhatsApp({
+        template: 'interview_result_request', subjectType: 'business', subjectId: interview.businessId,
         recipientPhone: contactPhone,
         relatedType: 'interview', relatedId: interview.id, variables: { link, interviewTime },
-      }))),
+      }),
       this.sendCandidateOfferCheck(interview),
     ]);
-    if (ownerMessages.some((message) => message.status === 'failed')) {
+    if (ownerMessage.status === 'failed') {
       throw new ServiceUnavailableException('The owner result request could not be delivered');
     }
   }
@@ -1073,13 +1071,12 @@ export class InterviewService {
       new Date(interview.slotEndsAt.getTime() + policy.interviewResultCloseHours * 60 * 60 * 1000),
     );
     const link = publicPageLink('offerCheck', token);
-    const messages = await Promise.all((['sms', 'whatsapp'] as const).map((channel) =>
-      this.messagingService.send({
-        channel, template: 'candidate_offer_check', subjectType: 'job_seeker', subjectId: interview.jobSeekerId,
-        relatedType: 'interview', relatedId: interview.id, variables: { link },
-      }),
-    ));
-    if (messages.some((message) => message.status === 'failed')) {
+    // WhatsApp first, SMS as backup (rev 211).
+    const message = await this.messagingService.sendPreferWhatsApp({
+      template: 'candidate_offer_check', subjectType: 'job_seeker', subjectId: interview.jobSeekerId,
+      relatedType: 'interview', relatedId: interview.id, variables: { link },
+    });
+    if (message.status === 'failed') {
       throw new ServiceUnavailableException('The candidate offer check could not be delivered');
     }
   }
@@ -1225,32 +1222,29 @@ export class InterviewService {
       ? await this.prisma.businessBranch.findUnique({ where: { id: interview.vacancy.branchId } })
       : null;
     const contactPerson = branch?.contactPersonName || interview.business.additionalContactName || interview.business.ownerName || '';
-    const candidateMessages = await Promise.all((['sms', 'whatsapp'] as const).map((channel) =>
-      this.messagingService.send({
-        channel, template: 'interview_booked', subjectType: 'job_seeker', subjectId: interview.jobSeekerId,
-        relatedType: 'interview', relatedId: interview.id,
-        variables: {
-          businessName: interview.business.name,
-          address: interview.business.address ?? '',
-          area: interview.vacancy.locality ?? interview.business.locality ?? '',
-          interviewTime: time,
-          contactPerson,
-        },
-      }),
-    ));
+    // WhatsApp first, SMS as backup (rev 211).
+    const candidateMessage = await this.messagingService.sendPreferWhatsApp({
+      template: 'interview_booked', subjectType: 'job_seeker', subjectId: interview.jobSeekerId,
+      relatedType: 'interview', relatedId: interview.id,
+      variables: {
+        businessName: interview.business.name,
+        address: interview.business.address ?? '',
+        area: interview.vacancy.locality ?? interview.business.locality ?? '',
+        interviewTime: time,
+        contactPerson,
+      },
+    });
     let photoLink = '';
     if (interview.jobSeeker.photoStoragePath && this.photoStorage) {
       photoLink = await this.photoStorage.signedUrl(interview.jobSeeker.photoStoragePath, CANDIDATE_PHOTO_LINK_TTL_SECONDS);
     }
-    const ownerMessages = await Promise.all((['sms', 'whatsapp'] as const).map((channel) =>
-      this.messagingService.send({
-        channel, template: 'interview_candidate_for_owner', subjectType: 'business', subjectId: interview.businessId,
-        ...(branch ? { recipientPhone: branch.contactPersonPhone } : {}),
-        relatedType: 'interview', relatedId: interview.id,
-        variables: { firstName: interview.jobSeeker.name.trim().split(/\s+/)[0], photoLink, interviewTime: time },
-      }),
-    ));
-    if ([...candidateMessages, ...ownerMessages].some((message) => message.status === 'failed')) {
+    const ownerMessage = await this.messagingService.sendPreferWhatsApp({
+      template: 'interview_candidate_for_owner', subjectType: 'business', subjectId: interview.businessId,
+      ...(branch ? { recipientPhone: branch.contactPersonPhone } : {}),
+      relatedType: 'interview', relatedId: interview.id,
+      variables: { firstName: interview.jobSeeker.name.trim().split(/\s+/)[0], photoLink: photoLink || 'not available yet.', interviewTime: time },
+    });
+    if ([candidateMessage, ownerMessage].some((message) => message.status === 'failed')) {
       throw new ServiceUnavailableException('Interview confirmation details could not be delivered');
     }
     await this.prisma.interview.update({ where: { id: interview.id }, data: { businessDetailsSentAt: now } });

@@ -76,6 +76,14 @@ model OtpSession {
   lastSentAt     DateTime
   expiresAt      DateTime
   usedAt         DateTime?
+  /// sms (the OTP vendor's own code) or whatsapp (rev 211: a code we generate, sent with the Authentication template).
+  channel        String   @default("sms")
+  /// HMAC of a WhatsApp code; the code itself is never stored or logged.
+  codeHash       String?
+  /// "Send by SMS" on a WhatsApp code: the OTP vendor's request, whose code is accepted too.
+  smsRequestId   String?
+  /// The WhatsApp message that carried the code (its "failed" status sends the code by SMS).
+  whatsappMessageId String? @unique
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -2259,6 +2267,18 @@ model MessageLog {
   sentAt            DateTime?
   deliveredAt       DateTime?
   failedAt          DateTime?
+  /// Meta's error code when WhatsApp refused or later failed it (131026: the number cannot get WhatsApp).
+  errorCode         String?
+  /// WhatsApp first, SMS as backup (Master Guide rev 211): null for a message with no backup
+  /// (SMS, both-channel exceptions, conversation replies); pending until delivered/read
+  /// (not_needed) or the backup SMS went (sent / failed / skipped).
+  smsBackup         String?
+  /// When the backup SMS goes if WhatsApp has not reported delivered or read: 1 hour counted only 9 AM-9 PM IST.
+  smsBackupDueAt    DateTime?
+  /// What the backup SMS needs (variables, the number, contact attempt), sealed with AES-256-GCM; cleared once decided.
+  smsBackupPayload  String?
+  /// The SMS row the backup created.
+  smsBackupMessageLogId String?
   contactAttempt    ContactAttempt?
   candidateIntroductions CandidateIntroduction[]
   createdAt         DateTime  @default(now())
@@ -2266,6 +2286,24 @@ model MessageLog {
 
   @@index([subjectType, subjectId])
   @@index([status])
+  @@index([smsBackup, smsBackupDueAt])
+}
+
+/// A phone number that cannot get WhatsApp messages (Master Guide rev 211): Meta said so
+/// (error 131026), or a call agent marked it on the person's profile. Kept per number, not
+/// per record, because Meta answers per number and one number can be a job seeker, a
+/// business owner and a partner at once. Messages to it go straight by SMS.
+model NoWhatsAppPhone {
+  id              String   @id @default(uuid())
+  /// SHA-256 of the 10 national digits (the same hash as ContactBlock.phoneHash).
+  phoneHash       String   @unique
+  phoneLast4      String
+  /// meta | staff
+  source          String
+  errorCode       String?
+  markedByStaffId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 model CandidateIntroduction {

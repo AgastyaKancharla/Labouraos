@@ -1,3 +1,4 @@
+import { LINK_SENDING_ROLES, linkChannel } from '../message/link-channel';
 import { MessagingService } from '../message/messaging.service';
 import {
   Body,
@@ -33,18 +34,20 @@ export class ReferralController {
   ) {}
 
   @Post(':id/terms-links')
-  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
+  // Rev 211: only agents press send buttons; Team Leads, Managers and the CEO keep the stuck view.
+  @RequireRoles(...LINK_SENDING_ROLES)
   @RequirePermission('referral', 'write')
   async createTermsLink(
     @Param('id') referralId: string,
-    @Body() body: { language?: string },
+    @Body() body: { language?: string; channel?: string },
     @Req() req: Request & { user: JwtPayload },
   ) {
-    // AC-3: the link goes to the partner by SMS; staff never get its token.
+    // AC-3: the link goes to the partner (WhatsApp first, SMS as backup; or "Send by SMS"); staff never get its token.
     return withoutLinkToken(await this.consentLinkService.createReferralTermsLink(
       referralId,
       req.user.sub,
       body?.language,
+      { channel: linkChannel(body?.channel), sentByStaffId: req.user.sub },
     ));
   }
 
@@ -58,7 +61,8 @@ export class ReferralController {
     const referral = await this.referralService.create(body, req.user.sub);
     // Guide, referral partners: on saving, the RF- ID is sent to them by SMS (the SMS provider; mock until DLT is set up).
     const idSms = await this.messaging
-      .send({ channel: 'sms', template: 'referral_partner_id', subjectType: 'referral', subjectId: referral.id, variables: { code: referral.code, name: referral.name } })
+      // WhatsApp first, SMS as backup (rev 211).
+      .sendPreferWhatsApp({ template: 'referral_partner_id', subjectType: 'referral', subjectId: referral.id, variables: { code: referral.code, name: referral.name } })
       .then((row) => row.status !== 'failed')
       .catch(() => false);
     const registration = await this.consentLinkService.createReferralTermsLink(

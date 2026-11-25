@@ -57,7 +57,8 @@ export default function BusinessesWaiting() {
     }
     if (r.waitingFor === 'auto_check') return <Link to={to('T-Checks')}>Open the checks</Link>;
     if (r.waitingFor === 'agreement') {
-      return <ActionButton label="Resend link" title="Resend the agreement link" description="The contact person gets a fresh link to sign the agreement by OTP." run={() => api.post(`/businesses/${r.id}/agreement-links`, {})} success="Agreement link sent" />;
+      // Rev 211: no send buttons for the CEO or a Manager; the account's agent sends the agreement link.
+      return <span className="ceo-sub">Waiting for the owner to sign</span>;
     }
     return (
       <ActionButton

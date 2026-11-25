@@ -278,11 +278,14 @@ describe('Phase 11 Gate End-to-End Proof', () => {
     expect(seekerAfterSweep.hits).toHaveLength(1);
     expect(seekerAfterSweep.hits[0].reason).toBe('no_pickup');
 
-    // Verify 3 contact attempts linked to this hit: AM call, PM call, WhatsApp message
-    expect(seekerAfterSweep.contactAttempts).toHaveLength(3);
+    // Verify 4 contact attempts linked to this hit: AM call, PM call, and the WhatsApp and SMS of
+    // "we tried to call you" (both channels, rev 211)
+    expect(seekerAfterSweep.contactAttempts).toHaveLength(4);
     const channels = seekerAfterSweep.contactAttempts.map((a) => a.channel);
     expect(channels.filter((c) => c === 'call')).toHaveLength(2);
     expect(channels.filter((c) => c === 'whatsapp')).toHaveLength(1);
+    expect(channels.filter((c) => c === 'sms')).toHaveLength(1);
+    expect(seekerAfterSweep.contactAttempts.every((a) => a.hitId === seekerAfterSweep.hits[0].id)).toBe(true);
 
     // Keep track of the created WhatsApp message for teardown
     const waAttempt = seekerAfterSweep.contactAttempts.find((a) => a.channel === 'whatsapp');

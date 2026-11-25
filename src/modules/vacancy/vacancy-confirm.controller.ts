@@ -1,3 +1,4 @@
+import { otpChannel } from '../../common/otp/otp.controller';
 import { Body, Controller, Get, Headers, Ip, Param, Post, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { createHash } from 'node:crypto';
@@ -31,8 +32,9 @@ export class VacancyConfirmController {
 
   @Post(':token/send-otp')
   @Public('token page: the job seeker, business or partner proves who they are with the link token')
-  async sendOtp(@Param('token') token: string, @Body() body: { otpRequestId?: string }) {
-    return this.confirmationService.sendLinkOtp(token, body?.otpRequestId);
+  async sendOtp(@Param('token') token: string, @Body() body: { otpRequestId?: string; channel?: string }) {
+    // "Send by SMS" (rev 211) after 30 seconds; otherwise WhatsApp first.
+    return this.confirmationService.sendLinkOtp(token, body?.otpRequestId, otpChannel(body?.channel));
   }
 
   @Post(':token')

@@ -24,7 +24,9 @@ describe('Referral partner saved (CA15b)', () => {
     expect(await screen.findByText('Link sent 12:11 · waiting')).toBeInTheDocument();
     expect(screen.getByText('Aadhaar, or PAN / driving licence / voter ID')).toBeInTheDocument();
     expect(screen.getByText('Checked against the name on the ID')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Resend link' }));
-    await waitFor(() => expect(api.calls('POST /referrals/ref-1/terms-links')[0]?.body).toEqual({ language: 'kn' }));
+    // Rev 211: "Send by SMS" beside "Send on WhatsApp".
+    expect(screen.getByText('Resend link')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Send by SMS' }));
+    await waitFor(() => expect(api.calls('POST /referrals/ref-1/terms-links')[0]?.body).toEqual({ language: 'kn', channel: 'sms' }));
   });
 });

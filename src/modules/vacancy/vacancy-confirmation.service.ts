@@ -16,6 +16,7 @@ import { PricingService } from '../pricing/pricing.service';
 import { tradeNameKey } from '../trade/trade.service';
 import { DEFAULT_MINIMUM_WAGE_ZONE, isMinimumWageZone, legalMinimumFor, MinimumWageLevel, MinimumWageZone } from '../trade/minimum-wage';
 import { testModeFields } from '../../common/otp/otp-test-mode';
+import { formatINR } from '../../common/money/money';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { VACANCY_PENDING_TL_CHECK, vacancyCheckReasons } from './vacancy-tl-check';
 
@@ -185,10 +186,27 @@ export class VacancyConfirmationService {
   }
 
   /**
+   * The vacancy details a message carries: the raw values (the SMS) plus the
+   * WhatsApp text's words (rev 211) — salary in rupees, and no empty value
+   * (Meta refuses an empty parameter).
+   */
+  private messageDetailsFor(vacancy: Vacancy & { business: { name: string } }) {
+    const from = vacancy.salaryMinPaise;
+    const upTo = vacancy.salaryMaxPaise ?? from;
+    const period = vacancy.salaryPeriod === 'daily' ? 'a day' : 'a month';
+    const salary = from === null || from === undefined
+      ? 'not set'
+      : `${formatINR(from)}${upTo !== null && upTo !== undefined && upTo !== from ? `–${formatINR(upTo)}` : ''} ${period}`;
+    const details = this.detailsFor(vacancy);
+    return { ...details, salary, shift: details.shift || 'any', startDate: details.startDate || 'as soon as possible' };
+  }
+
+
+  /**
    * Sends (or resends) the confirmation code to the business's or branch's contact person, with the vacancy details.
    * Only a vacancy awaiting confirmation can be sent a code.
    */
-  async sendCode(vacancyRef: string, actor: ConfirmationActor, otpRequestId?: string) {
+  async sendCode(vacancyRef: string, actor: ConfirmationActor, otpRequestId?: string, channel?: 'whatsapp' | 'sms') {
     const vacancy = await this.loadForConfirmation(vacancyRef);
     if (vacancy.status !== 'awaiting_confirmation') {
       throw new BadRequestException(`Only a vacancy awaiting confirmation can be sent a code (this one is ${vacancy.status})`);
@@ -196,17 +214,17 @@ export class VacancyConfirmationService {
     const contact = this.contactOf(vacancy);
     // M2: the code confirms this vacancy in its current confirmation round only; editing the
     // vacancy starts a new round, so a code the owner got for the old details stops working.
-    const result = await this.otpService.sendBoundOtp(contact.phone, await this.codePurpose(vacancy.id), actor.id, otpRequestId);
+    const result = await this.otpService.sendBoundOtp(contact.phone, await this.codePurpose(vacancy.id), actor.id, otpRequestId, channel);
     if (!otpRequestId) {
-      await this.messagingService.send({
-        channel: 'sms',
+      // WhatsApp first, SMS as backup (rev 211).
+      await this.messagingService.sendPreferWhatsApp({
         template: 'vacancy_confirm_details',
         subjectType: 'business',
         subjectId: vacancy.businessId,
         relatedType: 'vacancy',
         relatedId: vacancy.id,
         recipientPhone: contact.phone,
-        variables: this.detailsFor(vacancy),
+        variables: this.messageDetailsFor(vacancy),
       });
     }
     return {
@@ -271,7 +289,7 @@ export class VacancyConfirmationService {
   }
 
   /** Sends a 48-hour link so the contact person can confirm later; the vacancy stays awaiting confirmation. */
-  async sendLink(vacancyRef: string, actor: ConfirmationActor) {
+  async sendLink(vacancyRef: string, actor: ConfirmationActor, channel?: 'whatsapp' | 'sms') {
     const vacancy = await this.loadForConfirmation(vacancyRef);
     if (vacancy.status !== 'awaiting_confirmation') {
       throw new BadRequestException(`Only a vacancy awaiting confirmation can be sent a link (this one is ${vacancy.status})`);
@@ -291,8 +309,8 @@ export class VacancyConfirmationService {
       // M2-R1: the link confirms the details of this round only.
       metadata: { round: await this.currentRound(vacancy.id) },
     });
-    await this.messagingService.send({
-      channel: 'sms',
+    // "Send on WhatsApp" (SMS as backup) or "Send by SMS" (rev 211).
+    const sent = await this.messagingService.sendOn(channel, {
       template: 'vacancy_confirm_link',
       subjectType: 'business',
       subjectId: vacancy.businessId,
@@ -300,7 +318,7 @@ export class VacancyConfirmationService {
       relatedId: vacancy.id,
       recipientPhone: contact.phone,
       // Rev 192 fix S3: the owner's phone page (P07-VacancyConfirm), like the agreement link.
-      variables: { link: publicPageLink('vacancyConfirm', token), ...this.detailsFor(vacancy) },
+      variables: { link: publicPageLink('vacancyConfirm', token), ...this.messageDetailsFor(vacancy) },
     });
     await this.auditService.log({
       actorId: actor.id,
@@ -311,7 +329,7 @@ export class VacancyConfirmationService {
       changedFields: ['confirmationLink'],
       city: vacancy.city,
     });
-    return { success: true, expiresAt, sentToLast4: last4(contact.phone) };
+    return { success: true, expiresAt, sentToLast4: last4(contact.phone), sentBy: sent.channel };
   }
 
   private async requireLink(token: string) {
@@ -345,7 +363,7 @@ export class VacancyConfirmationService {
     };
   }
 
-  async sendLinkOtp(token: string, otpRequestId?: string) {
+  async sendLinkOtp(token: string, otpRequestId?: string, channel?: 'whatsapp' | 'sms') {
     const link = await this.requireLink(token);
     // Every public "Send code" costs an SMS: limited per link and per phone on the server,
     // like the agreement page (rev 192 fix S3).
@@ -354,8 +372,8 @@ export class VacancyConfirmationService {
     // agent's own "code on call" route and never confirms on the owner's page).
     const purpose = publicPageOtpPurpose(token);
     const result = otpRequestId
-      ? await this.otpService.getProvider().sendOtp(link.phone!, { purpose, requestId: otpRequestId })
-      : await this.otpService.getProvider().sendOtp(link.phone!, { purpose });
+      ? await this.otpService.getProvider().sendOtp(link.phone!, { purpose, requestId: otpRequestId, ...(channel ? { channel } : {}) })
+      : await this.otpService.getProvider().sendOtp(link.phone!, { purpose, ...(channel ? { channel } : {}) });
     return {
       otpRequestId: result.requestId,
       // The phone page's code box reads these two (same answer as the agreement page's send-otp).

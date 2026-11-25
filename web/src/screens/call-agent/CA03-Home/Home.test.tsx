@@ -36,7 +36,8 @@ describe('Call agent Home (CA03)', () => {
     expect(within(stuck).getByRole('link', { name: /Pooja Nair/ })).toHaveAttribute('href', '/call-agent/people/JS-00301');
     expect(within(stuck).getByTestId('row-status')).toHaveTextContent('Stuck at payment');
     expect(stuck).toHaveTextContent('Job seeker · JS-00301');
-    expect(within(stuck).getAllByRole('button')).toHaveLength(1);
+    // One link button (WhatsApp first) and its small "Send by SMS" (rev 211).
+    expect(within(stuck).getAllByRole('button')).toHaveLength(2);
     expect(screen.getByText('1 of your people are near day 30 · no suitable offer yet')).toBeInTheDocument();
     expect(screen.queryByText(/₹1,497/)).not.toBeInTheDocument();
     const done = screen.getByTestId('done-row');
@@ -89,7 +90,7 @@ describe('Call agent Home (CA03)', () => {
     await waitFor(() => expect(api.calls('POST /job-seekers/js9/resend-payment')).toHaveLength(1));
     await userEvent.click(screen.getByRole('button', { name: 'Resend registration link' }));
     await waitFor(() => expect(api.calls('POST /consent/links')).toHaveLength(1));
-    expect(api.calls('POST /consent/links')[0]!.body).toEqual({ jobSeekerId: 'js11' });
+    expect(api.calls('POST /consent/links')[0]!.body).toEqual({ jobSeekerId: 'js11', channel: 'whatsapp' });
   });
 
   it('21 Nov fixes: missed calls show the day and repeats; new callers stay on the list until handled; a do-not-call person is locked', async () => {
@@ -171,6 +172,7 @@ describe('Call agent Home (CA03)', () => {
     expect(within(partner!).getByTestId('row-status')).toHaveTextContent('Stuck at the selfie');
     await userEvent.click(within(biz!).getByRole('button', { name: 'Send agreement link' }));
     await waitFor(() => expect(api.calls('POST /businesses/b5/agreement-links')).toHaveLength(1));
+    expect(api.calls('POST /businesses/b5/agreement-links')[0]!.body).toEqual({ channel: 'whatsapp' });
     await userEvent.click(within(partner!).getByRole('button', { name: 'Send partner terms link' }));
     await waitFor(() => expect(api.calls('POST /referrals/rf4/terms-links')).toHaveLength(1));
     const [bizDone, partnerDone] = screen.getAllByTestId('done-row');

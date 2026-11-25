@@ -18,6 +18,7 @@ import { reg21NovEn } from './reg21nov';
 import { visit22En } from './visit22';
 import { bizAutoEn } from './bizAuto';
 import { whatsappEn } from './whatsapp';
+import { waFirst25En } from './waFirst25';
 import { consoleListsEn } from '../screens/call-agent/_lists/i18n';
 export const en = {
   "app.name": "Laboura",
@@ -632,6 +633,7 @@ export const en = {
   ...appSignupsEn,
   ...callAgentEn,
   ...whatsappEn,
+  ...waFirst25En,
   ...fixes17En,
   ...reg21NovEn,
   ...visit22En,

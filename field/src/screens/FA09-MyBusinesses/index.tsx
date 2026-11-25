@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useI18n, type MessageKey } from '@/i18n';
-import { Card, EmptyState, ErrorState, IconTile, LoadingState, Screen, SearchBar, Text, TextField } from '@/components';
+import { Card, EmptyState, ErrorState, IconTile, LoadingState, Screen, SearchBar, Text, TextField, SendBySms, type SendChannel } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { useAfterSave } from '@/api/refresh';
@@ -161,7 +161,8 @@ export function BusinessRowEnd({ b, row, testPrefix = 'fa09' }: { b: { id: strin
   const afterSave = useAfterSave();
   const sr = useSellingRoutes();
   const [shiftsOpen, setShiftsOpen] = useState(false);
-  const send = useMutation({ mutationFn: () => queue.live(() => redesign.resendAgreement(b.id)), onSuccess: () => afterSave() });
+  // Rev 211: the row's button sends on WhatsApp first (SMS as backup); "Send by SMS" under it.
+  const send = useMutation({ mutationFn: (channel: SendChannel) => queue.live(() => redesign.resendAgreement(b.id, channel)), onSuccess: () => afterSave() });
   const id = `${testPrefix}-action-${b.id}`;
   if (row.waiting) return <WaitingMark testID={`${testPrefix}-waiting-${b.id}`} />;
   if (!row.action) return row.done ? <DoneMark testID={`${testPrefix}-done-${b.id}`} /> : null;
@@ -170,7 +171,8 @@ export function BusinessRowEnd({ b, row, testPrefix = 'fa09' }: { b: { id: strin
     case 'agreement_link':
       return (
         <View style={styles.end}>
-          <RowButton label={send.isSuccess ? t('lists.sent') : label} loading={send.isPending} disabled={send.isSuccess} onPress={() => send.mutate()} testID={id} />
+          <RowButton label={send.isSuccess ? t('lists.sent') : label} loading={send.isPending} disabled={send.isSuccess} onPress={() => send.mutate('whatsapp')} testID={id} />
+          {!send.isSuccess ? <SendBySms sentAt={0} disabled={send.isPending} onPress={() => send.mutate('sms')} testID={`${id}-sms`} /> : null}
           {send.isError ? (
             <Text variant="tiny" color={colors.tomato} style={styles.endError} testID={`${id}-error`}>
               {t('lists.sendFailed')}

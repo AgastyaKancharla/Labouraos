@@ -58,8 +58,11 @@ export class PayoutAccountService {
     now = new Date(),
   ) {
     const submittedFields = Object.keys(dto as unknown as Record<string, unknown>);
-    if (submittedFields.some((field) => !['ownerType', 'ownerId'].includes(field))) {
+    if (submittedFields.some((field) => !['ownerType', 'ownerId', 'channel'].includes(field))) {
       throw new BadRequestException('Staff may create a payout link but cannot submit payout account details');
+    }
+    if (dto.channel !== undefined && dto.channel !== 'whatsapp' && dto.channel !== 'sms') {
+      throw new BadRequestException('channel must be whatsapp or sms');
     }
     let ownerName = '';
     let phone = '';
@@ -98,8 +101,8 @@ export class PayoutAccountService {
       phone, expiresAt, metadata: { ownerName },
     });
 
-    await this.messagingService.send({
-      channel: 'sms',
+    // "Send on WhatsApp" (SMS as backup) or "Send by SMS" (rev 211).
+    const sent = await this.messagingService.sendOn(dto.channel, {
       template: 'payout_details_link',
       subjectType: dto.ownerType,
       subjectId: dto.ownerId,
@@ -135,7 +138,7 @@ export class PayoutAccountService {
       },
     });
 
-    return { linkSent: true };
+    return { linkSent: true, sentBy: sent.channel };
   }
 
   hasActiveLink(ownerType: string, ownerId: string, now = new Date()): Promise<boolean> {
@@ -182,12 +185,12 @@ export class PayoutAccountService {
     };
   }
 
-  async sendOtp(token: string) {
+  async sendOtp(token: string, channel?: 'whatsapp' | 'sms') {
     const record = await this.getPayoutLink(token, new Date(), true);
     if (record.purpose !== 'payout_details' || !record.phone) throw new BadRequestException('Invalid or expired payout link token');
 
     // AC-3: a code bound to this payout link; staff-sent codes are never accepted on it.
-    const otp = await this.otpService.sendPublicPageOtp(record.phone, token);
+    const otp = await this.otpService.sendPublicPageOtp(record.phone, token, channel);
     return {
       success: true,
       requestId: otp.requestId,

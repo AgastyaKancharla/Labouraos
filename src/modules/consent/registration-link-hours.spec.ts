@@ -1,3 +1,4 @@
+import { withSendingRules } from '../../test-support/messaging-double';
 import { ConsentLinkService } from './consent-link.service';
 
 /** C-Pricing "Registration link valid": the job seeker's registration link lasts the Settings hours (48 by default). */
@@ -16,7 +17,7 @@ describe('registration link expiry comes from Settings', () => {
     const deps = {
       prisma: { jobSeeker: { findUnique: jest.fn().mockResolvedValue({ id: 'js-1', phone: '+919900000001' }) } },
       clock: { now: () => now },
-      messaging: { send: jest.fn() },
+      messaging: withSendingRules({ send: jest.fn() }),
       pricing: { current: jest.fn().mockResolvedValue({ registrationLinkValidHours: hours }) },
     };
     const s = new ConsentLinkService(

@@ -88,7 +88,7 @@ export default function VacancyConfirm() {
       <Muted>{t('pub.vac.wrong')}</Muted>
       <OtpBlock
         maskedPhone={d.maskedPhone}
-        send={() => vacancyConfirmApi.sendOtp(token)}
+        send={(channel) => vacancyConfirmApi.sendOtp(token, channel)}
         requestId={requestId}
         onRequestId={setRequestId}
         code={code}
