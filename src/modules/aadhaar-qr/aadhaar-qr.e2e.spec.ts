@@ -351,6 +351,23 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
     expect(attempt).toMatchObject({ channel: 'field', staffId: fielder.id, outcome: 'verified' });
   });
 
+  it('rev 211: a paid job seeker waiting for his ID, scanned in Laboura Field, becomes active and his 30 days start at the scan', async () => {
+    const s = await seeker(42);
+    const paidAt = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+    await prisma.jobSeeker.update({ where: { id: s.id }, data: { status: 'paid_waiting_id', paymentReceivedAt: paidAt } });
+    const before = Date.now();
+    const res = await post(fielder, `/field-work/job-seekers/${s.id}/aadhaar-qr`, { qrText: UIDAI_SAMPLE_SECURE_QR, captureSource: 'live_camera' });
+    expect(res.status).toBe(200);
+    expect(res.body.result).toBe('verified');
+    const after = await prisma.jobSeeker.findUniqueOrThrow({ where: { id: s.id } });
+    expect(after.status).toBe('active');
+    expect(after.paymentReceivedAt?.getTime()).toBe(paidAt.getTime());
+    // The later of the payment and the ID pass: the scan.
+    expect(after.guaranteeStartsAt!.getTime()).toBeGreaterThanOrEqual(before - 1000);
+    expect(await prisma.statusHistory.count({ where: { subjectId: s.id, fromStatus: 'paid_waiting_id', toStatus: 'active', reason: 'guarantee_started_id_passed' } })).toBe(1);
+    expect(await prisma.messageLog.count({ where: { subjectId: s.id, template: 'guarantee_started', status: { not: 'failed' } } })).toBe(1);
+  });
+
   it("the Team Lead sees the QR photo next to the selfie (agents never), and it is deleted when the check is done", async () => {
     const s = await seeker(4);
     await post(fielder, `/field-work/job-seekers/${s.id}/aadhaar-qr`, { qrText: UIDAI_SAMPLE_SECURE_QR, captureSource: 'live_camera' }).expect(200);
