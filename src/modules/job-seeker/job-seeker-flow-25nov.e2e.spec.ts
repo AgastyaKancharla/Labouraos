@@ -215,26 +215,36 @@ describe('Job seeker order Consent → Selfie → Payment → ID check (rev 211)
   });
 
   it('reminders: one a day, at most 3, 9 AM–9 PM only, not while the Team Lead checks, not to "do not call"', async () => {
-    const { seeker: s, paidAt } = await paidWaiting(1);
+    const { seeker: s, paidAt } = await paidWaiting(10);
+    // Runs on fixed past days (paid 10 days ago), so the test never depends on the time it runs at.
     const atIst = (dayOffset: number, istHour: number) => {
-      const d = new Date(paidAt.getTime() + dayOffset * DAY);
-      d.setUTCHours(istHour - 5, 30, 0, 0); // IST = UTC + 5:30
+      const d = new Date(paidAt.getTime() + (2 + dayOffset) * DAY);
+      d.setUTCHours(istHour - 6, 30, 0, 0); // IST = UTC + 5:30: istHour:00 IST
       return d;
     };
     const count = () => prisma.messageLog.count({ where: { subjectId: s.id, template: 'id_check_reminder', status: { not: 'failed' } } });
+    /** One sweep at `at`; a reminder it sends is dated `at`, as if the sweep had run then. */
+    const sweep = async (at: Date) => {
+      const startedAt = new Date(Date.now() - 1000);
+      const result = await flow.sendIdCheckReminders(at);
+      await prisma.messageLog.updateMany({ where: { subjectId: s.id, template: 'id_check_reminder', createdAt: { gte: startedAt } }, data: { createdAt: at } });
+      return result;
+    };
     // 10 PM IST: quiet hours.
-    expect(await flow.sendIdCheckReminders(atIst(1, 22))).toMatchObject({ sent: 0, quietHours: true });
-    await flow.sendIdCheckReminders(atIst(1, 10));
+    expect(await sweep(atIst(1, 22))).toMatchObject({ sent: 0, quietHours: true });
+    // 8 AM IST: still quiet.
+    expect(await sweep(atIst(1, 8))).toMatchObject({ sent: 0, quietHours: true });
+    await sweep(atIst(1, 10));
     expect(await count()).toBe(1);
     // Later the same day: nothing more.
-    await flow.sendIdCheckReminders(atIst(1, 15));
+    await sweep(atIst(1, 15));
     expect(await count()).toBe(1);
-    await flow.sendIdCheckReminders(atIst(2, 11));
-    await flow.sendIdCheckReminders(atIst(3, 11));
+    await sweep(atIst(2, 11));
+    await sweep(atIst(3, 11));
     expect(await count()).toBe(ID_CHECK_REMINDERS_MAX);
     // Then nothing more by itself.
-    await flow.sendIdCheckReminders(atIst(4, 11));
-    await flow.sendIdCheckReminders(atIst(5, 11));
+    await sweep(atIst(4, 11));
+    await sweep(atIst(5, 11));
     expect(await count()).toBe(3);
 
     // Another ID waiting for the Team Lead: nothing for him to do, no reminder.
