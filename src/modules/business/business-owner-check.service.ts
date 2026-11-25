@@ -1,3 +1,4 @@
+import { findFieldVisitProof } from './business-field-proof';
 import { BadRequestException, ForbiddenException, HttpStatus, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -44,6 +45,8 @@ export interface SmallBusinessState {
   businessProof: { given: boolean; kind: string | null; fromProofs: boolean };
   addressProof: { submitted: boolean; docType: string | null; result: string | null };
   videoCall: { done: boolean; at: string | null };
+  /** Rev 213: onboarded in person by a field agent — no video call needed, the visit photos count. */
+  fieldVisit?: boolean;
   photos: { selfie: boolean; workspace: boolean };
   /** What is still missing before the Team Lead may approve (in words). */
   missing: string[];
@@ -62,7 +65,7 @@ export function smallBusinessMissing(s: Omit<SmallBusinessState, 'missing' | 're
   if (s.ownerId.result !== 'verified') missing.push(s.ownerId.result === 'pending' ? "the Team Lead's check of the owner's ID" : "the owner's government ID");
   if (!s.businessProof.given) missing.push('one business proof');
   if (s.addressProof.result !== 'checked') missing.push(s.addressProof.submitted ? "the Team Lead's check of the address proof" : 'an address proof');
-  if (!s.videoCall.done) missing.push('the video call with the Team Lead');
+  if (!s.videoCall.done && !s.fieldVisit) missing.push('the video call with the Team Lead');
   return missing;
 }
 
@@ -89,12 +92,17 @@ export class BusinessOwnerCheckService {
     const b = await this.business(businessId);
     const c = b.ownerCheck;
     const shopKinds: string[] = allowedShopKinds(b);
+    const visit = await findFieldVisitProof(this.prisma, businessId);
     const base = {
       ownerId: { method: c?.idMethod ?? null, type: c?.idType ?? null, result: c?.idResult ?? null, last4: c?.idLast4 ?? null, failureReason: c?.idFailureReason ?? null },
       businessProof: { given: Boolean(c?.businessProofKind) || validProofCount(b) >= 1, kind: c?.businessProofKind ?? null, fromProofs: validProofCount(b) >= 1 },
       addressProof: { submitted: Boolean(c?.addressSubmittedAt), docType: c?.addressDocType ?? null, result: c?.addressResult ?? null },
       videoCall: { done: Boolean(c?.videoCallDoneAt), at: c?.videoCallDoneAt?.toISOString() ?? null },
-      photos: { selfie: b.ownerPhotos.some((p) => p.kind === 'owner_selfie'), workspace: b.ownerPhotos.some((p) => shopKinds.includes(p.kind)) },
+      fieldVisit: Boolean(visit),
+      photos: {
+        selfie: Boolean(visit) || b.ownerPhotos.some((p) => p.kind === 'owner_selfie'),
+        workspace: Boolean(visit) || b.ownerPhotos.some((p) => shopKinds.includes(p.kind)),
+      },
     };
     return { required: verificationPathOf(b) === 'small_business' || b.verificationPath === 'small_business', ...base, missing: smallBusinessMissing(base) };
   }

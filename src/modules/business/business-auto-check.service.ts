@@ -8,6 +8,7 @@ import { businessIdFingerprint, findBan } from '../conduct/permanent-ban.check';
 import { CustomerNotificationHooks } from '../customer-notification/customer-notification-hooks.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { AutoCheckFacts, AutoCheckResult, decideAutoCheck, failedReasonText, SAME_PLACE_METERS, metresBetween } from './business-auto-check';
+import { findFieldVisitProof } from './business-field-proof';
 import { isBusinessSuspended } from './business-candidate-access';
 import { BusinessClock } from './business-clock';
 import { normaliseRegistrationNumber } from './business-proofs';
@@ -58,6 +59,11 @@ export class BusinessAutoCheckService {
     const shopKinds: string[] = allowedShopKinds(business);
     const selfie = business.ownerPhotos.find((p) => p.kind === 'owner_selfie');
     const shop = business.ownerPhotos.find((p) => shopKinds.includes(p.kind));
+    // Rev 213: onboarded in person — the visit's board photo (with its GPS) and the agent's
+    // selfie at the board stand in for the owner's photos when he took none.
+    const visit = selfie && shop ? null : await findFieldVisitProof(this.prisma, business.id);
+    const shopLat = shop ? shop.latitude : visit?.latitude ?? null;
+    const shopLng = shop ? shop.longitude : visit?.longitude ?? null;
     const now = this.clock.now();
     const ban = await findBan(this.prisma, {
       phone: business.phone,
@@ -69,12 +75,13 @@ export class BusinessAutoCheckService {
     const facts: AutoCheckFacts = {
       phoneVerified: business.phoneVerified,
       agreementSignedByOtp: Boolean(business.agreements[0]?.otpRequestId),
-      hasOwnerSelfie: Boolean(selfie),
-      hasShopPhoto: Boolean(shop),
+      hasOwnerSelfie: Boolean(selfie) || Boolean(visit),
+      hasShopPhoto: Boolean(shop) || Boolean(visit),
+      photosFromFieldVisit: Boolean(visit) && !(selfie && shop),
       runsFromHome: business.runsFromHome,
-      shopPhotoLatitude: shop?.latitude ?? null,
-      shopPhotoLongitude: shop?.longitude ?? null,
-      shopPhotoLocationRefused: Boolean(shop) && (shop?.latitude === null || shop?.longitude === null),
+      shopPhotoLatitude: shopLat,
+      shopPhotoLongitude: shopLng,
+      shopPhotoLocationRefused: Boolean(shop || visit) && (shopLat === null || shopLng === null),
       gstNumber: business.gstNumber,
       fssaiNumber: business.fssaiNumber,
       licenceNumber: business.licenceNumber,

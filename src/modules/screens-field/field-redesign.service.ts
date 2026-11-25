@@ -1,3 +1,4 @@
+import { findFieldVisitProof } from '../business/business-field-proof';
 import { linkChannel } from '../message/link-channel';
 import { PRODUCT_LANGUAGE, productLanguage } from '../../common/language/english-only';
 import { HttpStatus, Injectable, Logger, NotFoundException } from '@nestjs/common';
@@ -1152,10 +1153,13 @@ export class FieldRedesignService {
     });
     const path = verificationPathOf(b);
     const shopKinds: string[] = allowedShopKinds(b);
+    // Rev 213: the agent's own visit photos (board + selfie at the board) are the proof in the field.
+    const visit = await findFieldVisitProof(this.prisma, businessId);
     return {
-      needed: path !== 'household',
-      selfie: b.ownerPhotos.some((p) => p.kind === 'owner_selfie'),
-      shop: b.ownerPhotos.some((p) => shopKinds.includes(p.kind)),
+      needed: path !== 'household' && !visit,
+      fromFieldVisit: Boolean(visit),
+      selfie: Boolean(visit) || b.ownerPhotos.some((p) => p.kind === 'owner_selfie'),
+      shop: Boolean(visit) || b.ownerPhotos.some((p) => shopKinds.includes(p.kind)),
       shopKinds,
       smallBusiness: path === 'small_business',
     };
