@@ -13,6 +13,7 @@ import { useJobs, useProfile, type BusinessProfile, type Profile, type ReferralP
 import { clock12, followUpKindLabel, whyText } from '../_lib/format';
 import { SignupHelpBox } from '../_lib/SignupHelpBox';
 import { StuckBox } from '../../shared/StuckBox';
+import { NoWhatsAppToggle } from '../_lib/NoWhatsApp';
 import { BestJobs, Glance, History, ProfileHeader } from '../_lib/ProfileParts';
 import { useCallActions } from '../_lib/useCallActions';
 import { WorkListAside } from '../_lib/WorkListAside';
@@ -88,6 +89,7 @@ function ProfileBody({ profile, followUpView }: { profile: Profile; followUpView
         ))}
         <SignupHelpBox item={profile.onList} />
         <StuckBox kind={profile.type} id={profile.id} />
+        <NoWhatsAppToggle kind={profile.type} id={profile.id} />
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <Button variant="primary" onClick={placeCall} loading={placing} disabled={Boolean(blocked)}>
             ☎ {t('ca.profile.call', { name: first })}

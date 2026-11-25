@@ -1,4 +1,5 @@
-import { BadRequestException, Controller, Get, Headers, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import { NoWhatsAppService } from './no-whatsapp.service';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
@@ -6,10 +7,29 @@ import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { MessagingService } from './messaging.service';
 import { Public } from '../../common/rbac/public.decorator';
+import { queryText } from '../../common/http/plain-query';
 
 @Controller()
 export class MessageController {
-  constructor(private readonly messaging: MessagingService) {}
+  constructor(
+    private readonly messaging: MessagingService,
+    private readonly noWhatsApp: NoWhatsAppService,
+  ) {}
+
+  /** "No WhatsApp" on a person's profile (rev 211): call agent console only (call agents read every record). */
+  @Get('no-whatsapp')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequireRoles('call_agent')
+  noWhatsAppView(@Query('kind') kind?: string, @Query('id') id?: string) {
+    return this.noWhatsApp.view(queryText(kind, 'kind'), queryText(id, 'id'));
+  }
+
+  @Put('no-whatsapp')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequireRoles('call_agent')
+  setNoWhatsApp(@Req() req: Request & { user: JwtPayload }, @Body() body: { kind?: unknown; id?: unknown; noWhatsApp?: unknown }) {
+    return this.noWhatsApp.set({ id: req.user.sub }, body?.kind, body?.id, body?.noWhatsApp);
+  }
 
   @Post('messages/webhook/whatsapp')
   @Public('webhook: the sender is checked by its signature, not a staff login')

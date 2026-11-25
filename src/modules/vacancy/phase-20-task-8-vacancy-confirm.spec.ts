@@ -142,7 +142,8 @@ describe('Phase 20 Task 8: every vacancy confirmed by OTP, and the minimum-wage 
       await request(server()).post(`/vacancies/${created.body.id}/confirmation-link`)
         .set('Authorization', `Bearer ${callAgentToken}`).expect(201);
       const call = sendSpy.mock.calls.find(([input]) => input.template === 'vacancy_confirm_link');
-      expect(call?.[0].recipientPhone).toBe(businessPhone);
+      // Rev 211: WhatsApp first; the number goes in its one stored form (+91 and 10 digits).
+      expect(call?.[0].recipientPhone).toBe(`+91${businessPhone.replace(/^\+91/, '')}`);
       const token = (call![0].variables!.link as string).split('/vacancy-confirm/')[1];
 
       // Rev 192 S3: the SMS opens the owner's phone page, like the agreement link; a browser opening

@@ -1,3 +1,4 @@
+import { withSendingRules } from '../../test-support/messaging-double';
 import { Test, TestingModule } from '@nestjs/testing';
 import { withIssuedLinkToken } from '../../test-support/issued-link-token';
 import { LegalDocumentService } from '../legal/legal-document.service';
@@ -209,9 +210,9 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
         },
         {
           provide: MessagingService,
-          useValue: {
+          useValue: withSendingRules({
             send: jest.fn().mockResolvedValue({ success: true, messageId: 'msg-1' }),
-          },
+          }),
         },
         {
           provide: PricingService,
@@ -312,7 +313,8 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
 
       expect(messagingService.send).toHaveBeenCalledWith(
         expect.objectContaining({
-          channel: 'sms',
+          // WhatsApp first, SMS as backup (rev 211).
+          channel: 'whatsapp',
           template: 'referral_terms_link',
           subjectType: 'referral',
           subjectId: referralId,
@@ -415,7 +417,7 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
       expect(res.body.success).toBe(true);
       expect(res.body.requestId).toBe('otp-req-999');
       expect(res.body.phone).toBe('******3210');
-      expect(otpService.sendPublicPageOtp).toHaveBeenCalledWith(partnerPhone, link.token);
+      expect(otpService.sendPublicPageOtp).toHaveBeenCalledWith(partnerPhone, link.token, undefined);
     });
 
     it('refuses submission with invalid OTP code', async () => {

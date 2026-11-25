@@ -907,8 +907,8 @@ export class AttendanceRequestsService {
         kind === 'leave'
           ? `${this.label((row as LeaveRequest).fromDate)} to ${this.label((row as LeaveRequest).toDate)}`
           : this.label((row as AttendanceCorrection).date);
-      await this.messaging.send({
-        channel: 'sms',
+      // WhatsApp first, SMS as backup (rev 211).
+      await this.messaging.sendPreferWhatsApp({
         template: kind === 'leave' ? 'attendance_leave_decision' : 'attendance_correction_decision',
         subjectType: 'staff',
         subjectId: row.staffId,

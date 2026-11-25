@@ -127,7 +127,7 @@ export class ReferralLeadService {
    * address (all links), per number (all links), then per link; then the usual
    * public-page limits per number (one code every 30 seconds).
    */
-  async sendCode(slug: string, rawPhone: unknown, ip?: string | null) {
+  async sendCode(slug: string, rawPhone: unknown, ip?: string | null, channel?: 'whatsapp' | 'sms') {
     const partner = await this.partnerForSlug(slug);
     if (!partner) throw codedError(HttpStatus.NOT_FOUND, 'LINK_NOT_ACTIVE', 'This link is not active.');
     const phone = parseIndianMobile(rawPhone);
@@ -156,7 +156,7 @@ export class ReferralLeadService {
       throw codedError(HttpStatus.TOO_MANY_REQUESTS, 'LIMIT_REACHED', 'This link has been used a lot today. Try again later, or call Laboura.');
     }
     await this.limiter.claimSend(`${linkToken(slug)}:${publicOtpPhoneHash(phone).slice(0, 16)}`, phone, now);
-    const sent = await this.otp.sendPublicPageOtp(phone, linkToken(slug));
+    const sent = await this.otp.sendPublicPageOtp(phone, linkToken(slug), channel);
     return { success: true, requestId: sent.requestId, ...testModeFields(sent) };
   }
 

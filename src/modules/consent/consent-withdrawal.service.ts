@@ -137,8 +137,8 @@ export class ConsentWithdrawalService {
         "The job seeker requested consent withdrawal during an answered call",
     });
 
-    await this.messaging.send({
-      channel: "sms",
+    // WhatsApp first, SMS as backup (rev 211).
+    await this.messaging.sendPreferWhatsApp({
       template: "consent_withdrawn",
       subjectType: "job_seeker",
       subjectId: seeker.id,

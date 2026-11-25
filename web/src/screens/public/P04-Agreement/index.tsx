@@ -139,7 +139,7 @@ export default function Agreement() {
       <Choice checked={agreeRecording} onChange={setAgreeRecording} title={t('pub.agree.agreeRecording')} missing={showMissing} />
       <OtpBlock
         maskedPhone={d.maskedPhone}
-        send={() => agreementApi.sendOtp(token)}
+        send={(channel) => agreementApi.sendOtp(token, channel)}
         requestId={requestId}
         onRequestId={setRequestId}
         code={code}

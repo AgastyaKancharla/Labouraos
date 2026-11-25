@@ -177,6 +177,7 @@ services:
         value: mock
       - key: PAYMENT_PROVIDER_MODE
         value: mock
+      # mock (pretend) or meta (Meta WhatsApp Cloud API); WhatsApp first, SMS as backup (rev 211).
       - key: WHATSAPP_PROVIDER_MODE
         value: mock
       - key: TELEPHONY_PROVIDER_MODE
@@ -204,10 +205,13 @@ services:
         sync: false
       - key: SMS_DLT_TEMPLATE_IDS
         sync: false
-      # WhatsApp (Meta Cloud API)
+      # WhatsApp (Meta Cloud API; WHATSAPP_PROVIDER_MODE: mock or meta). Webhook (Meta app):
+      # https://app.laboura.com/whatsapp/webhook, subscribed to messages (rev 211, DEPLOY.md).
       - key: WHATSAPP_ACCESS_TOKEN
         sync: false
       - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_BUSINESS_ACCOUNT_ID
         sync: false
       - key: WHATSAPP_APP_SECRET
         sync: false
@@ -364,6 +368,7 @@ services:
         value: mock
       - key: PAYMENT_PROVIDER_MODE
         value: mock
+      # mock (pretend) or meta (Meta WhatsApp Cloud API); WhatsApp first, SMS as backup (rev 211).
       - key: WHATSAPP_PROVIDER_MODE
         value: mock
       - key: TELEPHONY_PROVIDER_MODE

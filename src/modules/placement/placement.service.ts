@@ -603,7 +603,7 @@ export class PlacementService {
     return { raised };
   }
 
-  async resendPaymentLink(placementId: string) {
+  async resendPaymentLink(placementId: string, channel?: 'whatsapp' | 'sms') {
     const placement = await this.prisma.placement.findFirst({
       where: {
         OR: [{ id: placementId }, { code: placementId }],
@@ -633,7 +633,7 @@ export class PlacementService {
     const branch = branchId
       ? await this.prisma.businessBranch.findUnique({ where: { id: branchId } })
       : null;
-    return this.upiCollectionService.resendRequest(payment.id, 'business', placement.businessId, branch?.contactPersonPhone);
+    return this.upiCollectionService.resendRequest(payment.id, 'business', placement.businessId, branch?.contactPersonPhone, channel);
   }
 
   async recordJoined(id: string, _dto?: RecordJoinedDto, actorId?: string, now = new Date()) {
@@ -1874,7 +1874,8 @@ export class PlacementService {
         : undefined,
       sms: this.messaging
         ? (m: { template: string; subjectType: 'business' | 'job_seeker'; subjectId: string; relatedId: string; variables: Record<string, string> }) =>
-            this.messaging!.send({ channel: 'sms', template: m.template, subjectType: m.subjectType, subjectId: m.subjectId, relatedType: 'placement', relatedId: m.relatedId, variables: m.variables })
+            // WhatsApp first, SMS as backup (rev 211).
+            this.messaging!.sendPreferWhatsApp({ template: m.template, subjectType: m.subjectType, subjectId: m.subjectId, relatedType: 'placement', relatedId: m.relatedId, variables: m.variables })
         : undefined,
     };
   }

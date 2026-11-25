@@ -487,7 +487,7 @@ export class JobSeekerService {
     };
   }
 
-  async createActivationPayment(jobSeekerId: string, actorId?: string) {
+  async createActivationPayment(jobSeekerId: string, actorId?: string, channel?: 'whatsapp' | 'sms') {
     void actorId;
     const jobSeeker = await this.prisma.jobSeeker.findUnique({
       where: { id: jobSeekerId },
@@ -523,8 +523,10 @@ export class JobSeekerService {
       jobSeekerId: jobSeeker.id,
       notifySubjectType: 'job_seeker',
       notifySubjectId: jobSeeker.id,
+      notifyChannel: channel,
     });
     return {
+      sentBy: upiRequest.sentBy ?? null,
       paymentId: upiRequest.paymentId,
       paymentCode: upiRequest.paymentCode,
       paymentLink: upiRequest.paymentLink,
@@ -827,7 +829,9 @@ export class JobSeekerService {
 
           if (amNoPickupCall && pmNoPickupCall && msgAttempt) {
             foundDayKey = dayKey;
-            selectedIds = [amNoPickupCall.id, pmNoPickupCall.id, msgAttempt.id];
+            // Rev 211: "we tried to call you" goes on WhatsApp and SMS together; both legs are the proof.
+            const messageIds = dayAttempts.filter((a) => a.channel === 'whatsapp' || a.channel === 'sms').map((a) => a.id);
+            selectedIds = [amNoPickupCall.id, pmNoPickupCall.id, ...messageIds];
             break;
           }
         }
@@ -1669,7 +1673,7 @@ export class JobSeekerService {
     };
   }
 
-  async createPaymentOnlyLink(jobSeekerId: string, recipientPhone: string, actorId: string, relation?: string) {
+  async createPaymentOnlyLink(jobSeekerId: string, recipientPhone: string, actorId: string, relation?: string, channel?: 'whatsapp' | 'sms') {
     if (!this.publicLinks || !this.messagingService) throw new BadRequestException('Payment-only links are not configured');
     if (relation !== undefined && relation !== null && !(PAYMENT_PAYER_RELATIONS as readonly string[]).includes(relation)) {
       throw new BadRequestException(`relation must be one of: ${PAYMENT_PAYER_RELATIONS.join(', ')}`);
@@ -1716,8 +1720,8 @@ export class JobSeekerService {
       createdByStaffId: actorId,
       metadata: { paymentId: payment.id, ...(relation ? { relation } : {}) },
     });
-    await this.messagingService.send({
-      channel: 'sms',
+    // "Send on WhatsApp" (SMS as backup) or "Send by SMS" (rev 211).
+    const sent = await this.messagingService.sendOn(channel, {
       template: 'payment_only_link',
       subjectType: 'job_seeker',
       subjectId: seeker.id,
@@ -1727,6 +1731,7 @@ export class JobSeekerService {
         firstName: seeker.name.trim().split(/\s+/)[0] ?? seeker.name,
         code: seeker.code,
         amountPaise: String(payment.expectedAmountPaise),
+        amount: `${Math.floor((payment.expectedAmountPaise ?? 0) / 100)}.${String((payment.expectedAmountPaise ?? 0) % 100).padStart(2, '0')}`,
       },
     });
     await this.auditService.log({
@@ -1739,7 +1744,7 @@ export class JobSeekerService {
       changedFields: ['paymentOnlyLink'],
       city: seeker.city,
     });
-    return { success: true, expiresAt, validMinutes };
+    return { success: true, expiresAt, validMinutes, sentBy: sent.channel };
   }
 
   // --- Trades (Phase 12 Task 3) ---

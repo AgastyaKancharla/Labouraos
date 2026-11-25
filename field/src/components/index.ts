@@ -21,3 +21,5 @@ export { Text, type TextVariant } from './Text';
 export { TextField } from './TextField';
 export { TileMap, type MapMarker } from './TileMap';
 export { TopBar } from './TopBar';
+export { SendLinkButtons, sentResultKey, type SendChannel } from './SendLinkButtons';
+export { SEND_BY_SMS_AFTER_MS, SendBySms } from './SendBySms';

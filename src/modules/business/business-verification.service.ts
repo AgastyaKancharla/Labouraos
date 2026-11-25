@@ -421,7 +421,7 @@ export class BusinessVerificationService {
     return updated.count === 1 ? suggestedStaffId : null;
   }
 
-  async sendOwnerOtp(businessId: string, assignmentId: string, staffId: string) {
+  async sendOwnerOtp(businessId: string, assignmentId: string, staffId: string, channel?: 'whatsapp' | 'sms') {
     const assignment = await this.prisma.visitAssignment.findFirst({
       where: {
         id: assignmentId,
@@ -434,7 +434,7 @@ export class BusinessVerificationService {
     });
     if (!assignment) throw new ForbiddenException('Only the assigned field agent may request owner presence OTP');
     // Bound to this visit: the check (field visit or visit form) asks for the same purpose.
-    const result = await this.otpService.sendBoundOtp(assignment.business.phone, ownerVisitOtpPurpose(assignment.id), staffId);
+    const result = await this.otpService.sendBoundOtp(assignment.business.phone, ownerVisitOtpPurpose(assignment.id), staffId, undefined, channel);
     const digits = assignment.business.phone.replace(/\D/g, '');
     return { success: true, requestId: result.requestId, phone: `******${digits.slice(-4)}`, ...testModeFields(result) };
   }

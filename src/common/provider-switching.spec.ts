@@ -3,6 +3,7 @@ import { OTP_PROVIDER } from './otp/otp.interface';
 import { MockOtpProvider } from './otp/mock-otp.provider';
 import { RealOtpProvider } from './otp/real-otp.provider';
 import { OtpModule } from './otp/otp.module';
+import { WhatsAppFirstOtpProvider } from './otp/whatsapp-first-otp.provider';
 import { AuthModule } from './auth/auth.module';
 
 import { PAYMENT_PROVIDER } from '../modules/payment/payment-provider.interface';
@@ -115,9 +116,10 @@ describe('Provider Switching and Config (Task 1)', () => {
       delete process.env.WHATSAPP_PROVIDER_MODE;
     });
 
-    it('injects RealOtpProvider when OTP_PROVIDER_MODE=real', () => {
+    it('injects RealOtpProvider when OTP_PROVIDER_MODE=real (behind WhatsApp first while WhatsApp is live too, rev 211)', () => {
       const provider = moduleRef.get(OTP_PROVIDER);
-      expect(provider).toBeInstanceOf(RealOtpProvider);
+      expect(provider).toBeInstanceOf(WhatsAppFirstOtpProvider);
+      expect((provider as WhatsAppFirstOtpProvider).smsSender).toBeInstanceOf(RealOtpProvider);
     });
 
     it('injects RealPaymentProvider when PAYMENT_PROVIDER_MODE=real', () => {

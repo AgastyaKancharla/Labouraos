@@ -2,7 +2,7 @@ import { StyleSheet, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useI18n, type MessageKey } from '@/i18n';
-import { Banner, Button, Card, EmptyState, ErrorState, HeroCard, LoadingState, Screen } from '@/components';
+import { Banner, Button, Card, EmptyState, ErrorState, HeroCard, LoadingState, Screen, SendLinkButtons, type SendChannel } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { useAfterSave } from '@/api/refresh';
@@ -44,8 +44,9 @@ export default function ReferralSavedScreen() {
     enabled: Boolean(id),
     refetchInterval: (q) => (q.state.data?.currentStep === 'complete' ? false : 5000),
   });
+  // Rev 211: "Send on WhatsApp" (SMS as backup) or the small "Send by SMS".
   const resend = useMutation({
-    mutationFn: () => queue.live(() => redesign.resendReferralLink(id)),
+    mutationFn: (channel: SendChannel) => queue.live(() => redesign.resendReferralLink(id, channel)),
     onSuccess: () => afterSave(queryKeys.referralStatus(id)),
   });
   const chip = (s: ReferralStep | undefined): { label: string; tone: 'green' | 'amber' | 'neutral' | 'tomato' } =>
@@ -80,12 +81,11 @@ export default function ReferralSavedScreen() {
               })}
             </Card>
             {status.data?.currentStep !== 'complete' ? (
-              <Button
+              <SendLinkButtons
                 label={resend.isSuccess ? t('fa23b.resent') : t('fa23b.resend')}
-                variant="secondary"
-                loading={resend.isPending}
-                disabled={resend.isSuccess}
-                onPress={() => resend.mutate()}
+                disabled={resend.isSuccess || resend.isPending}
+                run={(channel) => resend.mutateAsync(channel)}
+                onError={() => undefined}
                 testID="fa23b-resend"
               />
             ) : null}

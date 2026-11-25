@@ -93,7 +93,7 @@ export default function ReferralLinkPage() {
         maskedPhone={`******${mobile.slice(-4)}`}
         sendLabel={t('ref.page.sendCode')}
         sendDisabled={!ready}
-        send={() => api.post<{ requestId: string; phone: string }>(`/referral-links/${encodeURIComponent(slug)}/send-code`, { phone: mobile }, PUBLIC)}
+        send={(channel) => api.post<{ requestId: string; phone: string }>(`/referral-links/${encodeURIComponent(slug)}/send-code`, { phone: mobile, ...(channel ? { channel } : {}) }, PUBLIC)}
         requestId={requestId}
         onRequestId={setRequestId}
         code={code}

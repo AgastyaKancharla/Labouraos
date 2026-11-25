@@ -19,9 +19,9 @@ describe('FA10b Saved — send the link', () => {
     expect(screen.getByTestId('step-consent')).toHaveTextContent(/1 · ConsentNot sent yet/);
     expect(screen.getByTestId('step-payment')).toHaveTextContent(/4 · ₹499 paymentNot sent yet/);
     expect(screen.queryByTestId('other-payer')).toBeNull();
-    await fireEvent.press(screen.getByTestId('send-link'));
+    await fireEvent.press(screen.getByTestId('send-link-whatsapp'));
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/job-seekers/js-uuid/registration'));
-    expect(calls).toContainEqual({ method: 'POST', path: '/consent/links', body: { jobSeekerId: 'js-uuid' } });
+    expect(calls).toContainEqual({ method: 'POST', path: '/consent/links', body: { jobSeekerId: 'js-uuid', channel: 'whatsapp' } });
   });
 
   it("previews what she'll see: the four steps in order, in plain words", async () => {

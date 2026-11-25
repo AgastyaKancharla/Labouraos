@@ -194,6 +194,7 @@ const MAX_RESENDS = 3;
 /**
  * "Code sent to ******2345" with the six digit boxes (P00, P02s, P04, P05).
  * Send → type the code; Resend unlocks after 30 seconds, at most 3 times.
+ * Codes go on WhatsApp first; "Send by SMS" unlocks with Resend (rev 211).
  * The code always goes to the number on record; this page never sees it.
  */
 /**
@@ -222,7 +223,8 @@ export function OtpBlock({
   onBlocked,
 }: {
   maskedPhone: string;
-  send: () => Promise<OtpSent>;
+  /** `channel: 'sms'`: "Send by SMS" (a fresh code by SMS); otherwise WhatsApp first. */
+  send: (channel?: 'sms') => Promise<OtpSent>;
   requestId: string | null;
   onRequestId: (requestId: string) => void;
   code: string;
@@ -262,7 +264,8 @@ export function OtpBlock({
     return () => clearTimeout(timer);
   }, [wait]);
 
-  const doSend = async (isResend: boolean) => {
+  const [bySms, setBySms] = useState(false);
+  const doSend = async (isResend: boolean, channel?: 'sms') => {
     const missing = checkBeforeSend ? checkBeforeSend() : null;
     if (missing) {
       setTriedBlocked(true);
@@ -272,8 +275,9 @@ export function OtpBlock({
     setSending(true);
     setError(null);
     try {
-      const sent = await send();
+      const sent = channel ? await send(channel) : await send();
       onRequestId(sent.requestId);
+      setBySms(channel === 'sms');
       if (sent.phone) setShownPhone(sent.phone);
       onCode('');
       setWait(RESEND_SECONDS);
@@ -318,6 +322,7 @@ export function OtpBlock({
     <div className="fld">
       <span className="lbl" id={`${hintId}-label`}>
         {t('pub.otp.sentTo', { phone: shownPhone })}
+        {bySms ? ` ${t('otp.sentBySms')}` : ''}
       </span>
       <OtpInput value={code} onChange={typed} label={t('pub.otp.label')} autoFocus invalid={invalid} describedBy={hint ? hintId : undefined} />
       {hint && (
@@ -333,6 +338,11 @@ export function OtpBlock({
       {resends < MAX_RESENDS && (
         <button type="button" className="lb-pub-link" disabled={wait > 0 || sending || submitting} onClick={() => void doSend(true)}>
           {wait > 0 ? t('pub.otp.resendIn', { seconds: wait }) : t('pub.otp.resend')}
+        </button>
+      )}
+      {resends < MAX_RESENDS && wait <= 0 && (
+        <button type="button" className="lb-pub-link" disabled={sending || submitting} onClick={() => void doSend(true, 'sms')}>
+          {t('otp.sendBySms')}
         </button>
       )}
       <SendError error={error} />

@@ -126,7 +126,7 @@ export default function InterviewResult() {
       <Choice type="radio" name="result" checked={result === 'candidate_no_show'} onChange={() => setResult('candidate_no_show')} title={t('pub.result.noShow', { name })} />
       <OtpBlock
         maskedPhone={d.maskedPhone}
-        send={() => interviewApi.sendOwnerOtp(token)}
+        send={(channel) => interviewApi.sendOwnerOtp(token, channel)}
         requestId={requestId}
         onRequestId={setRequestId}
         code={code}

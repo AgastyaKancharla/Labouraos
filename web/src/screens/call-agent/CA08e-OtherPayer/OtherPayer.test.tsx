@@ -22,8 +22,9 @@ describe('Send payment link to another number (CA08e)', () => {
     expect(await screen.findByText(/someone else pays for Kavya/)).toBeInTheDocument();
     await user.type(screen.getByLabelText(/Their mobile number/), '9886041207');
     await user.selectOptions(screen.getByLabelText('Who is it?'), 'brother');
-    await user.click(screen.getByRole('button', { name: 'Send payment link' }));
-    await waitFor(() => expect(api.calls('POST /job-seekers/js-uuid/payment-only-link')[0]?.body).toEqual({ phone: '9886041207', relation: 'brother' }));
+    expect(screen.getByText('Send payment link')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Send on WhatsApp' }));
+    await waitFor(() => expect(api.calls('POST /job-seekers/js-uuid/payment-only-link')[0]?.body).toEqual({ phone: '9886041207', relation: 'brother', channel: 'whatsapp' }));
     expect(await screen.findByTestId('navigated-away')).toBeInTheDocument();
   });
 
@@ -32,6 +33,7 @@ describe('Send payment link to another number (CA08e)', () => {
     signInAs('call_agent');
     renderScreen(<OtherPayer />, { portal: 'call-agent', path: '/call-agent/register/job-seeker/js-uuid/other-payer', route: '/call-agent/register/job-seeker/:id/other-payer' });
     expect(await screen.findByText(/Not yet: consent, selfie and ID must be finished first/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Send payment link' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Send on WhatsApp' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Send by SMS' })).toBeDisabled();
   });
 });

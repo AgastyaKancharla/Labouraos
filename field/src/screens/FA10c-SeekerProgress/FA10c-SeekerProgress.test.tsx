@@ -22,10 +22,10 @@ describe('FA10c Following the registration', () => {
     expect(screen.getByTestId('seeker-banner')).toHaveTextContent('✓ Link sent · valid 48 hours');
     expect(screen.getByTestId('step-payment')).toHaveTextContent(/Stuck: UPI failed twice/);
     expect(screen.getByTestId('step-consent')).toHaveTextContent(/All 5 of 5 required given · offers and news: No/);
-    expect(screen.getByTestId('send-link')).toHaveTextContent('Resend link — continues from Payment');
+    expect(screen.getByTestId('send-link')).toHaveTextContent(/^Resend link — continues from PaymentSend on WhatsAppSend by SMS$/);
     await fireEvent.press(screen.getByTestId('other-payer'));
     await fireEvent.changeText(screen.getByTestId('payer-mobile'), '9900011122');
-    await fireEvent.press(screen.getByTestId('send-payment-link'));
-    await waitFor(() => expect(calls).toContainEqual({ method: 'POST', path: '/job-seekers/js-uuid/payment-only-link', body: { phone: '9900011122' } }));
+    await fireEvent.press(screen.getByTestId('send-payment-link-whatsapp'));
+    await waitFor(() => expect(calls).toContainEqual({ method: 'POST', path: '/job-seekers/js-uuid/payment-only-link', body: { phone: '9900011122', channel: 'whatsapp' } }));
   });
 });

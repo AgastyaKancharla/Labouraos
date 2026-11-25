@@ -121,12 +121,11 @@ describe('M3: Team Lead scope on job seekers', () => {
 
   // Owner rule (Master Guide, 14 Nov): a Team Lead works only on their own
   // team — for every action on a job seeker, not only for reading it.
+  // Rev 211: the payment-link routes (activation-payment, resend-payment, payment-only-link) send a
+  // link, so a Team Lead is refused them by role (tested below), not only outside the team.
   const writeRoutes: Array<[string, string]> = [
-    ['post', 'activation-payment'],
-    ['post', 'resend-payment'],
     // POST identity-verification and identity-verification/provider are gone (rev 154: staff can't
     // record or mark an ID check; 404 is covered in identity-verification.spec.ts).
-    ['post', 'payment-only-link'],
     ['post', 'hits'],
     ['post', 'reactivate'],
     ['post', 'found-own-job'],
@@ -161,6 +160,11 @@ describe('M3: Team Lead scope on job seekers', () => {
     // The guard lets it through; the route's own rules then answer (often 400
     // for this empty body). It is never the team refusal.
     expect(String(res.body?.message ?? '')).not.toContain('outside your own team');
+  });
+
+  it.each(['activation-payment', 'resend-payment', 'payment-only-link'])('rev 211: a Team Lead sends no links, even for their own team (%s)', async (suffix) => {
+    const res = await call('post', `/job-seekers/${ids.mine}/${suffix}`, tokens.TLA).send({});
+    expect(res.status).toBe(403);
   });
 
   it('a Team Lead edits their own team\'s job seeker', async () => {
@@ -205,7 +209,8 @@ describe('M3: Team Lead scope on job seekers', () => {
     const mine = await make('A', ids.CAA);
     expect((await call('get', `/referrals/${theirs.id}`, tokens.TLA)).status).toBe(404);
     expect((await call('patch', `/referrals/${theirs.id}`, tokens.TLA).send({ name: 'x', reason: 'y' })).status).toBe(404);
-    expect((await call('post', `/referrals/${theirs.id}/terms-links`, tokens.TLA).send({})).status).toBe(404);
+    // Rev 211: sending a link is for agents only (403 by role, whatever the team).
+    expect((await call('post', `/referrals/${theirs.id}/terms-links`, tokens.TLA).send({})).status).toBe(403);
     expect((await call('get', `/referrals/${theirs.id}/registration-status`, tokens.TLA)).status).toBe(404);
     expect((await call('get', `/referrals/${mine.id}/registration-status`, tokens.TLA)).status).toBe(200);
   });

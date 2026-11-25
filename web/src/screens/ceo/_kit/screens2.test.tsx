@@ -592,7 +592,7 @@ describe('Targets and leaderboard', () => {
 });
 
 describe('Call center and field ops', () => {
-  it('shows agents, assigns a missed call and resends a stuck registration link', async () => {
+  it('shows agents, assigns a missed call and lists a stuck registration without a send button (rev 211: the CEO sends nothing)', async () => {
     const api = mockApi({
       ...common,
       'GET /ceo/call-center': {
@@ -605,7 +605,6 @@ describe('Call center and field ops', () => {
         agents: [{ id: 'ca1', name: 'Deepa Nair' }],
       },
       'POST /telephony/callbacks/cb1/assign': { ok: true },
-      'POST /consent/links': { ok: true },
     });
     render(<CallCenter />, '/ceo/call-center');
     expect(await screen.findByText('Ramesh Gowda · JS-00203')).toBeInTheDocument();
@@ -615,9 +614,9 @@ describe('Call center and field ops', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Assign' }));
     await userEvent.click(within(await dialog()).getByRole('button', { name: 'Give this missed call to an agent' }));
     await waitFor(() => expect(api.calls('POST /telephony/callbacks/cb1/assign')[0].body).toEqual({ staffId: 'ca1' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Resend' }));
-    await userEvent.click(within(await dialog()).getByRole('button', { name: /Resend Pooja Nair/ }));
-    await waitFor(() => expect(api.calls('POST /consent/links')[0].body).toEqual({ jobSeekerId: 'js185' }));
+    expect(screen.getByText(/Pooja Nair/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Resend' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Send on WhatsApp|Send by SMS/ })).toBeNull();
   });
 
   it('field ops assigns a visit request to an agent', async () => {

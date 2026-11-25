@@ -1,3 +1,4 @@
+import { otpChannel } from '../../common/otp/otp.controller';
 import { Body, Controller, Get, HttpCode, Param, Post, Query, Req, UseGuards, UseInterceptors } from '@nestjs/common';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
@@ -98,8 +99,9 @@ export class ReferralLinkPublicController {
   @Post(':slug/send-code')
   @HttpCode(200)
   @Public('share link page: the code goes to the number the person typed, limited per link and per number')
-  sendCode(@Param('slug') slug: string, @Body('phone') phone: unknown, @Req() req: Request) {
-    return this.leads.sendCode(slug, phone, req.ip ?? req.socket?.remoteAddress ?? null);
+  sendCode(@Param('slug') slug: string, @Body('phone') phone: unknown, @Req() req: Request, @Body('channel') channel?: unknown) {
+    // "Send by SMS" (rev 211) after 30 seconds; otherwise WhatsApp first.
+    return this.leads.sendCode(slug, phone, req.ip ?? req.socket?.remoteAddress ?? null, otpChannel(channel));
   }
 
   @Post(':slug/leads')

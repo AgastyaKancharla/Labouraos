@@ -1,3 +1,4 @@
+import { withSendingRules } from '../../test-support/messaging-double';
 import jsQR from 'jsqr';
 import { PAY_PAGE_DAYS_AFTER_PAYMENT, payPageTokenFor, payPageTokenHash } from './pay-page-token';
 import { Prisma } from '@prisma/client';
@@ -41,7 +42,7 @@ describe('UpiCollectionService', () => {
     identityVerification: { findFirst: identityFindFirst },
   } as unknown as PrismaService;
   const idService = { generateCode: jest.fn().mockResolvedValue('PAY-00042') } as unknown as IdService;
-  const messaging = { send } as unknown as MessagingService;
+  const messaging = withSendingRules({ send }) as unknown as MessagingService;
   const service = new UpiCollectionService(prisma, idService, messaging);
 
   beforeEach(() => {
@@ -97,7 +98,9 @@ describe('UpiCollectionService', () => {
     expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ method: 'upi_direct', gatewayReference: null }),
     }));
-    expect(send).toHaveBeenCalledTimes(2);
+    // One message, WhatsApp first; the SMS goes only as its backup (rev 211).
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ channel: 'whatsapp', template: 'payment_request' }));
   });
 
   it('reuses the same pending obligation and UPI reference when re-sending', async () => {

@@ -63,11 +63,11 @@ function SeekerButton({ js }: { js: MySeeker }) {
         <RowAction
           name={js.name}
           label={row.status === 'link_not_sent' ? t('cl.js.action.sendLink') : t('cl.js.action.registration_link')}
-          run={() => api.post('/consent/links', { jobSeekerId: js.id })}
+          send={(channel) => api.post('/consent/links', { jobSeekerId: js.id, channel })}
         />
       );
     case 'payment_link':
-      return <RowAction name={js.name} label={t('cl.js.action.payment_link')} run={() => api.post(`/job-seekers/${enc(js.id)}/resend-payment`, {})} />;
+      return <RowAction name={js.name} label={t('cl.js.action.payment_link')} send={(channel) => api.post(`/job-seekers/${enc(js.id)}/resend-payment`, { channel })} />;
     case 'book_interview':
       return row.vacancyId ? (
         <RowAction name={js.name} label={t('cl.js.action.book_interview')} to={`${to('CA06-BookInterview')}?person=${enc(js.code)}&vacancy=${enc(row.vacancyId)}`} />
@@ -115,13 +115,13 @@ function BusinessButton({ b }: { b: MyBusiness }) {
   const row = b.row;
   switch (row.action) {
     case 'agreement_link':
-      return <RowAction name={b.name} label={t('cl.biz.action.agreement_link')} run={() => api.post(`/businesses/${enc(b.id)}/agreement-links`, {})} />;
+      return <RowAction name={b.name} label={t('cl.biz.action.agreement_link')} send={(channel) => api.post(`/businesses/${enc(b.id)}/agreement-links`, { channel })} />;
     case 'confirm_vacancy':
       if (!row.vacancyId) return null;
       return row.status === 'vacancy_to_send' ? (
         <RowAction name={b.name} label={t('cl.biz.action.finishVacancy')} to={`${to('CA09-AddVacancy')}?draft=${enc(row.vacancyId)}`} />
       ) : (
-        <RowAction name={b.name} label={t('cl.biz.action.resendVacancy')} run={() => api.post(`/vacancies/${enc(row.vacancyId!)}/confirmation-link`, {})} />
+        <RowAction name={b.name} label={t('cl.biz.action.resendVacancy')} send={(channel) => api.post(`/vacancies/${enc(row.vacancyId!)}/confirmation-link`, { channel })} />
       );
     case 'add_vacancy':
     case 'add_shifts':
@@ -153,7 +153,7 @@ export function PartnerRow({ p }: { p: MyPartner }) {
           row={p.row}
           button={
             p.row.action === 'partner_terms_link' ? (
-              <RowAction name={p.name} label={t('cl.ref.action.partner_terms_link')} run={() => api.post(`/referrals/${enc(p.id)}/terms-links`, {})} />
+              <RowAction name={p.name} label={t('cl.ref.action.partner_terms_link')} send={(channel) => api.post(`/referrals/${enc(p.id)}/terms-links`, { channel })} />
             ) : null
           }
         />

@@ -306,7 +306,8 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
       const payment = await prisma.payment.findFirst({ where: { jobSeekerId: s.id, type: 'activation', status: 'pending' } });
       expect(payment).not.toBeNull();
       const sentMessages = await prisma.messageLog.findMany({ where: { subjectType: 'job_seeker', subjectId: s.id, template: 'payment_request' } });
-      expect(sentMessages.map((m) => m.channel).sort()).toEqual(['sms', 'whatsapp']);
+      // WhatsApp first, SMS as backup (rev 211).
+      expect(sentMessages.map((m) => m.channel).sort()).toEqual(['whatsapp']);
     }
   });
 

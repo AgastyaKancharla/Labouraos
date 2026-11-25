@@ -1,3 +1,4 @@
+import { withSendingRules } from '../../test-support/messaging-double';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { payPageTokenHash } from './pay-page-token';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -92,7 +93,7 @@ describe('Phase 16 Task 4: Card payments, only when payer chooses card', () => {
     } as unknown as jest.Mocked<BankFeedProvider>;
 
     auditService = { log: jest.fn() };
-    messagingService = { send: jest.fn().mockResolvedValue({}) };
+    messagingService = withSendingRules({ send: jest.fn().mockResolvedValue({}) });
     reviewFlagService = { raise: jest.fn().mockResolvedValue({ id: 'rf-1' }), resolve: jest.fn() };
 
     const pricingService = {

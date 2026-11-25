@@ -1,29 +1,78 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { FREE_TEXT_TEMPLATE, WhatsAppMessageResult, WhatsAppProvider } from './whatsapp.interface';
 import { parseIndianMobile } from '../phone/indian-mobile';
-import { NEW_WHATSAPP_TEMPLATE_NAMES, whatsappTemplate } from '../../modules/message/whatsapp-templates';
+import { metaParameterName, NEW_WHATSAPP_TEMPLATE_NAMES, whatsappTemplate } from '../../modules/message/whatsapp-templates';
 
-export const APPROVED_TEMPLATES = [
-  'call_attempt_notice',
-  'interview_reminder',
-  'interview_offer',
-  'interview_booked',
-  'interview_candidate_for_owner',
-  'interview_result_request',
-  'candidate_offer_check',
-  'joining_confirmed',
-  'job_offer_notice',
-  'candidate_activation_confirmation',
-  // 21 Nov (rev 202): event messages, links sent on WhatsApp and inbound replies
-  // (texts in src/modules/message/whatsapp-templates.ts).
-  ...NEW_WHATSAPP_TEMPLATE_NAMES,
-];
+/**
+ * Every template with an approved text in src/modules/message/whatsapp-templates.ts
+ * (rev 211: every message the software sends has one). Nothing else is sent.
+ */
+export const APPROVED_TEMPLATES: string[] = [...NEW_WHATSAPP_TEMPLATE_NAMES];
+
+/** Meta's error code when a number cannot get WhatsApp messages (not on WhatsApp, or too old a version). */
+export const NO_WHATSAPP_ERROR_CODES = ['131026'] as const;
+
+export function isNoWhatsAppError(code: string | number | null | undefined): boolean {
+  return code !== null && code !== undefined && (NO_WHATSAPP_ERROR_CODES as readonly string[]).includes(String(code));
+}
+
+/**
+ * The Cloud API `template` object (rev 211). Utility templates carry named
+ * parameters, lowercase with underscores (`first_name`), only those the
+ * approved text declares, in its order. An Authentication template (a login or
+ * confirmation code) carries the code positionally in the body and again for
+ * its copy-code button, as Meta asks.
+ */
+export function templatePayload(templateName: string, params: Record<string, string>) {
+  const def = whatsappTemplate(templateName);
+  if (def?.category === 'authentication') {
+    const code = String(params?.code ?? '');
+    return {
+      name: templateName,
+      language: { code: 'en' },
+      components: [
+        { type: 'body', parameters: [{ type: 'text', text: code }] },
+        { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: code }] },
+      ],
+    };
+  }
+  // Only the variables the approved template declares, in its order (21 Nov): Meta refuses a
+  // wrong parameter count, and nothing else (a raw link token, for one) ever leaves for Meta.
+  const declared = def?.variables;
+  const sent: Array<[string, string]> = declared
+    ? declared.map((key) => [key, String(params?.[key] ?? '')])
+    : Object.entries(params ?? {});
+  return {
+    name: templateName,
+    language: { code: 'en' },
+    // A template without variables sends no body component (Meta refuses an empty parameter list).
+    components: sent.length === 0 ? [] : [
+      {
+        type: 'body',
+        parameters: sent.map(([key, value]) => ({
+          type: 'text',
+          text: value,
+          parameter_name: metaParameterName(key),
+        })),
+      },
+    ],
+  };
+}
 
 export interface RealWhatsAppProviderOptions {
   apiUrl?: string;
   accessToken?: string;
   phoneNumberId?: string;
+  /** The WhatsApp Business Account that owns the templates (WHATSAPP_BUSINESS_ACCOUNT_ID). */
+  businessAccountId?: string;
   fetchFn?: typeof fetch;
+}
+
+/** One template as Meta has it (name, review status, category). */
+export interface MetaTemplateStatus {
+  name: string;
+  status: string;
+  category: string | null;
 }
 
 @Injectable()
@@ -32,6 +81,7 @@ export class RealWhatsAppProvider implements WhatsAppProvider {
   private readonly apiUrl: string;
   private readonly accessToken: string;
   private readonly phoneNumberId: string;
+  private readonly businessAccountId: string;
   private readonly fetchFn: typeof fetch;
 
   constructor(options?: RealWhatsAppProviderOptions) {
@@ -45,7 +95,29 @@ export class RealWhatsAppProvider implements WhatsAppProvider {
       options?.phoneNumberId ??
       process.env.WHATSAPP_PHONE_NUMBER_ID ??
       '100000000000001';
+    this.businessAccountId = options?.businessAccountId ?? process.env.WHATSAPP_BUSINESS_ACCOUNT_ID ?? '';
     this.fetchFn = options?.fetchFn ?? globalThis.fetch;
+  }
+
+  /**
+   * Rev 211 (C9): the templates' review state at Meta, read from the WhatsApp Business Account,
+   * so the submission sheet can be checked against what Meta approved. Needs
+   * WHATSAPP_BUSINESS_ACCOUNT_ID; never sends anything.
+   */
+  async templateStatuses(): Promise<MetaTemplateStatus[]> {
+    if (!this.businessAccountId) throw new Error('WHATSAPP_BUSINESS_ACCOUNT_ID is not set');
+    const rows: MetaTemplateStatus[] = [];
+    let url: string | null = `${this.apiUrl}/${encodeURIComponent(this.businessAccountId)}/message_templates?fields=name,status,category&limit=200`;
+    for (let page = 0; url && page < 20; page += 1) {
+      const response = await this.fetchFn(url, { headers: { Authorization: `Bearer ${this.accessToken}` } });
+      const body = (await response.json()) as { data?: Array<{ name?: string; status?: string; category?: string }>; paging?: { next?: string }; error?: { message?: string } };
+      if (!response.ok) throw new Error(`Meta template list failed (${response.status}): ${body.error?.message ?? 'unknown error'}`);
+      for (const row of body.data ?? []) {
+        if (row.name) rows.push({ name: row.name, status: row.status ?? 'UNKNOWN', category: row.category ?? null });
+      }
+      url = body.paging?.next ?? null;
+    }
+    return rows;
   }
 
   async sendTemplateMessage(
@@ -75,35 +147,12 @@ export class RealWhatsAppProvider implements WhatsAppProvider {
     const indian = parseIndianMobile(phone);
     const cleanPhone = indian ? indian.slice(1) : phone.replace(/\D/g, '');
 
-    // Only the variables the approved template declares, in its order (21 Nov): Meta refuses a
-    // wrong parameter count, and nothing else (a raw link token, for one) ever leaves for Meta.
-    const declared = whatsappTemplate(templateName)?.variables;
-    const sent: Array<[string, string]> = declared
-      ? declared.map((key) => [key, String(params?.[key] ?? '')])
-      : Object.entries(params ?? {});
-
     const bodyPayload = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
       to: cleanPhone,
       type: 'template',
-      template: {
-        name: templateName,
-        language: {
-          code: 'en',
-        },
-        // A template without variables sends no body component (Meta refuses an empty parameter list).
-        components: sent.length === 0 ? [] : [
-          {
-            type: 'body',
-            parameters: sent.map(([key, value]) => ({
-              type: 'text',
-              text: value,
-              parameter_name: key,
-            })),
-          },
-        ],
-      },
+      template: templatePayload(templateName, params),
     };
 
     try {
@@ -125,6 +174,7 @@ export class RealWhatsAppProvider implements WhatsAppProvider {
         const errorMsg =
           (data.error as { message?: string })?.message ||
           `WhatsApp API returned status ${response.status}`;
+        const errorCode = (data.error as { code?: number | string } | undefined)?.code;
         this.logger.error(`[REAL WHATSAPP] API send failed: ${errorMsg}`);
         return {
           messageId: '',
@@ -132,6 +182,7 @@ export class RealWhatsAppProvider implements WhatsAppProvider {
           phone,
           templateName,
           error: errorMsg,
+          ...(errorCode !== undefined && errorCode !== null ? { errorCode: String(errorCode) } : {}),
           timestamp,
         };
       }

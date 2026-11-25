@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, IconTile, StatusChip, Text } from '@/components';
+import { Banner, Button, IconTile, StatusChip, Text, SendLinkButtons, type SendChannel } from '@/components';
 import { Checkbox } from '@/components/form';
 import { useEndpoints } from '@/api/ApiProvider';
 import { errorCode, type PageVacancy } from '@/api/endpoints';
@@ -65,7 +65,8 @@ export function VacancyStep({ vacancy: v, businessId, sr, canAct, last }: {
       router.push(`${sr.confirmVacancy(v.id)}${sent ? `?otp=${encodeURIComponent(sent.otpRequestId)}&last4=${sent.sentToLast4}` : ''}`);
     },
   });
-  const link = useMutation({ mutationFn: () => queue.live(() => selling.vacancyLink(v.id)), onSettled: refresh });
+  // Rev 211: "Send on WhatsApp" (SMS as backup) or the small "Send by SMS".
+  const link = useMutation({ mutationFn: (channel: SendChannel) => queue.live(() => selling.vacancyLink(v.id, channel)), onSettled: refresh });
   const step = v.nextStep;
   const tone = v.status === 'open' ? 'green' : v.status === 'draft' ? 'neutral' : 'amber';
   const statusKey: MessageKey = v.status === 'open' ? 'vac.status.open' : v.status === 'draft' ? 'vac.status.draft' : v.status === 'awaiting_confirmation' ? 'vac.status.waiting' : 'vac.status.other';
@@ -111,18 +112,14 @@ export function VacancyStep({ vacancy: v, businessId, sr, canAct, last }: {
           <Text variant="muted">
             {step.linkSentAt ? t('vac.linkSentAt', { time: formatTimeIst(step.linkSentAt), last4: step.sentToLast4 ?? '—' }) : t('vac.waitingOwner')}
           </Text>
-          <View style={styles.row}>
-            <Button label={t('vac.enterCode')} style={styles.flex} onPress={() => router.push(sr.confirmVacancy(v.id))} testID={`vacancy-${v.id}-code`} />
-            <Button
-              label={link.isSuccess ? t('vac.linkResent') : t('vac.resendLink')}
-              variant="secondary"
-              style={styles.flex}
-              loading={link.isPending}
-              disabled={link.isSuccess}
-              onPress={() => link.mutate()}
-              testID={`vacancy-${v.id}-link`}
-            />
-          </View>
+          <Button label={t('vac.enterCode')} onPress={() => router.push(sr.confirmVacancy(v.id))} testID={`vacancy-${v.id}-code`} />
+          <SendLinkButtons
+            label={link.isSuccess ? t('vac.linkResent') : t('vac.resendLink')}
+            disabled={link.isSuccess || link.isPending}
+            run={(channel) => link.mutateAsync(channel)}
+            onError={() => undefined}
+            testID={`vacancy-${v.id}-link`}
+          />
           {link.error ? <Banner tone="error" message={isApiError(link.error) ? link.error.message : t('common.error')} /> : null}
         </View>
       ) : step.kind === 'show_candidates' ? (
