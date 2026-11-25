@@ -21,6 +21,8 @@ describe('P01-Consent', () => {
     expect(screen.getByText('Read the full terms')).toBeInTheDocument();
     expect(api.calls('GET /legal/documents/job_seeker_terms')[0]!.query.get('lang')).toBe('en');
     expect(screen.getByText('Step 1 of 4 · Consent')).toBeInTheDocument();
+    // Notice 1.3 (rev 211): the line above the ticks, word for word.
+    expect(screen.getByTestId('consent-notice')).toHaveTextContent('Your 30 days start only after your government ID is verified. Until then your registration is paused.');
     const boxes = screen.getAllByRole('checkbox');
     expect(boxes).toHaveLength(6);
     boxes.forEach((box) => expect(box).not.toBeChecked());
@@ -88,5 +90,18 @@ describe('P01-Consent', () => {
     for (const box of await screen.findAllByRole('checkbox')) await userEvent.click(box);
     await userEvent.click(screen.getByRole('button', { name: 'I agree — continue' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong on our side');
+  });
+
+  it('under 18 by his date of birth: registration stops at consent, before any payment (rev 211)', async () => {
+    verifiedInThisTab();
+    mockApi({
+      [`GET /registration/${TOKEN}/status`]: openStatus({ stopped: 'under_18' }),
+      'GET /legal/documents/job_seeker_terms': legalDocument(),
+    });
+    render();
+    expect(await screen.findByText('Registration stops here.')).toBeInTheDocument();
+    expect(screen.getByText(/No payment is taken/)).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'I agree — continue' })).not.toBeInTheDocument();
   });
 });

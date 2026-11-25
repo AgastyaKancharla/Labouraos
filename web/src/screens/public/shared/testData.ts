@@ -74,14 +74,15 @@ export function legalDocument(key: 'job_seeker_terms' | 'business_agreement' | '
         : [];
   return {
     key,
-    version: key === 'referral_terms' ? '1.0' : '1.1',
+    version: key === 'referral_terms' ? '1.0' : key === 'job_seeker_terms' ? '1.2' : '1.1',
     language: 'en',
     title: 'Terms',
     summary: ['You pay ₹499 once.'],
     summaryHtml: '<section class="lb-legal__short"><h2>In short</h2><ul><li>You pay <strong>₹499</strong> once.</li></ul></section>',
     bodyHtml: '<section class="lb-legal__full"><h3>1. What Laboura does</h3><p>Full text.</p></section>',
     hash: 'abc',
-    noticeVersion: key === 'job_seeker_terms' ? '1.2' : null,
+    noticeVersion: key === 'job_seeker_terms' ? '1.3' : null,
+    consentNotice: key === 'job_seeker_terms' ? 'Your 30 days start only after your government ID is verified. Until then your registration is paused.' : null,
     consents: ticks.map((t) => ({ ...t, withdrawal: null })),
   };
 }

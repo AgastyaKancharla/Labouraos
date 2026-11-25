@@ -43,7 +43,7 @@ describe('P02-Payment', () => {
     });
     render();
     expect(await screen.findByRole('heading', { name: 'Pay ₹499 · Registration' })).toBeInTheDocument();
-    expect(screen.getByText('Step 4 of 4 · Payment')).toBeInTheDocument();
+    expect(screen.getByText('Step 3 of 4 · Payment')).toBeInTheDocument();
     expect(screen.getByText('Housekeeping · within 8 km of your area · day shift · at least ₹13,000 a month')).toBeInTheDocument();
     expect(screen.getByText(/Finding a job yourself ends it too/)).toBeInTheDocument();
     const tick = screen.getByRole('checkbox', { name: 'I have read and agree to these terms' });

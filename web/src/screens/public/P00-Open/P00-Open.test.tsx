@@ -18,7 +18,7 @@ describe('P00-Open / P02r-Resume', () => {
     // The link was sent when he had Kannada saved: the page is English all the same.
     expect(await screen.findByRole('heading', { name: 'Complete your registration' })).toBeInTheDocument();
     await waitFor(() => expect(document.documentElement.lang).toBe('en'));
-    expect(screen.getByText('4. Pay ₹499')).toBeInTheDocument();
+    expect(screen.getByText('3. Pay ₹499')).toBeInTheDocument();
     expect(screen.queryByText(/Kavya/)).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Send code to ******2345' }));

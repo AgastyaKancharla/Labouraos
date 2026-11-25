@@ -42,4 +42,21 @@ describe('P02b-Paid', () => {
     expect(screen.getByText('9 Dec')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'View receipt' })).toHaveAttribute('href', '/payments/pay-1/receipt?token=rt');
   });
+
+  it('paid with the ID check still to do: "only your ID check is left", no 30-day end date yet, and a way to the ID check (rev 211)', async () => {
+    verifiedInThisTab();
+    mockApi({
+      [`GET /registration/${TOKEN}/status`]: openStatus({
+        currentStep: 'id_check', steps: { consent: true, selfie: true, idCheck: false, payment: true }, receiptToken: 'rt',
+        payment: { state: 'confirmed', amountPaise: 49900, upiReference: null, confirmedAt: '2026-11-09T05:50:00Z', guaranteeEndsAt: null, paymentId: 'pay-1' },
+      }),
+    });
+    render();
+    expect(await screen.findByText('Payment received · ₹499')).toBeInTheDocument();
+    expect(screen.getByText(/Only your ID check is left/)).toBeInTheDocument();
+    expect(screen.queryByText(/Registration complete/)).not.toBeInTheDocument();
+    expect(screen.queryByText('9 Dec')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Continue to the ID check' }));
+    expect(await screen.findByTestId('navigated-away')).toBeInTheDocument();
+  });
 });
