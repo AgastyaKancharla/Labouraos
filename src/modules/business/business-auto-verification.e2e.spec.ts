@@ -198,7 +198,10 @@ describe('Business automatic verification (rev 211–212)', () => {
     const link = await consentLinks.createAgreementLink(business.id, callAgent.id, 'en');
     const page = await request(app.getHttpServer()).get(`/consent/${link.token}`).expect(200);
     expect(page.body.ownerPhotos).toMatchObject({ selfie: true, shop: true, fromFieldVisit: true });
-    await sign(business.id);
+    // Sign on the same link (a second link within a minute is refused).
+    const sent = await consentLinks.sendOtp(link.token);
+    const code = (otp.getProvider() as MockOtpProvider).getCode(sent.requestId)!;
+    await consentLinks.submitConsent({ token: link.token, otpRequestId: sent.requestId, otpCode: code, signedName: 'Ravi Kumar', purposes: ['agreement_terms', 'agreement_authority', 'call_recording'] });
     const after = await prisma.business.findUniqueOrThrow({ where: { id: business.id } });
     expect(after).toMatchObject({ verificationStatus: 'verified', autoCheckStatus: 'passed' });
     expect(JSON.stringify(after.autoCheckReasons)).toMatch(/in-person visit/);
