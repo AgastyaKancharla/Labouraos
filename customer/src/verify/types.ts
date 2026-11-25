@@ -179,6 +179,47 @@ export interface AgreementDetails {
   ownerName: string | null;
   terms: { feePercent: number; gstPercent: number; noBypassMonths: number; noBypassPenaltyPercent: number };
   guarantee: { replacementWindowDays: number; maxFreeReplacements: number; replacementSearchDays: number };
+  /** 25 Nov (rev 211–212): the owner's live photos taken so far; signing waits for both. */
+  ownerPhotos?: OwnerPhotoState | null;
+}
+
+export type ShopPhotoKind = 'shop_board' | 'fssai_with_owner' | 'workspace';
+export interface OwnerPhotoState {
+  selfie: boolean;
+  shop: boolean;
+  shopKind: ShopPhotoKind;
+  shopKinds: ShopPhotoKind[];
+  smallBusiness?: boolean;
+}
+
+/** The phone's place for the shop photo, or that it was refused / not available. */
+export interface PhotoPlace {
+  latitude?: number;
+  longitude?: number;
+  accuracyMeters?: number;
+  locationStatus?: 'refused' | 'unavailable';
+}
+
+/** What the owner's interview result page (P05) shows. */
+export interface InterviewResultDetails {
+  candidateFirstName: string;
+  businessName: string;
+  job: string;
+  slotStartsAt: string;
+  slotEndsAt: string;
+  resultDueAt: string | null;
+  vacancySalaryMinPaise: number | null;
+  maskedPhone: string;
+  awaitingResult: boolean;
+  reasons: string[];
+}
+
+export type InterviewResultValue = 'selected' | 'not_selected' | 'candidate_no_show';
+export interface InterviewResultInput {
+  result: InterviewResultValue;
+  resultReason?: string;
+  selectedSalaryPaise?: number;
+  selectedJoiningDate?: string;
 }
 
 export interface SignedAgreement {

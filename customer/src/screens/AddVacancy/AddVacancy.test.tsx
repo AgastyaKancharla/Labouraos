@@ -89,7 +89,7 @@ describe('Add a vacancy', () => {
     expect(api.sendStepUp).toHaveBeenCalledWith('confirm_vacancy', undefined);
     await fireEvent.changeText(await screen.findByTestId('vacancy-otp-card-code'), '123456');
     await waitFor(() => expect(api.confirmVacancy).toHaveBeenCalledWith('p-biz', 'v-9', { otp: { requestId: 'vreq', code: '123456' }, ownerToldMinimumWage: true }));
-    expect(await screen.findByTestId('vacancy-waiting-visit')).toHaveTextContent(/after the verification visit/);
+    expect(await screen.findByTestId('vacancy-waiting-visit')).toHaveTextContent(/our team approves your business/);
     await fireEvent.press(screen.getByTestId('vacancy-home'));
     expect(router.replace).toHaveBeenCalledWith('/home');
   });

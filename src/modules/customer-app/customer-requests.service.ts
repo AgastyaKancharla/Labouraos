@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { CustomerAuthClock } from '../../common/customer-auth/customer-auth.clock';
-import { CustomerScopeService } from '../../common/customer-auth/customer-scope.service';
+import { CustomerScopeService, type ScopedProfile } from '../../common/customer-auth/customer-scope.service';
 import { CUSTOMER_ERROR_CODES, CustomerApiError } from '../../common/customer-auth/customer-auth.errors';
 import { refundGuaranteeDeadline } from '../../common/money/money';
 import { PAID_WAITING_ID } from '../job-seeker/job-seeker.status';
@@ -11,6 +11,7 @@ import { publicPageLink } from '../../common/public-pages';
 import { ConsentLinkService } from '../consent/consent-link.service';
 import { PricingService } from '../pricing/pricing.service';
 import { VacancyService } from '../vacancy/vacancy.service';
+import { interviewResultOpensAt } from '../vacancy/interview-result-window';
 import { VacancyConfirmationService } from '../vacancy/vacancy-confirmation.service';
 import { CreateVacancyDto } from '../vacancy/dto/create-vacancy.dto';
 import { CustomerSignInService } from '../customer-account/customer-sign-in.service';
@@ -103,7 +104,47 @@ export class CustomerRequestsService {
       const link = await this.consentLinks.createAgreementLink(profile.businessId!, null, account.language, { sms: false, issuedTo });
       return { url: publicPageLink('businessAgreement', link.token), purpose, expiresAt: link.expiresAt };
     }
-    throw validation('purpose must be registration, referral_registration or business_agreement', { field: 'purpose' });
+    if (purpose === 'interview_result') {
+      if (profile.kind !== 'business') throw this.kindMismatch('business');
+      return this.interviewResultLink(profile, body?.interviewId);
+    }
+    throw validation('purpose must be registration, referral_registration, business_agreement or interview_result', { field: 'purpose' });
+  }
+
+  /**
+   * 26 Nov (owner): the interview result inside the app. The app gets the same owner-result link
+   * the WhatsApp / SMS message carries (P05), for one of this business's own interviews (a branch
+   * manager: his branch's), once the result opens — an hour after the start, or the end of the slot
+   * if sooner. The code still goes to the number the result belongs to (the branch contact or the
+   * business phone), and the result is recorded by the existing P05 endpoints.
+   */
+  private async interviewResultLink(profile: ScopedProfile, interviewId: unknown) {
+    if (typeof interviewId !== 'string' || !interviewId) throw validation('interviewId is required', { field: 'interviewId' });
+    const interview = await this.prisma.interview.findFirst({
+      where: { id: interviewId, businessId: profile.businessId!, ...(profile.branchId ? { vacancy: { branchId: profile.branchId } } : {}) },
+      select: { id: true, status: true, slotStartsAt: true, slotEndsAt: true, resultRecordedAt: true, business: { select: { phone: true } }, vacancy: { select: { branchId: true } } },
+    });
+    if (!interview) throw new CustomerApiError(HttpStatus.NOT_FOUND, CUSTOMER_ERROR_CODES.NOT_ALLOWED, 'That interview is not one of yours');
+    if (interview.status !== 'confirmed' || interview.resultRecordedAt) {
+      throw new CustomerApiError(HttpStatus.CONFLICT, CUSTOMER_ERROR_CODES.NOT_ALLOWED, 'This interview is no longer waiting for a result');
+    }
+    const now = this.clock.now();
+    const opensAt = interviewResultOpensAt(interview.slotStartsAt, interview.slotEndsAt);
+    if (now.getTime() < opensAt.getTime()) {
+      throw new CustomerApiError(HttpStatus.CONFLICT, CUSTOMER_ERROR_CODES.NOT_ALLOWED, 'You can give the result after the interview', { opensAt: opensAt.toISOString() });
+    }
+    const branch = interview.vacancy.branchId
+      ? await this.prisma.businessBranch.findUnique({ where: { id: interview.vacancy.branchId }, select: { contactPersonPhone: true } })
+      : null;
+    const phone = branch?.contactPersonPhone ?? interview.business.phone;
+    const policy = await this.pricing.current();
+    // The same close time as the WhatsApp link: after it the agent records the result instead.
+    const expiresAt = new Date(interview.slotEndsAt.getTime() + policy.interviewResultCloseHours * 60 * 60 * 1000);
+    if (expiresAt.getTime() <= now.getTime()) {
+      throw new CustomerApiError(HttpStatus.CONFLICT, CUSTOMER_ERROR_CODES.NOT_ALLOWED, 'This interview is no longer waiting for a result');
+    }
+    const token = await this.consentLinks.createInterviewActionToken(interview.id, 'owner_result', phone, expiresAt);
+    return { url: publicPageLink('interviewResult', token), purpose: 'interview_result', expiresAt };
   }
 
   private kindMismatch(kind: string): CustomerApiError {

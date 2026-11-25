@@ -274,7 +274,8 @@ export interface JobSeekerHome {
   stuckReason: string | null;
   payment: { status: 'not_paid' | 'confirming' | 'paid'; amountPaise: number };
   guarantee: {
-    status: 'not_started' | 'running' | 'placed' | 'ended' | 'deactivated';
+    /** waiting_id (rev 211): paid, the 30 days start only once his ID check passes. */
+    status: 'not_started' | 'waiting_id' | 'running' | 'placed' | 'ended' | 'deactivated';
     day: number | null;
     totalDays: number;
     endsOn: string | null;
@@ -300,7 +301,7 @@ export interface JobSeekerHome {
   };
 }
 
-export type VacancyStatus = 'draft' | 'awaiting_otp' | 'waiting_for_visit' | 'open' | 'filled' | 'closed';
+export type VacancyStatus = 'draft' | 'awaiting_otp' | 'waiting_for_visit' | 'open' | 'filled' | 'closed' | 'being_checked';
 
 export interface VacancySummary {
   /** The draft id for drafts (used to confirm); otherwise the code or a stable id. */
@@ -332,10 +333,31 @@ export interface BusinessHome {
     approval: 'waiting' | 'approved' | 'paused';
   };
   vacancies: VacancySummary[];
+  /** 26 Nov: interviews booked with a shortlisted candidate, then their result (newest results kept 3 days). */
+  interviews: BusinessInterview[];
   /** workersPlaced: workers whose fee is paid (working now, or due to join) — "Report a worker left" shows above 0. */
   counts: { interviewsUpcoming: number; placements: number; workersPlaced: number };
   /** D6 (rev 176): suspended by the CEO — no new vacancies, candidates or interviews while it lasts. */
   suspension?: { until: string | null; permanent: boolean; reason: string | null } | null;
+}
+
+/**
+ * 26 Nov (owner): the interview card on the business Home. The candidate is
+ * shown by first name, age, trade, years, languages and photo — never a
+ * surname or phone number before the fee (no-bypass rule).
+ */
+export interface BusinessInterview {
+  id: string;
+  vacancyCode: string | null;
+  trade: string;
+  startsAt: string;
+  endsAt: string;
+  /** An hour after the start (or the end of the slot if sooner): "Give the result" opens then. */
+  resultOpensAt: string;
+  state: 'waiting_for_candidate' | 'upcoming' | 'result_due' | 'result_sent';
+  result: 'selected' | 'not_selected' | 'candidate_no_show' | null;
+  resultReason: string | null;
+  candidate: { firstName: string; age: number | null; trade: string | null; yearsExperience: number | null; languages: string[]; photoUrl: string | null };
 }
 
 /** "A worker left" (contract 8.2): a report that brings a call from the team, not the claim itself. */

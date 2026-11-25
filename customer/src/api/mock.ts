@@ -1,4 +1,4 @@
-import { onMockProfileLookup, onMockProgress } from '@/verify/mockSteps';
+import { mockInterviewToken, onMockInterview, onMockProfileLookup, onMockProgress } from '@/verify/mockSteps';
 import type { MockPersist } from './mockPersist';
 import { ApiError } from './errors';
 import { announceTestMode } from './testMode';
@@ -6,6 +6,7 @@ import type { CustomerApi } from './customerApi';
 import type {
   BusinessShift,
   BusinessHome,
+  BusinessInterview,
   CustomerAccount,
   FormOptions,
   JobSeekerHome,
@@ -143,6 +144,29 @@ export function mockCustomerApi({ latencyMs = 250, persist }: { latencyMs?: numb
   };
 
   // The pretend steps ask whose link it is: the business name and the person who registered it.
+  // 26 Nov: the business Home's pretend interviews, and their result from the app.
+  onMockInterview(
+    (interviewId) => {
+      for (const [, home] of Object.entries(state.homes)) {
+        if (home.kind !== 'business') continue;
+        const iv = home.interviews.find((i) => i.id === interviewId);
+        if (iv) return { id: iv.id, candidateFirstName: iv.candidate.firstName, businessName: home.name, job: iv.trade, startsAt: iv.startsAt, endsAt: iv.endsAt, salaryMinPaise: 1_500_000 };
+      }
+      return null;
+    },
+    (interviewId, result, reason) => {
+      void ready.then(() => {
+        for (const [, home] of Object.entries(state.homes)) {
+          if (home.kind !== 'business') continue;
+          home.interviews = home.interviews.map((i) =>
+            i.id === interviewId ? { ...i, state: 'result_sent', result: result as BusinessInterview['result'], resultReason: reason } : i,
+          );
+        }
+        save();
+      });
+    },
+  );
+
   onMockProfileLookup((profileId) => {
     const home = state.homes[profileId];
     if (!home) return null;
@@ -158,7 +182,14 @@ export function mockCustomerApi({ latencyMs = 250, persist }: { latencyMs?: numb
       if (home.kind === 'job_seeker') {
         if (event === 'consent') home.steps.consent = 'done';
         if (event === 'selfie') home.steps.selfie = 'done';
-        if (event === 'id_check') home.steps.idCheck = 'done';
+        if (event === 'id_check') {
+          home.steps.idCheck = 'done';
+          // Rev 211: paid and ID passed → the 30 days start now.
+          if (home.payment.status === 'paid' && home.guarantee.status === 'waiting_id') {
+            home.guarantee = { ...home.guarantee, status: 'running', day: 1, hits: 0, endsOn: new Date(Date.now() + 29 * 86_400_000).toISOString().slice(0, 10) };
+            setStage(profileId, 'active');
+          }
+        }
         if (event === 'terms_accepted') {
           home.steps.payment = 'in_progress';
           home.payment.status = 'confirming';
@@ -167,8 +198,14 @@ export function mockCustomerApi({ latencyMs = 250, persist }: { latencyMs?: numb
         if (event === 'paid') {
           home.steps.payment = 'done';
           home.payment.status = 'paid';
-          home.guarantee = { ...home.guarantee, status: 'running', day: 1, hits: 0, endsOn: new Date(Date.now() + 29 * 86_400_000).toISOString().slice(0, 10) };
-          setStage(profileId, 'active');
+          if (home.steps.idCheck === 'done') {
+            home.guarantee = { ...home.guarantee, status: 'running', day: 1, hits: 0, endsOn: new Date(Date.now() + 29 * 86_400_000).toISOString().slice(0, 10) };
+            setStage(profileId, 'active');
+          } else {
+            // Rev 211: "Paid, waiting for ID" — the 30 days start once the ID check passes.
+            home.guarantee = { ...home.guarantee, status: 'waiting_id', day: null, endsOn: null };
+            home.steps.idCheck = 'in_progress';
+          }
         }
       } else if (home.kind === 'referral_partner') {
         if (event === 'terms') home.steps.terms = 'done';
@@ -181,7 +218,27 @@ export function mockCustomerApi({ latencyMs = 250, persist }: { latencyMs?: numb
           setStage(profileId, 'active');
         }
       } else if (event === 'agreement_signed') {
-        home.tracker = { ...home.tracker, agreement: 'signed', visit: 'booked', visitAt: new Date(Date.now() + 86_400_000).toISOString(), visitAgentFirstName: 'Kiran' };
+        // Rev 211: checked automatically after signing (no visit for a shop). The test app then
+        // pretends our team booked two interviews from the WhatsApp shortlist (26 Nov).
+        home.tracker = { ...home.tracker, agreement: 'signed', approval: 'approved' };
+        home.vacancies = home.vacancies.map((v) => (v.status === 'waiting_for_visit' ? { ...v, status: 'open' } : v));
+        const trade = home.vacancies[0]?.trade || 'Cook';
+        const hour = 3_600_000;
+        const ago = Date.now() - 2 * hour;
+        const tomorrow = new Date(Date.now() + 24 * hour);
+        tomorrow.setMinutes(0, 0, 0);
+        home.interviews = [
+          {
+            id: `iv-${profileId}-1`, vacancyCode: home.vacancies[0]?.code ?? null, trade, startsAt: new Date(ago).toISOString(), endsAt: new Date(ago + hour).toISOString(),
+            resultOpensAt: new Date(ago + hour).toISOString(), state: 'result_due', result: null, resultReason: null,
+            candidate: { firstName: 'Ravi', age: 27, trade, yearsExperience: 4, languages: ['Kannada', 'Hindi'], photoUrl: null },
+          },
+          {
+            id: `iv-${profileId}-2`, vacancyCode: home.vacancies[0]?.code ?? null, trade, startsAt: tomorrow.toISOString(), endsAt: new Date(tomorrow.getTime() + hour).toISOString(),
+            resultOpensAt: new Date(tomorrow.getTime() + hour).toISOString(), state: 'upcoming', result: null, resultReason: null,
+            candidate: { firstName: 'Manjunath', age: 31, trade, yearsExperience: 6, languages: ['Kannada', 'Tamil'], photoUrl: null },
+          },
+        ];
       }
       save();
     });
@@ -296,6 +353,7 @@ export function mockCustomerApi({ latencyMs = 250, persist }: { latencyMs?: numb
           code,
           name: form.boardName,
           tracker: { phoneVerified: true, agreement: 'not_signed', visit: 'requested', visitAt: null, visitAgentFirstName: null, approval: 'waiting' },
+          interviews: [],
           vacancies: form.staffNeeded.map((row) => ({
             id: `v-${next()}`,
             code: null,
@@ -342,6 +400,14 @@ export function mockCustomerApi({ latencyMs = 250, persist }: { latencyMs?: numb
       wait(() => {
         if (!state.homes[profileId]) throw fail(404, 'PROFILE_NOT_FOUND', 'Not found');
         return { url: MOCK_SHEET_URL };
+      }),
+    interviewResultLink: (profileId, interviewId) =>
+      wait(() => {
+        const home = state.homes[profileId];
+        const iv = home?.kind === 'business' ? home.interviews.find((i) => i.id === interviewId) : null;
+        if (!iv) throw fail(404, 'NOT_ALLOWED', 'That interview is not one of yours');
+        if (iv.state !== 'result_due') throw fail(409, 'NOT_ALLOWED', 'You can give the result after the interview');
+        return { url: `https://app.laboura.com/p/interview-result/${mockInterviewToken(interviewId)}` };
       }),
 
     home: (profileId) =>

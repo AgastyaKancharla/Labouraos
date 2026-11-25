@@ -26,8 +26,10 @@ export function directionsUrl(i: NonNullable<JobSeekerHome['interview']>): strin
 export function JobSeekerHomeView({ profileId, home, hero, belowHero }: { profileId: string; home: JobSeekerHome; hero: HeroInfo; belowHero?: ReactNode }) {
   const { t } = useI18n();
   const { account } = useAuth();
-  const registrationDone = home.payment.status !== 'not_paid';
   const g = home.guarantee;
+  // Rev 211: paid but the ID check is still to do → registration is not finished yet.
+  const waitingId = g.status === 'waiting_id';
+  const registrationDone = home.payment.status !== 'not_paid' && !waitingId;
   const hasPartner = (account?.profiles ?? []).some((p) => p.kind === 'referral_partner');
   // Each step has its own colour and drawn icon (Master Guide: colour-coded steps).
   const steps: StepItem[] = [
@@ -35,8 +37,9 @@ export function JobSeekerHomeView({ profileId, home, hero, belowHero }: { profil
     { key: 'profile', label: t('jsHome.stepProfile'), state: home.steps.profile, icon: 'user', accent: 'navy' },
     { key: 'consent', label: t('jsHome.stepConsent'), state: home.steps.consent, icon: 'doc', accent: 'cyan' },
     { key: 'selfie', label: t('jsHome.stepSelfie'), state: home.steps.selfie, icon: 'camera', accent: 'gold' },
-    { key: 'idCheck', label: t('jsHome.stepId'), state: home.steps.idCheck, icon: 'id-card', accent: 'orange' },
+    // Rev 211 order: Consent → Selfie → Payment → ID check.
     { key: 'payment', label: t('jsHome.stepPayment', { amount: rupees(home.payment.amountPaise) }), state: home.steps.payment, icon: 'rupee', accent: 'good' },
+    { key: 'idCheck', label: t('jsHome.stepId'), state: home.steps.idCheck, icon: 'id-card', accent: 'orange' },
   ];
   const doneCount = steps.filter((s) => s.state === 'done').length;
   const nextStep = steps.find((s) => s.state !== 'done');
@@ -57,7 +60,13 @@ export function JobSeekerHomeView({ profileId, home, hero, belowHero }: { profil
   return (
     <View style={styles.gap} testID="js-home">
       <HeroCard eyebrow={hero.eyebrow} title={hero.title} emoji={heroEmoji} testID="js-home-hero">
-        {!registrationDone ? (
+        {waitingId ? (
+          <View style={styles.heroBlock} testID="js-home-waiting-id">
+            <Text style={heroText.label}>{t('jsHome.waitingIdTitle')}</Text>
+            <Text style={heroText.big}>{t('jsHome.stepId')}</Text>
+            <Text style={heroText.body}>{t('jsHome.waitingId')}</Text>
+          </View>
+        ) : !registrationDone ? (
           <View style={styles.heroBlock} testID="js-home-hero-next">
             <Text style={heroText.label}>{t('jsHome.finishTitle')}</Text>
             {nextStep ? <Text style={heroText.big}>{nextStep.label}</Text> : null}
@@ -98,7 +107,7 @@ export function JobSeekerHomeView({ profileId, home, hero, belowHero }: { profil
           <View style={styles.gap}>
             <StepList testID="js-step" steps={steps} />
             {home.stuckReason ? <Banner tone="warn" message={home.stuckReason} testID="js-home-stuck" /> : null}
-            <Text variant="muted">{t('jsHome.payLast')}</Text>
+            {waitingId ? <Banner tone="info" message={t('jsHome.waitingId')} testID="js-home-waiting-id-note" /> : <Text variant="muted">{t('jsHome.payLast')}</Text>}
             <Button label={t('jsHome.continue')} onPress={() => router.push(routes.verify('registration', profileId))} testID="js-home-continue" />
             <Button label={t('jsHome.needHelp')} variant="secondary" onPress={() => router.push(routes.help)} testID="js-home-help" />
           </View>
