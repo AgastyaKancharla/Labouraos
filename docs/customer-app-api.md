@@ -1361,3 +1361,13 @@ its API is `GET /referral-links/:slug`, `POST /referral-links/:slug/send-code { 
 `POST /referral-links/:slug/leads { name, phone, lookingFor: job|staff, area?, consent: true, requestId, code }`
 (always `{ received: true }`, no oracle; at most 30 leads and 60 codes a day per link,
 the usual public-page code limits per number). The app does not need these.
+
+## 16. WhatsApp first, SMS as backup (25 Nov, Master Guide rev 211) — for the customer-app session
+
+What changed on the server (no endpoint was removed or renamed; the app needs no change to keep working):
+
+- **Codes go on WhatsApp first.** While the server's WhatsApp is live (`WHATSAPP_PROVIDER_MODE=meta`), every code the app asks for (`POST /auth/otp/send`, add-mobile, fresh-OTP / step-up sends) goes as a WhatsApp Authentication message (copy-code button); SMS is the backup (sent at once if WhatsApp refuses it or later reports it failed). The `requestId` stays the same for the whole request; either code (WhatsApp or SMS) is accepted, with the same 5 minutes, 5 wrong tries, 30-second resend wait and 3 resends. Request ids of WhatsApp codes start `wa_otp_`; treat `requestId` as opaque as before.
+- **New optional body field `channel` on every code send:** `"sms"` asks for the code by SMS instead ("Send by SMS"). The guide wants the code screen to offer **"Send by SMS" 30 seconds after a code went** (with Resend): send the same body as a resend (`requestId` of the open request) plus `"channel": "sms"`. Any other value is ignored on the customer routes. Example: `{ "phone": "9876543210", "requestId": "wa_otp_…", "channel": "sms" }`.
+- **Test-mode code:** `testModeCode` is now also returned while WhatsApp is live, as long as the OTP and SMS vendors are still mock (customer OTP test mode rules otherwise unchanged).
+- **Messages to the person** (receipts, invoices, interview booked / offer check, joining confirmed, payout-details link and so on) now go on WhatsApp first with SMS as backup; interview offers and "we tried to call you" still go on both. The in-app inbox and pushes are unchanged.
+- The SMS link pages (`/p/...`) that the app opens or shares accept the same optional `channel: "sms"` on their "Send code" calls (`POST /consent/send-otp`, `/registration/payment/:token/send-otp`, `/interviews/result/:token/otp`, `/vacancy-confirm/:token/send-otp`, `/referral-links/:slug/send-code`, `/payout-accounts/send-otp`).
