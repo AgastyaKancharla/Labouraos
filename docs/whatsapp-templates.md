@@ -761,7 +761,7 @@ Hi {{first_name}}, your details for Laboura registration {{code}} are saved. Nex
 | `{{code}}` | LB-00123 |
 | `{{amount}}` | 499.00 |
 | `{{link}}` | https://app.laboura.com/p/register/k7m4q2px |
-| `{{days}}` | days |
+| `{{days}}` | 30 |
 
 ## payment_received_id_left
 
@@ -781,7 +781,7 @@ Hi {{first_name}}, payment received for Laboura registration {{code}}. Only your
 | `{{first_name}}` | Ravi |
 | `{{code}}` | LB-00123 |
 | `{{link}}` | https://app.laboura.com/p/register/k7m4q2px |
-| `{{days}}` | days |
+| `{{days}}` | 30 |
 
 ## guarantee_started
 
@@ -799,8 +799,8 @@ Hi {{first_name}}, your ID is verified and your {{days}} days have started. They
 | Variable | Sample value |
 | --- | --- |
 | `{{first_name}}` | Ravi |
-| `{{days}}` | days |
-| `{{end_date}}` | endDate |
+| `{{days}}` | 30 |
+| `{{end_date}}` | 25 Dec 2026 |
 
 ## id_check_failed_refund
 
@@ -819,8 +819,8 @@ Hi {{first_name}}, your ID check for Laboura registration {{code}} did not pass:
 | --- | --- |
 | `{{first_name}}` | Ravi |
 | `{{code}}` | LB-00123 |
-| `{{reason}}` | reason |
-| `{{amount}}` | 499.00 |
+| `{{reason}}` | the name on the ID does not match your registration |
+| `{{amount}}` | Rs 499 |
 
 ## id_check_reminder
 
@@ -838,5 +838,5 @@ Hi {{first_name}}, your Laboura payment is received, but your ID check is not do
 | Variable | Sample value |
 | --- | --- |
 | `{{first_name}}` | Ravi |
-| `{{days}}` | days |
+| `{{days}}` | 30 |
 | `{{link}}` | https://app.laboura.com/p/register/k7m4q2px |

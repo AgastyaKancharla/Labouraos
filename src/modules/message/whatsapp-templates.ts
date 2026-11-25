@@ -322,30 +322,35 @@ export const WHATSAPP_TEMPLATES = {
     label: 'Job seeker: details saved, pay next',
     text: 'Hi {{firstName}}, your details for Laboura registration {{code}} are saved. Next, pay {{amount}} on your link: {{link}} Your {{days}} days start once your ID is verified.',
     variables: ['firstName', 'code', 'amount', 'link', 'days'],
+    samples: { days: '30', link: 'https://app.laboura.com/p/register/k7m4q2px' },
   },
   payment_received_id_left: {
     name: 'payment_received_id_left',
     label: 'Job seeker: payment received, only the ID check is left',
     text: 'Hi {{firstName}}, payment received for Laboura registration {{code}}. Only your ID check is left: {{link}} Your {{days}} days start once your ID is verified.',
     variables: ['firstName', 'code', 'link', 'days'],
+    samples: { days: '30', link: 'https://app.laboura.com/p/register/k7m4q2px' },
   },
   guarantee_started: {
     name: 'guarantee_started',
     label: 'Job seeker: your 30 days have started',
     text: 'Hi {{firstName}}, your ID is verified and your {{days}} days have started. They end on {{endDate}}. Our team will call you about suitable jobs.',
     variables: ['firstName', 'days', 'endDate'],
+    samples: { days: '30', endDate: '25 Dec 2026' },
   },
   id_check_failed_refund: {
     name: 'id_check_failed_refund',
     label: 'Job seeker: ID check did not pass, refund on request',
     text: 'Hi {{firstName}}, your ID check for Laboura registration {{code}} did not pass: {{reason}}. If your ID cannot be verified, contact us for a full refund of {{amount}}. Reply to this message or call us.',
     variables: ['firstName', 'code', 'reason', 'amount'],
+    samples: { reason: 'the name on the ID does not match your registration', amount: 'Rs 499' },
   },
   id_check_reminder: {
     name: 'id_check_reminder',
     label: 'Job seeker: reminder to finish the ID check',
     text: 'Hi {{firstName}}, your Laboura payment is received, but your ID check is not done yet, so your {{days}} days have not started. Finish it here: {{link}} It takes two minutes.',
     variables: ['firstName', 'days', 'link'],
+    samples: { days: '30', link: 'https://app.laboura.com/p/register/k7m4q2px' },
   },
   // ==== end of Builder A section ====
 } as const satisfies Record<string, WhatsAppTemplateDef>;
