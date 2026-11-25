@@ -280,6 +280,9 @@ export interface BookingContext {
   walkInStart: string;
   walkInEnd: string;
   threeWayCalls: boolean;
+  /** 25 Nov (rev 212): the workplace is the owner's home; the first interview there is by phone or at the Laboura office. */
+  workplaceIsHome?: boolean;
+  firstInterviewHere?: boolean;
 }
 
 export interface CallStatus {
@@ -310,7 +313,7 @@ export interface DecisionBody {
 export interface BookBody {
   date: string;
   time: string;
-  type: 'at_shop' | 'walk_in' | 'phone';
+  type: 'at_shop' | 'walk_in' | 'phone' | 'laboura_office';
   agentWillAttend?: boolean;
 }
 
@@ -344,7 +347,7 @@ export const sellingApi = (api: ApiClient) => ({
   answer: (callRecordId: string, answer: 'yes' | 'no', reason?: string) =>
     api.post<{ interviewId: string; status: string; hit: boolean }>(`/field-selling/calls/${enc(callRecordId)}/answer`, { answer, reason }),
   handOver: (interviewId: string) => api.post(`/field-selling/interviews/${enc(interviewId)}/hand-over`),
-  ownerOtp: (interviewId: string, body: DecisionBody & { otpRequestId?: string }) =>
+  ownerOtp: (interviewId: string, body: DecisionBody & { otpRequestId?: string; channel?: 'sms' }) =>
     api.post<OtpSent>(`/field-selling/interviews/${enc(interviewId)}/owner-otp`, body),
   decision: (interviewId: string, body: DecisionBody & { otpRequestId: string; code: string }) =>
     api.post<{ interviewId: string; decision: string; placement: { id: string } | null }>(`/field-selling/interviews/${enc(interviewId)}/decision`, body),
@@ -360,11 +363,12 @@ export const sellingApi = (api: ApiClient) => ({
   reportClaim: (placementId: string, body: { workerLeftOn: string; reason: string; callRecordId: string }) =>
     api.post<{ code: string; decision: string | null; decisionReason: string | null }>(`/placements/${enc(placementId)}/claims`, body),
   // Vacancies (existing endpoints)
-  sendVacancyCode: (vacancyId: string, otpRequestId?: string) =>
-    api.post<OtpSent>(`/vacancies/${enc(vacancyId)}/confirmation/send-code`, { otpRequestId }),
+  sendVacancyCode: (vacancyId: string, otpRequestId?: string, channel?: 'sms') =>
+    api.post<OtpSent>(`/vacancies/${enc(vacancyId)}/confirmation/send-code`, { otpRequestId, ...(channel ? { channel } : {}) }),
   confirmVacancy: (vacancyId: string, otpRequestId: string, code: string) =>
     api.post(`/vacancies/${enc(vacancyId)}/confirm`, { otpRequestId, code, method: 'code_on_visit' }),
-  vacancyLink: (vacancyId: string) => api.post<{ expiresAt: string; sentToLast4: string }>(`/vacancies/${enc(vacancyId)}/confirmation-link`),
+  vacancyLink: (vacancyId: string, channel?: 'whatsapp' | 'sms') =>
+    api.post<{ expiresAt: string; sentToLast4: string; sentBy?: 'whatsapp' | 'sms' | null }>(`/vacancies/${enc(vacancyId)}/confirmation-link`, channel ? { channel } : undefined),
   /** With a business, each trade's legal minimum is the one for that business's zone (rev 193); else Zone 1's. */
   trades: (businessId?: string) => api.get<Trade[]>('/trades', businessId ? { query: { businessId } } : undefined),
   vacancy: (id: string) =>
@@ -372,15 +376,17 @@ export const sellingApi = (api: ApiClient) => ({
   createVacancy: (body: Record<string, unknown>) => api.post<CreatedVacancy>('/vacancies', body),
   // Job seeker registration — the same endpoints as the call agent's form (CA08).
   formOptions: () => api.get<{ city: string; areas: Area[] }>('/screens/call-registration/options'),
-  sendOtp: (phone: string, previousRequestId?: string) =>
-    api.post<SeekerOtpSendResult>('/otp/send', { phone, purpose: 'job_seeker', requestId: previousRequestId }),
+  sendOtp: (phone: string, previousRequestId?: string, channel?: 'sms') =>
+    api.post<SeekerOtpSendResult>('/otp/send', { phone, purpose: 'job_seeker', requestId: previousRequestId, ...(channel ? { channel } : {}) }),
   verifyOtp: (requestId: string, code: string) => api.post('/otp/verify', { requestId, code }),
   createJobSeeker: (body: Record<string, unknown>) => api.post<{ id: string; code: string }>('/job-seekers', body),
   updateProfile: (id: string, body: Record<string, unknown>) => api.patch(`/job-seekers/${enc(id)}/profile`, body),
   seekerStatus: (id: string) => api.get<JobSeekerStatus>(`/screens/call-registration/job-seekers/${enc(id)}`),
-  sendRegistrationLink: (jobSeekerId: string) => api.post<{ expiresAt: string }>('/consent/links', { jobSeekerId }),
-  paymentOnlyLink: (jobSeekerId: string, phone: string, relation?: string) =>
-    api.post<{ expiresAt: string }>(`/job-seekers/${enc(jobSeekerId)}/payment-only-link`, { phone, relation }),
+  /** Rev 211: WhatsApp first (SMS as backup), or `channel: 'sms'` ("Send by SMS"). */
+  sendRegistrationLink: (jobSeekerId: string, channel?: 'whatsapp' | 'sms') =>
+    api.post<{ expiresAt: string; sentBy?: 'whatsapp' | 'sms' | null }>('/consent/links', { jobSeekerId, ...(channel ? { channel } : {}) }),
+  paymentOnlyLink: (jobSeekerId: string, phone: string, relation?: string, channel?: 'whatsapp' | 'sms') =>
+    api.post<{ expiresAt: string; sentBy?: 'whatsapp' | 'sms' | null }>(`/job-seekers/${enc(jobSeekerId)}/payment-only-link`, { phone, relation, ...(channel ? { channel } : {}) }),
   /** "Scan Aadhaar QR": only the QR's text, read live with this phone's camera (guide, 14 Nov). Needs signal. */
   aadhaarQr: (jobSeekerId: string, qrText: string) =>
     api.post<AadhaarQrOutcome>(`/field-work/job-seekers/${enc(jobSeekerId)}/aadhaar-qr`, { qrText, captureSource: 'live_camera' }),
@@ -427,8 +433,10 @@ export interface JobSeekerStatus {
   name: string;
   phone: string;
   phoneVerifiedAt: string | null;
-  stage: 'registered' | 'in_progress' | 'active';
-  nextStep: 'consent' | 'selfie' | 'id_check' | 'payment' | 'complete';
+  /** Rev 211: paid_waiting_id — paid, the ID check has not passed (not active, the 30 days have not started). */
+  stage: 'registered' | 'in_progress' | 'paid_waiting_id' | 'active';
+  /** Rev 211 order: consent → selfie → payment → id_check. */
+  nextStep: 'consent' | 'selfie' | 'payment' | 'id_check' | 'complete';
   steps: { phone: Step; consent: Step; selfie: Step; idCheck: Step; payment: Step };
   consent: { requiredGiven: number; requiredTotal: number; promotions: boolean };
   /** Which terms version he accepted (legal documents v1.1, rev 176). */

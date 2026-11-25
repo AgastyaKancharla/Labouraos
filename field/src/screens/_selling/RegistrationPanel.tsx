@@ -6,7 +6,7 @@ import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { useAfterSave } from '@/api/refresh';
 import type { JobSeekerStatus, Step } from '@/api/endpoints';
-import { Banner, Button, Card, Icon, IconTile, Text } from '@/components';
+import { Banner, Button, Card, Icon, IconTile, Text, SendLinkButtons, type SendChannel } from '@/components';
 import { MobileField, SelectField } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useI18n, type MessageKey } from '@/i18n';
@@ -25,7 +25,7 @@ const NEXT_STEP_KEYS: Record<JobSeekerStatus['nextStep'], MessageKey> = {
   selfie: 'fa10b.step.selfie',
   id_check: 'fa10b.step.idCheck',
   payment: 'fa10b.step.payment',
-  complete: 'fa10b.step.payment',
+  complete: 'fa10b.step.idCheck',
 };
 
 /** Each step's mark in a coloured disc: done green, stuck red, in progress gold, not started grey-navy. */
@@ -38,12 +38,12 @@ function mark(step: Step): { icon: string; color: string; fill: string } {
 
 /**
  * The registration status panel shared by FA10b (just saved) and FA10c
- * (following the link): Phone verified, Consent, Selfie, ID check, ₹499 —
+ * (following the link): Phone verified, Consent, Selfie, ₹499, ID check (rev 211 order) —
  * each done / sent / stuck / not started, with the reason when stuck.
  * The same endpoints as the call agent's panel (CA08b/c): one SMS link,
  * valid 48 hours, that resumes at the first unfinished step; a payment-only
  * link to another number once payment is reached. Sending needs signal.
- * At the ID step, with his consent given on his link, "Scan Aadhaar QR" lets
+ * From the payment step on (rev 211: an ID check before payment still counts), with his consent given on his link, "Scan Aadhaar QR" lets
  * the field agent scan the QR on his Aadhaar card live (guide, 14 Nov), or
  * "Photo of another ID" photograph his PAN / driving licence / voter ID card
  * live for the Team Lead's check (rev 154).
@@ -77,15 +77,16 @@ function Panel({ status: s, variant, refetch: refetchStatus }: { status: JobSeek
   const [relation, setRelation] = useState('');
   const now = useNow();
   const linkLive = !!s.registrationLinkExpiresAt && new Date(s.registrationLinkExpiresAt).getTime() > now;
+  // Rev 211: "Send on WhatsApp" (SMS as backup) or the small "Send by SMS".
   const send = useMutation({
-    mutationFn: () => queue.live(() => selling.sendRegistrationLink(s.id)),
+    mutationFn: (channel: SendChannel) => queue.live(() => selling.sendRegistrationLink(s.id, channel)),
     onSuccess: () => {
       refetch();
       if (variant === 'saved') router.replace(pageRoutes.seekerProgress(s.id));
     },
   });
   const other = useMutation({
-    mutationFn: () => queue.live(() => selling.paymentOnlyLink(s.id, payer, relation || undefined)),
+    mutationFn: (channel: SendChannel) => queue.live(() => selling.paymentOnlyLink(s.id, payer, relation || undefined, channel)),
     onSuccess: () => {
       setOtherOpen(false);
       refetch();
@@ -103,6 +104,8 @@ function Panel({ status: s, variant, refetch: refetchStatus }: { status: JobSeek
         : '',
     },
     { key: 'selfie', label: t('fa10b.selfie'), step: s.steps.selfie, detail: s.steps.selfie.state === 'done' ? t('fa10b.selfieDone') : '' },
+    // Rev 211: Consent → Selfie → Payment → ID check.
+    { key: 'payment', label: t('fa10b.payment'), step: s.steps.payment, detail: s.steps.payment.state === 'confirming' ? t('fa10b.confirming') : '' },
     {
       key: 'idCheck',
       label: t('fa10b.idCheck'),
@@ -110,8 +113,9 @@ function Panel({ status: s, variant, refetch: refetchStatus }: { status: JobSeek
       // Another ID waiting for the Team Lead (rev 154): say so instead of "in progress".
       detail: s.steps.idCheck.state === 'in_progress' && s.steps.idCheck.reason ? t('fa10b.idWaiting') : '',
     },
-    { key: 'payment', label: t('fa10b.payment'), step: s.steps.payment, detail: s.steps.payment.state === 'confirming' ? t('fa10b.confirming') : '' },
   ];
+  // Rev 211: the ID check comes after the payment, but a field agent may still scan it in person before (it counts).
+  const canCheckId = s.stage !== 'active' && s.steps.consent.state === 'done' && s.steps.idCheck.state !== 'done' && (s.nextStep === 'payment' || s.nextStep === 'id_check');
   const stateText = (step: Step) =>
     step.state === 'done'
       ? step.time ? formatTimeIst(step.time) : t('fa10b.done')
@@ -124,7 +128,15 @@ function Panel({ status: s, variant, refetch: refetchStatus }: { status: JobSeek
     <>
       <Banner
         tone="ok"
-        title={variant === 'saved' && !linkLive ? t('fa10b.saved', { code: s.code }) : s.stage === 'active' ? t('fa10b.active', { code: s.code }) : t('fa10b.linkSent')}
+        title={
+          variant === 'saved' && !linkLive
+            ? t('fa10b.saved', { code: s.code })
+            : s.stage === 'active'
+              ? t('fa10b.active', { code: s.code })
+              : s.stage === 'paid_waiting_id'
+                ? t('fa10b.paidWaitingId', { code: s.code })
+                : t('fa10b.linkSent')
+        }
         testID="seeker-banner"
       />
       {s.terms?.needsReconsent ? (
@@ -151,7 +163,7 @@ function Panel({ status: s, variant, refetch: refetchStatus }: { status: JobSeek
           );
         })}
       </Card>
-      {s.stage !== 'active' && s.nextStep === 'id_check' && s.steps.consent.state === 'done' ? (
+      {canCheckId ? (
         scanOpen ? (
           <AadhaarQrScan jobSeekerId={s.id} onFinished={refetch} onClose={() => setScanOpen(false)} />
         ) : otherIdOpen ? (
@@ -165,10 +177,11 @@ function Panel({ status: s, variant, refetch: refetchStatus }: { status: JobSeek
       ) : null}
       {s.stage !== 'active' ? (
         <>
-          <Button
+          <SendLinkButtons
             label={linkLive ? t('fa10b.resend', { step: t(NEXT_STEP_KEYS[s.nextStep]) }) : t('fa10b.send')}
-            loading={send.isPending}
-            onPress={() => send.mutate()}
+            disabled={send.isPending}
+            run={(channel) => send.mutateAsync(channel)}
+            onError={() => undefined}
             testID="send-link"
           />
           {s.nextStep === 'payment' ? (
@@ -179,7 +192,13 @@ function Panel({ status: s, variant, refetch: refetchStatus }: { status: JobSeek
               <View style={styles.gap}>
                 <MobileField label={t('fa10b.payerMobile')} required value={payer} onChange={setPayer} testID="payer-mobile" />
                 <SelectField label={t('fa10b.relation')} value={relation} choices={RELATIONS.map((r) => ({ value: r, label: t(`fa10b.relation.${r}` as MessageKey) }))} onChange={setRelation} />
-                <Button label={t('fa10b.sendPaymentLink')} disabled={!/^[6-9]\d{9}$/.test(payer)} loading={other.isPending} onPress={() => other.mutate()} testID="send-payment-link" />
+                <SendLinkButtons
+                  label={t('fa10b.sendPaymentLink')}
+                  disabled={!/^[6-9]\d{9}$/.test(payer) || other.isPending}
+                  run={(channel) => other.mutateAsync(channel)}
+                  onError={() => undefined}
+                  testID="send-payment-link"
+                />
                 <Note>{t('fa10b.paymentOnlyNote', { minutes: s.paymentOnlyLinkMinutes ?? 15 })}</Note>
               </View>
             </Card>
@@ -196,8 +215,8 @@ function Panel({ status: s, variant, refetch: refetchStatus }: { status: JobSeek
               <Text>{t('fa10b.previewBody')}</Text>
               <Text>{t('fa10b.preview.consent')}</Text>
               <Text>{t('fa10b.preview.selfie')}</Text>
-              <Text>{t('fa10b.preview.id')}</Text>
               <Text>{t('fa10b.preview.payment')}</Text>
+              <Text>{t('fa10b.preview.id')}</Text>
               <Text variant="muted">{t('fa10b.preview.note')}</Text>
             </Card>
           ) : null}

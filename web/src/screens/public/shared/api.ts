@@ -14,7 +14,8 @@ export type PublicLanguage = 'en';
 
 // ---- Registration link (RegistrationController, ConsentController) ----
 
-export type RegistrationStep = 'consent' | 'selfie' | 'id_check' | 'payment' | 'complete';
+/** Rev 211 (25 Nov): Consent → Selfie → Payment → ID check. */
+export type RegistrationStep = 'consent' | 'selfie' | 'payment' | 'id_check' | 'complete';
 export type RegistrationPaymentState = 'not_started' | 'pending' | 'confirming' | 'failed' | 'confirmed';
 
 export interface RegistrationLocked {
@@ -34,9 +35,11 @@ export interface RegistrationOpen {
   steps: { consent: boolean; selfie: boolean; idCheck: boolean; payment: boolean };
   /** Consent items already given and not withdrawn: not asked again (17 Nov). */
   consentGiven?: string[];
-  /** Another ID waits for the Team Lead's check (rev 154): no payment until it is approved. */
+  /** Another ID waits for the Team Lead's check (rev 154); the 30 days start when it is approved (rev 211). */
   idCheck: { waitingForTeamLead: boolean; lastResult: IdLastResult };
   stopped: 'under_18' | null;
+  /** Rev 211: paid, and no ID check has passed yet (older servers leave it out). */
+  paidWaitingForId?: boolean;
   waitingForTrade: boolean;
   termsAcceptedAt: string | null;
   /** Accepted an older version of the terms (rev 176): the blocking re-consent page first. */
@@ -46,6 +49,8 @@ export interface RegistrationOpen {
     amountPaise: number;
     upiReference: string | null;
     confirmedAt: string | null;
+    /** Rev 211: when the 30 days started (paid and ID passed); null until then. */
+    guaranteeStartsAt?: string | null;
     guaranteeEndsAt: string | null;
     paymentId: string | null;
   };
@@ -110,7 +115,7 @@ export interface OtpSent {
 export const registrationApi = {
   status: (token: string, requestId?: string | null) =>
     api.get<RegistrationStatus>(`/registration/${enc(token)}/status`, { ...PUBLIC, query: { requestId: requestId ?? undefined } }),
-  sendOtp: (token: string) => api.post<OtpSent>('/consent/send-otp', { token }, PUBLIC),
+  sendOtp: (token: string, channel?: 'sms') => api.post<OtpSent>('/consent/send-otp', { token, ...(channel ? { channel } : {}) }, PUBLIC),
   verifyOtp: (token: string, requestId: string, code: string) =>
     api.post<RegistrationOpen>(`/registration/${enc(token)}/verify-otp`, { requestId, code }, PUBLIC),
   /** textHash: the hash of the terms text the page showed (the server refuses a text that changed meanwhile). */
@@ -219,7 +224,7 @@ export type PartnerPayout = { method: 'upi'; upiId: string } | { method: 'bank';
 export const partnerApi = {
   status: (token: string, requestId?: string | null) =>
     api.get<PartnerStatus>(`/referral-registration/${enc(token)}/status`, { ...PUBLIC, query: { requestId: requestId ?? undefined } }),
-  sendOtp: (token: string) => api.post<OtpSent>('/consent/send-otp', { token }, PUBLIC),
+  sendOtp: (token: string, channel?: 'sms') => api.post<OtpSent>('/consent/send-otp', { token, ...(channel ? { channel } : {}) }, PUBLIC),
   verifyOtp: (token: string, requestId: string, code: string) =>
     api.post<PartnerOpen>(`/referral-registration/${enc(token)}/verify-otp`, { requestId, code }, PUBLIC),
   terms: (token: string, requestId: string) => api.get<PartnerTerms>(`/referral-registration/${enc(token)}/terms`, { ...PUBLIC, query: { requestId } }),
@@ -313,7 +318,7 @@ export interface PaymentOnlyDetails {
 
 export const paymentOnlyApi = {
   info: (token: string) => api.get<PaymentOnlyInfo>(`/registration/payment/${enc(token)}/info`, PUBLIC),
-  sendOtp: (token: string) => api.post<OtpSent>(`/registration/payment/${enc(token)}/send-otp`, {}, PUBLIC),
+  sendOtp: (token: string, channel?: 'sms') => api.post<OtpSent>(`/registration/payment/${enc(token)}/send-otp`, channel ? { channel } : {}, PUBLIC),
   verify: (token: string, requestId: string, code: string) =>
     api.post<PaymentOnlyDetails>(`/registration/payment/${enc(token)}/verify-otp`, { requestId, code }, PUBLIC),
   details: (token: string, requestId: string) =>
@@ -335,6 +340,9 @@ export interface OfferDetails {
   replyDueAt: string;
   awaitingReply: boolean;
   belowGuaranteeFloor: boolean;
+  /** 25 Nov (rev 212, B9f): the workplace is the owner's home; how this interview happens. */
+  workplaceIsHome?: boolean;
+  interviewType?: string | null;
   language: string | null;
 }
 
@@ -374,6 +382,8 @@ export interface OfferCheckDetails {
   businessName: string;
   slotStartsAt: string;
   answered: boolean;
+  /** 25 Nov (rev 211, B6): also ask "Was the shop real, at this address, and was the job as described?" */
+  askShopCheck?: boolean;
   language: string | null;
 }
 
@@ -382,13 +392,14 @@ export const interviewApi = {
   reply: (token: string, answer: 'yes' | 'no') =>
     api.post<{ status: string; booked?: BookedDetails }>(`/interviews/reply/${enc(token)}`, { answer }, PUBLIC),
   ownerResult: (token: string) => api.get<OwnerResultDetails>(`/interviews/result/${enc(token)}`, PUBLIC),
-  sendOwnerOtp: (token: string) => api.post<OtpSent>(`/interviews/result/${enc(token)}/otp`, {}, PUBLIC),
+  sendOwnerOtp: (token: string, channel?: 'sms') => api.post<OtpSent>(`/interviews/result/${enc(token)}/otp`, channel ? { channel } : {}, PUBLIC),
   submitOwnerResult: (
     token: string,
     body: { otpRequestId: string; otpCode: string; result: OwnerResult; resultReason?: string; selectedSalaryPaise?: number; selectedJoiningDate?: string },
   ) => api.post<OwnerResultResponse>(`/interviews/result/${enc(token)}`, body, PUBLIC),
   offerCheck: (token: string) => api.get<OfferCheckDetails>(`/interviews/check/${enc(token)}`, PUBLIC),
-  answerOfferCheck: (token: string, answer: 'yes' | 'no') => api.post<{ candidateCheckAnswer: string }>(`/interviews/check/${enc(token)}`, { answer }, PUBLIC),
+  answerOfferCheck: (token: string, answer: 'yes' | 'no', shopAnswer?: 'yes' | 'no') =>
+    api.post<{ candidateCheckAnswer: string }>(`/interviews/check/${enc(token)}`, shopAnswer ? { answer, shopAnswer } : { answer }, PUBLIC),
 };
 
 // ---- Business agreement (ConsentController) ----
@@ -407,6 +418,72 @@ export interface AgreementDetails {
   ownerName: string | null;
   terms: { feePercent: number; gstPercent: number; noBypassMonths: number; noBypassPenaltyPercent: number };
   guarantee: { replacementWindowDays: number; maxFreeReplacements: number; replacementSearchDays: number };
+  /** 25 Nov (rev 211–212): the owner's live photos taken so far; signing waits for both. */
+  ownerPhotos?: OwnerPhotoState;
+}
+
+export type ShopPhotoKind = 'shop_board' | 'fssai_with_owner' | 'workspace';
+export interface OwnerPhotoState {
+  selfie: boolean;
+  shop: boolean;
+  shopKind: ShopPhotoKind;
+  shopKinds: ShopPhotoKind[];
+  smallBusiness: boolean;
+}
+
+/** 25 Nov (rev 212, B9): the small-business steps on the agreement link. */
+export interface SmallBusinessState {
+  required: boolean;
+  ownerId: { method: string | null; type: string | null; result: string | null; last4: string | null; failureReason: string | null };
+  businessProof: { given: boolean; kind: string | null; fromProofs: boolean };
+  addressProof: { submitted: boolean; docType: string | null; result: string | null };
+  videoCall: { done: boolean; at: string | null };
+  photos: { selfie: boolean; workspace: boolean };
+  missing: string[];
+}
+
+export interface PhotoLocation {
+  latitude?: number;
+  longitude?: number;
+  accuracyMeters?: number;
+  locationStatus?: 'refused' | 'unavailable';
+}
+
+/** Multipart POST of a live camera frame with extra fields (owner photos, ID card, address proof). */
+async function postPhoto<T>(path: string, fields: Record<string, string | number | undefined>, photo: Blob): Promise<T> {
+  const clean: Record<string, string> = {};
+  for (const [k, v] of Object.entries(fields)) if (v !== undefined) clean[k] = String(v);
+  return (await postLiveSelfie(path, clean, photo, {}, 'photo.jpg')) as T;
+}
+
+export const ownerStepsApi = {
+  photo: (token: string, kind: 'selfie' | 'shop', photo: Blob, location: PhotoLocation = {}, shopVariant?: 'board' | 'fssai' | 'workspace') =>
+    postPhoto<{ ownerPhotos: OwnerPhotoState }>(`/consent/${enc(token)}/owner-photo`, { kind, shopVariant, ...location }, photo),
+  smallBusiness: (token: string) => api.get<SmallBusinessState>(`/consent/${enc(token)}/small-business`, PUBLIC),
+  aadhaarQr: (token: string, qrText: string) =>
+    api.post<{ result: AadhaarQrResult['result']; verified: boolean; failureReason: string | null; offerOtherId: boolean; state: SmallBusinessState }>(
+      `/consent/${enc(token)}/small-business/aadhaar-qr`, { qrText }, PUBLIC),
+  otherId: (token: string, idType: string, idNumber: string, nameOnId: string, photo: Blob) =>
+    postPhoto<SmallBusinessState>(`/consent/${enc(token)}/small-business/other-id`, { idType, idNumber, nameOnId }, photo),
+  addressProof: (token: string, docType: string, photo: Blob) =>
+    postPhoto<SmallBusinessState>(`/consent/${enc(token)}/small-business/address-proof`, { docType }, photo),
+  businessProof: (token: string, kind: string, value: string) =>
+    api.post<SmallBusinessState>(`/consent/${enc(token)}/small-business/business-proof`, { kind, value }, PUBLIC),
+};
+
+/** The phone's location for the shop photo (browser geolocation); refused or unavailable is said so. */
+export function currentLocation(timeoutMs = 10000): Promise<PhotoLocation> {
+  return new Promise((resolve) => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      resolve({ locationStatus: 'unavailable' });
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (p) => resolve({ latitude: p.coords.latitude, longitude: p.coords.longitude, accuracyMeters: Math.round(p.coords.accuracy) }),
+      (e) => resolve({ locationStatus: e.code === 1 ? 'refused' : 'unavailable' }),
+      { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 60000 },
+    );
+  });
 }
 
 export interface SignedAgreement {
@@ -420,7 +497,7 @@ export const agreementApi = {
   details: (token: string) => api.get<AgreementDetails>(`/consent/${enc(token)}`, PUBLIC),
   signed: (token: string) => api.get<SignedAgreement>(`/consent/${enc(token)}/signed`, PUBLIC),
   copyHref: (token: string) => `/consent/${enc(token)}/signed/copy`,
-  sendOtp: (token: string) => api.post<OtpSent>('/consent/send-otp', { token }, PUBLIC),
+  sendOtp: (token: string, channel?: 'sms') => api.post<OtpSent>('/consent/send-otp', { token, ...(channel ? { channel } : {}) }, PUBLIC),
   sign: (token: string, otpRequestId: string, otpCode: string, signedName: string) =>
     api.post<{ signedAt: string }>(
       '/consent/submit',
@@ -461,7 +538,7 @@ export interface VacancyConfirmed {
 
 export const vacancyConfirmApi = {
   details: (token: string) => api.get<VacancyConfirmDetails>(`/vacancy-confirm/${enc(token)}`, PUBLIC),
-  sendOtp: (token: string) => api.post<OtpSent>(`/vacancy-confirm/${enc(token)}/send-otp`, {}, PUBLIC),
+  sendOtp: (token: string, channel?: 'sms') => api.post<OtpSent>(`/vacancy-confirm/${enc(token)}/send-otp`, channel ? { channel } : {}, PUBLIC),
   confirm: (token: string, otpRequestId: string, code: string) =>
     api.post<VacancyConfirmed>(`/vacancy-confirm/${enc(token)}`, { otpRequestId, code }, PUBLIC),
 };

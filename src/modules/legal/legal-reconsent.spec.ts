@@ -5,6 +5,12 @@ import { renderSignedAgreementDocument } from '../consent/business-agreement.tem
 import { renderLegalDocument } from './legal-documents';
 import { legalCompanyFrom, legalNumbersFrom } from './legal-document.service';
 
+/** The current job seeker terms and consent notice (rev 211: 1.2 and 1.3); OLD_* the versions before. */
+const JS_V = '1.2';
+const NOTICE_V = '1.3';
+const OLD_JS_V = '1.1';
+const OLD_NOTICE_V = '1.2';
+
 const POLICY = {
   activationFeePaise: 49_900, jobSeekerGuaranteeDays: 30, offerReplyHours: 48, maxHits: 3, joiningRewardPaise: 20_000, joiningRewardAfterDays: 30,
   registrationLinkValidHours: 48, paymentOnlyLinkMinutes: 15, placementFeePercent: 50, gstPercent: 18, placementPaymentDueHours: 24,
@@ -35,10 +41,10 @@ const shownHash = (key: 'job_seeker_terms' | 'referral_terms', lang: 'en') =>
   renderLegalDocument(key, lang, legalNumbersFrom(POLICY as never), legalCompanyFrom(POLICY as never)).hash;
 
 describe('Re-consent (rev 176): who must accept the current version', () => {
-  it('a job seeker who gave the five consents under 1.1 (no new acceptance yet) is asked once; consents stay valid meanwhile', async () => {
+  it('a job seeker who gave the five consents under an older version (no new acceptance yet) is asked once; consents stay valid meanwhile', async () => {
     const { service } = legalWith({ consents: REQUIRED });
     const status = await service.status('job_seeker', 'js-1');
-    expect(status).toMatchObject({ documentKey: 'job_seeker_terms', currentVersion: '1.1', acceptedVersion: null, needsReconsent: true, currentNoticeVersion: '1.2' });
+    expect(status).toMatchObject({ documentKey: 'job_seeker_terms', currentVersion: JS_V, acceptedVersion: null, needsReconsent: true, currentNoticeVersion: NOTICE_V });
   });
 
   it('someone still at the consent step is not asked to re-consent (the normal first step shows the current text)', async () => {
@@ -48,29 +54,32 @@ describe('Re-consent (rev 176): who must accept the current version', () => {
 
   it('accepted the current terms and notice: nothing to do; an older notice version: asked again', async () => {
     const at = new Date('2026-11-15T10:00:00Z');
-    expect((await legalWith({ acceptance: { version: '1.1', language: 'kn', acceptedAt: at, noticeVersion: '1.2' } }).service.status('job_seeker', 'js-1')).needsReconsent).toBe(false);
-    expect((await legalWith({ acceptance: { version: '1.1', language: 'kn', acceptedAt: at, noticeVersion: '1.1' } }).service.status('job_seeker', 'js-1')).needsReconsent).toBe(true);
-    expect((await legalWith({ acceptance: { version: '1.0', language: 'en', acceptedAt: at, noticeVersion: '1.2' } }).service.status('job_seeker', 'js-1')).needsReconsent).toBe(true);
+    expect((await legalWith({ acceptance: { version: JS_V, language: 'kn', acceptedAt: at, noticeVersion: NOTICE_V } }).service.status('job_seeker', 'js-1')).needsReconsent).toBe(false);
+    expect((await legalWith({ acceptance: { version: JS_V, language: 'kn', acceptedAt: at, noticeVersion: OLD_NOTICE_V } }).service.status('job_seeker', 'js-1')).needsReconsent).toBe(true);
+    expect((await legalWith({ acceptance: { version: OLD_JS_V, language: 'en', acceptedAt: at, noticeVersion: NOTICE_V } }).service.status('job_seeker', 'js-1')).needsReconsent).toBe(true);
+    // Rev 211: everyone who accepted 1.1 under notice 1.2 is asked again.
+    expect((await legalWith({ acceptance: { version: OLD_JS_V, language: 'en', acceptedAt: at, noticeVersion: OLD_NOTICE_V } }).service.status('job_seeker', 'js-1')).needsReconsent).toBe(true);
   });
 
-  it('H1: registration (ticks under notice 1.2) then the guarantee terms at payment: not asked to re-consent', async () => {
+  it('H1: registration (ticks under the current notice) then the guarantee terms at payment: not asked to re-consent', async () => {
     const rows = [
-      { context: 'registration', version: '1.1', language: 'kn', acceptedAt: new Date('2026-11-15T10:00:00Z'), noticeVersion: '1.2' },
+      { context: 'registration', version: JS_V, language: 'kn', acceptedAt: new Date('2026-11-15T10:00:00Z'), noticeVersion: NOTICE_V },
       // The guarantee terms at payment carry no ticks: no notice version.
-      { context: 'payment_terms', version: '1.1', language: 'kn', acceptedAt: new Date('2026-11-15T10:05:00Z'), noticeVersion: null },
+      { context: 'payment_terms', version: JS_V, language: 'kn', acceptedAt: new Date('2026-11-15T10:05:00Z'), noticeVersion: null },
     ];
     const { service, prisma } = legalWith({ consents: REQUIRED });
     prisma.legalAcceptance.findFirst.mockImplementation(async ({ where }: { where: { context?: { not: string } } }) =>
       rows.filter((r) => r.context !== where.context?.not).sort((x, y) => y.acceptedAt.getTime() - x.acceptedAt.getTime())[0] ?? null);
     const status = await service.status('job_seeker', 'js-1');
-    expect(status).toMatchObject({ acceptedVersion: '1.1', noticeVersion: '1.2', needsReconsent: false });
+    expect(status).toMatchObject({ acceptedVersion: JS_V, noticeVersion: NOTICE_V, needsReconsent: false });
     expect(prisma.legalAcceptance.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ context: { not: 'payment_terms' } }) }));
   });
 
-  it('a business that signed agreement 1.0 must sign 1.1; one that signed 1.1 is up to date; one that never signed is not asked', async () => {
+  it('a business that signed agreement 1.1 must sign 1.2 (rev 211); one that signed 1.2 is up to date; one that never signed is not asked', async () => {
     const signedAt = new Date('2026-11-01T10:00:00Z');
     expect(await legalWith({ agreement: { version: '1.0', signedAt } }).service.status('business', 'bz-1')).toMatchObject({ acceptedVersion: '1.0', needsReconsent: true });
-    expect(await legalWith({ agreement: { version: '1.1', signedAt } }).service.status('business', 'bz-1')).toMatchObject({ acceptedVersion: '1.1', needsReconsent: false });
+    expect(await legalWith({ agreement: { version: '1.1', signedAt } }).service.status('business', 'bz-1')).toMatchObject({ acceptedVersion: '1.1', needsReconsent: true });
+    expect(await legalWith({ agreement: { version: '1.2', signedAt } }).service.status('business', 'bz-1')).toMatchObject({ acceptedVersion: '1.2', needsReconsent: false });
     expect((await legalWith({}).service.status('business', 'bz-1')).needsReconsent).toBe(false);
   });
 
@@ -83,9 +92,9 @@ describe('Re-consent (rev 176): who must accept the current version', () => {
   it('records an acceptance with version, language, OTP and the exact text (stored once per hash)', async () => {
     const { service, prisma } = legalWith({});
     const rendered = await service.render('job_seeker_terms', 'en');
-    await service.recordAcceptance({ subjectType: 'job_seeker', subjectId: 'js-1', rendered, context: 'reconsent', method: 'sms_link', otpRequestId: 'otp-9', noticeVersion: '1.2', purposes: REQUIRED, acceptedAt: new Date('2026-11-15T10:00:00Z') });
-    expect(prisma.legalDocumentText.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { hash: rendered.hash }, create: expect.objectContaining({ html: rendered.html, version: '1.1', language: 'en' }) }));
-    expect(prisma.legalAcceptance.create).toHaveBeenCalledWith({ data: expect.objectContaining({ version: '1.1', language: 'en', textHash: rendered.hash, otpRequestId: 'otp-9', noticeVersion: '1.2', context: 'reconsent' }) });
+    await service.recordAcceptance({ subjectType: 'job_seeker', subjectId: 'js-1', rendered, context: 'reconsent', method: 'sms_link', otpRequestId: 'otp-9', noticeVersion: NOTICE_V, purposes: REQUIRED, acceptedAt: new Date('2026-11-15T10:00:00Z') });
+    expect(prisma.legalDocumentText.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { hash: rendered.hash }, create: expect.objectContaining({ html: rendered.html, version: JS_V, language: 'en' }) }));
+    expect(prisma.legalAcceptance.create).toHaveBeenCalledWith({ data: expect.objectContaining({ version: JS_V, language: 'en', textHash: rendered.hash, otpRequestId: 'otp-9', noticeVersion: NOTICE_V, context: 'reconsent' }) });
   });
 });
 
@@ -110,14 +119,14 @@ describe('Re-consent on the link (ConsentLinkService.recordReconsent)', () => {
     return { service, grants, recorded, audit, tx, legal };
   }
 
-  it('needs every required tick, then grants them under notice 1.2 and records the acceptance', async () => {
+  it('needs every required tick, then grants them under the current notice and records the acceptance', async () => {
     const { service, grants, recorded, audit } = linkService({ needsReconsent: true, acceptedVersion: null });
     await expect(service.recordReconsent('job_seeker', 'js-1', { purposes: ['job_matching'], language: 'en', method: 'sms_link', otpRequestId: 'otp-1', textHash: shownHash('job_seeker_terms', 'en') })).rejects.toThrow(BadRequestException);
     const res = await service.recordReconsent('job_seeker', 'js-1', { purposes: [...REQUIRED, 'promotions'], language: 'en', method: 'sms_link', otpRequestId: 'otp-1', textHash: shownHash('job_seeker_terms', 'en') });
-    expect(res.version).toBe('1.1');
+    expect(res.version).toBe(JS_V);
     expect(grants).toHaveLength(6);
-    expect(grants[0]).toMatchObject({ subjectType: 'job_seeker', noticeVersion: '1.2', language: 'en', otpRequestId: 'otp-1' });
-    expect(recorded[0]).toMatchObject({ context: 'reconsent', noticeVersion: '1.2', otpRequestId: 'otp-1', rendered: expect.objectContaining({ language: 'en', version: '1.1' }) });
+    expect(grants[0]).toMatchObject({ subjectType: 'job_seeker', noticeVersion: NOTICE_V, language: 'en', otpRequestId: 'otp-1' });
+    expect(recorded[0]).toMatchObject({ context: 'reconsent', noticeVersion: NOTICE_V, otpRequestId: 'otp-1', rendered: expect.objectContaining({ language: 'en', version: JS_V }) });
     expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'legal.reconsent_accepted' }));
   });
 

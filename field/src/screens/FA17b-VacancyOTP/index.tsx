@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
 import { errorCode, type BusinessPage, type OtpSent, type PageVacancy } from '@/api/endpoints';
 import { isApiError } from '@/api/errors';
-import { Banner, Button, Card, HeroCard, Screen, Text } from '@/components';
+import { Banner, Button, Card, HeroCard, Screen, Text, SendLinkButtons, type SendChannel } from '@/components';
 import { Checkbox, formatDateKey } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useI18n } from '@/i18n';
@@ -88,7 +88,8 @@ function Vacancy({ page, row, id, status, confirmedAt, confirmedByName }: {
     void client.invalidateQueries({ queryKey: ['selling'] });
     void client.invalidateQueries({ queryKey: ['field-work'] });
   };
-  const link = useMutation({ mutationFn: () => queue.live(() => selling.vacancyLink(id)), onSettled: refresh });
+  // Rev 211: "Send on WhatsApp" (SMS as backup) or the small "Send by SMS".
+  const link = useMutation({ mutationFn: (channel: SendChannel) => queue.live(() => selling.vacancyLink(id, channel)), onSettled: refresh });
   const submit = useMutation({
     mutationFn: () => queue.live(() => redesign.submitDraft(id, told || undefined)),
     onSuccess: (r) => {
@@ -163,7 +164,7 @@ function Vacancy({ page, row, id, status, confirmedAt, confirmedByName }: {
             sendLabel={t('fa17b.send', { name: contact })}
             verifyLabel={t('fa17b.verify')}
             intro={(s) => t('fa17b.sent', { name: s.contactName ?? contact, role: t(roleKey(role)), last4: s.sentToLast4 })}
-            send={(prev) => selling.sendVacancyCode(id, prev)}
+            send={(prev, channel) => selling.sendVacancyCode(id, prev, channel)}
             verify={async (requestId, code) => {
               await selling.confirmVacancy(id, requestId, code);
               await client.invalidateQueries({ queryKey: ['selling'] });
@@ -172,12 +173,11 @@ function Vacancy({ page, row, id, status, confirmedAt, confirmedByName }: {
           />
           <Note>{t('fa17b.notHere')}</Note>
           {isWaiting(status) ? <Note testID="vacancy-watching">{t('fa17b.watching')}</Note> : null}
-          <Button
+          <SendLinkButtons
             label={link.isSuccess ? t('fa17b.linkSent', { last4: link.data.sentToLast4 }) : t('fa17b.sendLink')}
-            variant="secondary"
-            disabled={link.isSuccess}
-            loading={link.isPending}
-            onPress={() => link.mutate()}
+            disabled={link.isSuccess || link.isPending}
+            run={(channel) => link.mutateAsync(channel)}
+            onError={() => undefined}
             testID="send-link"
           />
           <ErrorBanner error={link.error} />

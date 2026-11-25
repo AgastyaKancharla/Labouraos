@@ -55,6 +55,8 @@ interface Summary {
   withinFiveDaysOfRefund: number;
   atTwoOfThreeHits: number;
   deactivatedThisMonth: number;
+  /** Rev 211: paid, waiting for the ID check (older servers leave it out). */
+  paidWaitingForId?: number;
 }
 
 const KYC: Record<JobSeekerRow['kyc'], { label: string; tone: StatusTone }> = {
@@ -151,6 +153,8 @@ export default function JobSeekersList() {
         <StatTile label="Active in pool" value={s?.activeInPool ?? '—'} tone="cyan" loading={loading} onClick={tile('active')} active={status === 'active'} />
         <StatTile label="Registered, not paid" value={s?.registeredNotPaid ?? '—'} tone="royal" loading={loading} onClick={tile('not_paid')} active={status === 'not_paid'} />
         <StatTile label="Waiting on KYC" value={s?.waitingOnKyc ?? '—'} tone="gold" loading={loading} onClick={tile('waiting_kyc')} active={status === 'waiting_kyc'} />
+        {/* Rev 211: paid, the ID check has not passed — not active, the 30 days have not started (view only). */}
+        <StatTile label="Paid, waiting for ID" value={s?.paidWaitingForId ?? '—'} tone="orange" loading={loading} onClick={tile('paid_waiting_id')} active={status === 'paid_waiting_id'} />
         <StatTile label="Within 5 days of refund" value={s?.withinFiveDaysOfRefund ?? '—'} tone="orange" loading={loading} to={nearRefund ?? undefined} />
         <StatTile label="At 2 of 3 hits" value={s?.atTwoOfThreeHits ?? '—'} tone="gold" loading={loading} onClick={tile('two_hits')} active={status === 'two_hits'} />
         <StatTile
@@ -172,6 +176,7 @@ export default function JobSeekersList() {
             { value: '', label: 'All' },
             { value: 'active', label: 'Active' },
             { value: 'not_paid', label: 'Registered, not paid' },
+            { value: 'paid_waiting_id', label: 'Paid, waiting for ID' },
             { value: 'waiting_kyc', label: 'Waiting on KYC' },
             { value: 'two_hits', label: 'At 2 of 3 hits' },
             { value: 'placed', label: 'Placed' },

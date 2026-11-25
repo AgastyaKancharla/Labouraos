@@ -1,4 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
+import { idPassedMock } from '../../test-support/id-passed-mock';
 import { PlacementService } from './placement.service';
 import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -12,6 +13,7 @@ import { evaluatePlacementRefundEligibility } from './placement-refund-eligibili
 import { EditPolicyService } from '../../common/edit-policy/edit-policy.service';
 
 type MockPrisma = {
+  identityVerification?: ReturnType<typeof idPassedMock>;
   staff: { findUnique: jest.Mock; findFirst: jest.Mock; findMany: jest.Mock };
   placement: {
     findFirst: jest.Mock;
@@ -149,6 +151,7 @@ describe('Phase 17 Task 3: Replacements through interviews and guarantee rules',
         findUniqueOrThrow: jest.fn().mockResolvedValue(rootPlacement.vacancy),
         update: jest.fn().mockResolvedValue({ ...rootPlacement.vacancy, status: 'filled' }),
       },
+      identityVerification: idPassedMock(),
       jobSeeker: {
         update: jest.fn().mockResolvedValue({ id: 'js-rep-1', status: 'placed' }),
       },

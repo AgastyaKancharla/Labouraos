@@ -24,4 +24,18 @@ describe('P06-DidTheyOffer', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'No' }));
     expect(await screen.findByRole('alert')).toBeInTheDocument();
   });
+
+  it('25 Nov (B6): at the first interview it also asks about the shop and sends both answers together', async () => {
+    const api = mockApi({ 'GET /interviews/check/ctok': { ...details, askShopCheck: true }, 'POST /interviews/check/ctok': { candidateCheckAnswer: 'offered_yes' } });
+    render();
+    expect(await screen.findByText('Was the shop real, at this address, and was the job as described?')).toBeInTheDocument();
+    const send = screen.getByRole('button', { name: 'Answer both questions' });
+    expect(send).toBeDisabled();
+    await userEvent.click(screen.getAllByRole('button', { name: 'Yes' })[0]!);
+    expect(send).toBeDisabled();
+    await userEvent.click(screen.getAllByRole('button', { name: 'No' })[1]!);
+    await userEvent.click(send);
+    expect(api.calls('POST /interviews/check/ctok')[0]!.body).toEqual({ answer: 'yes', shopAnswer: 'no' });
+    expect(await screen.findByText('Thank you, Ramesh')).toBeInTheDocument();
+  });
 });

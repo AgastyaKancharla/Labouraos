@@ -3,7 +3,7 @@
  * Master Guide rev 193). The consent wording is the same as the call agent's
  * (web CA08); the pitch is FA14.
  */
-export const JOB_SEEKER_CONSENT_SCRIPT = '“This call is recorded. Laboura uses your details only to find you a job. Businesses see your first name, photo, age and experience — never your phone number. We check your ID and keep only the result, never your Aadhaar number. We send job updates by SMS and WhatsApp.\n\nYou’ll get one link. On it you tick these permissions yourself, take a selfie, check your ID and pay ₹499. If we don’t offer you a suitable job within 30 days, you get your ₹499 back. If you turn down a suitable offer or stop answering, the guarantee ends.”';
+export const JOB_SEEKER_CONSENT_SCRIPT = '“This call is recorded. Laboura uses your details only to find you a job. Businesses see your first name, photo, age and experience — never your phone number. We check your ID and keep only the result, never your Aadhaar number. We send job updates by SMS and WhatsApp.\n\nYou’ll get one link. On it you tick these permissions yourself, take a selfie, pay ₹499 and then check your ID. Your 30 days start only after your government ID is verified. If we don’t offer you a suitable job within those 30 days, you get your ₹499 back. If you turn down a suitable offer or stop answering, the guarantee ends.”';
 
 /**
  * FA14 — "Explain Laboura" in three lines. {fee} and {gst} come from Settings;

@@ -91,7 +91,7 @@ describe('Growth proposals N1–N5 (confirmed 11 Nov)', () => {
         preferredCallWindowStart: '09:00',
         preferredCallWindowEnd: '21:00',
         status: data.status,
-        paymentReceivedAt: paidAt,
+        paymentReceivedAt: paidAt, guaranteeStartsAt: paidAt,
         registeredByStaffId: data.registeredBy ?? null,
         dateOfBirth: new Date('1995-02-03T00:00:00.000Z'),
         latitude: lat + 0.001,
@@ -584,7 +584,7 @@ describe('Growth proposals N1–N5 (confirmed 11 Nov)', () => {
     });
 
     it('takes him off when he registers again (pays again)', async () => {
-      await prisma.jobSeeker.update({ where: { id: refunded }, data: { paymentReceivedAt: new Date(), status: 'active' } });
+      await prisma.jobSeeker.update({ where: { id: refunded }, data: { paymentReceivedAt: new Date(), guaranteeStartsAt: new Date(), status: 'active' } });
       const list = await get('/growth/win-back', staff.call1).expect(200);
       expect(list.body.rows.some((r: { jobSeeker: { id: string } }) => r.jobSeeker.id === refunded)).toBe(false);
       await post('/growth/win-back/run', staff.ceo).expect(201);

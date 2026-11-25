@@ -1,4 +1,6 @@
+import { withSendingRules } from '../../test-support/messaging-double';
 import { BadRequestException, ConflictException, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import { idPassedMock } from '../../test-support/id-passed-mock';
 import { Reflector } from '@nestjs/core';
 import * as crypto from 'crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -14,6 +16,7 @@ import { PaymentService } from './payment.service';
 import { PaymentController } from './payment.controller';
 
 type MockPrisma = {
+  identityVerification?: ReturnType<typeof idPassedMock>;
   bankCredit: Record<string, jest.Mock>;
   payoutAccount: Record<string, jest.Mock>;
   bankDayClose: Record<string, jest.Mock>;
@@ -66,6 +69,7 @@ describe('Phase 16 Task 3: Bank Feed & Finance Confirmation', () => {
         findMany: jest.fn(),
         updateMany: jest.fn(),
       },
+      identityVerification: idPassedMock(),
       jobSeeker: {
         update: jest.fn(),
       },
@@ -96,9 +100,9 @@ describe('Phase 16 Task 3: Bank Feed & Finance Confirmation', () => {
     const pricingService = {
       current: jest.fn().mockResolvedValue({ referralPayoutPaise: 20000 }),
     } as unknown as PricingService;
-    const messagingService = {
+    const messagingService = withSendingRules({
       send: jest.fn().mockResolvedValue({ status: 'sent' }),
-    } as unknown as MessagingService;
+    }) as unknown as MessagingService;
     reviewFlagService = {
       raise: jest.fn().mockResolvedValue({ id: 'flag-1', code: 'RF-0001' }),
       resolve: jest.fn().mockResolvedValue({ id: 'flag-1' }),

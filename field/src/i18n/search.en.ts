@@ -28,6 +28,7 @@ export const searchEn = {
   'search.js.lead': 'Not registered yet',
   'search.js.consented': 'Registration: consent given',
   'search.js.pending_activation': 'Registration: payment pending',
+  'search.js.paid_waiting_id': 'Paid, waiting for ID',
   'search.js.active': 'Active',
   'search.js.paused': 'Paused',
   'search.js.deactivated': 'Deactivated',

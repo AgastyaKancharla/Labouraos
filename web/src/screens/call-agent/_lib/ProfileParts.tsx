@@ -10,6 +10,8 @@ import { formatDayMonthIST, formatDateIST } from '../../../lib/format/date';
 import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { useJobs, type HistoryRow, type Profile, type SeekerProfile } from './api';
+import { api } from '../../../lib/api/client';
+import { ApiError } from '../../../lib/api/errors';
 import { clock12, salaryRange, time12 } from './format';
 
 function initials(name: string): string {
@@ -21,7 +23,7 @@ function initials(name: string): string {
     .join('');
 }
 
-const SEEKER_STATUSES = ['lead', 'consented', 'pending_activation', 'active', 'paused', 'deactivated', 'placed', 'closed', 'refunded'];
+const SEEKER_STATUSES = ['lead', 'consented', 'pending_activation', 'paid_waiting_id', 'active', 'paused', 'deactivated', 'placed', 'closed', 'refunded'];
 
 /** The header card: avatar, name, masked phone · trade · languages · salary, status · ID. */
 export function ProfileHeader({ profile }: { profile: Profile }) {
@@ -189,9 +191,61 @@ function historyText(row: HistoryRow, t: ReturnType<typeof useT>): string {
       return t('ca.history.registered', { by: (row.by as string | null) ?? '—' });
     case 'payment_link_after_id':
       return t(row.sent ? 'ca.history.linkAfterIdSent' : 'ca.history.linkAfterIdNotSent');
+    case 'paid_waiting_id':
+      return t('ca.history.paidWaitingId');
+    case 'guarantee_started':
+      return t('ca.history.guaranteeStarted');
     default:
       return row.kind;
   }
+}
+
+/**
+ * 25 Nov (rev 211, B6): after the first interview at a business the candidate is asked "Was the
+ * shop real, at this address, and was the job as described?". The agent records what he said on
+ * the call (his own answered call) or wrote in WhatsApp; "No" pauses the business at once.
+ */
+function ShopCheck({ interviewId }: { interviewId: string }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState('');
+  const [channel, setChannel] = useState<'call' | 'whatsapp'>('call');
+  const [state, setState] = useState<'idle' | 'busy' | 'done' | 'error'>('idle');
+  const [message, setMessage] = useState('');
+  const send = async (answer: 'yes' | 'no') => {
+    setState('busy');
+    try {
+      await api.post(`/interviews/${interviewId}/shop-check`, { answer, channel, note: note.trim() || undefined });
+      setState('done');
+      setMessage(answer === 'no' ? t('ca.shop.savedNo') : t('ca.shop.savedYes'));
+    } catch (e) {
+      setState('error');
+      setMessage(e instanceof ApiError ? e.message : t('common.retry'));
+    }
+  };
+  if (state === 'done') return <span className="sub" data-testid="shop-check-done" style={{ marginLeft: 8 }}>{message}</span>;
+  if (!open) {
+    return (
+      <button type="button" className="btn bs" style={{ marginLeft: 8 }} onClick={() => setOpen(true)} data-testid="shop-check-open">
+        {t('ca.shop.ask')}
+      </button>
+    );
+  }
+  return (
+    <span className="ca-shop-check" style={{ marginLeft: 8, display: 'inline-grid', gap: 6 }} data-testid="shop-check">
+      <strong>{t('ca.shop.question')}</strong>
+      <select aria-label={t('ca.shop.heardOn')} value={channel} onChange={(e) => setChannel(e.target.value as 'call' | 'whatsapp')}>
+        <option value="call">{t('ca.shop.onCall')}</option>
+        <option value="whatsapp">{t('ca.shop.onWhatsApp')}</option>
+      </select>
+      <input aria-label={t('ca.shop.note')} placeholder={t('ca.shop.note')} value={note} onChange={(e) => setNote(e.target.value)} />
+      <span>
+        <button type="button" className="btn bg" disabled={state === 'busy'} onClick={() => void send('yes')}>{t('ca.shop.yes')}</button>{' '}
+        <button type="button" className="btn bd" disabled={state === 'busy' || !note.trim()} onClick={() => void send('no')}>{t('ca.shop.no')}</button>
+      </span>
+      {state === 'error' && <span role="alert">{message}</span>}
+    </span>
+  );
 }
 
 export function History({ rows }: { rows: HistoryRow[] }) {
@@ -213,6 +267,7 @@ export function History({ rows }: { rows: HistoryRow[] }) {
               {when}
             </span>
             <span>{historyText(row, t)}</span>
+            {row.kind === 'offer' && row.shopCheckPending === true && typeof row.interviewId === 'string' && <ShopCheck interviewId={row.interviewId} />}
           </div>
         );
       })}

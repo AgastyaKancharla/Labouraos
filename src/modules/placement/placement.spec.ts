@@ -461,13 +461,15 @@ describe('Phase 5 Task 1: Placement Creation', () => {
     expect(paidPlacement.status).toBe('confirmed');
     expect(paidPlacement.paidAt).toBeInstanceOf(Date);
     expect((await prisma.jobSeeker.findUniqueOrThrow({ where: { id: candidate.id } })).status).toBe('placed');
-    expect(await prisma.messageLog.count({ where: { relatedId: selected.id, template: 'joining_confirmed' } })).toBe(2);
+    // WhatsApp first, SMS as backup (rev 211): one message.
+    expect(await prisma.messageLog.count({ where: { relatedId: selected.id, template: 'joining_confirmed' } })).toBe(1);
 
     const replay = await request(app.getHttpServer()).post('/payments/mock/simulate-webhook').send({
       gatewayReference: payment.gatewayReference, status: 'succeeded',
     }).expect(201);
     expect(replay.body.alreadyProcessed).toBe(true);
-    expect(await prisma.messageLog.count({ where: { relatedId: selected.id, template: 'joining_confirmed' } })).toBe(2);
+    // WhatsApp first, SMS as backup (rev 211): one message.
+    expect(await prisma.messageLog.count({ where: { relatedId: selected.id, template: 'joining_confirmed' } })).toBe(1);
     await prisma.businessAgreement.delete({ where: { id: agreement.id } });
     await prisma.pricingPolicy.delete({ where: { id: changedPolicy.id } });
   });

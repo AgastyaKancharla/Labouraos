@@ -58,7 +58,7 @@ export function HomeStuckRows({ rows }: { rows: StuckListRow[] | undefined }) {
               r.waitingForTeamLead ? (
                 <WaitingMark />
               ) : action ? (
-                <RowAction name={r.name} label={t(ACTION[action].label)} run={() => ACTION[action].run(r.id)} />
+                <RowAction name={r.name} label={t(ACTION[action].label)} send={(channel) => ACTION[action].run(r.id, channel)} />
               ) : null
             }
           />

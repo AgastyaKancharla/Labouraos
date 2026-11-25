@@ -1,3 +1,4 @@
+import { withSendingRules } from '../../test-support/messaging-double';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -125,7 +126,7 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
     } as unknown as IdService;
 
     auditService = { log: jest.fn() };
-    messagingService = { send: jest.fn().mockResolvedValue({ id: 'msg-1' }) };
+    messagingService = withSendingRules({ send: jest.fn().mockResolvedValue({ id: 'msg-1' }) });
 
     pricingService = {
       current: jest.fn().mockResolvedValue(currentPolicy),
@@ -234,7 +235,8 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
       expect(res.paymentLink).not.toContain('PAY-00001-1234abcd');
       expect(messagingService.send).toHaveBeenCalledWith(
         expect.objectContaining({
-          channel: 'sms',
+          // WhatsApp first, SMS as backup (rev 211).
+          channel: 'whatsapp',
           template: 'payment_request',
           subjectType: 'job_seeker',
           subjectId: 'js-1',
@@ -267,12 +269,13 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
         bankUtr: 'UTR1122334455',
       });
 
-      // Assert candidate active and clock started at confirmedAt
+      // Rev 211: no ID check has passed yet, so he is "paid, waiting for ID" and the 30 days have not started.
       expect(prisma.jobSeeker.update).toHaveBeenCalledWith({
         where: { id: 'js-1' },
         data: {
-          status: 'active',
+          status: 'paid_waiting_id',
           paymentReceivedAt: confirmedAt,
+          guaranteeStartsAt: null,
           hitCount: 0,
         },
       });

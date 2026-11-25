@@ -477,7 +477,8 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
       .expect(201);
     expect(created.body.code).toMatch(/^RF-/);
     expect(created.body.idSmsSent).toBe(true);
-    const sms = await prisma.messageLog.findFirst({ where: { channel: 'sms', template: 'referral_partner_id', subjectType: 'referral', subjectId: created.body.id } });
+    // WhatsApp first, SMS as backup (rev 211).
+    const sms = await prisma.messageLog.findFirst({ where: { channel: 'whatsapp', template: 'referral_partner_id', subjectType: 'referral', subjectId: created.body.id } });
     expect(sms?.status).toBe('sent');
 
     const { token: linkResponseToken } = await withIssuedLinkToken(app, () => request(app.getHttpServer())

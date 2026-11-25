@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { PAID_WAITING_ID, PAID_WAITING_ID_LABEL } from '../job-seeker/job-seeker.status';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -42,6 +43,8 @@ export interface VerifyRow {
   registeredBy: { id: string; code: string; name: string; role: string } | null;
   registeredAt: string;
   paid: boolean;
+  /** Rev 211: "Paid, waiting for ID" while he has paid and no ID check has passed (job seekers only). */
+  stage?: string | null;
   hasSelfie: boolean;
   idCheck: {
     method: string;
@@ -243,7 +246,7 @@ export class TeamLeadChecksService {
     const now = this.clock.now();
     const monthStart = istStartOfDay(`${istDayKey(now).slice(0, 8)}01`);
     const seekerSelect = {
-      id: true, code: true, name: true, whatsappPhone: true, dateOfBirth: true, photoStoragePath: true, registeredByStaffId: true, paymentReceivedAt: true, createdAt: true,
+      id: true, code: true, name: true, whatsappPhone: true, dateOfBirth: true, photoStoragePath: true, registeredByStaffId: true, paymentReceivedAt: true, status: true, createdAt: true,
       trades: { select: { trade: true }, orderBy: { isPrimary: 'desc' as const }, take: 1 },
       identityVerifications: { orderBy: { createdAt: 'desc' as const }, take: 1, select: { id: true, method: true, vendor: true, status: true, nameMatches: true, isAdult: true, phoneLinked: true, last4: true } },
     };
@@ -371,6 +374,8 @@ export class TeamLeadChecksService {
         registeredBy: registrarOf(seeker.registeredByStaffId ?? appAgents.get(seeker.id) ?? null),
         registeredAt: seeker.createdAt.toISOString(),
         paid: Boolean(seeker.paymentReceivedAt),
+        /** Rev 211: paid, and the ID check has not passed — "Paid, waiting for ID" (view only). */
+        stage: seeker.status === PAID_WAITING_ID ? PAID_WAITING_ID_LABEL : null,
         hasSelfie: Boolean(seeker.photoStoragePath),
         idCheck: idCheckOf(idCheck),
         approval: approvalOf(seeker.id, seeker.registeredByStaffId, isPending(seeker.identityVerifications)),
@@ -508,11 +513,12 @@ export class TeamLeadChecksService {
       await this.audit.log({ actorId: actor.id, action: `team_lead.registration_${verdict}`, entityType: subjectType, entityCode: subject.code, after: { verdict, flagId, otherIdDecided } });
       return { id: check.id, verdict, flagId, otherIdDecided, idPhotoDeleted: photosDeleted > 0, qrPhotoDeleted: photosDeleted > 0 };
     });
-    // 22 Nov: an approved other ID sends the ₹499 payment link by itself (after the check is saved).
-    const paymentLink = this.otherIds
+    // Rev 211 (replaces the 22 Nov automatic payment link): an approved other ID of a paid job seeker
+    // starts his 30 days and tells him (after the check is saved). followUp says what happened.
+    const followUp = this.otherIds
       ? await this.otherIds.afterDecision(subjectType, subject.id, result.otherIdDecided, actor, this.clock.now())
       : { status: 'none' as const, reason: null };
-    return { ...result, paymentLink };
+    return { ...result, followUp };
   }
 
   // -------------------------------------------------------------- visits

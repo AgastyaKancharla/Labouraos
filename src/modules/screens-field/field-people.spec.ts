@@ -134,7 +134,7 @@ describe('Laboura Field lists (22 Nov): GET /field-work/businesses, /field-work/
   function signAgreement(businessId: string) {
     return prisma.businessAgreement.create({
       data: {
-        businessId, version: '1.1', termsHash: 'h', noBypassMonths: 12, noBypassPenaltyPercent: 50, feePercent: 50, gstPercent: 18,
+        businessId, version: '1.2', termsHash: 'h', noBypassMonths: 12, noBypassPenaltyPercent: 50, feePercent: 50, gstPercent: 18,
         signedName: 'Owner Name', signedPhone: '+919999999999', otpRequestId: 'otp', signedAt: new Date(NOON.getTime() - DAY), documentStoragePath: 'x',
       },
     });
@@ -155,7 +155,7 @@ describe('Laboura Field lists (22 Nov): GET /field-work/businesses, /field-work/
         status: fields.status ?? 'lead',
         locality: fields.locality ?? 'Bommanahalli',
         hitCount: fields.hitCount ?? 0,
-        paymentReceivedAt: fields.paymentReceivedAt ?? null,
+        paymentReceivedAt: fields.paymentReceivedAt ?? null, guaranteeStartsAt: fields.paymentReceivedAt ?? null,
         createdAt: fields.createdAt ?? NOON,
         trades: { create: [{ trade: 'Cook', yearsExperience: 1, isPrimary: true }] },
       },
@@ -252,7 +252,8 @@ describe('Laboura Field lists (22 Nov): GET /field-work/businesses, /field-work/
     });
     const waiting = await makeSeeker(agent, { name: 'Ramesh Waiting', createdAt: new Date(NOON.getTime() - 3 * HOUR) });
     await allConsents(waiting.id);
-    await prisma.jobSeeker.update({ where: { id: waiting.id }, data: { photoStoragePath: `job-seekers/${waiting.id}/selfie.jpg`, photoTakenAt: NOON } });
+    // Rev 211: paid, and the ID check waits for the Team Lead ("paid, waiting for ID").
+    await prisma.jobSeeker.update({ where: { id: waiting.id }, data: { photoStoragePath: `job-seekers/${waiting.id}/selfie.jpg`, photoTakenAt: NOON, status: 'paid_waiting_id', paymentReceivedAt: new Date(NOON.getTime() - HOUR) } });
     await prisma.identityVerification.create({ data: { jobSeekerId: waiting.id, method: 'pan', vendor: 'team_lead_photo', status: 'pending' } });
     const paid = await makeSeeker(agent, { name: 'Paid Lakshmi', status: 'active', hitCount: 2, paymentReceivedAt: new Date(NOON.getTime() - 4 * DAY), createdAt: new Date(NOON.getTime() - 5 * DAY) });
     const notMine = await makeSeeker(otherAgent, { name: 'Other Person' });

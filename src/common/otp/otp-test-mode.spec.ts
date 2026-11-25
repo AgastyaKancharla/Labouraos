@@ -42,12 +42,20 @@ describe('B2: OTP test mode — when it is on', () => {
     expect(otpTestModeEnabled(HOSTED_TEST)).toBe(true);
   });
 
-  it('is never on in production with any live vendor', () => {
+  it('is never on in production with any live vendor but WhatsApp', () => {
     expect(anyLiveVendor(LIVE)).toBe(true);
     expect(otpTestModeEnabled(LIVE)).toBe(false);
-    for (const key of ['SMS_PROVIDER_MODE', 'PAYMENT_PROVIDER_MODE', 'WHATSAPP_PROVIDER_MODE', 'TELEPHONY_PROVIDER_MODE']) {
+    for (const key of ['SMS_PROVIDER_MODE', 'PAYMENT_PROVIDER_MODE', 'TELEPHONY_PROVIDER_MODE']) {
       expect({ key, on: otpTestModeEnabled({ ...HOSTED_TEST, [key]: 'real' }) }).toEqual({ key, on: false });
     }
+  });
+
+  it('rev 211: a live WhatsApp alone does not hide the code while OTP and SMS are mock', () => {
+    expect(otpTestModeEnabled({ ...HOSTED_TEST, WHATSAPP_PROVIDER_MODE: 'meta' })).toBe(true);
+    expect(testModeFields({ testModeCode: '123456' }, { ...HOSTED_TEST, WHATSAPP_PROVIDER_MODE: 'meta' })).toEqual({ testModeCode: '123456', testModeBanner: 'Test mode code: 123456' });
+    // Still never with a live SMS or OTP vendor in production.
+    expect(otpTestModeEnabled({ ...HOSTED_TEST, WHATSAPP_PROVIDER_MODE: 'meta', SMS_PROVIDER_MODE: 'real' })).toBe(false);
+    expect(otpTestModeEnabled({ ...HOSTED_TEST, WHATSAPP_PROVIDER_MODE: 'meta', OTP_PROVIDER_MODE: 'real' })).toBe(false);
   });
 
   it('is off with a real OTP vendor, whatever else is set', () => {

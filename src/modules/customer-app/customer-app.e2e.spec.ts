@@ -408,7 +408,7 @@ describe('Customer app API', () => {
       expect(res.body.code).toBe('GOOGLE_TOKEN_INVALID');
     });
 
-    it('registers a business as a lead with a visit request, then a vacancy confirmed by fresh OTP', async () => {
+    it('registers a business as a lead (no visit request: checked automatically after signing), then a vacancy confirmed by fresh OTP', async () => {
       const phone = newPhone();
       const session = await signIn(phone);
       const otpCode = await freshOtp(session.accessToken, 'register');
@@ -422,8 +422,8 @@ describe('Customer app API', () => {
       expect(res.body).toEqual(expect.objectContaining({ kind: 'business', verificationStatus: 'lead', next: 'agreement' }));
       const business = await prisma.business.findUniqueOrThrow({ where: { code: res.body.code } });
       expect(business).toEqual(expect.objectContaining({ leadCreatedByStaffId: null, leadChannel: 'laboura_app', heardFrom: 'laboura_app' }));
-      const visit = await prisma.visitAssignment.findFirstOrThrow({ where: { businessId: business.id } });
-      expect(visit).toEqual(expect.objectContaining({ purpose: 'business_signup', status: 'pending', requestedFor: expect.any(Date), signupTrackerId: expect.any(String) }));
+      // 25 Nov (rev 211, B5): a business that is not a household gets no automatic visit request.
+      expect(await prisma.visitAssignment.count({ where: { businessId: business.id } })).toBe(0);
 
       const home = await auth(http().get(`${API}/me/profiles/${res.body.profileId}/home`), session.accessToken).expect(200);
       expect(home.body).toEqual(expect.objectContaining({ kind: 'business', nextAction: 'sign_agreement', vacancies: [] }));
@@ -503,7 +503,7 @@ describe('Customer app API', () => {
         .expect(201);
       const referral = await prisma.referral.findUniqueOrThrow({ where: { code: res.body.code } });
       expect(referral.registeredByStaffId).toBeNull();
-      await agentJobSeeker(newPhone(), { name: 'Suresh Kumar Rao', referredById: referral.id, paymentReceivedAt: new Date() });
+      await agentJobSeeker(newPhone(), { name: 'Suresh Kumar Rao', referredById: referral.id, paymentReceivedAt: new Date(), guaranteeStartsAt: new Date() });
       const home = await auth(http().get(`${API}/me/profiles/${res.body.profileId}/home`), session.accessToken).expect(200);
       expect(home.body.referred).toEqual([expect.objectContaining({ firstName: 'Suresh', stage: 'paid' })]);
       expect(JSON.stringify(home.body.referred)).not.toMatch(/Kumar|Rao|\+91|phone/);
@@ -569,7 +569,7 @@ describe('Customer app API', () => {
   describe('delete my account', () => {
     it('needs a fresh OTP and, during a running guarantee, the refund warning', async () => {
       const phone = newPhone();
-      await agentJobSeeker(phone, { status: 'active', paymentReceivedAt: new Date() });
+      await agentJobSeeker(phone, { status: 'active', paymentReceivedAt: new Date(), guaranteeStartsAt: new Date() });
       const session = await signIn(phone);
       const info = await auth(http().get(`${API}/me/deletion`), session.accessToken).expect(200);
       expect(info.body).toEqual(expect.objectContaining({ guaranteeRunning: true, endsRefund: true, openRequest: null }));

@@ -390,6 +390,8 @@ export interface AgreementStatus {
   resendAvailableAt: string | null;
   canShowCandidates: boolean;
   candidatesHiddenReason: CandidatesHiddenReason;
+  /** 25 Nov (rev 211–212): the owner's photos the agent takes before the owner signs (absent on older servers). */
+  ownerPhotos?: { needed: boolean; selfie: boolean; shop: boolean; shopKinds: ('shop_board' | 'fssai_with_owner' | 'workspace')[]; smallBusiness: boolean };
 }
 
 export interface MyJobSeekerRow {
@@ -468,25 +470,28 @@ export const redesignApi = (api: ApiClient) => ({
   businessPage: (ref: string) => api.get<BusinessPage>(`/field-work/businesses/${enc(ref)}/page`),
   agreement: (ref: string) => api.get<AgreementStatus>(`/field-work/businesses/${enc(ref)}/agreement`),
   /** The agreement link, in English (rev 193). */
-  resendAgreement: (ref: string) =>
-    api.post<{ success: boolean; linkSentAt: string; linkExpiresAt: string; sentToLast4: string }>(
+  /** Rev 211: WhatsApp first (SMS as backup), or `channel: 'sms'` ("Send by SMS"); `sentBy` says which carried it. */
+  resendAgreement: (ref: string, channel?: 'whatsapp' | 'sms') =>
+    api.post<{ success: boolean; linkSentAt: string; linkExpiresAt: string; sentToLast4: string; sentBy?: 'whatsapp' | 'sms' | null }>(
       `/field-work/businesses/${enc(ref)}/agreement-link`,
-      {},
+      channel ? { channel } : {},
     ),
   submitDraft: (vacancyId: string, ownerToldMinimumWage?: boolean) =>
     api.post<SubmittedVacancy>(`/vacancies/${enc(vacancyId)}/submit-for-confirmation`, ownerToldMinimumWage ? { ownerToldMinimumWage: true } : {}),
   myJobSeekers: (q?: string) => api.get<{ query: string; results: MyJobSeekerRow[] }>('/field-work/job-seekers', { query: { q: q || undefined } }),
   // Referral partners
-  sendReferralOtp: (phone: string, requestId?: string) =>
+  sendReferralOtp: (phone: string, requestId?: string, channel?: 'sms') =>
     api.post<{ requestId?: string; resendAvailableAt?: string; alreadyRegistered?: boolean; type?: string; code?: string }>('/otp/send', {
       phone,
       purpose: 'referral',
       ...(requestId ? { requestId } : {}),
+      ...(channel ? { channel } : {}),
     }),
   createReferral: (body: Record<string, unknown>) => api.post<CreatedReferral>('/referrals', body),
   referral: (id: string) => api.get<{ id: string; code: string; name: string; language: string | null; paused?: boolean }>(`/referrals/${enc(id)}`),
   referralStatus: (id: string) => api.get<ReferralStatus>(`/referrals/${enc(id)}/registration-status`),
-  resendReferralLink: (id: string) => api.post<{ success?: boolean; expiresAt?: string }>(`/referrals/${enc(id)}/terms-links`, {}),
+  resendReferralLink: (id: string, channel?: 'whatsapp' | 'sms') =>
+    api.post<{ success?: boolean; expiresAt?: string; sentBy?: 'whatsapp' | 'sms' | null }>(`/referrals/${enc(id)}/terms-links`, channel ? { channel } : {}),
 });
 
 /** The stable `code` of an API error (docs/api/field-redesign.md §7), if any. */

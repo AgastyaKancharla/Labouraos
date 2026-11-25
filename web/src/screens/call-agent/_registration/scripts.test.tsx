@@ -33,7 +33,7 @@ const CHANGED: ScriptTerms = {
 
 describe('call scripts read their figures from Settings', () => {
   it('job seeker consent script: the fee and the guarantee days, in English only (rev 193)', () => {
-    expect(jobSeekerConsentScript(GUIDE)).toContain('pay ₹499. If we don’t offer you a suitable job within 30 days, you get your ₹499 back.');
+    expect(jobSeekerConsentScript(GUIDE)).toContain('pay ₹499 and then check your ID. Your 30 days start only after your government ID is verified. If we don’t offer you a suitable job within those 30 days, you get your ₹499 back.');
     const changed = jobSeekerConsentScript(CHANGED);
     expect(changed).toContain('₹599');
     expect(changed).toContain('45');

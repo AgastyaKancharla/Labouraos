@@ -5,6 +5,8 @@ export const SEEKER_STATUS: Record<string, { label: string; tone: StatusTone }> 
   lead: { label: 'Registered, not paid', tone: 'muted' },
   consented: { label: 'Consent given', tone: 'muted' },
   pending_activation: { label: 'Paid — confirming', tone: 'warn' },
+  // Rev 211 (25 Nov): paid, the ID check has not passed — not active, the 30 days have not started.
+  paid_waiting_id: { label: 'Paid, waiting for ID', tone: 'warn' },
   active: { label: 'Active', tone: 'info' },
   paused: { label: 'Paused', tone: 'warn' },
   deactivated: { label: 'Deactivated', tone: 'danger' },
@@ -23,7 +25,7 @@ export function guaranteePill(daysLeft: number | null) {
 export const BUSINESS_STATUS: Record<string, { label: string; tone: StatusTone }> = {
   lead: { label: 'Lead · visit needed', tone: 'muted' },
   pending_visit: { label: 'Visit needed', tone: 'warn' },
-  pending_tl_check: { label: 'TL review', tone: 'warn' },
+  pending_tl_check: { label: 'Team Lead check', tone: 'warn' },
   verified: { label: 'Verified', tone: 'good' },
   rejected: { label: 'Rejected', tone: 'danger' },
   paused: { label: 'Paused', tone: 'danger' },
@@ -35,6 +37,8 @@ export const VACANCY_STATUS: Record<string, { label: string; tone: StatusTone }>
   cancelled: { label: 'Closed', tone: 'muted' },
   draft: { label: 'Draft', tone: 'muted' },
   awaiting_confirmation: { label: 'Waiting for owner OTP', tone: 'warn' },
+  // 25 Nov (rev 211, B4): unusual salary or more than 5 openings — the Team Lead checks it first.
+  pending_tl_check: { label: 'Team Lead check', tone: 'warn' },
 };
 
 export const PLACEMENT_STAGE: Record<string, { label: string; tone: StatusTone }> = {

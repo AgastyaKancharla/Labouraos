@@ -53,6 +53,9 @@ import { AgentViewer, agentViewerFor, businessForViewer } from './business-agent
 import { areaAutoFillMaxMeters, areaRequiredError, DEFAULT_AREA_AUTO_FILL_MAX_METERS } from './area-auto-fill';
 import { recordFullNumberSearch } from '../../common/phone/full-number-search';
 import { ownerVisitOtpPurpose } from '../../common/otp/bound-otp-purposes';
+import { MapsLinkService } from '../maps-link/maps-link.service';
+import { isHouseholdBusiness } from './business-auto-check.service';
+import { proofFormatError } from './business-proofs';
 
 /**
  * The only columns PATCH /businesses/:id writes (security AC-1). Not here, on
@@ -114,6 +117,7 @@ export class BusinessService {
     private readonly tradeService: TradeService,
     @Optional() private readonly fieldVisits?: FieldVisitService,
     @Optional() private readonly messaging?: MessagingService,
+    @Optional() private readonly mapsLinks?: MapsLinkService,
   ) {}
 
   async update(id: string, dto: Record<string, unknown>, actor: EditActor | string) {
@@ -541,6 +545,11 @@ export class BusinessService {
       }
     }
 
+    // 25 Nov (rev 211, B2): the Maps link proof, read to its pin (no address lookup). A link that
+    // cannot be read is kept with no pin: the proof is then not valid and the Team Lead looks.
+    const mapsLinkText = dto.mapsLink?.trim().slice(0, 2048) || null;
+    const mapsPin = mapsLinkText && this.mapsLinks ? await this.mapsLinks.pinForProof(auditActorId, mapsLinkText) : null;
+    const runsFromHome = !isHousehold && !isHouseholdBusiness(businessType) && dto.runsFromHome === true;
     const capturedChannel = !staff ? 'laboura_app' : staff.role === 'field_agent' ? 'field_visit' : 'phone_call';
     const accountAgent = staff?.role === 'field_agent'
       ? { accountAgentId: staff.id, accountAgentAssignedAt: this.clock.now() }
@@ -603,6 +612,11 @@ export class BusinessService {
           latitude,
           longitude,
           geofenceFlag,
+          runsFromHome,
+          mapsLink: mapsLinkText,
+          mapsLatitude: mapsPin?.latitude ?? null,
+          mapsLongitude: mapsPin?.longitude ?? null,
+          mapsPlaceName: mapsPin?.placeName?.slice(0, 200) ?? null,
         },
       });
       const branchIds = new Map<string, string>();
@@ -818,6 +832,119 @@ export class BusinessService {
       return this.prisma.business.findUniqueOrThrow({ where: { id: business.id } });
     }
     return updated;
+  }
+
+  /**
+   * 25 Nov (rev 211, B2/B3): adds a missing proof — GST, FSSAI, trade licence, Shop and
+   * Establishment or Udyam number, or the Google Maps link — then runs the automatic check
+   * again. A proof already on file is changed only by a Team Lead, Manager or the CEO (the
+   * numbers are ban fingerprints). GSTIN, FSSAI and Udyam must have the right format; a number
+   * another business already has is refused ("Already registered — open it").
+   */
+  async addProofs(businessId: string, body: Record<string, unknown>, actorId: string) {
+    const business = await this.prisma.business.findUnique({ where: { id: businessId } });
+    if (!business || business.anonymisedAt) throw new NotFoundException(`Business '${businessId}' not found`);
+    const actor = await this.prisma.staff.findUnique({ where: { id: actorId }, select: { id: true, role: true } });
+    if (!actor) throw new NotFoundException(`Staff '${actorId}' not found`);
+    if (isHouseholdBusiness(business.businessType)) throw new BadRequestException('Households have no GST or licence proofs: they keep the verification visit');
+    const senior = ['team_lead', 'manager', 'ceo'].includes(actor.role);
+    const text = (key: string): string | null | undefined => {
+      if (!(key in body)) return undefined;
+      const value = body[key];
+      if (value === null || value === '') return null;
+      if (typeof value !== 'string') throw new BadRequestException(`${key} must be text`);
+      return value.trim().slice(0, key === 'mapsLink' ? 2048 : 40) || null;
+    };
+    const fields = ['gstNumber', 'fssaiNumber', 'licenceNumber', 'shopEstablishmentNumber', 'udyamNumber', 'mapsLink'] as const;
+    const unknown = Object.keys(body).filter((key) => !(fields as readonly string[]).includes(key) && key !== 'reason');
+    if (unknown.length) throw new BadRequestException(`Only proofs can be added here (not ${unknown.join(', ')})`);
+    const next: Partial<Record<(typeof fields)[number], string | null>> = {};
+    for (const key of fields) {
+      const value = text(key);
+      if (value === undefined) continue;
+      const current = business[key];
+      if ((value ?? '') === (current ?? '')) continue;
+      if (current && !senior) throw new ForbiddenException(`${key} is already on file: a Team Lead, Manager or the CEO corrects it`);
+      if (value === null && !senior) throw new ForbiddenException('Only a Team Lead, Manager or the CEO removes a proof');
+      if (key === 'gstNumber' || key === 'fssaiNumber' || key === 'udyamNumber') {
+        const error = proofFormatError(key, value);
+        if (error) throw new BadRequestException(error);
+      }
+      next[key] = value;
+    }
+    if (!Object.keys(next).length) return this.prisma.business.findUniqueOrThrow({ where: { id: businessId } });
+    const policy = await this.pricingService.current();
+    const duplicates = await this.findDuplicateMatches({
+      name: business.name,
+      gstNumber: next.gstNumber ?? null,
+      licenceNumber: next.licenceNumber ?? null,
+      shopEstablishmentNumber: next.shopEstablishmentNumber ?? null,
+      udyamNumber: next.udyamNumber ?? null,
+      fssaiNumber: next.fssaiNumber ?? null,
+      photoHash: null,
+      latitude: null,
+      longitude: null,
+      duplicateRadiusMeters: policy.duplicateBusinessRadiusMeters,
+      excludeBusinessId: business.id,
+    });
+    for (const [matchedBusinessId, matchTypes] of duplicates) {
+      const documentMatches = [...matchTypes].filter((type) => REGISTRATION_NUMBER_MATCHES.has(type));
+      if (!documentMatches.length) continue;
+      const matched = await this.prisma.business.findUnique({ where: { id: matchedBusinessId }, select: { code: true } });
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Already registered — open it. A business with this GST or licence number already exists',
+        existingBusinessCode: matched?.code ?? null,
+        matchedOn: documentMatches,
+      });
+    }
+    if (next.gstNumber) await assertNotBanned(this.prisma, { idFingerprints: [businessIdFingerprint('gstin', next.gstNumber)] });
+    let mapsPin: { latitude: number; longitude: number; placeName: string | null } | null = null;
+    if (next.mapsLink && this.mapsLinks) mapsPin = await this.mapsLinks.pinForProof(actorId, next.mapsLink);
+    const merged = { ...business, ...next };
+    const documented = [merged.gstNumber, merged.fssaiNumber, merged.licenceNumber, merged.shopEstablishmentNumber, merged.udyamNumber, merged.pan].some((v) => v?.trim());
+    let gstLookupData: { gstVerified: boolean; gstLegalName: string | null; gstStatus: string; gstCheckedAt: Date } | null = null;
+    if (next.gstNumber) {
+      // The mock GST lookup stays (no paid service yet).
+      const result = await this.gstLookup.lookup(next.gstNumber).catch(() => null);
+      gstLookupData = result
+        ? { gstVerified: result.verified, gstLegalName: result.legalName, gstStatus: result.status, gstCheckedAt: this.clock.now() }
+        : { gstVerified: false, gstLegalName: null, gstStatus: 'lookup_failed', gstCheckedAt: this.clock.now() };
+    }
+    await this.prisma.business.update({
+      where: { id: businessId },
+      data: {
+        gstNumber: 'gstNumber' in next ? next.gstNumber : undefined,
+        fssaiNumber: 'fssaiNumber' in next ? next.fssaiNumber : undefined,
+        licenceNumber: 'licenceNumber' in next ? next.licenceNumber : undefined,
+        shopEstablishmentNumber: 'shopEstablishmentNumber' in next ? next.shopEstablishmentNumber : undefined,
+        udyamNumber: 'udyamNumber' in next ? next.udyamNumber : undefined,
+        mapsLink: 'mapsLink' in next ? next.mapsLink : undefined,
+        mapsLatitude: 'mapsLink' in next ? (mapsPin?.latitude ?? null) : undefined,
+        mapsLongitude: 'mapsLink' in next ? (mapsPin?.longitude ?? null) : undefined,
+        mapsPlaceName: 'mapsLink' in next ? (mapsPin?.placeName?.slice(0, 200) ?? null) : undefined,
+        gstVerified: gstLookupData ? gstLookupData.gstVerified : undefined,
+        gstLegalName: gstLookupData ? gstLookupData.gstLegalName : undefined,
+        gstStatus: gstLookupData ? gstLookupData.gstStatus : undefined,
+        gstCheckedAt: gstLookupData ? gstLookupData.gstCheckedAt : undefined,
+        documentsStatus: documented ? 'documented' : business.documentsStatus,
+      },
+    });
+    await this.auditService.log({
+      actorId,
+      action: 'business.proofs_added',
+      entityType: 'business',
+      entityCode: business.code,
+      // Which proofs changed, never the numbers themselves.
+      before: Object.fromEntries(Object.keys(next).map((key) => [key, business[key as (typeof fields)[number]] ? 'on file' : 'empty'])),
+      after: { ...Object.fromEntries(Object.keys(next).map((key) => [key, next[key as (typeof fields)[number]] ? 'on file' : 'empty'])), mapsPinRead: 'mapsLink' in next ? Boolean(mapsPin) : undefined },
+      changedFields: Object.keys(next),
+      reason: typeof body.reason === 'string' && body.reason.trim() ? body.reason.trim() : 'Proof added for the automatic verification',
+      city: business.city,
+    });
+    await this.verificationService.advanceToPendingTlCheckIfReady(business.id, actorId);
+    return this.prisma.business.findUniqueOrThrow({ where: { id: businessId } });
   }
 
   private async findDuplicateMatches(input: {

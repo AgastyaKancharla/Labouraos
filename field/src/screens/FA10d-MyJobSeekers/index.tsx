@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useI18n, type MessageKey } from '@/i18n';
-import { Button, Card, EmptyState, ErrorState, Icon, LoadingState, Screen, SearchBar, Text, TextField } from '@/components';
+import { Button, Card, EmptyState, ErrorState, Icon, LoadingState, Screen, SearchBar, Text, TextField, SendBySms, type SendChannel } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { useAfterSave } from '@/api/refresh';
@@ -124,9 +124,10 @@ export function SeekerRowEnd({ js, row, testPrefix = 'fa10d' }: { js: { id: stri
   const { selling, people } = useEndpoints();
   const queue = useOfflineQueue();
   const afterSave = useAfterSave();
+  // Rev 211: the row's button sends on WhatsApp first (SMS as backup); "Send by SMS" under it.
   const send = useMutation({
-    mutationFn: (kind: 'registration_link' | 'payment_link') =>
-      queue.live<unknown>(() => (kind === 'registration_link' ? selling.sendRegistrationLink(js.id) : people.sendPaymentLink(js.id))),
+    mutationFn: ({ kind, channel }: { kind: 'registration_link' | 'payment_link'; channel: SendChannel }) =>
+      queue.live<unknown>(() => (kind === 'registration_link' ? selling.sendRegistrationLink(js.id, channel) : people.sendPaymentLink(js.id, channel))),
     onSuccess: () => afterSave(),
   });
   const id = `${testPrefix}-action-${js.id}`;
@@ -139,7 +140,8 @@ export function SeekerRowEnd({ js, row, testPrefix = 'fa10d' }: { js: { id: stri
       const label = action === 'registration_link' && row.status === 'link_not_sent' ? t('lists.js.action.sendLink') : t(`lists.js.action.${action}` as MessageKey);
       return (
         <View style={styles.end}>
-          <RowButton label={send.isSuccess ? t('lists.sent') : label} loading={send.isPending} disabled={send.isSuccess} onPress={() => send.mutate(action)} testID={id} />
+          <RowButton label={send.isSuccess ? t('lists.sent') : label} loading={send.isPending} disabled={send.isSuccess} onPress={() => send.mutate({ kind: action, channel: 'whatsapp' })} testID={id} />
+          {!send.isSuccess ? <SendBySms sentAt={0} disabled={send.isPending} onPress={() => send.mutate({ kind: action, channel: 'sms' })} testID={`${id}-sms`} /> : null}
           {send.isError ? (
             <Text variant="tiny" color={colors.tomato} style={styles.endError} testID={`${id}-error`}>
               {t('lists.sendFailed')}

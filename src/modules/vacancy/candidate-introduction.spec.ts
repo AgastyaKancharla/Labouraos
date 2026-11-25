@@ -1,3 +1,4 @@
+import { withSendingRules } from '../../test-support/messaging-double';
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ConsentClock } from '../consent/consent-clock';
@@ -27,7 +28,7 @@ describe('CandidateIntroductionService', () => {
       $transaction: jest.fn(async (callback: (tx: unknown) => Promise<unknown>) => callback(prisma)),
     };
     matching = { match: jest.fn() };
-    messaging = { send: jest.fn().mockResolvedValue({ id: 'message-1', status: 'sent' }) };
+    messaging = withSendingRules({ send: jest.fn().mockResolvedValue({ id: 'message-1', status: 'sent' }) });
     service = new CandidateIntroductionService(
       prisma as unknown as PrismaService,
       matching as unknown as MatchingService,
@@ -49,7 +50,7 @@ describe('CandidateIntroductionService', () => {
     });
 
     await expect(service.shareByLink('vacancy-1', ['seeker-1', 'seeker-2', 'seeker-3'], 'staff-1', 'whatsapp'))
-      .resolves.toEqual({ count: 3, channel: 'share_link', messageLogId: 'message-1' });
+      .resolves.toEqual({ count: 3, channel: 'share_link', messageLogId: 'message-1', sentBy: 'whatsapp' });
     expect(messaging.send).toHaveBeenCalledWith(expect.objectContaining({
       channel: 'whatsapp', template: 'candidates_shared', subjectType: 'business', subjectId: 'business-1',
       variables: { link: expect.stringMatching(/^https:\/\/app\.laboura\.in\/candidate-introductions\/[a-f0-9]{64}$/) },

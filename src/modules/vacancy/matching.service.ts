@@ -5,7 +5,7 @@ import { Prisma } from '@prisma/client';
 import { refundGuaranteeDeadline } from '../../common/money/money';
 import { ConsentClock } from '../consent/consent-clock';
 import { PricingPolicy, PricingService } from '../pricing/pricing.service';
-import { isUnconfirmedVacancyStatus } from './vacancy-confirmation.service';
+import { isUnconfirmedVacancyStatus, isVacancyWaitingForTeamLead, VACANCY_WAITS_FOR_TEAM_LEAD_MESSAGE } from './vacancy-confirmation.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { jobSeekerHasTrade } from '../job-seeker/job-seeker-legacy-read';
 import { compareMatches, refundPriorityOf } from '../refund-priority/refund-priority.rules';
@@ -43,6 +43,8 @@ type MatchCandidate = {
   salaryPeriod: string | null;
   guaranteeFloorPaise: number | null;
   paymentReceivedAt: Date | null;
+  /** Rev 211: when his 30 days started (paid and ID passed); the clock factor counts from here. */
+  guaranteeStartsAt: Date | null;
   dateOfBirth: Date | null;
   gender: string | null;
   latitude: number | null;
@@ -162,6 +164,7 @@ export class MatchingService {
     if (isUnconfirmedVacancyStatus(vacancy.status)) {
       throw new BadRequestException('Candidates are shown only after the contact person confirms this vacancy by OTP');
     }
+    if (isVacancyWaitingForTeamLead(vacancy.status)) throw new BadRequestException(VACANCY_WAITS_FOR_TEAM_LEAD_MESSAGE);
     const access = businessCandidateAccess(vacancy.business);
     if (!access.allowed) {
       throw new ForbiddenException(access.reason === 'paused'
@@ -276,6 +279,7 @@ export class MatchingService {
     for (const vacancy of vacancies) {
       if (
         isUnconfirmedVacancyStatus(vacancy.status) ||
+        isVacancyWaitingForTeamLead(vacancy.status) ||
         !businessCandidateAccess(vacancy.business).allowed ||
         !listedTrades.has(tradeKey(vacancy.tradeSkill))
       ) {
@@ -587,7 +591,7 @@ export class MatchingService {
     const matchedTrade = seeker.trades.find((trade) => trade.trade.trim().toLowerCase() === vacancy.tradeSkill.trim().toLowerCase());
     const experience = matchedTrade?.yearsExperience ?? 0;
     const travelDistance = seeker.travelDistanceKm ?? 0;
-    const deadline = seeker.paymentReceivedAt ? refundGuaranteeDeadline(seeker.paymentReceivedAt, guaranteeDays) : null;
+    const deadline = seeker.guaranteeStartsAt ? refundGuaranteeDeadline(seeker.guaranteeStartsAt, guaranteeDays) : null;
     const daysLeft = deadline ? Math.ceil((deadline.getTime() - now.getTime()) / DAY_MS) : guaranteeDays;
     const clockScore = deadline && now > deadline && this.refundStillOwed(seeker) ? 1 : clip((guaranteeDays - daysLeft) / guaranteeDays);
     const experienceScore = vacancy.experienceRequiredYears
@@ -654,6 +658,8 @@ export class MatchingService {
   }
 
   private refundStillOwed(seeker: MatchCandidate): boolean {
+    // A day-30 refund can only be owed once his 30 days started (rev 211).
+    if (!seeker.guaranteeStartsAt) return false;
     const hasPaidActivation = seeker.paymentReceivedAt !== null || seeker.payments.some((payment) => payment.type === 'activation' && ['succeeded', 'completed'].includes(payment.status));
     const alreadyRefunded = seeker.payments.some((payment) => payment.type === 'refund' && ['succeeded', 'completed'].includes(payment.status));
     const refundForfeitingHit = seeker.hits.some((hit) => !hit.reversedAt && (REFUND_FORFEITING_HIT_REASONS as readonly string[]).includes(hit.reason));

@@ -62,28 +62,35 @@ describe('Phase 18 Gate End-to-End Proof', () => {
     process.env.PAYOUT_ACCOUNT_KEY = 'phase18_payout_account_secret_key_32_chars_min!';
     process.env.CALL_ROUTING_KEY = 'phase18_call_routing_secret_key_32_chars_min!';
 
+    // The payout details link goes WhatsApp first, SMS as backup (rev 211): read it from either.
+    const capturePayoutToken = async (template: string, variables: Record<string, string>) => {
+      const link = variables.link;
+      const match = template === 'payout_details_link' ? link?.match(/\/payout-accounts\/link\/([^/?#]+)/) : null;
+      if (match?.[1]) {
+        const owner = await prisma.publicLink.findFirst({
+          where: { tokenHash: crypto.createHash('sha256').update(match[1]).digest('hex') },
+          select: { subjectType: true, subjectId: true },
+        });
+        if (owner) sentPayoutTokens.push({ ownerType: owner.subjectType, ownerId: owner.subjectId, token: match[1] });
+      }
+    };
     const mockSms: SmsProvider = {
       sendTemplate: async (_phone, template, _dltTemplateId, variables) => {
-        const link = variables.link;
-        const match = template === 'payout_details_link' ? link?.match(/\/payout-accounts\/link\/([^/?#]+)/) : null;
-        if (match?.[1]) {
-          const owner = await prisma.publicLink.findFirst({
-            where: { tokenHash: crypto.createHash('sha256').update(match[1]).digest('hex') },
-            select: { subjectType: true, subjectId: true },
-          });
-          if (owner) sentPayoutTokens.push({ ownerType: owner.subjectType, ownerId: owner.subjectId, token: match[1] });
-        }
+        await capturePayoutToken(template, variables);
         return { messageId: `sms_${crypto.randomUUID()}`, status: 'sent' };
       },
     };
     const mockWa: WhatsAppProvider = {
-      sendTemplateMessage: async () => ({
-        messageId: `wa_${crypto.randomUUID()}`,
-        status: 'sent',
-        phone: '9999999999',
-        templateName: 'template',
-        timestamp: new Date(),
-      }),
+      sendTemplateMessage: async (_phone, templateName, params) => {
+        await capturePayoutToken(templateName, params);
+        return {
+          messageId: `wa_${crypto.randomUUID()}`,
+          status: 'sent',
+          phone: '9999999999',
+          templateName: 'template',
+          timestamp: new Date(),
+        };
+      },
     };
 
     const moduleRef: TestingModule = await Test.createTestingModule({ imports: [AppModule] })

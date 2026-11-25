@@ -77,7 +77,8 @@ describe("GET /profile-stuck — where they're stuck", () => {
 
     // Job seekers at each step.
     rec.sNew = await seeker('new', 1, people.caA.id);
-    rec.sIdWait = await seeker('idw', 2, people.caA.id, { photoStoragePath: `selfies/${tail}/w.jpg`, photoTakenAt: new Date() });
+    // Rev 211: paid, and another ID waits for the Team Lead — "Paid, waiting for ID".
+    rec.sIdWait = await seeker('idw', 2, people.caA.id, { photoStoragePath: `selfies/${tail}/w.jpg`, photoTakenAt: new Date(), status: 'paid_waiting_id', paymentReceivedAt: new Date() });
     for (const purpose of ['job_matching', 'profile_sharing', 'call_recording', 'aadhaar_verification', 'job_updates']) {
       await prisma.consent.create({ data: { subjectType: 'job_seeker', subjectId: rec.sIdWait, purpose, granted: true, grantedAt: new Date(), noticeVersion: '1.2', language: 'en', method: 'sms_link' } });
     }
@@ -106,22 +107,27 @@ describe("GET /profile-stuck — where they're stuck", () => {
     await app.close();
   });
 
-  it('shows the account owner, the step and the matching button in every view', async () => {
+  it('shows the account owner and the step in every view; only the call agent gets the button (rev 211)', async () => {
     for (const who of ['caA', 'tlA', 'mgr', 'ceo']) {
       const res = await get(who, 'job_seeker', rec.sNew).expect(200);
       expect([who, res.body]).toEqual([who, expect.objectContaining({
-        kind: 'job_seeker', code: `JS-PS-${tail}-new`, owner: { name: 'Stuck caA', code: people.caA.code }, step: 'consent', waitingForTeamLead: false, actions: ['registration_link'],
+        kind: 'job_seeker', code: `JS-PS-${tail}-new`, owner: { name: 'Stuck caA', code: people.caA.code }, step: 'consent', waitingForTeamLead: false,
+        // Team Leads, Managers and the CEO keep the view of where he is stuck, with no send buttons.
+        actions: who === 'caA' ? ['registration_link'] : [],
       })]);
     }
     // By code too.
     expect((await get('ceo', 'job_seeker', `JS-PS-${tail}-new`).expect(200)).body.id).toBe(rec.sNew);
-    expect((await get('tlA', 'business', rec.bLead).expect(200)).body).toMatchObject({ step: 'agreement', owner: { name: 'Stuck faA', code: people.faA.code }, actions: ['agreement_link'] });
-    expect((await get('mgr', 'referral', rec.rNew).expect(200)).body).toMatchObject({ step: 'terms', owner: { code: people.caA.code }, actions: ['partner_terms_link'] });
+    expect((await get('tlA', 'business', rec.bLead).expect(200)).body).toMatchObject({ step: 'agreement', owner: { name: 'Stuck faA', code: people.faA.code }, actions: [] });
+    expect((await get('mgr', 'referral', rec.rNew).expect(200)).body).toMatchObject({ step: 'terms', owner: { code: people.caA.code }, actions: [] });
+    expect((await get('caA', 'referral', rec.rNew).expect(200)).body).toMatchObject({ step: 'terms', actions: ['partner_terms_link'] });
   });
 
   it("waiting for the Team Lead's ID check shows that, with no resend button", async () => {
     const res = await get('caA', 'job_seeker', rec.sIdWait).expect(200);
     expect(res.body).toMatchObject({ step: 'id_check', state: 'in_progress', waitingForTeamLead: true, actions: [], reason: expect.stringContaining('Team Lead') });
+    // Rev 211: he has paid — the stage staff see is "Paid, waiting for ID" (view only).
+    expect(res.body).toMatchObject({ stage: 'paid_waiting_id', reason: expect.stringContaining('Paid, waiting for ID') });
   });
 
   it("keeps each role's record scope: another team's Team Lead and another tree's Manager get 404; Finance and field agents are refused", async () => {
@@ -135,22 +141,20 @@ describe("GET /profile-stuck — where they're stuck", () => {
     await request(app.getHttpServer()).get('/profile-stuck').query({ kind: 'job_seeker', id: rec.sNew }).expect(401);
   });
 
-  it('the buttons are the existing routes, and the Team Lead (own team), Manager (own tree) and CEO can use them', async () => {
-    for (const who of ['tlA', 'mgr', 'ceo', 'caA']) {
-      const res = await post(who, '/consent/links', { jobSeekerId: rec.sNew });
-      expect([who, res.status]).toEqual([who, 201]);
+  it('the buttons are the existing routes, for agents only: Team Lead, Manager and CEO are refused (rev 211)', async () => {
+    for (const who of ['tlA', 'mgr', 'ceo']) {
+      expect([who, (await post(who, '/consent/links', { jobSeekerId: rec.sNew })).status]).toEqual([who, 403]);
+      expect([who, (await post(who, `/referrals/${rec.rNew}/terms-links`, {})).status]).toEqual([who, 403]);
+      expect([who, (await post(who, `/businesses/${rec.bLead}/agreement-links`, {})).status]).toEqual([who, 403]);
     }
-    const partner = await post('tlA', `/referrals/${rec.rNew}/terms-links`, {});
+    const res = await post('caA', '/consent/links', { jobSeekerId: rec.sNew, channel: 'sms' });
+    expect(res.status).toBe(201);
+    expect(res.body.sentBy).toBe('sms');
+    const partner = await post('caA', `/referrals/${rec.rNew}/terms-links`, {});
     expect([200, 201]).toContain(partner.status);
-    const first = await post('tlA', `/businesses/${rec.bLead}/agreement-links`, {});
+    expect(partner.body.sentBy).toBe('whatsapp');
+    const first = await post('faA', `/businesses/${rec.bLead}/agreement-links`, {});
     expect([200, 201]).toContain(first.status);
-    // The route's own one-a-minute rule answers the next ones; never a permission refusal for a senior in scope.
-    for (const who of ['mgr', 'ceo']) {
-      const again = await post(who, `/businesses/${rec.bLead}/agreement-links`, {});
-      expect([who, [403, 404].includes(again.status)]).toEqual([who, false]);
-    }
-    // Another team's Team Lead is refused by the route's own scope (unchanged).
-    expect((await post('tlB', '/consent/links', { jobSeekerId: rec.sNew })).status).toBe(403);
   });
 
   it('22 Nov: GET /profile-stuck/list holds every stuck person of the agent (or the team): job seekers, businesses and partners', async () => {

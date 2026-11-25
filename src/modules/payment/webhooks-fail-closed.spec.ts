@@ -1,4 +1,5 @@
 import { INestApplication, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { idPassedMock } from '../../test-support/id-passed-mock';
 import { Test } from '@nestjs/testing';
 import * as crypto from 'crypto';
 import * as request from 'supertest';
@@ -14,6 +15,7 @@ import { CallService } from '../call/call.service';
 import { TelephonyController } from '../telephony/telephony.controller';
 import { TelephonyService } from '../telephony/telephony.service';
 import { MessageController } from '../message/message.controller';
+import { NoWhatsAppService } from '../message/no-whatsapp.service';
 import { MessagingService } from '../message/messaging.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -323,6 +325,7 @@ describe('Security Fix: Fail-Closed Incoming Webhooks & Secret Enforcement', () 
             return Promise.resolve({});
           }),
         },
+        identityVerification: idPassedMock(),
         jobSeeker: {
           update: jest.fn().mockImplementation(({ data }) => {
             if (data.status) candidateStatus = data.status;
@@ -385,6 +388,7 @@ describe('Security Fix: Fail-Closed Incoming Webhooks & Secret Enforcement', () 
       messageLog: {
         findUnique: jest.Mock;
         update: jest.Mock;
+        updateMany: jest.Mock;
       };
       callbackTask: { findFirst: jest.Mock; create: jest.Mock };
       jobSeeker: { findFirst: jest.Mock; update: jest.Mock };
@@ -403,6 +407,8 @@ describe('Security Fix: Fail-Closed Incoming Webhooks & Secret Enforcement', () 
       messageLog: {
         findUnique: jest.fn().mockResolvedValue({ id: 'msg-1', status: 'sent', deliveredAt: null, failedAt: null }),
         update: jest.fn().mockResolvedValue({ id: 'msg-1', status: 'delivered' }),
+        // WhatsApp first (rev 211): "delivered" closes the SMS backup.
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       callbackTask: { findFirst: jest.fn(), create: jest.fn() },
       jobSeeker: { findFirst: jest.fn(), update: jest.fn() },
@@ -427,6 +433,7 @@ describe('Security Fix: Fail-Closed Incoming Webhooks & Secret Enforcement', () 
           MessageController,
         ],
         providers: [
+          { provide: NoWhatsAppService, useValue: { view: jest.fn(), set: jest.fn() } },
           {
             provide: PrismaService,
             useValue: mockPrisma,

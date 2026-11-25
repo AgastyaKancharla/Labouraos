@@ -1,8 +1,8 @@
 /**
- * Tests that charge a job seeker the activation fee: he must have a verified
- * ID first (POST /job-seekers/:id/activation-payment refuses otherwise, the same
- * rule as his own link). This gives him the row an approved other ID leaves:
- * type and last 4 only, name and 18+ confirmed by the Team Lead.
+ * Gives a job seeker the row an approved other ID leaves (type and last 4 only,
+ * name and 18+ confirmed by the Team Lead). Since rev 211 (25 Nov) payment no
+ * longer needs it, but his 30 days start only once he is paid AND ID-verified:
+ * tests that expect an active job seeker after the ₹499 give him this first.
  */
 interface IdentityVerificationWriter {
   identityVerification: { create(args: { data: Record<string, unknown> }): Promise<unknown> };

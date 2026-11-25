@@ -1,3 +1,5 @@
+import { otpChannel } from '../../common/otp/otp.controller';
+import { LINK_SENDING_ROLES, linkChannel } from '../message/link-channel';
 import {
   Body,
   Controller,
@@ -8,8 +10,13 @@ import {
   Query,
   Req,
   Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { CheckLinkBeforeUpload } from '../../common/public-link-upload.guard';
+import { parseOwnerPhotoLocation, parseOwnerPhotoSlot, parseShopVariant } from '../business/business-owner-photo.service';
 import { Response } from 'express';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
@@ -60,11 +67,12 @@ export class ConsentController {
    */
   @Post('links')
   @UseGuards(JwtAuthGuard, RbacGuard)
-  @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
+  // Rev 211: only agents press send buttons; Team Leads, Managers and the CEO keep the stuck view.
+  @RequireRoles(...LINK_SENDING_ROLES)
   @RequirePermission('job_seeker', 'write', { kind: 'job_seeker', from: 'body:jobSeekerId' })
-  async createLink(@Body('jobSeekerId') jobSeekerId: string) {
-    // AC-3: the link goes to the person by SMS; staff never get its token.
-    return withoutLinkToken(await this.consentLinkService.createLink(jobSeekerId));
+  async createLink(@Body('jobSeekerId') jobSeekerId: string, @Body('channel') channel: unknown, @Req() req: AuthenticatedRequest) {
+    // AC-3: the link goes to the person (WhatsApp first, SMS as backup; or "Send by SMS"); staff never get its token.
+    return withoutLinkToken(await this.consentLinkService.createLink(jobSeekerId, { channel: linkChannel(channel), sentByStaffId: req.user.sub }));
   }
 
   /**
@@ -133,8 +141,9 @@ export class ConsentController {
    */
   @Post('send-otp')
   @Public('token page: the job seeker, business or partner proves who they are with the link token')
-  async sendOtp(@Body('token') token: string) {
-    return this.consentLinkService.sendOtp(token);
+  async sendOtp(@Body('token') token: string, @Body('channel') channel?: unknown) {
+    // "Send by SMS" (rev 211) after 30 seconds; otherwise WhatsApp first.
+    return this.consentLinkService.sendOtp(token, otpChannel(channel));
   }
 
   /**
@@ -145,6 +154,85 @@ export class ConsentController {
   @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async submitConsent(@Body() body: SubmitConsentDto) {
     return this.consentLinkService.submitConsent(body);
+  }
+
+  /**
+   * 25 Nov (rev 211, B1): before signing, the owner takes a live selfie (kind=selfie) and a live
+   * photo of the shop's name board — for a home business himself holding the FSSAI licence —
+   * (kind=shop) on the agreement page. Camera only (captureSource=live_camera); the phone's
+   * location goes with the shop photo (latitude, longitude, accuracyMeters, or
+   * locationStatus=refused). The link token is checked before the file is read.
+   */
+  @Post(':token/owner-photo')
+  @Public('token page: the business owner proves who he is with the agreement link token')
+  @CheckLinkBeforeUpload('business_agreement', 'business', 'A valid business agreement link is required')
+  @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  async ownerPhoto(
+    @Param('token') token: string,
+    @UploadedFile() photo: { buffer: Buffer; mimetype: string } | undefined,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.consentLinkService.saveAgreementOwnerPhoto(token, {
+      slot: parseOwnerPhotoSlot(body?.kind),
+      shopVariant: parseShopVariant(body?.shopVariant),
+      photo: photo?.buffer ?? Buffer.alloc(0),
+      captureSource: typeof body?.captureSource === 'string' ? body.captureSource : undefined,
+      location: parseOwnerPhotoLocation(body ?? {}),
+    });
+  }
+
+  // ---- 25 Nov (rev 212, B9): small businesses with little paperwork, on the agreement link ----
+
+  /** Which small-business steps are done (works before and after signing, until the link expires). */
+  @Get(':token/small-business')
+  @Public('token page: the business owner proves who he is with the agreement link token')
+  async smallBusiness(@Param('token') token: string) {
+    return this.consentLinkService.smallBusinessState(token);
+  }
+
+  /** (a) The owner's Aadhaar Secure QR text, read on his phone (only the result, last 4 and name are kept). */
+  @Post(':token/small-business/aadhaar-qr')
+  @Public('token page: the business owner proves who he is with the agreement link token')
+  async smallBusinessAadhaar(@Param('token') token: string, @Body() body: { qrText?: unknown }) {
+    return this.consentLinkService.smallBusinessAadhaar(token, body?.qrText);
+  }
+
+  /** (a) A live photo of PAN, driving licence or voter ID with the number and name typed: the Team Lead checks it. */
+  @Post(':token/small-business/other-id')
+  @Public('token page: the business owner proves who he is with the agreement link token')
+  @CheckLinkBeforeUpload('business_agreement', 'business', 'A valid business agreement link is required', { allowUsed: true })
+  @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  async smallBusinessOtherId(
+    @Param('token') token: string,
+    @UploadedFile() photo: { buffer: Buffer; mimetype: string } | undefined,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.consentLinkService.smallBusinessOtherId(token, {
+      idType: body?.idType, idNumber: body?.idNumber, nameOnId: body?.nameOnId,
+      photo: photo?.buffer ?? Buffer.alloc(0), captureSource: typeof body?.captureSource === 'string' ? body.captureSource : undefined,
+    });
+  }
+
+  /** (d) One address proof photo (bank statement, electricity bill, rent agreement or similar). */
+  @Post(':token/small-business/address-proof')
+  @Public('token page: the business owner proves who he is with the agreement link token')
+  @CheckLinkBeforeUpload('business_agreement', 'business', 'A valid business agreement link is required', { allowUsed: true })
+  @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  async smallBusinessAddressProof(
+    @Param('token') token: string,
+    @UploadedFile() photo: { buffer: Buffer; mimetype: string } | undefined,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.consentLinkService.smallBusinessAddressProof(token, {
+      docType: body?.docType, photo: photo?.buffer ?? Buffer.alloc(0), captureSource: typeof body?.captureSource === 'string' ? body.captureSource : undefined,
+    });
+  }
+
+  /** (c) One business proof: a registration number, a business bank / UPI account, or a website or listing link. */
+  @Post(':token/small-business/business-proof')
+  @Public('token page: the business owner proves who he is with the agreement link token')
+  async smallBusinessProof(@Param('token') token: string, @Body() body: { kind?: unknown; value?: unknown }) {
+    return this.consentLinkService.smallBusinessProof(token, { kind: body?.kind, value: body?.value });
   }
 
   /** "We've updated our terms": accept the current version on the job seeker's or partner's link (rev 176). */

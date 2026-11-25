@@ -1,3 +1,5 @@
+import { findFieldVisitProof } from '../business/business-field-proof';
+import { linkChannel } from '../message/link-channel';
 import { PRODUCT_LANGUAGE, productLanguage } from '../../common/language/english-only';
 import { HttpStatus, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -19,6 +21,7 @@ import {
   ConsentLinkService,
 } from '../consent/consent-link.service';
 import { LEGAL_DOCUMENT_VERSIONS } from '../legal/legal-documents';
+import { allowedShopKinds, verificationPathOf } from '../business/business-paths';
 import { FieldAgentMetricsService } from '../target/field-agent-metrics.service';
 import { VacancyConfirmationService } from '../vacancy/vacancy-confirmation.service';
 import { REVISIT_OUTCOMES } from '../field-visit/field-visit.constants';
@@ -1132,6 +1135,33 @@ export class FieldRedesignService {
       resendAvailableAt: signedCurrent || resend.allowedNow ? null : resend.retryAt?.toISOString() ?? null,
       canShowCandidates: businessCandidateAccess(business, now).allowed,
       candidatesHiddenReason: this.candidatesHiddenReason(business, agreement, outside.has(business.id), now),
+      ownerPhotos: await this.ownerPhotoState(business.id),
+    };
+  }
+
+  /**
+   * 25 Nov (rev 211–212, B1): the owner's live selfie and second photo for FA07b — the agent takes
+   * them before the owner signs (POST /businesses/:id/owner-photos). Households take none.
+   */
+  private async ownerPhotoState(businessId: string) {
+    const b = await this.prisma.business.findUniqueOrThrow({
+      where: { id: businessId },
+      select: {
+        businessType: true, runsFromHome: true, gstNumber: true, fssaiNumber: true, licenceNumber: true, shopEstablishmentNumber: true,
+        udyamNumber: true, mapsLink: true, mapsLatitude: true, mapsLongitude: true, ownerPhotos: { select: { kind: true } },
+      },
+    });
+    const path = verificationPathOf(b);
+    const shopKinds: string[] = allowedShopKinds(b);
+    // Rev 213: the agent's own visit photos (board + selfie at the board) are the proof in the field.
+    const visit = await findFieldVisitProof(this.prisma, businessId);
+    return {
+      needed: path !== 'household' && !visit,
+      fromFieldVisit: Boolean(visit),
+      selfie: Boolean(visit) || b.ownerPhotos.some((p) => p.kind === 'owner_selfie'),
+      shop: Boolean(visit) || b.ownerPhotos.some((p) => shopKinds.includes(p.kind)),
+      shopKinds,
+      smallBusiness: path === 'small_business',
     };
   }
 
@@ -1140,7 +1170,8 @@ export class FieldRedesignService {
    * phone. Own business only; never once the current version is signed; one link a
    * minute and five a day per business; a failed SMS is reported, never swallowed.
    */
-  async resendAgreement(actor: Actor, ref: string, body: { language?: string }) {
+  async resendAgreement(actor: Actor, ref: string, body: { language?: string; channel?: string }) {
+    const channel = linkChannel(body?.channel);
     const now = this.clock.now();
     const business = await this.ownBusiness(actor, ref);
     const agreement = (await this.agreementInfos([business.id], now)).get(business.id)!;
@@ -1153,7 +1184,8 @@ export class FieldRedesignService {
     const language = productLanguage(body?.language);
     // The one-a-minute / five-a-day limit is checked inside createAgreementLink (shared by
     // every path that sends a link, S2); a link whose SMS failed is withdrawn there.
-    const issued = await this.consentLinks.createAgreementLink(business.id, actor.sub, language);
+    // Rev 211: "Send on WhatsApp" (SMS as backup) or "Send by SMS".
+    const issued = await this.consentLinks.createAgreementLink(business.id, actor.sub, language, { channel, sentByStaffId: actor.sub });
     if (issued.smsSent === false) {
       throw codedError(HttpStatus.BAD_GATEWAY, 'AGREEMENT_SMS_FAILED', 'The SMS could not be sent. Try again in a moment.');
     }
@@ -1172,6 +1204,7 @@ export class FieldRedesignService {
       linkSentAt: now.toISOString(),
       linkExpiresAt: issued.expiresAt.toISOString(),
       sentToLast4: phoneLast4(business.phone),
+      sentBy: issued.sentBy ?? null,
     };
   }
 

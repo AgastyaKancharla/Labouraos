@@ -37,7 +37,7 @@ describe('close-to-refund buckets', () => {
 describe('refundPriorityOf', () => {
   const now = new Date('2026-11-20T06:00:00.000Z');
   const paidAt = new Date(now.getTime() - 18 * DAY_MS); // 12 days left of 30
-  const base = { status: 'active', paymentReceivedAt: paidAt, hits: [], payments: [], interviews: [] };
+  const base = { status: 'active', paymentReceivedAt: paidAt, guaranteeStartsAt: paidAt as Date | null, hits: [], payments: [], interviews: [] };
 
   it('marks a paid job seeker 12 days from a refund with no offer as a priority', () => {
     expect(refundPriorityOf(base, now, 30, 15)).toEqual({ priority: true, daysLeft: 12 });

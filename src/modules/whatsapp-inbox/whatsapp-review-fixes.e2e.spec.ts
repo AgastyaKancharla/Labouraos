@@ -368,7 +368,7 @@ describe('WhatsApp review fixes (21 Nov): heard-from, linking, failed links, cal
     expect(JSON.stringify(prefill.body)).not.toContain(lead.phone.slice(3));
   });
 
-  it('S4: WhatsApp fails a link later: a fresh link goes by SMS and the agent who sent it gets a bell; the earlier link keeps working', async () => {
+  it('S4: WhatsApp fails a link later: the same link goes by SMS (its backup, rev 211) and the agent who sent it gets a bell; the link keeps working', async () => {
     const s = await makeSeeker({ registeredByStaffId: agentA.id });
     await app.get(ConsentLinkService).createLink(s.id, { sms: false });
     const before = await prisma.publicLink.count({ where: { subjectId: s.id, revokedAt: null } });
@@ -383,7 +383,9 @@ describe('WhatsApp review fixes (21 Nov): heard-from, linking, failed links, cal
     expect(smsLogs).toHaveLength(1);
     const bell = await prisma.notification.findFirst({ where: { recipientStaffId: agentA.id, kind: 'whatsapp_link_failed' } });
     expect(bell?.title).toContain('went by SMS');
-    expect(await prisma.publicLink.count({ where: { subjectId: s.id, revokedAt: null } })).toBe(before + 2);
+    // Rev 211: the backup SMS carries the same link (no second link is made).
+    expect(await prisma.publicLink.count({ where: { subjectId: s.id, revokedAt: null } })).toBe(before + 1);
+    expect((await prisma.messageLog.findUniqueOrThrow({ where: { id: waLog.id } })).smsBackup).toBe('sent');
     // Neither the WhatsApp link nor its SMS fallback is the message leg of a no-pickup hit.
     expect(await prisma.contactAttempt.count({ where: { jobSeekerId: s.id } })).toBe(0);
   });
@@ -482,12 +484,17 @@ describe('WhatsApp review fixes (21 Nov): heard-from, linking, failed links, cal
     });
 
     it('both channels failing: at most 3 tries with a growing gap, then it stops', async () => {
-      const s = await makeSeeker({ status: 'active', paymentReceivedAt: new Date('2027-03-25T05:00:00Z') });
+      // Rev 211: a job seeker's "registration done" is retired; a verified business's is the event message here.
+      const b = await prisma.business.create({
+        data: { code: `BZ-RT${stamp.slice(-6)}`, name: 'Retry Bakery', ownerName: 'Lakshmi', phone: newPhone(), verificationStatus: 'verified', verifiedAt: new Date('2027-03-25T05:00:00Z') },
+      });
+      businessIds.push(b.id);
+      const s = { id: b.id };
       wa.fail = true;
       sms.fail = true;
       try {
         clock.at = new Date('2027-03-25T06:30:00.000Z');
-        const failedTries = () => prisma.messageLog.count({ where: { subjectId: s.id, template: 'registration_done', channel: 'whatsapp', status: 'failed' } });
+        const failedTries = () => prisma.messageLog.count({ where: { subjectId: s.id, template: 'business_registration_done', channel: 'whatsapp', status: 'failed' } });
         // Each try's time is when its row was written: set it relative to the test clock.
         const triedAgo = (minutes: number) => prisma.messageLog.updateMany({ where: { subjectId: s.id }, data: { createdAt: new Date(clock.now().getTime() - minutes * MIN) } });
         await events.sweep(clock.now());
@@ -507,7 +514,7 @@ describe('WhatsApp review fixes (21 Nov): heard-from, linking, failed links, cal
         await triedAgo(24 * 60);
         await events.sweep(clock.now());
         expect(await failedTries()).toBe(MAX_SEND_TRIES);
-        expect(await prisma.messageLog.count({ where: { subjectId: s.id, template: 'registration_done', channel: 'sms', status: 'failed' } })).toBe(MAX_SEND_TRIES);
+        expect(await prisma.messageLog.count({ where: { subjectId: s.id, template: 'business_registration_done', channel: 'sms', status: 'failed' } })).toBe(MAX_SEND_TRIES);
       } finally {
         wa.fail = false;
         sms.fail = false;
@@ -516,17 +523,21 @@ describe('WhatsApp review fixes (21 Nov): heard-from, linking, failed links, cal
 
     it('an event message WhatsApp fails later goes once by SMS (never a contact attempt, never again on WhatsApp)', async () => {
       clock.at = new Date('2027-03-25T06:30:00.000Z');
-      const s = await makeSeeker({ status: 'active', paymentReceivedAt: new Date('2027-03-25T05:00:00Z') });
+      const b = await prisma.business.create({
+        data: { code: `BZ-FL${stamp.slice(-6)}`, name: 'Fallback Bakery', ownerName: 'Lakshmi', phone: newPhone(), verificationStatus: 'verified', verifiedAt: new Date('2027-03-25T05:00:00Z') },
+      });
+      businessIds.push(b.id);
+      const s = { id: b.id };
       await events.sweep(clock.now());
-      const waLog = await prisma.messageLog.findFirstOrThrow({ where: { subjectId: s.id, template: 'registration_done', channel: 'whatsapp', status: 'sent' } });
+      const waLog = await prisma.messageLog.findFirstOrThrow({ where: { subjectId: s.id, template: 'business_registration_done', channel: 'whatsapp', status: 'sent' } });
       const raw = JSON.stringify({ object: 'whatsapp_business_account', entry: [{ changes: [{ field: 'messages', value: { statuses: [{ id: waLog.providerMessageId, status: 'failed', timestamp: '1' }] } }] }] });
       await deliver(raw).expect(200);
       await deliver(raw).expect(200);
-      expect(await prisma.messageLog.count({ where: { subjectId: s.id, template: 'registration_done', channel: 'sms', status: 'sent' } })).toBe(1);
-      const waBefore = await prisma.messageLog.count({ where: { subjectId: s.id, template: 'registration_done', channel: 'whatsapp' } });
+      expect(await prisma.messageLog.count({ where: { subjectId: s.id, template: 'business_registration_done', channel: 'sms', status: 'sent' } })).toBe(1);
+      const waBefore = await prisma.messageLog.count({ where: { subjectId: s.id, template: 'business_registration_done', channel: 'whatsapp' } });
       await events.sweep(clock.now());
-      expect(await prisma.messageLog.count({ where: { subjectId: s.id, template: 'registration_done', channel: 'whatsapp' } })).toBe(waBefore);
-      expect(await prisma.contactAttempt.count({ where: { jobSeekerId: s.id } })).toBe(0);
+      expect(await prisma.messageLog.count({ where: { subjectId: s.id, template: 'business_registration_done', channel: 'whatsapp' } })).toBe(waBefore);
+      // A business message is never a job seeker's contact attempt (it has none).
     });
 
     it('stopped part-way: never more than 3 nudges, a day apart', async () => {

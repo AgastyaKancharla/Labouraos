@@ -6,6 +6,7 @@ import { ReconsentRequiredException } from '../legal/legal-status';
 import {
   BadRequestException,
   ForbiddenException,
+  HttpStatus,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -13,7 +14,8 @@ import {
   Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { isUnconfirmedVacancyStatus } from './vacancy-confirmation.service';
+import { codedError } from '../../common/http/coded-error';
+import { isUnconfirmedVacancyStatus, isVacancyWaitingForTeamLead, VACANCY_WAITS_FOR_TEAM_LEAD_MESSAGE } from './vacancy-confirmation.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -63,6 +65,23 @@ interface BookInterviewDto {
   vacancyId: string;
   jobSeekerId: string;
   slotId: string;
+  /**
+   * 25 Nov (rev 212, B9f): how the interview happens — at_shop / walk_in (at the workplace),
+   * phone, or laboura_office. At a workplace inside the owner's home the first interview must be
+   * phone or laboura_office. Absent means at the workplace (as before).
+   */
+  interviewType?: string;
+}
+
+/** Interview types that do not take the candidate to the workplace. */
+export const AWAY_FROM_WORKPLACE_INTERVIEW_TYPES = ['phone', 'laboura_office'];
+export const HOME_WORKPLACE_FIRST_INTERVIEW_MESSAGE =
+  "This workplace is the owner's home: the first interview is by phone or at the Laboura office";
+
+/** B9f: a home workplace's first interview never takes the candidate to the home (pure, for tests). */
+export function homeWorkplaceInterviewAllowed(runsFromHome: boolean, earlierInterviews: number, interviewType: string | null | undefined): boolean {
+  if (!runsFromHome || earlierInterviews > 0) return true;
+  return AWAY_FROM_WORKPLACE_INTERVIEW_TYPES.includes(interviewType ?? '');
 }
 
 interface MatchForBooking {
@@ -125,12 +144,21 @@ export class InterviewService {
     if (isUnconfirmedVacancyStatus(vacancy.status)) {
       throw new BadRequestException('An interview can only be booked once the contact person confirms the vacancy');
     }
+    if (isVacancyWaitingForTeamLead(vacancy.status)) throw new BadRequestException(VACANCY_WAITS_FOR_TEAM_LEAD_MESSAGE);
     const businessAccess = businessCandidateAccess(vacancy.business);
     if (!businessAccess.allowed) {
       throw new BadRequestException(businessAccessMessage(businessAccess, 'The business must be verified before an interview can be booked'));
     }
     if (actor.role === 'field_agent' && vacancy.business.accountAgentId !== actor.id) {
       throw new ForbiddenException('Field agents may only book interviews for their account businesses');
+    }
+    if (vacancy.business.runsFromHome) {
+      const earlier = await this.prisma.interview.count({
+        where: { businessId: vacancy.businessId, status: { notIn: ['cancelled', 'declined'] } },
+      });
+      if (!homeWorkplaceInterviewAllowed(true, earlier, dto.interviewType)) {
+        throw codedError(HttpStatus.BAD_REQUEST, 'HOME_WORKPLACE_FIRST_INTERVIEW', HOME_WORKPLACE_FIRST_INTERVIEW_MESSAGE);
+      }
     }
     if (actor.role === 'team_lead') {
       const belongsToTeam = await new OwnTeam(this.prisma).ownsBusiness(actor.id, vacancy.business);
@@ -246,6 +274,7 @@ export class InterviewService {
           replyDueAt,
           resultDueAt,
           agentAttendanceRequired,
+          interviewType: dto.interviewType && ['at_shop', 'walk_in', 'phone', 'laboura_office'].includes(dto.interviewType) ? dto.interviewType : null,
         },
       });
       await recordStatusChange(tx, {
@@ -294,7 +323,8 @@ export class InterviewService {
     const salaryMax = vacancy.salaryMaxPaise ?? salaryMin;
     const variables = {
       jobType: vacancy.roleTitle?.trim() || vacancy.tradeSkill,
-      area: vacancy.locality || vacancy.business.locality || '',
+      // B9f: the candidate is told before the interview that the workplace is a home.
+      area: `${vacancy.locality || vacancy.business.locality || ''}${vacancy.business.runsFromHome ? " (the workplace is the owner's home)" : ''}${dto.interviewType === 'laboura_office' ? ', interview at the Laboura office' : dto.interviewType === 'phone' ? ', interview by phone' : ''}`,
       salaryRange: `${formatINR(salaryMin)}–${formatINR(salaryMax)}`,
       shift: vacancy.shift ?? '',
       interviewDay,
@@ -302,17 +332,16 @@ export class InterviewService {
       link,
     };
 
-    const messages = await Promise.all((['sms', 'whatsapp'] as const).map((channel) =>
-      this.messagingService.send({
-        channel,
-        template: 'interview_offer',
-        subjectType: 'job_seeker',
-        subjectId: seeker.id,
-        relatedType: 'interview',
-        relatedId: created.interview.id,
-        variables,
-      }),
-    ));
+    // An exception to WhatsApp first (rev 211): an offer always goes on both, the hit rule counts both.
+    const both = await this.messagingService.sendBoth({
+      template: 'interview_offer',
+      subjectType: 'job_seeker',
+      subjectId: seeker.id,
+      relatedType: 'interview',
+      relatedId: created.interview.id,
+      variables,
+    });
+    const messages = [both.sms, both.whatsapp];
     if (messages.some((message) => message.status === 'failed')) {
       await this.cancelFailedOffer(created.interview.id, actor.id, now);
       throw new ServiceUnavailableException('The interview offer could not be delivered by SMS and WhatsApp');
@@ -476,6 +505,9 @@ export class InterviewService {
       awaitingReply: interview.status === 'offered' && !interview.candidateRespondedAt,
       /** Saying no to an offer below his guaranteed salary floor is never a hit. */
       belowGuaranteeFloor: await this.offerIsBelowGuaranteeFloor(interview),
+      // B9f (rev 212): told before the interview that the workplace is a home, and how this interview happens.
+      workplaceIsHome: interview.business.runsFromHome,
+      interviewType: interview.interviewType,
       language: PRODUCT_LANGUAGE,
     };
   }
@@ -514,6 +546,8 @@ export class InterviewService {
       businessName: interview.business.name,
       slotStartsAt: interview.slotStartsAt,
       answered: interview.candidateCheckAnswer === 'offered_yes' || interview.candidateCheckAnswer === 'offered_no',
+      // 25 Nov (rev 211, B6): the second question, at the first interview(s) of a business.
+      askShopCheck: interview.shopCheckAsked && !interview.shopCheckAnswer,
       language: PRODUCT_LANGUAGE,
     };
   }
@@ -664,9 +698,9 @@ export class InterviewService {
     return this.consentLinks.validateInterviewActionToken(token, 'owner_result');
   }
 
-  async sendOwnerResultOtp(token: string) {
+  async sendOwnerResultOtp(token: string, channel?: 'whatsapp' | 'sms') {
     await this.validateOwnerResultLink(token);
-    return this.consentLinks.sendOtp(token);
+    return this.consentLinks.sendOtp(token, channel);
   }
 
   async validateCandidateCheckLink(token: string) {
@@ -846,27 +880,26 @@ export class InterviewService {
         timeZone: 'Asia/Kolkata',
         dateStyle: 'medium',
       }).format(joiningDate);
-      for (const channel of ['whatsapp', 'sms'] as const) {
-        await this.messagingService.send({
-          channel,
-          template: 'joining_confirmed',
-          subjectType: 'job_seeker',
-          subjectId: interview.jobSeekerId,
-          relatedType: 'placement',
-          relatedId: placement.id,
-          variables: {
-            candidateName: interview.jobSeeker.name,
-            businessName: interview.business.name,
-            joiningDate: joiningText,
-          },
-        });
-      }
+      // WhatsApp first, SMS as backup (rev 211).
+      await this.messagingService.sendPreferWhatsApp({
+        template: 'joining_confirmed',
+        subjectType: 'job_seeker',
+        subjectId: interview.jobSeekerId,
+        relatedType: 'placement',
+        relatedId: placement.id,
+        variables: {
+          candidateName: interview.jobSeeker.name,
+          businessName: interview.business.name,
+          joiningDate: joiningText,
+        },
+      });
     }
     return { id: interview.id, status, result: input.result, placement };
   }
 
-  async submitCandidateOfferCheck(token: string, answer: 'yes' | 'no') {
+  async submitCandidateOfferCheck(token: string, answer: 'yes' | 'no', shopAnswer?: 'yes' | 'no') {
     if (!['yes', 'no'].includes(answer)) throw new BadRequestException('answer must be yes or no');
+    if (shopAnswer !== undefined && shopAnswer !== null && !['yes', 'no'].includes(shopAnswer)) throw new BadRequestException('shopAnswer must be yes or no');
     const link = await this.consentLinks.validateInterviewActionToken(token, 'candidate_check');
     const interview = await this.prisma.interview.findUnique({ where: { id: link.interviewId } });
     // He is asked at the same moment as the owner (Master Guide, "Stopping bypass"), so he may answer first.
@@ -881,7 +914,106 @@ export class InterviewService {
     if (updated.count !== 1) throw new BadRequestException('This candidate check link has already been used');
     await this.consentLinks.consumeInterviewActionToken(token, 'candidate_check');
     await this.raiseMismatchIfNeeded(interview.id, null);
+    // B6: "Was the shop real, at this address, and was the job as described?" on the same page.
+    if (interview.shopCheckAsked && shopAnswer) await this.recordShopCheck(interview.id, shopAnswer, 'link', null, null);
     return { id: interview.id, candidateCheckAnswer: answer === 'yes' ? 'offered_yes' : 'offered_no' };
+  }
+
+  /**
+   * 25 Nov (rev 211, B6): the call agent records the candidate's answer to "Was the shop real, at
+   * this address, and was the job as described?" — said on a call (his own answered call to the
+   * candidate after the interview) or written in a WhatsApp / SMS reply (his own conversation
+   * with the candidate). Team Leads, Managers and the CEO may record it too.
+   */
+  async recordShopCheckByStaff(interviewId: string, actor: { id: string; role: string }, body: { answer?: unknown; channel?: unknown; callRecordId?: unknown; note?: unknown }) {
+    const answer = body.answer;
+    if (answer !== 'yes' && answer !== 'no') throw new BadRequestException('answer must be yes or no');
+    const channel = body.channel === 'whatsapp' ? 'whatsapp' : 'call';
+    const interview = await this.prisma.interview.findUnique({ where: { id: interviewId } });
+    if (!interview) throw new NotFoundException('Interview not found');
+    if (!interview.shopCheckAsked) throw new BadRequestException('This interview is not asked the shop question (only the first interview at a business)');
+    if (interview.shopCheckAnswer) throw new BadRequestException('The candidate already answered the shop question');
+    const note = typeof body.note === 'string' ? body.note.trim().slice(0, 500) || null : null;
+    if (answer === 'no' && !note) throw new BadRequestException('Write what the candidate said (a note is required for "No")');
+    if (!['team_lead', 'manager', 'ceo'].includes(actor.role)) {
+      if (channel === 'call') {
+        const callId = typeof body.callRecordId === 'string' ? body.callRecordId : '';
+        // Without an id: his own latest answered call to this candidate since the interview.
+        const call = callId
+          ? await this.prisma.callRecord.findUnique({ where: { id: callId } })
+          : await this.prisma.callRecord.findFirst({
+            where: { staffId: actor.id, subjectType: 'job_seeker', subjectId: interview.jobSeekerId, answered: true, startedAt: { gte: interview.slotStartsAt } },
+            orderBy: { startedAt: 'desc' },
+          });
+        if (!call || call.staffId !== actor.id || call.subjectType !== 'job_seeker' || call.subjectId !== interview.jobSeekerId || !call.answered
+          || (call.startedAt ?? call.createdAt).getTime() < interview.slotStartsAt.getTime()) {
+          throw new ForbiddenException('Record it on your own answered call to this candidate after the interview');
+        }
+      } else {
+        const conversation = await this.prisma.whatsAppConversation.findFirst({
+          where: { subjectType: 'job_seeker', subjectId: interview.jobSeekerId, assignedStaffId: actor.id },
+          select: { id: true },
+        });
+        if (!conversation) throw new ForbiddenException('Record a WhatsApp reply from your own conversation with this candidate');
+      }
+    }
+    await this.recordShopCheck(interview.id, answer, channel, actor.id, note);
+    return this.prisma.interview.findUniqueOrThrow({
+      where: { id: interview.id },
+      select: { id: true, shopCheckAnswer: true, shopCheckAt: true, shopCheckChannel: true },
+    });
+  }
+
+  /**
+   * Saves the answer once. "No" pauses the business at once (by the system), raises the Team
+   * Lead's bell and review item with the candidate's answer, and asks for a field visit.
+   */
+  private async recordShopCheck(interviewId: string, answer: 'yes' | 'no', channel: 'link' | 'call' | 'whatsapp', staffId: string | null, note: string | null) {
+    const now = this.clock.now();
+    const saved = await this.prisma.interview.updateMany({
+      where: { id: interviewId, shopCheckAsked: true, shopCheckAnswer: null },
+      data: { shopCheckAnswer: answer, shopCheckAt: now, shopCheckChannel: channel, shopCheckByStaffId: staffId, shopCheckNote: note },
+    });
+    if (saved.count !== 1) return;
+    const interview = await this.prisma.interview.findUniqueOrThrow({ where: { id: interviewId }, include: { business: true, jobSeeker: { select: { code: true } } } });
+    await this.auditService.log({
+      actorId: staffId ?? 'system',
+      action: 'interview.shop_check_answered',
+      entityType: 'interview',
+      entityCode: interview.id,
+      after: { shopCheckAnswer: answer, channel, businessCode: interview.business.code },
+      changedFields: ['shopCheckAnswer', 'shopCheckAt', 'shopCheckChannel'],
+      reason: 'Candidate answered "Was the shop real, at this address, and was the job as described?"',
+      city: interview.business.city,
+    });
+    if (answer !== 'no') return;
+    const business = interview.business;
+    const reason = 'A candidate said after the first interview that the shop was not real, not at this address or the job not as described';
+    const paused = await this.prisma.business.updateMany({
+      where: { id: business.id, pausedAt: null },
+      data: { pausedAt: now, pausedByStaffId: null, pauseReason: reason },
+    });
+    if (paused.count === 1) {
+      await this.auditService.log({
+        actorId: 'system',
+        action: 'business.paused',
+        entityType: 'business',
+        entityCode: business.code,
+        before: { pausedAt: null, pausedByStaffId: null },
+        after: { pausedAt: now.toISOString(), pausedBy: 'system', verificationStatus: business.verificationStatus, interviewId },
+        changedFields: ['pausedAt', 'pausedByStaffId', 'pauseReason'],
+        reason,
+        city: business.city,
+      });
+    }
+    await this.reviewFlags.raise({
+      kind: 'candidate_shop_report',
+      subjectType: 'business',
+      subjectId: business.id,
+      raisedForStaffId: business.accountAgentId ?? business.leadCreatedByStaffId ?? interview.proposedByStaffId,
+      details: { businessCode: business.code, interviewId, jobSeekerCode: interview.jobSeeker.code, channel, candidateSaid: note ?? 'No (answered on the link)' },
+    });
+    await this.businessVerification.requestCandidateReportVisit(business.id, interviewId);
   }
 
   private async sendOwnerResultRequest(
@@ -906,15 +1038,16 @@ export class InterviewService {
     const interviewTime = new Intl.DateTimeFormat('en-IN', {
       timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short',
     }).format(interview.slotStartsAt);
-    const [ownerMessages] = await Promise.all([
-      Promise.all((['sms', 'whatsapp'] as const).map((channel) => this.messagingService.send({
-        channel, template: 'interview_result_request', subjectType: 'business', subjectId: interview.businessId,
+    // WhatsApp first, SMS as backup (rev 211).
+    const [ownerMessage] = await Promise.all([
+      this.messagingService.sendPreferWhatsApp({
+        template: 'interview_result_request', subjectType: 'business', subjectId: interview.businessId,
         recipientPhone: contactPhone,
         relatedType: 'interview', relatedId: interview.id, variables: { link, interviewTime },
-      }))),
+      }),
       this.sendCandidateOfferCheck(interview),
     ]);
-    if (ownerMessages.some((message) => message.status === 'failed')) {
+    if (ownerMessage.status === 'failed') {
       throw new ServiceUnavailableException('The owner result request could not be delivered');
     }
   }
@@ -922,19 +1055,28 @@ export class InterviewService {
   private async sendCandidateOfferCheck(
     interview: Prisma.InterviewGetPayload<{ include: { business: true; jobSeeker: true; vacancy: true } }>,
   ) {
+    // 25 Nov (rev 211, B6): the shop question goes with "Did they offer you?" until one candidate
+    // has said yes for this business (its first interview, or the next one when the first
+    // candidate never answered); later interviews are not asked.
+    const confirmedBefore = await this.prisma.interview.findFirst({
+      where: { businessId: interview.businessId, id: { not: interview.id }, shopCheckAnswer: 'yes' },
+      select: { id: true },
+    });
+    if (!confirmedBefore) {
+      await this.prisma.interview.updateMany({ where: { id: interview.id, shopCheckAsked: false }, data: { shopCheckAsked: true } });
+    }
     const policy = await this.pricingService.current();
     const token = await this.consentLinks.createInterviewActionToken(
       interview.id, 'candidate_check', interview.jobSeeker.phone,
       new Date(interview.slotEndsAt.getTime() + policy.interviewResultCloseHours * 60 * 60 * 1000),
     );
     const link = publicPageLink('offerCheck', token);
-    const messages = await Promise.all((['sms', 'whatsapp'] as const).map((channel) =>
-      this.messagingService.send({
-        channel, template: 'candidate_offer_check', subjectType: 'job_seeker', subjectId: interview.jobSeekerId,
-        relatedType: 'interview', relatedId: interview.id, variables: { link },
-      }),
-    ));
-    if (messages.some((message) => message.status === 'failed')) {
+    // WhatsApp first, SMS as backup (rev 211).
+    const message = await this.messagingService.sendPreferWhatsApp({
+      template: 'candidate_offer_check', subjectType: 'job_seeker', subjectId: interview.jobSeekerId,
+      relatedType: 'interview', relatedId: interview.id, variables: { link },
+    });
+    if (message.status === 'failed') {
       throw new ServiceUnavailableException('The candidate offer check could not be delivered');
     }
   }
@@ -1080,32 +1222,29 @@ export class InterviewService {
       ? await this.prisma.businessBranch.findUnique({ where: { id: interview.vacancy.branchId } })
       : null;
     const contactPerson = branch?.contactPersonName || interview.business.additionalContactName || interview.business.ownerName || '';
-    const candidateMessages = await Promise.all((['sms', 'whatsapp'] as const).map((channel) =>
-      this.messagingService.send({
-        channel, template: 'interview_booked', subjectType: 'job_seeker', subjectId: interview.jobSeekerId,
-        relatedType: 'interview', relatedId: interview.id,
-        variables: {
-          businessName: interview.business.name,
-          address: interview.business.address ?? '',
-          area: interview.vacancy.locality ?? interview.business.locality ?? '',
-          interviewTime: time,
-          contactPerson,
-        },
-      }),
-    ));
+    // WhatsApp first, SMS as backup (rev 211).
+    const candidateMessage = await this.messagingService.sendPreferWhatsApp({
+      template: 'interview_booked', subjectType: 'job_seeker', subjectId: interview.jobSeekerId,
+      relatedType: 'interview', relatedId: interview.id,
+      variables: {
+        businessName: interview.business.name,
+        address: interview.business.address ?? '',
+        area: interview.vacancy.locality ?? interview.business.locality ?? '',
+        interviewTime: time,
+        contactPerson,
+      },
+    });
     let photoLink = '';
     if (interview.jobSeeker.photoStoragePath && this.photoStorage) {
       photoLink = await this.photoStorage.signedUrl(interview.jobSeeker.photoStoragePath, CANDIDATE_PHOTO_LINK_TTL_SECONDS);
     }
-    const ownerMessages = await Promise.all((['sms', 'whatsapp'] as const).map((channel) =>
-      this.messagingService.send({
-        channel, template: 'interview_candidate_for_owner', subjectType: 'business', subjectId: interview.businessId,
-        ...(branch ? { recipientPhone: branch.contactPersonPhone } : {}),
-        relatedType: 'interview', relatedId: interview.id,
-        variables: { firstName: interview.jobSeeker.name.trim().split(/\s+/)[0], photoLink, interviewTime: time },
-      }),
-    ));
-    if ([...candidateMessages, ...ownerMessages].some((message) => message.status === 'failed')) {
+    const ownerMessage = await this.messagingService.sendPreferWhatsApp({
+      template: 'interview_candidate_for_owner', subjectType: 'business', subjectId: interview.businessId,
+      ...(branch ? { recipientPhone: branch.contactPersonPhone } : {}),
+      relatedType: 'interview', relatedId: interview.id,
+      variables: { firstName: interview.jobSeeker.name.trim().split(/\s+/)[0], photoLink: photoLink || 'not available yet.', interviewTime: time },
+    });
+    if ([candidateMessage, ownerMessage].some((message) => message.status === 'failed')) {
       throw new ServiceUnavailableException('Interview confirmation details could not be delivered');
     }
     await this.prisma.interview.update({ where: { id: interview.id }, data: { businessDetailsSentAt: now } });

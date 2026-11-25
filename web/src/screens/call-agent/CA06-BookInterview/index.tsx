@@ -60,17 +60,23 @@ function BookForm({ profile, job }: { profile: SeekerProfile; job: JobMatch }) {
   const open = job.slots.filter((s) => s.placesLeft === null || s.placesLeft > 0);
   const [slotId, setSlotId] = useState(open[0]?.id ?? '');
   const [error, setError] = useState<string | null>(null);
+  // 25 Nov (rev 212, B9f): a workplace inside the owner's home — the first interview is at the Laboura office (or by phone).
+  const [homeWorkplace, setHomeWorkplace] = useState(false);
   const slot = job.slots.find((s) => s.id === slotId);
   const place = [job.businessType ? t('ca.book.aBusiness', { type: job.businessType.toLowerCase() }) : null, job.locality].filter(Boolean).join(' · ');
   const book = useMutation({
-    mutationFn: () => api.post<{ id: string; replyDueAt: string }>('/interviews', { vacancyId: job.vacancyId, jobSeekerId: profile.id, slotId }),
+    mutationFn: (interviewType?: 'laboura_office') =>
+      api.post<{ id: string; replyDueAt: string }>('/interviews', interviewType ? { vacancyId: job.vacancyId, jobSeekerId: profile.id, slotId, interviewType } : { vacancyId: job.vacancyId, jobSeekerId: profile.id, slotId }),
     onSuccess: (interview) => {
       void qc.invalidateQueries({ queryKey: ['call-work'] });
       navigate(
         `${to('CA06b-OfferSent')}?person=${encodeURIComponent(profile.code)}&interview=${encodeURIComponent(interview.id)}&due=${encodeURIComponent(interview.replyDueAt)}`,
       );
     },
-    onError: (err) => setError(err instanceof ApiError ? err.message : String(err)),
+    onError: (err) => {
+      if (err instanceof ApiError && /owner's home/.test(err.message)) setHomeWorkplace(true);
+      setError(err instanceof ApiError ? err.message : String(err));
+    },
   });
 
   return (
@@ -116,8 +122,13 @@ function BookForm({ profile, job }: { profile: SeekerProfile; job: JobMatch }) {
           })}
         </fieldset>
         {error && <p className="vno" role="alert">{error}</p>}
+        {homeWorkplace && (
+          <button type="button" className="btn bp" data-testid="book-at-office" disabled={book.isPending} onClick={() => { setError(null); book.mutate('laboura_office'); }}>
+            {t('ca.book.atOffice')}
+          </button>
+        )}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <Button variant="primary" disabled={!slotId} loading={book.isPending} onClick={() => book.mutate()}>{t('ca.book.send')}</Button>
+          <Button variant="primary" disabled={!slotId} loading={book.isPending} onClick={() => book.mutate(undefined)}>{t('ca.book.send')}</Button>
           <Link className="btn bs lb-btn" to={to('CA04-Profile', { id: profile.code })}>{t('common.cancel')}</Link>
         </div>
       </div>

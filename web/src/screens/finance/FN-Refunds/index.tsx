@@ -110,7 +110,26 @@ export default function Refunds() {
   );
   return (
     <div className="lb-page">
-      <TopBar back={{ to: to('FN-Home'), label: 'Money today' }} title="Refunds" subtitle="Refunds the rules say are owed, and who may approve each one." showSearch={false} />
+      <TopBar
+        back={{ to: to('FN-Home'), label: 'Money today' }}
+        title="Refunds"
+        subtitle="Refunds the rules say are owed, and who may approve each one."
+        showSearch={false}
+        actions={
+          <FormAction
+            label="Refund requested (ID not verified)"
+            title="Refund requested by the job seeker (ID not verified)"
+            description="Only when he contacted us and asked: he paid ₹499 but no ID check passed (under 18, or an ID that could not be verified). The full ₹499 goes back to whoever paid. Never for a forged or altered ID."
+            confirmLabel="Record and approve"
+            fields={[
+              { name: 'code', kind: 'text', label: 'Job seeker code', required: true, placeholder: 'JS-00001' },
+              { name: 'reason', kind: 'text', label: 'Note (optional)' },
+            ]}
+            run={(v) => api.post(`/job-seekers/${encodeURIComponent(String(v.code).trim().toUpperCase())}/refund`, { idNotVerified: true, ...(String(v.reason ?? '').trim() ? { reason: String(v.reason).trim() } : {}) })}
+            success={() => 'Refund approved — pay it to whoever paid and record the UTR'}
+          />
+        }
+      />
       <StatGrid>
         <StatTile label="Within your limit" value={s?.withinLimitCount ?? '—'} tone="good" loading={loading} />
         <StatTile label="To pay" value={s ? formatINR(s.toPayPaise) : '—'} tone="royal" loading={loading} />

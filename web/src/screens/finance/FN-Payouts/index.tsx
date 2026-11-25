@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { Button } from '../../../components/Button';
+import { SendLinkButtons } from '../../../components/SendLinkButtons';
 import { Card } from '../../../components/Card';
 import { DataTable, useTableDownload, type Column } from '../../../components/DataTable';
 import { StatusPill } from '../../../components/Badge';
@@ -108,16 +109,8 @@ const payFields = (r: PayoutRow) => [
 ];
 
 function RowActions({ r }: { r: PayoutRow }) {
-  const sendLink = (
-    <FormAction
-      label="Send details link"
-      size="compact"
-      title="Send the payout details link"
-      description={`${r.to.name ?? 'They'} get an SMS link to give a UPI ID or bank account. New details wait 48 hours before money can go.`}
-      run={() => api.post('/payout-accounts/links', { ownerType: r.owner.ownerType, ownerId: r.owner.ownerId })}
-      success="Details link sent"
-    />
-  );
+  // Rev 211: the payout details link, "Send on WhatsApp" (SMS as backup) or "Send by SMS".
+  const sendLink = <PayoutLinkButtons r={r} />;
   if (r.state === 'ready') {
     return (
       <span className="fin-row-actions">
@@ -168,6 +161,19 @@ function RowActions({ r }: { r: PayoutRow }) {
 }
 
 /** Details flagged: resolve the flag on this person, or ask for new details (new details replace the flagged ones). */
+/** The details link: a UPI ID or bank account, which then waits 48 hours before money can go. */
+function PayoutLinkButtons({ r }: { r: PayoutRow }) {
+  const queryClient = useQueryClient();
+  return (
+    <SendLinkButtons
+      label="Payout details link"
+      run={(channel) => api.post('/payout-accounts/links', { ownerType: r.owner.ownerType, ownerId: r.owner.ownerId, channel })}
+      onSent={() => void queryClient.invalidateQueries()}
+      testId={`payout-link-${r.owner.ownerId}`}
+    />
+  );
+}
+
 function FlaggedActions({ r, sendLink }: { r: PayoutRow; sendLink: ReactNode }) {
   const { rows } = useMoneyFlags(PAYOUT_FLAG_KINDS);
   // Every open flag on this person (a payout is released only once all are closed).

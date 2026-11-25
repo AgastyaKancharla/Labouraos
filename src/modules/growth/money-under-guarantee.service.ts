@@ -155,7 +155,7 @@ export class MoneyUnderGuaranteeService {
       where: { type: 'activation', status: { in: [...RECEIVED_PAYMENT_STATUSES] }, jobSeekerId: { not: null } },
       select: {
         code: true, amount: true, confirmedAt: true, paidAt: true, createdAt: true, jobSeekerId: true,
-        jobSeeker: { select: { code: true, status: true, paymentReceivedAt: true } },
+        jobSeeker: { select: { code: true, status: true, paymentReceivedAt: true, guaranteeStartsAt: true } },
       },
     });
     if (payments.length === 0) return [];
@@ -227,6 +227,8 @@ export class MoneyUnderGuaranteeService {
             code: payment.jobSeeker?.code ?? payment.code,
             amountPaise: payment.amount,
             receivedAt: start,
+            // Rev 211: the current guarantee counts from guaranteeStartsAt (paid AND ID passed), null while waiting for the ID.
+            guaranteeStartsAt: isLatest ? payment.jobSeeker?.guaranteeStartsAt ?? null : start,
             isLatestActivation: isLatest,
             refundedThisCycle,
             seekerStatus: payment.jobSeeker?.status ?? 'lead',

@@ -127,7 +127,7 @@ describe('Call agent console lists (23 Nov): GET /call-work/my/job-seekers | bus
         status: fields.status ?? 'lead',
         locality: 'Bommanahalli',
         hitCount: fields.hitCount ?? 0,
-        paymentReceivedAt: fields.paymentReceivedAt ?? null,
+        paymentReceivedAt: fields.paymentReceivedAt ?? null, guaranteeStartsAt: fields.paymentReceivedAt ?? null,
         createdAt: fields.createdAt ?? NOON,
         trades: { create: [{ trade: 'Cook', yearsExperience: 2, isPrimary: true }] },
       },

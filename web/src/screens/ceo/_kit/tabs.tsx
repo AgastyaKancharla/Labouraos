@@ -10,7 +10,8 @@ export function BusinessTabs() {
       label="Businesses"
       items={[
         { to: to('C-Businesses'), label: 'All businesses' },
-        { to: to('C-Biz-Pending'), label: 'Waiting for visit or approval' },
+        { to: to('C-Biz-Pending'), label: 'Waiting for agreement or approval' },
+        { to: to('T-Checks'), label: 'To check (reasons)' },
         { to: to('C-Introductions'), label: 'Introductions register' },
       ]}
     />

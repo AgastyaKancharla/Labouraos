@@ -1,3 +1,4 @@
+import { otpChannel } from '../../common/otp/otp.controller';
 import { coversPiece } from '../field-visit/field-handover.service';
 import { LegalDocumentService } from '../legal/legal-document.service';
 import { BUSINESS_SUSPENDED_MESSAGE, isBusinessSuspended } from '../business/business-candidate-access';
@@ -30,7 +31,7 @@ import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { TELEPHONY_PROVIDER, TelephonyProvider } from '../telephony/telephony.interface';
 import { MatchingService } from '../vacancy/matching.service';
 import { InterviewService, NOT_SELECTED_REASONS } from '../vacancy/interview.service';
-import { isUnconfirmedVacancyStatus } from '../vacancy/vacancy-confirmation.service';
+import { isUnconfirmedVacancyStatus, isVacancyWaitingForTeamLead, VACANCY_WAITS_FOR_TEAM_LEAD_MESSAGE } from '../vacancy/vacancy-confirmation.service';
 import { businessAccessMessage, businessCandidateAccess } from '../business/business-candidate-access';
 import { FieldVisitService } from '../field-visit/field-visit.service';
 import { testModeFields } from '../../common/otp/otp-test-mode';
@@ -42,7 +43,8 @@ export interface SellingActor {
 }
 
 /** How an interview booked from the field app happens (FA15g). */
-export const BOOKED_INTERVIEW_TYPES = ['at_shop', 'walk_in', 'phone'] as const;
+// laboura_office (25 Nov, rev 212 B9f): the first interview at a workplace inside the owner's home.
+export const BOOKED_INTERVIEW_TYPES = ['at_shop', 'walk_in', 'phone', 'laboura_office'] as const;
 export type BookedInterviewType = (typeof BOOKED_INTERVIEW_TYPES)[number];
 
 /** The owner's answer on the joining call (FA11) besides "he joined" (POST /placements/:id/joined). */
@@ -189,6 +191,7 @@ export class FieldSellingService {
     if (isUnconfirmedVacancyStatus(vacancy.status)) {
       throw new BadRequestException('The contact person must confirm this vacancy by OTP first');
     }
+    if (isVacancyWaitingForTeamLead(vacancy.status)) throw new BadRequestException(VACANCY_WAITS_FOR_TEAM_LEAD_MESSAGE);
     const access = businessCandidateAccess(vacancy.business);
     if (!access.allowed) {
       throw new BadRequestException(businessAccessMessage(access, 'The business must be verified (or onboarded in person) first'));
@@ -393,17 +396,20 @@ export class FieldSellingService {
    * reason). Needs signal — the owner reads the code out in the shop.
    */
   async sendDecisionOtp(actor: SellingActor, interviewId: string, body: {
-    decision?: string; salaryPaise?: number; joiningDate?: string; reason?: string; otpRequestId?: string;
+    decision?: string; salaryPaise?: number; joiningDate?: string; reason?: string; otpRequestId?: string; channel?: string;
   }) {
     const interview = await this.interviewFor(actor, interviewId);
     this.assertAwaitingDecision(interview);
     const decision = this.validateDecision(body, this.clock.now());
     const contact = this.contactOf({ branch: interview.vacancy.branch, business: interview.business });
     // Bound to this interview: recordDecision checks the same purpose.
-    const result = await this.otp.sendBoundOtp(contact.phone, interviewResultOtpPurpose(interview.id), actor.id, body.otpRequestId);
+    // "Send by SMS" (rev 211) after 30 seconds; otherwise WhatsApp first.
+    const result = await this.otp.sendBoundOtp(contact.phone, interviewResultOtpPurpose(interview.id), actor.id, body.otpRequestId, otpChannel(body.channel));
     if (!body.otpRequestId) {
-      await this.messaging.send({
-        channel: 'sms',
+      const salary = decision === 'selected' ? formatINR(body.salaryPaise as number) : '';
+      const joiningDate = decision === 'selected' ? istDayText(istInstant(body.joiningDate as string, '00:00')) : '';
+      // WhatsApp first, SMS as backup (rev 211). `result` is the one line the WhatsApp text shows.
+      await this.messaging.sendPreferWhatsApp({
         template: 'interview_result_confirm_details',
         subjectType: 'business',
         subjectId: interview.businessId,
@@ -414,10 +420,16 @@ export class FieldSellingService {
           ? {
             candidateFirstName: firstName(interview.jobSeeker.name),
             decision: 'selected',
-            salary: formatINR(body.salaryPaise as number),
-            joiningDate: istDayText(istInstant(body.joiningDate as string, '00:00')),
+            salary,
+            joiningDate,
+            result: `selected, salary ${salary}, joining ${joiningDate}`,
           }
-          : { candidateFirstName: firstName(interview.jobSeeker.name), decision: 'not_selected', reason: body.reason as string },
+          : {
+            candidateFirstName: firstName(interview.jobSeeker.name),
+            decision: 'not_selected',
+            reason: body.reason as string,
+            result: `not selected (${String(body.reason ?? '').replace(/_/g, ' ')})`,
+          },
       });
     }
     return {
@@ -502,7 +514,7 @@ export class FieldSellingService {
 
   private validateBooking(body: BookBody, policy: { walkInStart: string; walkInEnd: string; callingHoursStart: string; callingHoursEnd: string }, now: Date) {
     if (!(BOOKED_INTERVIEW_TYPES as readonly string[]).includes(body?.type ?? '')) {
-      throw new BadRequestException('type must be at_shop, walk_in or phone');
+      throw new BadRequestException('type must be at_shop, walk_in, phone or laboura_office');
     }
     const type = body.type as BookedInterviewType;
     if (type === 'phone' && !this.telephony.supportsThreeWayCalls?.()) {
@@ -548,7 +560,7 @@ export class FieldSellingService {
     });
     let booked: { id: string; code: string };
     try {
-      booked = await this.interviews.book({ vacancyId: vacancy.id, jobSeekerId: body.jobSeekerId, slotId: slot.id }, actor.id);
+      booked = await this.interviews.book({ vacancyId: vacancy.id, jobSeekerId: body.jobSeekerId, slotId: slot.id, interviewType: type }, actor.id);
     } catch (error) {
       await this.prisma.vacancyInterviewSlot.deleteMany({ where: { id: slot.id, interviews: { none: {} } } });
       throw error;
@@ -804,15 +816,14 @@ export class FieldSellingService {
       data: { joiningDate, joiningMovedCount: { increment: 1 } },
     });
     const dayText = istDayText(istInstant(newDate, '12:00'));
-    for (const channel of ['sms', 'whatsapp'] as const) {
-      await this.messaging.send({
-        channel, template: 'joining_confirmed', subjectType: 'job_seeker', subjectId: placement.jobSeekerId,
-        relatedType: 'placement', relatedId: placement.id,
-        variables: { candidateName: placement.jobSeeker.name, businessName: placement.business.name, joiningDate: dayText },
-      });
-    }
-    await this.messaging.send({
-      channel: 'sms', template: 'joining_date_moved', subjectType: 'business', subjectId: placement.businessId,
+    // WhatsApp first, SMS as backup (rev 211).
+    await this.messaging.sendPreferWhatsApp({
+      template: 'joining_confirmed', subjectType: 'job_seeker', subjectId: placement.jobSeekerId,
+      relatedType: 'placement', relatedId: placement.id,
+      variables: { candidateName: placement.jobSeeker.name, businessName: placement.business.name, joiningDate: dayText },
+    });
+    await this.messaging.sendPreferWhatsApp({
+      template: 'joining_date_moved', subjectType: 'business', subjectId: placement.businessId,
       relatedType: 'placement', relatedId: placement.id,
       variables: { candidateFirstName: firstName(placement.jobSeeker.name), joiningDate: dayText },
     });

@@ -1,3 +1,4 @@
+import { SendLinkButtons, type SendChannel } from '../../../components/SendLinkButtons';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -483,11 +484,12 @@ function ConfirmVacancy({ vacancy, businessName }: { vacancy: Saved; businessNam
     return () => clearInterval(id);
   }, [request, clock]);
 
+  // Rev 211: the code goes on WhatsApp first; "Send by SMS" after 30 seconds.
   const sendCode = useMutation({
-    mutationFn: () =>
+    mutationFn: (channel?: 'sms') =>
       api.post<{ otpRequestId: string; sentToLast4: string; contactName: string | null; resendAvailableAt?: string }>(
         `/vacancies/${vacancy.id}/confirmation/send-code`,
-        request ? { otpRequestId: request.otpRequestId } : {},
+        { ...(request ? { otpRequestId: request.otpRequestId } : {}), ...(channel ? { channel } : {}) },
       ),
     onSuccess: (r) => {
       setError(null);
@@ -509,14 +511,12 @@ function ConfirmVacancy({ vacancy, businessName }: { vacancy: Saved; businessNam
     },
     onError: (e) => setError(isApiError(e) ? e.message : t('error.server')),
   });
-  const sendLink = useMutation({
-    mutationFn: () => api.post<{ expiresAt: string; sentToLast4: string }>(`/vacancies/${vacancy.id}/confirmation-link`),
-    onSuccess: (r) => {
-      setError(null);
-      setLinkSent(r);
-    },
-    onError: (e) => setError(isApiError(e) ? e.message : t('error.server')),
-  });
+  // Rev 211: "Send on WhatsApp" (SMS as backup) or "Send by SMS".
+  const sendLink = (channel: SendChannel) => api.post<{ expiresAt: string; sentToLast4: string }>(`/vacancies/${vacancy.id}/confirmation-link`, { channel });
+  const afterLink = (r: unknown) => {
+    setError(null);
+    setLinkSent(r as { expiresAt: string; sentToLast4: string });
+  };
 
   return (
     <div className="reg">
@@ -534,12 +534,10 @@ function ConfirmVacancy({ vacancy, businessName }: { vacancy: Saved; businessNam
             <p className="muted">{t('reg.vac.confirmHelp')}</p>
             {!request ? (
               <div className="reg-actions">
-                <Button variant="primary" onClick={() => sendCode.mutate()} loading={sendCode.isPending}>
+                <Button variant="primary" onClick={() => sendCode.mutate(undefined)} loading={sendCode.isPending}>
                   {t('reg.vac.sendCode')}
                 </Button>
-                <Button onClick={() => sendLink.mutate()} loading={sendLink.isPending} disabled={Boolean(linkSent)}>
-                  {t('reg.vac.sendLink')}
-                </Button>
+                <SendLinkButtons label={t('reg.vac.sendLink')} run={sendLink} onSent={afterLink} disabled={Boolean(linkSent)} testId="vacancy-link-buttons" />
               </div>
             ) : (
               <div className="sec">
@@ -554,13 +552,18 @@ function ConfirmVacancy({ vacancy, businessName }: { vacancy: Saved; businessNam
                   {request.resendAt > nowMs ? (
                     <span className="sub">{t('form.otp.resendIn', { seconds: Math.ceil((request.resendAt - nowMs) / 1000) })}</span>
                   ) : (
-                    <Button onClick={() => sendCode.mutate()} loading={sendCode.isPending}>
-                      {t('form.otp.resend')}
-                    </Button>
+                    <>
+                      <Button onClick={() => sendCode.mutate(undefined)} loading={sendCode.isPending}>
+                        {t('form.otp.resend')}
+                      </Button>
+                      <button type="button" className="lb-send__sms" onClick={() => sendCode.mutate('sms')} disabled={sendCode.isPending}>
+                        {t('otp.sendBySms')}
+                      </button>
+                    </>
                   )}
-                  <Button onClick={() => sendLink.mutate()} loading={sendLink.isPending} disabled={Boolean(linkSent)}>
-                    {t('reg.vac.sendLinkInstead')}
-                  </Button>
+                </div>
+                <div className="reg-actions">
+                  <SendLinkButtons label={t('reg.vac.sendLinkInstead')} run={sendLink} onSent={afterLink} disabled={Boolean(linkSent)} testId="vacancy-link-buttons" />
                 </div>
               </div>
             )}

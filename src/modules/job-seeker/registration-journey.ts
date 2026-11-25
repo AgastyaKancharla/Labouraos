@@ -6,19 +6,26 @@ import { JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } from '../consent/consent.constan
 /**
  * What the registration link (web pages P00 → P02b) shows a job seeker: which
  * of the four steps are done, where he carries on, and the state of his ₹499.
+ * The order (Master Guide rev 211, 25 Nov): Consent → Selfie → Payment ₹499 →
+ * ID check. Payment needs consent and the selfie (and the terms, a trade floor,
+ * no under-18 stop); it no longer waits for the ID check. An ID check done
+ * before payment (a field agent scanning in person) still counts: the page
+ * then goes from the payment straight to done.
  * Each step is saved to the person, not to the link, so a fresh link resumes
  * at the first unfinished step (Master Guide, "Registration, in order").
  *
  * Before the OTP to his own number is verified the link shows nothing about
  * him: only the masked number the code goes to and his language.
  */
-export type RegistrationStep = 'consent' | 'selfie' | 'id_check' | 'payment' | 'complete';
+export type RegistrationStep = 'consent' | 'selfie' | 'payment' | 'id_check' | 'complete';
 
 /**
  * not_started – terms not accepted yet; pending – UPI request made, no money;
  * confirming – he says he paid (UPI reference hint) but the bank has not shown
  * it yet (a screenshot is never proof); failed – the last try failed;
- * confirmed – the money is in Laboura's bank and the 30 days have started.
+ * confirmed – the money is in Laboura's bank. The 30 days start when the ID
+ * check has passed too (guaranteeStartsAt; rev 211): until then he is "paid,
+ * waiting for ID".
  */
 export type RegistrationPaymentState = 'not_started' | 'pending' | 'confirming' | 'failed' | 'confirmed';
 
@@ -53,6 +60,8 @@ export interface JourneyInput {
     messageLanguage: string | null;
     photoStoragePath: string | null;
     paymentReceivedAt: Date | null;
+    /** Rev 211: when his 30 days started (paid and ID passed); null while waiting for the ID. */
+    guaranteeStartsAt?: Date | null;
     termsAcceptedAt: Date | null;
     guaranteeFloorPaise: number | null;
     isUnder18ByDateOfBirth: boolean;
@@ -93,13 +102,15 @@ export interface JourneyStatus {
   /** Consent items already given under the current notice version and not withdrawn: the consent page does not ask them again (17 Nov). An item given under an older notice is asked again. */
   consentGiven: string[];
   idCheck: {
-    /** Another ID is waiting for the Team Lead's check (rev 154): no payment until it is approved. */
+    /** Another ID is waiting for the Team Lead's check (rev 154); the 30 days start when it is approved (rev 211). */
     waitingForTeamLead: boolean;
     /** photo_expired: the photo of another ID card expired before anyone checked it — take a new photo (rev 169). */
     lastResult: 'none' | 'verified' | 'pending' | 'name_mismatch' | 'under_18' | 'photo_expired' | 'failed';
   };
-  /** Registration stops before payment when he is under 18. */
+  /** Registration stops when he is under 18: before payment by his typed date of birth, or at the ID check. */
   stopped: 'under_18' | null;
+  /** Rev 211: paid, and no ID check has passed yet — not active, the 30 days have not started. */
+  paidWaitingForId: boolean;
   /** His only trade is a new "Other" not yet on the list, so there is no salary floor to agree to. */
   waitingForTrade: boolean;
   termsAcceptedAt: Date | null;
@@ -108,6 +119,8 @@ export interface JourneyStatus {
     amountPaise: number;
     upiReference: string | null;
     confirmedAt: Date | null;
+    /** Rev 211: when the 30 days started (null until the ID check has passed too). */
+    guaranteeStartsAt: Date | null;
     guaranteeEndsAt: Date | null;
     paymentId: string | null;
   };
@@ -125,7 +138,8 @@ export function buildJourneyStatus(input: JourneyInput): JourneyStatus {
   );
   const paid = Boolean(seeker.paymentReceivedAt) || Boolean(payment && SUCCEEDED.includes(payment.status));
 
-  const currentStep: RegistrationStep = !consent ? 'consent' : !selfie ? 'selfie' : !idCheck ? 'id_check' : !paid ? 'payment' : 'complete';
+  // Rev 211: Consent → Selfie → Payment → ID check.
+  const currentStep: RegistrationStep = !consent ? 'consent' : !selfie ? 'selfie' : !paid ? 'payment' : !idCheck ? 'id_check' : 'complete';
 
   // A lifted under-18 stop (isAdult false, no longer standing) needs a new ID check: 'failed'.
   const lastResult: JourneyStatus['idCheck']['lastResult'] = input.under18Stop
@@ -148,6 +162,8 @@ export function buildJourneyStatus(input: JourneyInput): JourneyStatus {
   else if (payment?.status === 'pending') paymentState = payment.payerUtrHint ? 'confirming' : 'pending';
 
   const confirmedAt = seeker.paymentReceivedAt ?? payment?.confirmedAt ?? null;
+  // The 30 days run from guaranteeStartsAt only (paid AND ID passed), never from the payment alone.
+  const guaranteeStartsAt = paid && idCheck ? seeker.guaranteeStartsAt ?? null : null;
   return {
     otpRequired: false,
     maskedPhone: maskPublicPhone(seeker.phone),
@@ -159,6 +175,7 @@ export function buildJourneyStatus(input: JourneyInput): JourneyStatus {
     consentGiven: [...new Set(input.grantedUnderCurrentNotice ?? input.grantedPurposes)],
     idCheck: { waitingForTeamLead: lastResult === 'pending', lastResult },
     stopped: seeker.isUnder18ByDateOfBirth || input.under18Stop ? 'under_18' : null,
+    paidWaitingForId: paid && !idCheck,
     waitingForTrade: seeker.guaranteeFloorPaise === null,
     termsAcceptedAt: seeker.termsAcceptedAt,
     payment: {
@@ -166,7 +183,8 @@ export function buildJourneyStatus(input: JourneyInput): JourneyStatus {
       amountPaise: payment?.expectedAmountPaise ?? input.activationFeePaise,
       upiReference: payment && payment.status === 'pending' ? payment.upiReference : null,
       confirmedAt: paid ? confirmedAt : null,
-      guaranteeEndsAt: paid && confirmedAt ? refundGuaranteeDeadline(confirmedAt, input.guaranteeDays) : null,
+      guaranteeStartsAt,
+      guaranteeEndsAt: guaranteeStartsAt ? refundGuaranteeDeadline(guaranteeStartsAt, input.guaranteeDays) : null,
       paymentId: paid ? payment?.id ?? null : null,
     },
   };

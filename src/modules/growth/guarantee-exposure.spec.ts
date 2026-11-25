@@ -15,6 +15,7 @@ function activation(overrides: Partial<ActivationExposureInput> = {}): Activatio
     code: 'JS-00001',
     amountPaise: 49900,
     receivedAt: PAID,
+    guaranteeStartsAt: PAID,
     isLatestActivation: true,
     refundedThisCycle: false,
     seekerStatus: 'active',

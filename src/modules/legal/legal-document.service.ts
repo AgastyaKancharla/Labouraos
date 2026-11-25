@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma, PricingPolicy } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
-import { CONSENT_NOTICES } from '../consent/consent-notices';
+import { CONSENT_NOTICES, GUARANTEE_START_NOTICE } from '../consent/consent-notices';
 import {
   DEFAULT_NOTICE_VERSION,
   JOB_SEEKER_CONSENT_PURPOSES,
@@ -143,6 +143,8 @@ export class LegalDocumentService {
       bodyHtml: rendered.bodyHtml,
       hash: rendered.hash,
       noticeVersion: key === 'job_seeker_terms' ? DEFAULT_NOTICE_VERSION : null,
+      /** Notice 1.3 (rev 211): the line shown above the job seeker's ticks, word for word. */
+      consentNotice: key === 'job_seeker_terms' ? GUARANTEE_START_NOTICE : null,
       consents: consentTicks(key, language),
     };
   }

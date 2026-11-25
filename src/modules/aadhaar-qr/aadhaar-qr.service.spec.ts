@@ -1,3 +1,5 @@
+import { DEFAULT_NOTICE_VERSION } from '../consent/consent.constants';
+import { LEGAL_DOCUMENT_VERSIONS } from '../legal/legal-documents';
 import { BadRequestException, ConflictException, ForbiddenException, HttpException, Logger } from '@nestjs/common';
 import { encode as encodeJpeg } from 'jpeg-js';
 import { inflateSecureQrText, parseSecureQr, TrustedKey } from './secure-qr.parser';
@@ -468,7 +470,7 @@ describe('AadhaarQrService (guide: Aadhaar verification, 14 Nov)', () => {
       prisma.consent.rows.push({ id: `c-${purpose}`, subjectType: 'job_seeker', subjectId: 'js-1', purpose, granted: true, grantedAt: NOW, withdrawnAt: null, createdAt: NOW });
     }
     await expect(service.checkJobSeeker('js-1', qr({ last4: '4321' }), { channel: 'link', now: NOW })).rejects.toThrow('accept the updated terms');
-    prisma.legalAcceptance.rows.push({ id: 'acc-js', subjectType: 'job_seeker', subjectId: 'js-1', documentKey: 'job_seeker_terms', version: '1.1', context: 'reconsent', noticeVersion: '1.2', acceptedAt: NOW });
+    prisma.legalAcceptance.rows.push({ id: 'acc-js', subjectType: 'job_seeker', subjectId: 'js-1', documentKey: 'job_seeker_terms', version: LEGAL_DOCUMENT_VERSIONS.job_seeker_terms, context: 'reconsent', noticeVersion: DEFAULT_NOTICE_VERSION, acceptedAt: NOW });
     expect((await service.checkJobSeeker('js-1', qr({ last4: '4321' }), { channel: 'link', now: NOW })).result).toBe('verified');
   });
 

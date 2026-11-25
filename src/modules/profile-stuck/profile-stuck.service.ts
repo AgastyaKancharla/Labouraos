@@ -3,8 +3,10 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { eitherWheres, RecordWheres } from '../ceo-portal/record-scope';
 import { JobSeekerService } from '../job-seeker/job-seeker.service';
+import { PAID_WAITING_ID, PAID_WAITING_ID_LABEL } from '../job-seeker/job-seeker.status';
 import { ManagerRecordsService } from '../screens-manager/manager-records.service';
 import { TeamLeadRecordsService } from '../screens-team-lead/team-lead-records.service';
+import { isHouseholdBusiness } from '../business/business-auto-check.service';
 
 export type StuckKind = 'job_seeker' | 'business' | 'referral';
 const KINDS: readonly StuckKind[] = ['job_seeker', 'business', 'referral'];
@@ -27,7 +29,7 @@ export interface StuckView {
   name: string;
   /** Who holds the record: the agent it was assigned to, else the agent who registered it (or the account agent / lead creator). */
   owner: { name: string; code: string } | null;
-  /** The step the person is on (job seeker: consent, selfie, id_check, payment; business: agreement, visit, team_lead_check; partner: terms, selfie, id_check, upi), or complete. */
+  /** The step the person is on (job seeker: consent, selfie, payment, id_check (rev 211 order); business: agreement, automatic_check, team_lead_check — households: agreement, visit, team_lead_check; partner: terms, selfie, id_check, upi), or complete. */
   step: string;
   /** done, in_progress, stuck or not_started (of that step). */
   state: string;
@@ -38,6 +40,8 @@ export interface StuckView {
   actions: StuckAction[];
   /** The owner's staff id (assigned ?? registered; business: account agent ?? lead creator), for "Remind". */
   ownerId?: string | null;
+  /** Rev 211: a job seeker who has paid and waits for the ID check — shown as "Paid, waiting for ID". */
+  stage?: 'paid_waiting_id';
 }
 
 /** One row of a "Stuck registrations" list (22 Nov): a stuck job seeker, business or partner. */
@@ -48,6 +52,7 @@ export interface StuckListRow extends StuckView {
 
 /** Job seekers who have not paid yet and may be stuck in registration. */
 const OPEN_SEEKER_STATUSES = ['lead', 'consented', 'pending_activation'];
+/** Rev 211: paid, but the ID check has not passed — still stuck (at the ID check), "Paid, waiting for ID". */
 /** At most this many of each kind are looked at (newest first). */
 const LIST_CAP = 40;
 
@@ -86,6 +91,16 @@ const STAFF = { select: { name: true, code: true } } as const;
  * Lead: his team plus not-assigned in his city; a call agent: the city-wide
  * read call agents have for these records).
  */
+/**
+ * Team Leads, Managers and the CEO keep the view of where each person is stuck
+ * but get no send buttons (Master Guide rev 211): their answers list no actions,
+ * and the sending routes refuse them (link-channel.ts LINK_SENDING_ROLES).
+ */
+const NO_SEND_BUTTON_ROLES = new Set(['team_lead', 'manager', 'ceo']);
+function viewFor<T extends { actions: StuckAction[] }>(actor: { role: string }, view: T): T {
+  return NO_SEND_BUTTON_ROLES.has(actor.role) ? { ...view, actions: [] } : view;
+}
+
 @Injectable()
 export class ProfileStuckService {
   constructor(
@@ -100,9 +115,9 @@ export class ProfileStuckService {
     if (typeof ref !== 'string' || !ref.trim() || ref.length > 64) throw new BadRequestException('id is required');
     const scope = await this.scopeFor(actor);
     const byRef = isUuid(ref) ? { id: ref } : { code: ref.trim() };
-    if (kind === 'job_seeker') return this.jobSeeker(scope ? { AND: [scope.seeker, byRef] } : byRef);
-    if (kind === 'business') return this.business(scope ? { AND: [scope.business, byRef] } : byRef);
-    return this.referral(scope ? { AND: [scope.referral, byRef] } : byRef);
+    if (kind === 'job_seeker') return viewFor(actor, await this.jobSeeker(scope ? { AND: [scope.seeker, byRef] } : byRef));
+    if (kind === 'business') return viewFor(actor, await this.business(scope ? { AND: [scope.business, byRef] } : byRef));
+    return viewFor(actor, await this.referral(scope ? { AND: [scope.referral, byRef] } : byRef));
   }
 
   /**
@@ -131,7 +146,13 @@ export class ProfileStuckService {
     const scope = await this.ownerScope(actor);
     const [seekers, businesses, referrals] = await Promise.all([
       this.prisma.jobSeeker.findMany({
-        where: { AND: [scope.seeker, { status: { in: OPEN_SEEKER_STATUSES }, paymentReceivedAt: null, anonymisedAt: null }] },
+        where: {
+          AND: [
+            scope.seeker,
+            { anonymisedAt: null },
+            { OR: [{ status: { in: OPEN_SEEKER_STATUSES }, paymentReceivedAt: null }, { status: PAID_WAITING_ID }] },
+          ],
+        },
         select: { id: true, createdAt: true },
         orderBy: { createdAt: 'desc' },
         take: LIST_CAP,
@@ -171,7 +192,7 @@ export class ProfileStuckService {
       if (view.step !== 'complete') rows.push({ ...view, since: r.createdAt.toISOString() });
     }
     rows.sort((a, b) => b.since.localeCompare(a.since));
-    return { rows };
+    return { rows: rows.map((row) => viewFor(actor, row)) };
   }
 
   /** Whose records a "Stuck registrations" list holds (owner rules of own-team.ts / record-scope.ts). */
@@ -217,22 +238,27 @@ export class ProfileStuckService {
       owner: staffLabel(seeker.assignedStaff ?? seeker.registeredBy), ownerId: seeker.assignedStaffId ?? seeker.registeredByStaffId ?? null,
     };
     const { steps } = await this.jobSeekers.getRegistrationStatus(seeker.id);
-    if (seeker.status === 'active' || (seeker.paymentReceivedAt && steps.payment.state === 'done')) {
+    const paidWaitingForId = seeker.status === PAID_WAITING_ID;
+    if (seeker.status === 'active' || (seeker.paymentReceivedAt && steps.payment.state === 'done' && !paidWaitingForId)) {
       return { ...base, step: 'complete', state: 'done', reason: null, waitingForTeamLead: false, actions: [] };
     }
     if (['banned', 'deactivated', 'refunded', 'anonymised'].includes(seeker.status)) {
       return { ...base, step: 'closed', state: 'stuck', reason: `Status: ${seeker.status}`, waitingForTeamLead: false, actions: [] };
     }
+    // Rev 211 (25 Nov): Consent → Selfie → Payment → ID check.
     const order: Array<[string, { state: string; reason: string | null }]> = [
-      ['consent', steps.consent], ['selfie', steps.selfie], ['id_check', steps.idCheck], ['payment', steps.payment],
+      ['consent', steps.consent], ['selfie', steps.selfie], ['payment', steps.payment], ['id_check', steps.idCheck],
     ];
     const current = order.find(([, s]) => s.state !== 'done');
     if (!current) return { ...base, step: 'complete', state: 'done', reason: null, waitingForTeamLead: false, actions: [] };
     const [step, s] = current;
     if (step === 'id_check') {
       const waiting = s.state === 'in_progress' && /Team Lead/i.test(s.reason ?? '');
-      if (waiting || s.state === 'stuck') return { ...base, step, state: s.state, reason: s.reason, waitingForTeamLead: waiting, actions: [] };
-      return { ...base, step, state: s.state, reason: s.reason, waitingForTeamLead: false, actions: ['registration_link'] };
+      // Paid and waiting for the ID check: the stage staff see is "Paid, waiting for ID" (view only for TL / Manager).
+      const reason = paidWaitingForId ? [PAID_WAITING_ID_LABEL, s.reason].filter(Boolean).join(' — ') : s.reason;
+      const stage = paidWaitingForId ? { stage: 'paid_waiting_id' as const } : {};
+      if (waiting || s.state === 'stuck') return { ...base, ...stage, step, state: s.state, reason, waitingForTeamLead: waiting, actions: [] };
+      return { ...base, ...stage, step, state: s.state, reason, waitingForTeamLead: false, actions: ['registration_link'] };
     }
     if (step === 'payment') {
       // Waiting for a new trade to be added: nothing to send until it is.
@@ -247,7 +273,7 @@ export class ProfileStuckService {
       where,
       select: {
         id: true, code: true, name: true, verificationStatus: true, verifiedAt: true, inPersonOnboardedAt: true,
-        accountAgentId: true, leadCreatedByStaffId: true,
+        accountAgentId: true, leadCreatedByStaffId: true, businessType: true, autoCheckStatus: true, autoCheckReasons: true,
         agreements: { orderBy: { signedAt: 'desc' }, take: 1, select: { signedAt: true } },
         visits: { orderBy: { visitedAt: 'desc' }, take: 1, select: { visitedAt: true } },
         visitAssignments: { orderBy: { createdAt: 'desc' }, take: 1, select: { status: true, assignedStaff: STAFF, suggestedStaff: STAFF } },
@@ -264,7 +290,26 @@ export class ProfileStuckService {
     }
     if (verified) return { ...base, step: 'complete', state: 'done', reason: null, waitingForTeamLead: false, actions: [] };
     if (status === 'rejected') return { ...base, step: 'team_lead_check', state: 'stuck', reason: 'The Team Lead rejected the verification', waitingForTeamLead: false, actions: [] };
-    if (status === 'pending_tl_check') return { ...base, step: 'team_lead_check', state: 'in_progress', reason: 'Waiting for the Team Lead to approve the verification', waitingForTeamLead: true, actions: [] };
+    // 25 Nov (rev 211, B5): agreement → automatic check → Team Lead check only when the check failed.
+    const failed = Array.isArray(business.autoCheckReasons)
+      ? (business.autoCheckReasons as Array<{ ok?: boolean; detail?: string }>).filter((r) => r && r.ok === false).map((r) => r.detail).filter(Boolean)
+      : [];
+    if (status === 'pending_tl_check') {
+      return {
+        ...base,
+        step: 'team_lead_check',
+        state: 'in_progress',
+        reason: business.autoCheckStatus === 'failed' && failed.length
+          ? `The automatic check did not pass (${failed.join('; ')}): waiting for the Team Lead`
+          : 'Waiting for the Team Lead to approve the verification',
+        waitingForTeamLead: true,
+        actions: [],
+      };
+    }
+    if (!isHouseholdBusiness(business.businessType)) {
+      // Signed, not checked yet (an agreement signed before 25 Nov): the check runs when a proof or photo is added.
+      return { ...base, step: 'automatic_check', state: 'in_progress', reason: 'Signed: the automatic check runs once the owner photos and 2 proofs are in', waitingForTeamLead: false, actions: [] };
+    }
     const assignment = business.visitAssignments[0];
     const who = assignment?.assignedStaff ?? assignment?.suggestedStaff;
     return {

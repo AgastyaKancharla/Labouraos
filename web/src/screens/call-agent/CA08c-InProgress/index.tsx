@@ -1,38 +1,37 @@
+import { SendLinkButtons } from '../../../components/SendLinkButtons';
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button, ButtonLink } from '../../../components/Button';
 import { Card } from '../../../components/Card';
 import { ErrorState } from '../../../components/ErrorState';
 import { Modal } from '../../../components/Modal';
 import { SkeletonCard } from '../../../components/Skeleton';
 import { TopBar } from '../../../components/TopBar';
-import { useToast } from '../../../components/Toast';
 import { useT } from '../../../i18n/I18nProvider';
 import type { MessageKey } from '../../../i18n/en';
 import { api } from '../../../lib/api/client';
-import { isApiError } from '../../../lib/api/errors';
 import { formatDateIST, formatDateTimeIST, formatTimeIST } from '../../../lib/format/date';
 import { formatINR } from '../../../lib/format/money';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { qk, useJobSeekerStatus, type JobSeekerStatus, type Step } from '../_registration/api';
 import { StepLegend, StepRow } from '../_registration/kit';
 import { GENDERS, PAYER_RELATIONS, SHIFT_PREFERENCES } from '../_registration/options';
-import { SendOnWhatsAppButton } from '../CA18-WhatsApp/SendOnWhatsApp';
 import '../_registration/registration.css';
 
 /**
  * Registration step panel — designs CA08b-Registered (saved, nothing sent),
  * CA08c-InProgress (ticks update live while he works through the link) and
- * CA08f-Active (every step green, 30 days running). Polls every 5 s until
- * the registration is complete.
+ * CA08f-Active (every step green, 30 days running). Rev 211: Consent →
+ * Selfie → Payment → ID check; paid with the ID check open shows "Paid,
+ * waiting for ID". Polls every 5 s until the registration is complete.
  */
 const NEXT_STEP_LABEL: Record<JobSeekerStatus['nextStep'], MessageKey> = {
   consent: 'reg.status.step.consent',
   selfie: 'reg.status.step.selfie',
   id_check: 'reg.status.step.idCheck',
   payment: 'reg.status.step.payment',
-  complete: 'reg.status.step.payment',
+  complete: 'reg.status.step.idCheck',
 };
 
 function time(step: Step) {
@@ -43,21 +42,17 @@ export default function RegistrationProgress() {
   const t = useT();
   const { id = '' } = useParams();
   const to = useScreenPath();
-  const toast = useToast();
   const queryClient = useQueryClient();
   const status = useJobSeekerStatus(id);
   const [sent, setSent] = useState<{ expiresAt: string } | null>(null);
   const [preview, setPreview] = useState(false);
 
-  const sendLink = useMutation({
-    mutationFn: () => api.post<{ expiresAt: string }>('/consent/links', { jobSeekerId: status.data!.id }),
-    onSuccess: (res) => {
-      setSent(res);
-      toast.success(t('reg.status.linkSentToast'));
-      void queryClient.invalidateQueries({ queryKey: qk.jobSeeker(id) });
-    },
-    onError: (e) => toast.error(isApiError(e) ? e.message : t('error.server')),
-  });
+  // Rev 211: "Send on WhatsApp" (SMS as backup) or "Send by SMS"; the line under the buttons says which carried it.
+  const sendLink = (channel: 'whatsapp' | 'sms') => api.post<{ expiresAt: string }>('/consent/links', { jobSeekerId: status.data!.id, channel });
+  const afterSend = (res: unknown) => {
+    setSent(res as { expiresAt: string });
+    void queryClient.invalidateQueries({ queryKey: qk.jobSeeker(id) });
+  };
 
   if (status.isLoading) {
     return (
@@ -97,7 +92,9 @@ export default function RegistrationProgress() {
   ]
     .filter(Boolean)
     .join(' · ');
-  const reachedPayment = [steps.consent, steps.selfie, steps.idCheck].every((step) => step.state === 'done');
+  // Rev 211: Consent → Selfie → Payment → ID check — payment no longer waits for the ID check.
+  const reachedPayment = [steps.consent, steps.selfie].every((step) => step.state === 'done');
+  const paidWaitingForId = s.stage === 'paid_waiting_id';
   const linkLiveUntil = sent?.expiresAt ?? s.registrationLinkExpiresAt;
   const anySent = Boolean(linkLiveUntil) || s.stage !== 'registered';
   const notSent = t('reg.status.notSent');
@@ -145,6 +142,10 @@ export default function RegistrationProgress() {
         <div className="ok" role="status">
           ✓ {t('reg.status.complete', { name: s.name })}
         </div>
+      ) : paidWaitingForId ? (
+        <div className="ok" role="status" data-testid="paid-waiting-id">
+          {t('reg.status.paidWaitingId', { name: s.name })}
+        </div>
       ) : linkLiveUntil ? (
         <div className="ok" role="status">
           ✓ {t('reg.status.linkSent', { phone: s.phone, until: formatDateTimeIST(linkLiveUntil) })}
@@ -185,8 +186,8 @@ export default function RegistrationProgress() {
             }
           />
           <StepRow state={steps.selfie.state} title={`2 · ${t('reg.status.step.selfie')}`} detail={plainDetail(steps.selfie, s.stage === 'active' ? '' : t('reg.status.selfieDone'))} />
-          <StepRow state={steps.idCheck.state} title={`3 · ${t('reg.status.step.idCheck')}`} detail={plainDetail(steps.idCheck, t('reg.status.idDone'))} />
-          <StepRow state={steps.payment.state} title={`4 · ${t('reg.status.step.payment')}`} detail={paymentDetail} />
+          <StepRow state={steps.payment.state} title={`3 · ${t('reg.status.step.payment')}`} detail={paymentDetail} />
+          <StepRow state={steps.idCheck.state} title={`4 · ${t('reg.status.step.idCheck')}`} detail={plainDetail(steps.idCheck, t('reg.status.idDone'))} />
         </ul>
 
         <div className="reg-actions" style={{ marginTop: 14 }}>
@@ -196,10 +197,11 @@ export default function RegistrationProgress() {
             </ButtonLink>
           ) : (
             <>
-              <Button variant="primary" onClick={() => sendLink.mutate()} loading={sendLink.isPending}>
-                {anySent ? t('reg.status.resendFrom', { step: t(NEXT_STEP_LABEL[s.nextStep]) }) : t('reg.status.sendLink')}
-              </Button>
-              <SendOnWhatsAppButton kind="registration" id={s.id} onSent={() => void queryClient.invalidateQueries({ queryKey: qk.jobSeeker(id) })} />
+              <SendLinkButtons
+                label={anySent ? t('reg.status.resendFrom', { step: t(NEXT_STEP_LABEL[s.nextStep]) }) : t('reg.status.sendLink')}
+                run={sendLink}
+                onSent={afterSend}
+              />
               {reachedPayment && steps.payment.state !== 'done' && (
                 <ButtonLink to={to('CA08e-OtherPayer', { id: s.id })}>{t('reg.status.otherNumber')}</ButtonLink>
               )}
@@ -225,10 +227,10 @@ export default function RegistrationProgress() {
             <strong>{t('reg.status.step.selfie')}</strong> — {t('reg.preview.selfie')}
           </li>
           <li>
-            <strong>{t('reg.status.step.idCheck')}</strong> — {t('reg.preview.id')}
+            <strong>{t('reg.status.step.payment')}</strong> — {t('reg.preview.payment')}
           </li>
           <li>
-            <strong>{t('reg.status.step.payment')}</strong> — {t('reg.preview.payment')}
+            <strong>{t('reg.status.step.idCheck')}</strong> — {t('reg.preview.id')}
           </li>
         </ol>
         <p className="muted">{t('reg.preview.note')}</p>

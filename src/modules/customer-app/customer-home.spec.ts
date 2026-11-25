@@ -17,7 +17,7 @@ describe('Job seeker Home: no business before the interview is booked', () => {
     vacancy: { locality: 'Jayanagar' },
   };
   const prisma = {
-    jobSeeker: { findUniqueOrThrow: jest.fn().mockResolvedValue({ code: 'JS-00001', name: 'Ravi Kumar', status: 'active', hitCount: 1, paymentReceivedAt: new Date('2026-11-20T06:00:00.000Z') }) },
+    jobSeeker: { findUniqueOrThrow: jest.fn().mockResolvedValue({ code: 'JS-00001', name: 'Ravi Kumar', status: 'active', hitCount: 1, paymentReceivedAt: new Date('2026-11-20T06:00:00.000Z'), guaranteeStartsAt: new Date('2026-11-20T06:00:00.000Z') }) },
     jobSeekerHit: { findFirst: jest.fn().mockResolvedValue(null) },
     consent: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) },
     payment: { findFirst: jest.fn().mockResolvedValue(null) },
@@ -62,7 +62,7 @@ describe('Job seeker Home: no business before the interview is booked', () => {
 
   it('after day 30 with no forfeit, the refund is due (status only)', async () => {
     prisma.interview.findFirst.mockResolvedValue(null);
-    prisma.jobSeeker.findUniqueOrThrow.mockResolvedValueOnce({ code: 'JS-00001', name: 'Ravi Kumar', status: 'active', hitCount: 0, paymentReceivedAt: new Date('2026-10-20T06:00:00.000Z') });
+    prisma.jobSeeker.findUniqueOrThrow.mockResolvedValueOnce({ code: 'JS-00001', name: 'Ravi Kumar', status: 'active', hitCount: 0, paymentReceivedAt: new Date('2026-10-20T06:00:00.000Z'), guaranteeStartsAt: new Date('2026-10-20T06:00:00.000Z') });
     const home = await service.jobSeekerHome(profile);
     expect(home.refund).toEqual(expect.objectContaining({ state: 'due' }));
     expect(home.guarantee.active).toBe(false);

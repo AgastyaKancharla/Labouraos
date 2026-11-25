@@ -129,7 +129,8 @@ describe('Phase 8: collection webhook (POST /payments/webhook) verifies the raw 
       expect(res.status).toBe(201);
       expect(res.body).toMatchObject({ received: true, status: 'succeeded', paymentId: payment.id });
       expect((await prisma.payment.findUniqueOrThrow({ where: { id: payment.id } })).status).toBe('succeeded');
-      expect((await prisma.jobSeeker.findUniqueOrThrow({ where: { id: seeker.id } })).status).toBe('active');
+      // Rev 211: paid with no ID check passed yet — "Paid, waiting for ID" (the payment was applied).
+      expect((await prisma.jobSeeker.findUniqueOrThrow({ where: { id: seeker.id } })).status).toBe('paid_waiting_id');
     });
 
     it('is still idempotent: the same genuine body twice is processed once', async () => {

@@ -104,6 +104,8 @@ export interface SeekerPage {
   row: SeekerRowState;
   hits: number;
   guarantee: GuaranteeDay | null;
+  /** Rev 211: paid, and the ID check has not passed — "Paid, waiting for ID" (older servers leave it out). */
+  paidWaitingForId?: boolean;
   nextInterviewAt: string | null;
   interviews: { id: string; code: string; startsAt: string; status: string; result: string | null; businessName: string; trade: string }[];
   placements: { id: string; code: string; status: string; joiningDate: string | null; businessName: string; trade: string }[];
@@ -115,5 +117,6 @@ const enc = encodeURIComponent;
 export const peopleApi = (api: ApiClient) => ({
   seekerPage: (ref: string) => api.get<SeekerPage>(`/field-work/job-seekers/${enc(ref)}/page`),
   /** "Send payment link": a new ₹499 request sent to his phone (POST /job-seekers/:id/resend-payment, the office's button). */
-  sendPaymentLink: (jobSeekerId: string) => api.post<{ paymentId?: string }>(`/job-seekers/${enc(jobSeekerId)}/resend-payment`, {}),
+  sendPaymentLink: (jobSeekerId: string, channel?: 'whatsapp' | 'sms') =>
+    api.post<{ paymentId?: string; sentBy?: 'whatsapp' | 'sms' | null }>(`/job-seekers/${enc(jobSeekerId)}/resend-payment`, channel ? { channel } : {}),
 });

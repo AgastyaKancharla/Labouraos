@@ -383,8 +383,10 @@ describe('Phase 11 Task 5: system contact attempts', () => {
     const preSweepAttempts = await prisma.contactAttempt.findMany({
       where: { jobSeekerId: seeker.id },
     });
-    expect(preSweepAttempts).toHaveLength(3);
+    // Rev 211: "we tried to call you" goes on WhatsApp and SMS together.
+    expect(preSweepAttempts).toHaveLength(4);
     expect(preSweepAttempts.filter((a) => a.channel === 'whatsapp')).toHaveLength(1);
+    expect(preSweepAttempts.filter((a) => a.channel === 'sms')).toHaveLength(1);
 
     // Run sweep: AM + PM unanswered plus the WhatsApp on the same day record the hit.
     const sweepResult = await sweepJob.evaluateNoPickups();
@@ -399,8 +401,8 @@ describe('Phase 11 Task 5: system contact attempts', () => {
     expect(updatedSeeker.hits).toHaveLength(1);
     expect(updatedSeeker.hits[0].reason).toBe('no_pickup');
 
-    // Check all 3 attempts (AM call, PM call, WhatsApp) are linked to the hit
-    expect(updatedSeeker.contactAttempts).toHaveLength(3);
+    // Check all 4 attempts (AM call, PM call, WhatsApp, SMS) are linked to the hit
+    expect(updatedSeeker.contactAttempts).toHaveLength(4);
     for (const att of updatedSeeker.contactAttempts) {
       expect(att.hitId).toBe(updatedSeeker.hits[0].id);
     }

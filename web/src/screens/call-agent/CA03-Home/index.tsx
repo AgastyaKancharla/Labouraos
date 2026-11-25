@@ -253,7 +253,7 @@ export default function CallAgentHome() {
 }
 
 const OUTCOMES = ['interested', 'accepted_offer', 'rejected_offer', 'callback_requested', 'not_interested', 'working_now', 'wrong_number', 'do_not_call', 'busy', 'switched_off', 'other'];
-const SEEKER_STATUSES = ['lead', 'consented', 'pending_activation', 'active', 'paused', 'deactivated', 'placed', 'closed', 'refunded'];
+const SEEKER_STATUSES = ['lead', 'consented', 'pending_activation', 'paid_waiting_id', 'active', 'paused', 'deactivated', 'placed', 'closed', 'refunded'];
 
 function doneTag(d: { kind: string; status: string; extra: string | null }, t: ReturnType<typeof useT>): string {
   if (d.kind === 'interview_booked' && d.extra) return t('ca.done.interviewOn', { date: formatDayMonthIST(d.extra) });

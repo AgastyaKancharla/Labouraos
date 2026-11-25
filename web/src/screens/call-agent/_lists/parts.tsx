@@ -1,3 +1,4 @@
+import { sentResultKey, type SendChannel } from '../../../components/SendLinkButtons';
 import { useEffect, useId, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -64,14 +65,25 @@ export function WaitingMark() {
  * link, Send agreement link…); `to` opens the screen that does it (Add vacancy, Book interview).
  * A refusal shows the server's own words (a do-not-call block, a one-a-minute limit).
  */
-export function RowAction({ label, name, run, to, testId }: { label: string; name: string; run?: () => Promise<unknown>; to?: string; testId?: string }) {
+/**
+ * A row's one button. `to` opens a screen; `send` sends a link (rev 211): the button sends on
+ * WhatsApp first (SMS as backup) and the small "by SMS" under it sends by SMS only; the toast
+ * says which channel carried it. `run` is a plain action.
+ */
+export function RowAction({ label, name, run, send, to, testId }: { label: string; name: string; run?: () => Promise<unknown>; send?: (channel: SendChannel) => Promise<unknown>; to?: string; testId?: string }) {
   const t = useT();
   const toast = useToast();
   const queryClient = useQueryClient();
-  const send = useMutation({
-    mutationFn: () => run!(),
-    onSuccess: () => {
-      toast.success(t('cl.sentToast', { name }));
+  const action = useMutation({
+    mutationFn: (channel: SendChannel | null) => (channel && send ? send(channel) : run!()),
+    onSuccess: (res, channel) => {
+      if (channel) {
+        const key = sentResultKey(channel, res);
+        if (key === 'send.result.none') toast.error(t(key));
+        else toast.success(`${t('cl.sentToast', { name })} ${t(key)}`);
+      } else {
+        toast.success(t('cl.sentToast', { name }));
+      }
       // The row's status line, the Home lists and the profile box follow the new state.
       void queryClient.invalidateQueries({ queryKey: ['call-work'] });
       void queryClient.invalidateQueries({ queryKey: ['profile-stuck'] });
@@ -90,16 +102,21 @@ export function RowAction({ label, name, run, to, testId }: { label: string; nam
       <button
         type="button"
         className="btn bp lb-btn lb-cl-btn"
-        disabled={send.isPending || send.isSuccess}
-        aria-busy={send.isPending}
-        onClick={() => send.mutate()}
+        disabled={action.isPending || action.isSuccess}
+        aria-busy={action.isPending}
+        onClick={() => action.mutate(send ? 'whatsapp' : null)}
         data-testid={testId}
       >
-        {send.isSuccess ? t('cl.sent') : send.isPending ? '…' : label}
+        {action.isSuccess ? t('cl.sent') : action.isPending ? '…' : label}
       </button>
-      {send.isError && (
+      {send && !action.isSuccess && (
+        <button type="button" className="lb-send__sms" disabled={action.isPending} onClick={() => action.mutate('sms')}>
+          {t('send.bySms')}
+        </button>
+      )}
+      {action.isError && (
         <span className="lb-cl-error" role="alert">
-          {isApiError(send.error) ? send.error.message : t('error.server')}
+          {isApiError(action.error) ? action.error.message : t('error.server')}
         </span>
       )}
     </span>

@@ -48,6 +48,9 @@ import { isRuleBasedRefund, recordRefundRejection, refundLockKey } from '../refu
 import { markJobSeekerRefunded } from '../job-seeker/job-seeker-refunded';
 import { CustomerNotificationHooks } from '../customer-notification/customer-notification-hooks.service';
 import { loadStandingWithdrawals } from '../consent/consent-withdrawal-state';
+import { PAID_WAITING_ID_REASON, statusAfterPayment } from '../job-seeker/guarantee-start';
+import { PAID_WAITING_ID } from '../job-seeker/job-seeker.status';
+import { JobSeekerFlowEvents } from '../job-seeker/job-seeker-flow-events';
 
 /** What the bank feed webhook reports back for one credit. */
 export interface BankFeedWebhookResult {
@@ -101,6 +104,7 @@ export class PaymentService {
     @Optional() publicLinkStore?: PublicLinkStoreService,
     @Optional() private readonly monthLocks?: MonthLockService,
     @Optional() private readonly customerNotifications?: CustomerNotificationHooks,
+    @Optional() private readonly flowEvents?: JobSeekerFlowEvents,
   ) {
     this.publicLinks = publicLinkStore ?? new PublicLinkStoreService(prisma);
   }
@@ -407,10 +411,14 @@ export class PaymentService {
         ? await openBanReview(tx, 'job_seeker', payment.jobSeekerId)
         : null;
       if (payment.type === 'activation' && payment.jobSeekerId && !bannedActivation && !reviewActivation) {
+        // Rev 211 (25 Nov): Consent → Selfie → Payment → ID check. With his ID already passed (a field
+        // agent scanned it in person, or he comes back after a refund) he is active and the 30 days
+        // start now; otherwise he is "paid, waiting for ID": no matching, no hits, no clock.
+        const afterPayment = await statusAfterPayment(tx, payment.jobSeekerId, confirmedAt);
         updatedSeeker = await tx.jobSeeker.update({
           where: { id: payment.jobSeekerId },
           data: {
-            status: 'active', paymentReceivedAt: confirmedAt,
+            status: afterPayment.status, paymentReceivedAt: confirmedAt, guaranteeStartsAt: afterPayment.guaranteeStartsAt,
             hitCount: payment.reactivation ? 0 : (payment.jobSeeker?.hitCount ?? 0),
           },
         });
@@ -423,9 +431,12 @@ export class PaymentService {
         }
         await recordStatusChange(tx, {
           subjectType: 'job_seeker', subjectId: payment.jobSeekerId,
-          fromStatus: payment.jobSeeker?.status ?? null, toStatus: 'active',
+          fromStatus: payment.jobSeeker?.status ?? null, toStatus: updatedSeeker.status,
           changedByStaffId: confirmedByStaffId ?? null,
-          reason: payment.reactivation ? 'reactivated_via_payment' : 'activated_via_payment', changedAt: confirmedAt,
+          reason: updatedSeeker.status === PAID_WAITING_ID
+            ? PAID_WAITING_ID_REASON
+            : payment.reactivation ? 'reactivated_via_payment' : 'activated_via_payment',
+          changedAt: confirmedAt,
         });
       }
 
@@ -542,21 +553,30 @@ export class PaymentService {
           status: transition.payment.jobSeeker.status,
           hitCount: transition.payment.jobSeeker.hitCount,
           paymentReceivedAt: transition.payment.jobSeeker.paymentReceivedAt,
+          guaranteeStartsAt: transition.payment.jobSeeker.guaranteeStartsAt,
         } : null,
         after: {
           status: transition.updatedSeeker.status, hitCount: transition.updatedSeeker.hitCount,
           paymentReceivedAt: transition.updatedSeeker.paymentReceivedAt,
+          guaranteeStartsAt: transition.updatedSeeker.guaranteeStartsAt,
           reactivation: transition.payment.reactivation,
         }, city: transition.updatedSeeker.city,
       });
       const paymentReceiptLink = receiptLink(paymentId);
-      await Promise.all((['sms', 'whatsapp'] as const).map((channel) => this.messagingService.send({
-        channel, template: 'payment_receipt', subjectType: 'job_seeker',
+      // WhatsApp first, SMS as backup (rev 211).
+      await this.messagingService.sendPreferWhatsApp({
+        template: 'payment_receipt', subjectType: 'job_seeker',
         subjectId: transition.updatedSeeker!.id, relatedType: 'payment', relatedId: paymentId,
         variables: { link: paymentReceiptLink },
-      })));
+      });
       // Customer app notification (Agent C): extra to the SMS/WhatsApp above; never a contact attempt.
       await this.customerNotifications?.jobSeekerPaymentConfirmed(paymentId);      await this.flagPaidPastIdGate(paymentId, transition.updatedSeeker);
+      // Rev 211: "payment received, only your ID check is left" — or "your 30 days have started".
+      await this.flowEvents?.paid({
+        jobSeekerId: transition.updatedSeeker.id, paymentId,
+        guaranteeStarted: transition.updatedSeeker.status === 'active' && Boolean(transition.updatedSeeker.guaranteeStartsAt),
+        now: confirmedAt,
+      });
     }
     if (transition.placementTransition) {
       const { placement, invoiceCode } = transition.placementTransition;
@@ -571,18 +591,20 @@ export class PaymentService {
         const joiningDate = new Intl.DateTimeFormat('en-IN', {
           timeZone: 'Asia/Kolkata', dateStyle: 'medium',
         }).format(placement.joiningDate);
-        await Promise.all((['sms', 'whatsapp'] as const).map((channel) => this.messagingService.send({
-          channel, template: 'joining_confirmed', subjectType: 'job_seeker',
+        const business = await this.prisma.business.findUnique({ where: { id: placement.businessId }, select: { name: true } });
+        // WhatsApp first, SMS as backup (rev 211); the same variables as every joining_confirmed.
+        await this.messagingService.sendPreferWhatsApp({
+          template: 'joining_confirmed', subjectType: 'job_seeker',
           subjectId: placement.jobSeekerId, relatedType: 'placement', relatedId: placement.id,
-          variables: { joiningDate },
-        })));
+          variables: { candidateName: placement.jobSeeker.name, businessName: business?.name ?? 'the business', joiningDate },
+        });
       }
       const placementInvoiceLink = invoiceLink(placement.id);
-      await Promise.all((['sms', 'whatsapp'] as const).map((channel) => this.messagingService.send({
-        channel, template: 'placement_invoice', subjectType: 'business',
+      await this.messagingService.sendPreferWhatsApp({
+        template: 'placement_invoice', subjectType: 'business',
         subjectId: placement.businessId, relatedType: 'placement', relatedId: placement.id,
         variables: { link: placementInvoiceLink, invoiceCode },
-      })));
+      });
       // Customer app notification (Agent C): extra to the SMS/WhatsApp above; never a contact attempt.
       await this.customerNotifications?.placementFeePaid(paymentId);
     }
@@ -1609,8 +1631,8 @@ export class PaymentService {
       phone, expiresAt, metadata: { ownerName },
     });
 
-    await this.messagingService.send({
-      channel: 'sms',
+    // WhatsApp first, SMS as backup (rev 211).
+    await this.messagingService.sendPreferWhatsApp({
       template: 'payout_details_link',
       subjectType: ownerType,
       subjectId: ownerId,
@@ -1761,6 +1783,7 @@ export class PaymentService {
           {
             code: jobSeeker.code,
             paymentReceivedAt: jobSeeker.paymentReceivedAt,
+            guaranteeStartsAt: jobSeeker.guaranteeStartsAt,
             status: jobSeeker.status,
             hasOfferRejectedHit: guards.hasOfferRejectedHit,
             hasExistingRefund: false,
@@ -2052,7 +2075,8 @@ export class PaymentService {
                 if (kind === 'replacement_cancelled') await this.customerNotifications!.upgradeCancelled(row);
               }
             : undefined,
-          sms: (m) => this.messagingService.send({ channel: 'sms', template: m.template, subjectType: m.subjectType, subjectId: m.subjectId, relatedType: 'placement', relatedId: m.relatedId, variables: m.variables }),
+          // WhatsApp first, SMS as backup (rev 211).
+          sms: (m) => this.messagingService.sendPreferWhatsApp({ template: m.template, subjectType: m.subjectType, subjectId: m.subjectId, relatedType: 'placement', relatedId: m.relatedId, variables: m.variables }),
         },
         row,
         { auditActorId: actorId, automatic: false, reason: 'The guarantee ended with a refund' },

@@ -142,7 +142,7 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
         name: 'Approaching Candidate',
         phone: '+919900000001',
         tradeSkill: 'Electrician',
-        paymentReceivedAt: new Date(fixedNow.getTime() - 15 * 24 * 60 * 60 * 1000), // 15 days ago -> 15 days left
+        paymentReceivedAt: new Date(fixedNow.getTime() - 15 * 24 * 60 * 60 * 1000), guaranteeStartsAt: new Date(fixedNow.getTime() - 15 * 24 * 60 * 60 * 1000), // 15 days ago -> 15 days left
         status: 'active',
         registeredByStaffId: mockCallAgentId,
         registeredBy: { id: mockCallAgentId, code: 'CA-00001', name: 'Call Agent 1' },
@@ -156,7 +156,7 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
         name: 'Far Away Candidate',
         phone: '+919900000002',
         tradeSkill: 'Plumber',
-        paymentReceivedAt: new Date(fixedNow.getTime() - 14 * 24 * 60 * 60 * 1000), // 14 days ago -> 16 days left
+        paymentReceivedAt: new Date(fixedNow.getTime() - 14 * 24 * 60 * 60 * 1000), guaranteeStartsAt: new Date(fixedNow.getTime() - 14 * 24 * 60 * 60 * 1000), // 14 days ago -> 16 days left
         status: 'active',
         registeredByStaffId: mockCallAgentId,
         registeredBy: { id: mockCallAgentId, code: 'CA-00001', name: 'Call Agent 1' },
@@ -185,7 +185,7 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
         city: 'Bengaluru',
         name: 'Candidate',
         phone: '+919900000009',
-        paymentReceivedAt: new Date(fixedNow.getTime() - daysAgo * 24 * 60 * 60 * 1000),
+        paymentReceivedAt: new Date(fixedNow.getTime() - daysAgo * 24 * 60 * 60 * 1000), guaranteeStartsAt: new Date(fixedNow.getTime() - daysAgo * 24 * 60 * 60 * 1000),
         status: 'active',
         registeredByStaffId: mockCallAgentId,
         registeredBy: { id: mockCallAgentId, code: 'CA-00001', name: 'Call Agent 1' },
@@ -204,7 +204,7 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
           city: 'Bengaluru',
           name: 'Offered',
           phone: '+919900000010',
-          paymentReceivedAt: paidAt,
+          paymentReceivedAt: paidAt, guaranteeStartsAt: paidAt,
           status: 'active',
           registeredByStaffId: mockCallAgentId,
           registeredBy: { id: mockCallAgentId, code: 'CA-00001', name: 'Call Agent 1' },
@@ -215,7 +215,7 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
           city: 'Bengaluru',
           name: 'Offer before paying again',
           phone: '+919900000011',
-          paymentReceivedAt: paidAt,
+          paymentReceivedAt: paidAt, guaranteeStartsAt: paidAt,
           status: 'active',
           registeredByStaffId: mockCallAgentId,
           registeredBy: { id: mockCallAgentId, code: 'CA-00001', name: 'Call Agent 1' },
@@ -238,7 +238,7 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
         name: 'Past Deadline',
         phone: '+919900000003',
         tradeSkill: 'Welder',
-        paymentReceivedAt: new Date(fixedNow.getTime() - 35 * 24 * 60 * 60 * 1000),
+        paymentReceivedAt: new Date(fixedNow.getTime() - 35 * 24 * 60 * 60 * 1000), guaranteeStartsAt: new Date(fixedNow.getTime() - 35 * 24 * 60 * 60 * 1000),
         status: 'active',
         registeredByStaffId: mockCallAgentId,
         registeredBy: { id: mockCallAgentId, code: 'CA-00001', name: 'Call Agent 1' },
@@ -261,7 +261,7 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
         name: 'Rejected Candidate',
         phone: '+919900000004',
         tradeSkill: 'Painter',
-        paymentReceivedAt: new Date(fixedNow.getTime() - 25 * 24 * 60 * 60 * 1000), // 5 days left
+        paymentReceivedAt: new Date(fixedNow.getTime() - 25 * 24 * 60 * 60 * 1000), guaranteeStartsAt: new Date(fixedNow.getTime() - 25 * 24 * 60 * 60 * 1000), // 5 days left
         status: 'active',
         registeredByStaffId: mockCallAgentId,
         registeredBy: { id: mockCallAgentId, code: 'CA-00001', name: 'Call Agent 1' },
@@ -281,14 +281,14 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
         id: 'js-placed',
         code: 'JS-PLACED',
         city: 'Bengaluru',
-        paymentReceivedAt: new Date(fixedNow.getTime() - 25 * 24 * 60 * 60 * 1000),
+        paymentReceivedAt: new Date(fixedNow.getTime() - 25 * 24 * 60 * 60 * 1000), guaranteeStartsAt: new Date(fixedNow.getTime() - 25 * 24 * 60 * 60 * 1000),
         status: 'placed',
       };
       const candidateRefunded = {
         id: 'js-refunded',
         code: 'JS-REF',
         city: 'Bengaluru',
-        paymentReceivedAt: new Date(fixedNow.getTime() - 25 * 24 * 60 * 60 * 1000),
+        paymentReceivedAt: new Date(fixedNow.getTime() - 25 * 24 * 60 * 60 * 1000), guaranteeStartsAt: new Date(fixedNow.getTime() - 25 * 24 * 60 * 60 * 1000),
         status: 'active',
       };
 
@@ -473,7 +473,7 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
         name: 'Four Days',
         phone: '+919900000004',
         tradeSkill: 'Electrician',
-        paymentReceivedAt: new Date(fixedNow.getTime() - 26 * 24 * 60 * 60 * 1000),
+        paymentReceivedAt: new Date(fixedNow.getTime() - 26 * 24 * 60 * 60 * 1000), guaranteeStartsAt: new Date(fixedNow.getTime() - 26 * 24 * 60 * 60 * 1000),
         status: 'active',
         registeredByStaffId: mockCallAgentId,
       };
@@ -563,7 +563,7 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
       prismaMock.jobSeeker.findMany.mockResolvedValue([
         {
           id: 'js-near', code: 'JS-00042', city: 'Bengaluru', name: 'Near Refund', phone: '+919900000042',
-          paymentReceivedAt: new Date(fixedNow.getTime() - 27 * DAY), status: 'active',
+          paymentReceivedAt: new Date(fixedNow.getTime() - 27 * DAY), guaranteeStartsAt: new Date(fixedNow.getTime() - 27 * DAY), status: 'active',
           registeredByStaffId: mockCallAgentId, registeredBy: { id: mockCallAgentId, code: 'CA-00001', name: 'Call Agent 1' },
         },
       ]);
@@ -692,7 +692,7 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
         name: 'Candidate',
         phone: '+919900000001',
         tradeSkill: 'Electrician',
-        paymentReceivedAt: paidAt,
+        paymentReceivedAt: paidAt, guaranteeStartsAt: paidAt,
         status: 'active',
         registeredByStaffId: mockCallAgentId,
         registeredBy: { id: mockCallAgentId, code: 'CA-00001', name: 'Call Agent 1' },

@@ -363,6 +363,7 @@ describe('Pricing & Policy Module (Phase 9 Task 2)', () => {
         preferredCallWindowEnd: '18:00',
         status: 'active',
         paymentReceivedAt,
+        guaranteeStartsAt: paymentReceivedAt,
         city: 'Bengaluru',
       },
     });
@@ -406,6 +407,7 @@ describe('Pricing & Policy Module (Phase 9 Task 2)', () => {
         preferredCallWindowEnd: '18:00',
         status: 'active',
         paymentReceivedAt,
+        guaranteeStartsAt: paymentReceivedAt,
         city: 'Bengaluru',
       },
     });

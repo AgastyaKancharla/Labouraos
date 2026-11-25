@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { VISIT_PURPOSE_BUSINESS_SIGNUP } from '../../common/customer-auth/customer-app.constants';
+import { isHouseholdBusiness } from '../business/business-auto-check.service';
 import {
   StageResult,
   businessStage,
@@ -38,16 +39,17 @@ export class SignupFactsService {
     const [seeker, consents, idv, payments] = await Promise.all([
       this.prisma.jobSeeker.findUnique({
         where: { id },
-        select: { photoStoragePath: true, guaranteeFloorPaise: true, paymentReceivedAt: true },
+        select: { photoStoragePath: true, guaranteeFloorPaise: true, paymentReceivedAt: true, guaranteeStartsAt: true, status: true },
       }),
       this.prisma.consent.findMany({
         where: { subjectType: 'job_seeker', subjectId: id, granted: true, withdrawnAt: null },
         select: { purpose: true },
       }),
-      this.prisma.identityVerification.findFirst({
+      this.prisma.identityVerification.findMany({
         where: { jobSeekerId: id },
         orderBy: { createdAt: 'desc' },
-        select: { status: true },
+        select: { status: true, nameMatches: true, isAdult: true },
+        take: 20,
       }),
       this.prisma.payment.findMany({ where: { jobSeekerId: id, type: 'activation' }, select: { status: true } }),
     ]);
@@ -56,17 +58,19 @@ export class SignupFactsService {
     return seekerStage({
       consentDone: SEEKER_REQUIRED_CONSENTS.every((p) => given.has(p)),
       selfie: Boolean(seeker.photoStoragePath),
-      idVerified: idv?.status === 'verified',
-      idFailed: idv?.status === 'failed',
+      // Any passed check counts (the same rule as the journey); the latest says whether one failed.
+      idVerified: idv.some((v) => v.status === 'verified' && v.nameMatches === true && v.isAdult === true),
+      idFailed: idv[0]?.status === 'failed',
       termsAgreed: seeker.guaranteeFloorPaise !== null,
       paymentFailures: payments.filter((p) => p.status === 'failed').length,
       paid: seeker.paymentReceivedAt !== null,
+      guaranteeStarted: seeker.guaranteeStartsAt !== null,
     });
   }
 
   private async business(id: string): Promise<StageResult> {
     const [business, agreement, visits] = await Promise.all([
-      this.prisma.business.findUnique({ where: { id }, select: { verificationStatus: true } }),
+      this.prisma.business.findUnique({ where: { id }, select: { verificationStatus: true, businessType: true, autoCheckStatus: true } }),
       this.prisma.businessAgreement.findFirst({ where: { businessId: id }, select: { id: true } }),
       this.prisma.visitAssignment.findMany({
         where: { businessId: id, purpose: { in: ['verification', VISIT_PURPOSE_BUSINESS_SIGNUP] }, status: { not: 'cancelled' } },
@@ -76,6 +80,8 @@ export class SignupFactsService {
     if (!business) return noRecordStage('business');
     const status = business.verificationStatus ?? 'lead';
     return businessStage({
+      household: isHouseholdBusiness(business.businessType),
+      autoCheckFailed: business.autoCheckStatus === 'failed',
       agreementSigned: Boolean(agreement),
       visitBooked: visits.some((v) => v.status === 'assigned' || v.status === 'done'),
       visitRequested: visits.some((v) => v.status === 'pending'),

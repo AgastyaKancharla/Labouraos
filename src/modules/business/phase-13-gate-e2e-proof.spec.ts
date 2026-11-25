@@ -15,6 +15,7 @@ import { JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } from '../consent/consent.constan
 import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 import { confirmVacancyForTest } from '../../test-support/confirm-vacancy';
 import { jobSeekerTermsHash } from '../../test-support/terms-hash';
+import { seedOwnerPhotos } from '../../test-support/owner-photos';
 
 class Phase13GateClock extends BusinessClock {
   nowValue = new Date();
@@ -140,6 +141,13 @@ describe('Phase 13 gate — complete verification and consent journeys', () => {
     await request(server).post(`/businesses/${businessId}/visit-assignments/${assignmentResponse.body.id}/assign`)
       .set('Authorization', `Bearer ${lead.token}`).send({ assignedStaffId: visitingAgent.staff.id }).expect(201);
 
+    // Rev 211: links are sent by agents (Team Leads keep the view, no send buttons): the visiting
+    // field agent sends the agreement link during the visit.
+    await request(server).post(`/businesses/${businessId}/agreement-links`)
+      .set('Authorization', `Bearer ${lead.token}`).send({ language: 'en' }).expect(403);
+    const { token: agreementLinkToken } = await withIssuedLinkToken(app, () => request(server).post(`/businesses/${businessId}/agreement-links`)
+      .set('Authorization', `Bearer ${visitingAgent.token}`).send({ language: 'en' }).expect(201));
+
     const ownerPresenceOtp = await request(server)
       .post(`/businesses/${businessId}/visit-assignments/${assignmentResponse.body.id}/owner-otp`)
       .set('Authorization', `Bearer ${visitingAgent.token}`).send({}).expect(201);
@@ -159,8 +167,7 @@ describe('Phase 13 gate — complete verification and consent journeys', () => {
     expect(visitResponse.body.ownerOtpRequestId).toBe(ownerPresenceOtp.body.requestId);
     expect(visitResponse.body.photoLive).toBe(false);
 
-    const { token: agreementLinkToken } = await withIssuedLinkToken(app, () => request(server).post(`/businesses/${businessId}/agreement-links`)
-      .set('Authorization', `Bearer ${lead.token}`).send({ language: 'en' }).expect(201));
+    await seedOwnerPhotos(prisma, businessId);
     const signingOtp = await request(server).post('/consent/send-otp')
       .send({ token: agreementLinkToken }).expect(201);
     const signingCode = provider.getCode(signingOtp.body.requestId)!;

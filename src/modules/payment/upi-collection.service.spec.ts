@@ -1,3 +1,4 @@
+import { withSendingRules } from '../../test-support/messaging-double';
 import jsQR from 'jsqr';
 import { PAY_PAGE_DAYS_AFTER_PAYMENT, payPageTokenFor, payPageTokenHash } from './pay-page-token';
 import { Prisma } from '@prisma/client';
@@ -41,7 +42,7 @@ describe('UpiCollectionService', () => {
     identityVerification: { findFirst: identityFindFirst },
   } as unknown as PrismaService;
   const idService = { generateCode: jest.fn().mockResolvedValue('PAY-00042') } as unknown as IdService;
-  const messaging = { send } as unknown as MessagingService;
+  const messaging = withSendingRules({ send }) as unknown as MessagingService;
   const service = new UpiCollectionService(prisma, idService, messaging);
 
   beforeEach(() => {
@@ -97,7 +98,9 @@ describe('UpiCollectionService', () => {
     expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ method: 'upi_direct', gatewayReference: null }),
     }));
-    expect(send).toHaveBeenCalledTimes(2);
+    // One message, WhatsApp first; the SMS goes only as its backup (rev 211).
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ channel: 'whatsapp', template: 'payment_request' }));
   });
 
   it('reuses the same pending obligation and UPI reference when re-sending', async () => {
@@ -114,15 +117,16 @@ describe('UpiCollectionService', () => {
     expect(resent.paymentLink).toBe(first.paymentLink);
   });
 
-  it('does not send a ₹499 again past an under-18 stop or without a verified ID (L-5)', async () => {
+  it('does not send a ₹499 again past an under-18 stop; no verified ID is needed any more (L-5, rev 211)', async () => {
     findUnique.mockResolvedValue(payment);
     identityFindFirst.mockImplementation(async (args: { where: Record<string, unknown> }) => ('under18LiftedAt' in args.where ? { id: 'stop-1' } : { id: 'idv-1' }));
     await expect(service.resendRequest(payment.id)).rejects.toThrow(/under 18/i);
-    identityFindFirst.mockResolvedValue(null);
-    await expect(service.resendRequest(payment.id)).rejects.toThrow('Finish the ID check first');
-    identityFindFirst.mockImplementation(async (args: { where: Record<string, unknown> }) => (args.where.status === 'pending' ? { id: 'p-1' } : null));
-    await expect(service.resendRequest(payment.id)).rejects.toThrow(/Team Lead/);
     expect(send).not.toHaveBeenCalled();
+    // Rev 211: Consent → Selfie → Payment → ID check — no ID check yet, or one waiting for the Team Lead, does not stop it.
+    identityFindFirst.mockResolvedValue(null);
+    await expect(service.resendRequest(payment.id)).resolves.toMatchObject({ paymentId: payment.id });
+    identityFindFirst.mockImplementation(async (args: { where: Record<string, unknown> }) => (args.where.status === 'pending' ? { id: 'p-1' } : null));
+    await expect(service.resendRequest(payment.id)).resolves.toMatchObject({ paymentId: payment.id });
     // A placement fee isn't an activation: no ID gate.
     findUnique.mockResolvedValue({ ...payment, type: 'placement_fee', jobSeekerId: null, businessId: 'biz-1' });
     await expect(service.resendRequest(payment.id)).resolves.toMatchObject({ paymentId: payment.id });
@@ -153,11 +157,14 @@ describe('UpiCollectionService', () => {
       expect(await service.getPublicSummary(payment.upiReference)).toMatchObject({ state: 'closed', stopped: true, pay: null });
     });
 
-    it('no UPI reference hint either, and without a verified ID the same', async () => {
+    it('no UPI reference hint either after an under-18 stop; without a verified ID it is saved (rev 211: payment before the ID check)', async () => {
       findUnique.mockResolvedValue(payment);
-      identityFindFirst.mockResolvedValue(null);
+      stoppedForUnder18();
       await expect(service.saveUtrHint(payment.upiReference, '123456789012')).rejects.toThrow(/can't go ahead/);
       expect(update).not.toHaveBeenCalled();
+      findUnique.mockResolvedValue(payment);
+      identityFindFirst.mockResolvedValue(null);
+      await expect(service.saveUtrHint(payment.upiReference, '123456789012')).resolves.toMatchObject({ saved: true });
     });
 
     it('a verified ID and no stop: the page works; a placement fee is never asked', async () => {

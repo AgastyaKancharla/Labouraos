@@ -104,7 +104,7 @@ describe('a save in the redesign refreshes the lists that show it (A1)', () => {
     await waitFor(() => screen.getByTestId('fa10d-seeker-js-uuid'));
     expect(screen.getByTestId('fa10d-seeker-js-uuid-status')).toHaveTextContent('Registration link not sent');
     await waitFor(() => screen.getByTestId('send-link'));
-    await fireEvent.press(screen.getByTestId('send-link'));
+    await fireEvent.press(screen.getByTestId('send-link-whatsapp'));
     await waitFor(() => expect(screen.getByTestId('fa10d-seeker-js-uuid-status')).toHaveTextContent('Link not finished'));
   });
 });

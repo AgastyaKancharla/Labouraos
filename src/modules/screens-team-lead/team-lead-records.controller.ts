@@ -124,6 +124,20 @@ export class TeamLeadRecordsController {
     return this.sections.visitPhotos(await this.scope(req), id, visitId);
   }
 
+  /** 25 Nov (rev 211, B3/B4): T-Checks — every business and vacancy waiting for his check, with the reasons. */
+  @Get('business-checks')
+  @RequireRoles('team_lead')
+  async businessChecks(@Req() req: Authed) {
+    return this.sections.businessChecks(await this.scope(req), true);
+  }
+
+  /** 25 Nov (rev 211, B1): the owner's live selfie and shop photo (short-lived private links, audited). */
+  @Get('businesses/:id/owner-photos')
+  @RequireRoles('team_lead')
+  async ownerPhotos(@Req() req: Authed, @Param('id') id: string) {
+    return this.sections.ownerPhotos(await this.scope(req), id);
+  }
+
   @Get('vacancies')
   @RequireRoles('team_lead')
   async vacancies(@Req() req: Authed, @Query() q: Q) {

@@ -61,7 +61,7 @@ describe('FA10e the job seeker profile (Laboura Field lists, 22 Nov evening)', (
     expect(screen.getByTestId('fa10e-step-consent')).toHaveTextContent(/^✓Consent/);
     expect(screen.getByTestId('fa10e-step-idCheck')).toHaveTextContent(/^…ID check/);
     expect(screen.getByTestId('fa10e-details')).toHaveTextContent(/Also.*Helper.*Age.*27.*Speaks.*Kannada, Telugu.*Last job.*Cook · Udupi Hotel.*by you/);
-    expect(screen.getByTestId('fa10e-guarantee')).toHaveTextContent(/Starts when he pays/);
+    expect(screen.getByTestId('fa10e-guarantee')).toHaveTextContent(/Starts when he has paid and his ID is verified/);
     expect(screen.getByTestId('fa10e-history')).toHaveTextContent(/ID sent for checking.*Consent given.*Registration link sent.*Registered/);
     // No rupee amounts on the profile.
     expect(screen.queryByText(/₹/)).toBeNull();
@@ -77,8 +77,9 @@ describe('FA10e the job seeker profile (Laboura Field lists, 22 Nov evening)', (
     const { calls } = await render(atId);
     await waitFor(() => screen.getByTestId('fa10e-scan'));
     expect(screen.getByTestId('fa10e-other-id')).toHaveTextContent('Photo of another ID');
-    await fireEvent.press(screen.getByTestId('fa10e-resend'));
-    await waitFor(() => expect(calls).toContainEqual({ method: 'POST', path: '/consent/links', body: { jobSeekerId: 'js-uuid' } }));
+    // Rev 211: "Send on WhatsApp" (SMS as backup) or the small "Send by SMS".
+    await fireEvent.press(screen.getByTestId('fa10e-resend-whatsapp'));
+    await waitFor(() => expect(calls).toContainEqual({ method: 'POST', path: '/consent/links', body: { jobSeekerId: 'js-uuid', channel: 'whatsapp' } }));
     await fireEvent.press(screen.getByTestId('fa10e-scan'));
     await waitFor(() => screen.getByTestId('aadhaar-scan'));
   });
@@ -100,9 +101,9 @@ describe('FA10e the job seeker profile (Laboura Field lists, 22 Nov evening)', (
     const { calls } = await render(atPayment);
     await waitFor(() => screen.getByTestId('fa10e-payment-link'));
     expect(screen.getByTestId('fa10e-stuck')).toHaveTextContent(/Stuck at payment/);
-    await fireEvent.press(screen.getByTestId('fa10e-payment-link'));
-    await waitFor(() => expect(calls).toContainEqual({ method: 'POST', path: '/job-seekers/js-uuid/resend-payment', body: {} }));
-    await waitFor(() => expect(screen.getByTestId('fa10e-payment-link')).toHaveTextContent('Sent ✓'));
+    await fireEvent.press(screen.getByTestId('fa10e-payment-link-sms'));
+    await waitFor(() => expect(calls).toContainEqual({ method: 'POST', path: '/job-seekers/js-uuid/resend-payment', body: { channel: 'sms' } }));
+    await waitFor(() => expect(screen.getByTestId('fa10e-payment-link')).toHaveTextContent(/Sent ✓/));
   });
 
   it('paid and placed: "All done", Day X of 30, hits, interviews and placements; no registration buttons', async () => {

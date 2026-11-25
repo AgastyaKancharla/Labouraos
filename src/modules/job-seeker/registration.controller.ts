@@ -1,3 +1,4 @@
+import { otpChannel } from '../../common/otp/otp.controller';
 import {
   BadRequestException,
   Body,
@@ -11,6 +12,7 @@ import {
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { PublicLinkStoreService } from '../../common/public-link-store.service';
 import { OtpService } from '../../common/otp/otp.service';
@@ -196,11 +198,12 @@ export class RegistrationController {
 
   @Post('payment/:token/send-otp')
   @Public('token page: the job seeker, business or partner proves who they are with the link token')
-  async sendPaymentOnlyOtp(@Param('token') token: string) {
+  async sendPaymentOnlyOtp(@Param('token') token: string, @Body('channel') channel?: unknown) {
     const link = await this.requirePaymentLink(token);
     await this.otpLimiter.claimSend(this.publicLinks.hashToken(token), link.phone!);
     // AC-3: a code bound to this payment link; staff-sent codes are never accepted on it.
-    const result = await this.otp.sendPublicPageOtp(link.phone!, token);
+    // "Send by SMS" (rev 211) after 30 seconds; otherwise WhatsApp first.
+    const result = await this.otp.sendPublicPageOtp(link.phone!, token, otpChannel(channel));
     return { success: true, requestId: result.requestId, phone: maskPhone(link.phone!), resendAvailableAt: result.resendAvailableAt, ...testModeFields(result) };
   }
 
@@ -210,6 +213,9 @@ export class RegistrationController {
   async verifyPaymentOnlyOtp(@Param('token') token: string, @Body() body: { requestId?: string; code?: string }) {
     const link = await this.requirePaymentLink(token);
     await this.verifyCode(body, link.phone!, token);
+    // Rev 211: the payer proved this number on the link — a refund of this ₹499 goes back to him.
+    const payerMetadata = Object.assign({}, (link.metadata ?? {}) as Prisma.InputJsonObject, { payerVerifiedAt: new Date().toISOString() });
+    await this.prisma.publicLink.update({ where: { id: link.id }, data: { metadata: payerMetadata } });
     return this.paymentOnlyDetails(link);
   }
 

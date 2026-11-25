@@ -84,7 +84,7 @@ function Selected({ interview: i }: { interview: InterviewView }) {
                 sendLabel={t('fa15s.sendOtp', { owner })}
                 verifyLabel={t('fa15s.confirm')}
                 intro={(s) => t('selling.otpSentTo', { name: s.contactName ?? owner, last4: s.sentToLast4 })}
-                send={(prev) => selling.ownerOtp(i.id, { decision: 'selected', salaryPaise: salary, joiningDate: joining, otpRequestId: prev })}
+                send={(prev, channel) => selling.ownerOtp(i.id, { decision: 'selected', salaryPaise: salary, joiningDate: joining, otpRequestId: prev, ...(channel ? { channel } : {}) })}
                 verify={async (requestId, code) => {
                   await selling.decision(i.id, { decision: 'selected', salaryPaise: salary, joiningDate: joining, otpRequestId: requestId, code });
                   await client.invalidateQueries({ queryKey: queryKeys.sellingInterview(i.id) });

@@ -39,7 +39,7 @@ function row(over: Partial<SignupRow> = {}): SignupRow {
     name: 'Ravi Kumar',
     maskedPhone: '******3210',
     area: 'Jayanagar',
-    stage: 'E',
+    stage: 'D',
     stageReachedAt: '2026-12-01T09:30:00Z',
     step: 'payment_failed',
     missing: ['payment'],
@@ -83,7 +83,7 @@ describe('Team Lead · App sign-ups', () => {
     renderScreen(<TeamLeadAppSignups />, { now: NOW, portal: 'team-lead', path: '/team-lead/app-signups' });
     const table = await screen.findByRole('table', { name: "Your team's app sign-ups" });
     expect(await within(table).findByText('Ravi Kumar')).toBeInTheDocument();
-    expect(within(table).getByText('Payment pending')).toBeInTheDocument();
+    expect(within(table).getByText('Selfie done, payment pending')).toBeInTheDocument();
     expect(within(table).getByText(/Still to do: Payment/)).toBeInTheDocument();
     expect(within(table).getByText('UPI failed 2 times')).toBeInTheDocument();
     expect(within(table).getByText(/Call overdue since/)).toBeInTheDocument();

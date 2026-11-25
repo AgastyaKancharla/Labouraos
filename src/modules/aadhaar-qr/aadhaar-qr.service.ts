@@ -30,6 +30,7 @@ import {
 } from './secure-qr.parser';
 import { loadUidaiCertificates } from './uidai-certificates';
 import { Under18StopService } from './under18-stop.service';
+import { JobSeekerFlowEvents } from '../job-seeker/job-seeker-flow-events';
 
 /** Lets the tests trust a throw-away key instead of UIDAI's certificates. Refused in production. */
 export const AADHAAR_QR_TRUSTED_KEYS = 'AADHAAR_QR_TRUSTED_KEYS';
@@ -125,6 +126,7 @@ export class AadhaarQrService {
     private readonly idPhotos: IdCheckPhotoService,
     private readonly stops: Under18StopService,
     @Optional() @Inject(AADHAAR_QR_TRUSTED_KEYS) keys?: TrustedKey[],
+    @Optional() private readonly flowEvents?: JobSeekerFlowEvents,
   ) {
     if (keys?.length && process.env.NODE_ENV === 'production') {
       throw new Error('Test keys for the Aadhaar QR check are never allowed in production');
@@ -186,6 +188,46 @@ export class AadhaarQrService {
       qrText,
       context,
     );
+  }
+
+  /**
+   * 25 Nov (rev 212, B9): a small business owner's Aadhaar, read on his agreement page. The same
+   * in-house check (UIDAI's signature with UIDAI's key, 18+, the name against the owner's name,
+   * the permanent-ban fingerprint), but nothing is written here: the caller keeps only the
+   * result, the last 4 digits and the name (BusinessOwnerCheck). Never the QR text or a photo.
+   */
+  async checkBusinessOwner(ownerName: string, qrText: unknown, now: Date = new Date()): Promise<{ result: QrResult; verified: boolean; last4: string | null; nameOnId: string | null; failureReason: string | null }> {
+    let parsed;
+    try {
+      parsed = parseSecureQr(qrText);
+    } catch (error) {
+      if (!(error instanceof SecureQrError)) throw error;
+      const result: QrResult = error.code === 'old_unsigned_qr' ? 'old_qr' : 'unreadable';
+      return { result, verified: false, last4: null, nameOnId: null, failureReason: error.message };
+    }
+    const signer = verifySecureQrSignature(parsed, this.keys);
+    if (!signer) {
+      const issued = qrIssuedAt(parsed);
+      if (issued && this.newestCertEnd && issued.getTime() > this.newestCertEnd.getTime()) {
+        await this.flagCertificateMissing(now);
+        return { result: 'cert_missing', verified: false, last4: null, nameOnId: null, failureReason: SECURE_QR_MESSAGES.cert_missing };
+      }
+      return { result: 'bad_signature', verified: false, last4: null, nameOnId: null, failureReason: SECURE_QR_MESSAGES.bad_signature };
+    }
+    const policy = await this.pricing.current();
+    const dob = parseQrDateOfBirth(parsed.dateOfBirth);
+    if (dob) await assertNotBanned(this.prisma, { idFingerprints: [aadhaarFingerprint(parsed.referenceLast4, dob.value, parsed.name)] });
+    const isAdult = isAdultOn(dob, now, policy.adultMinimumAge);
+    const name = checkIdName(ownerName, parsed.name);
+    const result: QrResult = !isAdult ? 'under_18' : !name.matches ? 'name_mismatch' : 'verified';
+    const verified = result === 'verified';
+    return {
+      result,
+      verified,
+      last4: verified ? parsed.referenceLast4 : null,
+      nameOnId: verified ? parsed.name : null,
+      failureReason: result === 'under_18' ? 'The owner must be 18 or older' : result === 'name_mismatch' ? "The name on the Aadhaar does not match the owner's name" : null,
+    };
   }
 
   private async check(subject: Subject, consentId: string, qrText: unknown, context: Context): Promise<AadhaarQrOutcome> {
@@ -343,6 +385,15 @@ export class AadhaarQrService {
       });
     }
     if (passed && dob) await this.flagDuplicatePerson(subject, verificationId, parsed.referenceLast4, dob.value, parsed.name);
+    // Rev 211 (25 Nov): a passed check starts the 30 days of a job seeker who has paid; a failed one
+    // (under 18 or a name that doesn't match) tells a paid job seeker what went wrong and how a refund works.
+    if (subject.type === 'job_seeker' && this.flowEvents) {
+      const actor = context.staffId ? { id: context.staffId, role: context.channel === 'field' ? 'field_agent' : 'staff' } : null;
+      if (passed) await this.flowEvents.idPassed({ jobSeekerId: subject.id, actor, now });
+      else if (result === 'under_18' || result === 'name_mismatch') {
+        await this.flowEvents.idFailed({ jobSeekerId: subject.id, verificationId, result, now });
+      }
+    }
 
     return {
       verificationId,

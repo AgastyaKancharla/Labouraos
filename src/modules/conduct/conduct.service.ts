@@ -58,7 +58,8 @@ function coveredOf(ban: { coveredProfiles: Prisma.JsonValue; subjectType: string
 }
 
 /** H1: a lifted ban puts a job seeker back only to one of these; anything else is paused for review. */
-const RESTORABLE_JOB_SEEKER_STATUSES: readonly string[] = ['active', 'paused', 'inactive'];
+// Rev 211: "paid, waiting for ID" goes back as it was too (his ₹499 is in; the ID check decides the rest).
+const RESTORABLE_JOB_SEEKER_STATUSES: readonly string[] = ['active', 'paused', 'inactive', 'paid_waiting_id'];
 
 const dateOrNull = (value: unknown): Date | null => (typeof value === 'string' && value ? new Date(value) : null);
 
@@ -208,7 +209,8 @@ export class ConductService {
   private async tellInterviewsCancelled(businessId: string, interviews: { id: string; jobSeekerId: string }[]) {
     for (const row of interviews) {
       await this.customerNotifications?.notify({ jobSeekerId: row.jobSeekerId }, 'interview_cancelled', {}, { dedupeKey: `interview_cancelled:${row.id}` }).catch(() => undefined);
-      await this.messaging?.send({ channel: 'sms', template: 'interview_cancelled', subjectType: 'job_seeker', subjectId: row.jobSeekerId, relatedType: 'interview', relatedId: row.id, variables: {} }).catch(() => undefined);
+      // WhatsApp first, SMS as backup (rev 211).
+      await this.messaging?.sendPreferWhatsApp({ template: 'interview_cancelled', subjectType: 'job_seeker', subjectId: row.jobSeekerId, relatedType: 'interview', relatedId: row.id, variables: {} }).catch(() => undefined);
     }
     if (interviews.length) {
       await this.customerNotifications?.notify({ businessId }, 'interview_cancelled', {}, { dedupeKey: `interview_cancelled:business:${businessId}:${interviews[0].id}` }).catch(() => undefined);

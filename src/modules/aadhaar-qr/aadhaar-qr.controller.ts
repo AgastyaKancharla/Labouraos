@@ -240,9 +240,10 @@ export class AadhaarQrController {
       });
       return { id: check.id, verdict, flagId, ...decided };
     });
-    // 22 Nov: an approved other ID sends the ₹499 payment link by itself (after the check is saved).
-    const paymentLink = await this.otherIds.afterDecision(subjectType, id, result.otherIdDecided, actor);
-    return { ...result, paymentLink };
+    // Rev 211 (replaces the 22 Nov automatic payment link): an approved other ID of a paid job seeker
+    // starts his 30 days and tells him (after the check is saved). followUp says what happened.
+    const followUp = await this.otherIds.afterDecision(subjectType, id, result.otherIdDecided, actor);
+    return { ...result, followUp };
   }
 
   @Get('identity/:subjects/:id/aadhaar-check')

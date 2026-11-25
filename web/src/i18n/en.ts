@@ -16,7 +16,9 @@ import { callAgentEn } from '../screens/call-agent/_lib/i18n.en';
 import { fixes17En } from './fixes17';
 import { reg21NovEn } from './reg21nov';
 import { visit22En } from './visit22';
+import { bizAutoEn } from './bizAuto';
 import { whatsappEn } from './whatsapp';
+import { waFirst25En } from './waFirst25';
 import { consoleListsEn } from '../screens/call-agent/_lists/i18n';
 export const en = {
   "app.name": "Laboura",
@@ -81,8 +83,8 @@ export const en = {
   "pub.open.alreadyComplete": "Your registration is already complete. Type the code to see the details.",
   "pub.open.step1": "1. Your permission",
   "pub.open.step2": "2. A selfie",
-  "pub.open.step3": "3. Check your ID",
-  "pub.open.step4": "4. Pay ₹499",
+  "pub.open.step3": "3. Pay ₹499",
+  "pub.open.step4": "4. Check your ID",
   "pub.open.min1": "1 min",
   "pub.open.min2": "2 min",
   "pub.open.sec30": "30 sec",
@@ -90,7 +92,7 @@ export const en = {
   "pub.resume.title": "Welcome back, {name}",
   "pub.resume.intro": "You've already done {done} of 4 steps. You won't be asked again.",
   "pub.resume.selfie": "2. Selfie",
-  "pub.resume.id": "3. ID check",
+  "pub.resume.id": "4. ID check",
   "pub.resume.done": "Done",
   "pub.resume.toDo": "To do",
   "pub.resume.notPaidYet": "Not paid yet",
@@ -140,6 +142,9 @@ export const en = {
   "pub.id.failed": "That ID couldn't be checked. Try again or use another ID.",
   "pub.id.under18Title": "Registration stops here.",
   "pub.id.under18Body": "Laboura can only register people who are 18 or older. No payment is taken. If this was a family member's Aadhaar by mistake, a Laboura Manager can lift this stop.",
+  "pub.id.under18PaidBody": "Laboura can only register people who are 18 or older. Contact Laboura and ask for your ₹499 back in full. If this was a family member's Aadhaar by mistake, a Laboura Manager can lift this stop.",
+  "pub.id.paidBanner": "Payment received. Only your ID check is left — your 30 days start once it passes.",
+  "pub.id.refundNote": "If your ID can't be verified, contact Laboura and ask for your ₹499 back in full.",
   "pub.pay.stepLabel": "Payment",
   "pub.pay.title": "Pay {amount} · Registration",
   "pub.pay.guarantee": "Your guarantee",
@@ -163,7 +168,8 @@ export const en = {
   "pub.pay.otherSend": "Send payment link",
   "pub.pay.otherSentTitle": "Sent",
   "pub.pay.otherSent": "The link works for {minutes} minutes. Send a fresh one if it runs out.",
-  "pub.pay.bankNote": "Your registration is complete only when the money reaches Laboura's bank. A screenshot is not proof of payment.",
+  "pub.pay.bankNote": "Your payment counts only when the money reaches Laboura's bank. A screenshot is not proof of payment.",
+  "pub.pay.idNext": "Next comes the ID check. Your 30 days start only after your government ID is verified.",
   "pub.pay.waitingForTrade": "We're adding your trade to our list. We'll send you an SMS when you can pay.",
   "pub.shift.day": "day shift",
   "pub.shift.night": "night shift",
@@ -176,6 +182,9 @@ export const en = {
   "pub.confirming.utrSend": "Send reference number",
   "pub.confirming.utrSaved": "Thank you. We'll match it when the money reaches our bank.",
   "pub.paid.done": "Registration complete · {amount} received",
+  "pub.paid.received": "Payment received · {amount}",
+  "pub.paid.idLeft": "Only your ID check is left. Your 30 days start once your ID is verified; until then your registration is paused.",
+  "pub.paid.toId": "Continue to the ID check",
   "pub.paid.confirmedBy": "Confirmed by the bank",
   "pub.paid.daysEnd": "Your 30 days end",
   "pub.paid.receipt": "Receipt",
@@ -621,6 +630,7 @@ export const en = {
   "screen.P06-DidTheyOffer": "Did they offer you the job?",
   "screen.P07-VacancyConfirm": "Confirm vacancy",
   ...registrationEn,
+  ...bizAutoEn,
   ...staffAccessEn,
   ...referralTermsEn,
   ...legalEn,
@@ -630,6 +640,7 @@ export const en = {
   ...appSignupsEn,
   ...callAgentEn,
   ...whatsappEn,
+  ...waFirst25En,
   ...fixes17En,
   ...reg21NovEn,
   ...visit22En,

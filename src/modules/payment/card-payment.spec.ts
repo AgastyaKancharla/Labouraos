@@ -1,4 +1,6 @@
+import { withSendingRules } from '../../test-support/messaging-double';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { idPassedMock } from '../../test-support/id-passed-mock';
 import { payPageTokenHash } from './pay-page-token';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -14,6 +16,7 @@ import { UpiCollectionService } from './upi-collection.service';
 import { Response } from 'express';
 
 type MockPrisma = {
+  identityVerification?: ReturnType<typeof idPassedMock>;
   payment: Record<string, jest.Mock>;
   bankCredit: Record<string, jest.Mock>;
   jobSeeker: Record<string, jest.Mock>;
@@ -56,6 +59,7 @@ describe('Phase 16 Task 4: Card payments, only when payer chooses card', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         findMany: jest.fn(),
       },
+      identityVerification: idPassedMock(),
       jobSeeker: {
         findUnique: jest.fn(),
         update: jest.fn(),
@@ -92,7 +96,7 @@ describe('Phase 16 Task 4: Card payments, only when payer chooses card', () => {
     } as unknown as jest.Mocked<BankFeedProvider>;
 
     auditService = { log: jest.fn() };
-    messagingService = { send: jest.fn().mockResolvedValue({}) };
+    messagingService = withSendingRules({ send: jest.fn().mockResolvedValue({}) });
     reviewFlagService = { raise: jest.fn().mockResolvedValue({ id: 'rf-1' }), resolve: jest.fn() };
 
     const pricingService = {

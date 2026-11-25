@@ -1,11 +1,17 @@
 import type { LegalDocumentSource } from '../legal-document.types';
 
-/** Owner-approved English text (Master Guide rev 176, 15 Nov). Numbers in {{…}} come from Settings. */
+/**
+ * Owner-approved English text (Master Guide rev 176, 15 Nov). Numbers in {{…}} come from Settings.
+ * v1.2 (Master Guide rev 211, 25 Nov): Consent → Selfie → Payment → ID check; the 30 days start when
+ * he is paid AND his ID is verified (5.4); a refund before a passed ID check, only on request (9.5);
+ * a forged or altered ID gets no refund (15.4).
+ */
 export const JOB_SEEKER_TERMS_EN: LegalDocumentSource = {
   title: "Job Seeker Terms, Consent and Privacy Notice",
   summary: [
     "You pay **{{fee}}** once to register. Laboura is **not your employer**. The business that hires you is your employer and sets your salary.",
-    "**Our promise:** within **{{guaranteeDays}} days** of your {{fee}} reaching Laboura's bank, we give you at least **one suitable job offer** (a confirmed interview), **or you get the full {{fee}} back**, with nothing taken off.",
+    "**Our promise:** within **{{guaranteeDays}} days** of your registration being complete — your {{fee}} in Laboura's bank **and** your ID verified — we give you at least **one suitable job offer** (a confirmed interview), **or you get the full {{fee}} back**, with nothing taken off.",
+    "**Your {{guaranteeDays}} days start only after your government ID is verified.** Until then your registration is paused. If your ID cannot be verified (or shows you are under 18), you can ask for the full {{fee}} back. A forged or altered ID gets no refund.",
     "\"Suitable\" means: your trade, a salary at or above the floor you saw and ticked before paying, within your travel distance, your shift, and a real business with a real interview time.",
     "**Your refund ends** if you say no to a suitable offer, don't reply to an offer within **{{offerReplyHours}} hours**, don't go to a booked interview, find a job on your own, stop wanting a job, or work at a business Laboura introduced you to without going through Laboura.",
     "**{{maxHits}} \"hits\" switch off your profile.** A hit is: not picking up (a morning call, an evening call and a WhatsApp or SMS on the same day), saying no to a suitable offer, not replying in {{offerReplyHours}} hours, or not going to an interview. You can come back by paying {{fee}} again.",
@@ -22,7 +28,7 @@ export const JOB_SEEKER_TERMS_EN: LegalDocumentSource = {
 | **GSTIN** | {{company.gstin}} |
 | **Grievance Officer** | {{grievance}} |
 | **Document** | Job Seeker Terms, Consent and Privacy Notice |
-| **Version** | 1.1 |
+| **Version** | 1.2 |
 | **Effective date** | {{company.effective}} |
 | **Languages** | Kannada, Hindi and English. You choose the language. If the versions differ, the version in the language you chose is the one you agreed to. |
 
@@ -49,7 +55,7 @@ export const JOB_SEEKER_TERMS_EN: LegalDocumentSource = {
 
 3.1 You must be **18 or older** and allowed to work in India.
 
-3.2 If the ID check shows you are under 18, **registration stops before any payment is taken**. The stop stays even if you try another ID. Only a Laboura Manager or the CEO can lift it, for example if the date on the card was wrong or a family member's card was used by mistake.
+3.2 If the date of birth you give shows you are under 18, **registration stops before any payment is taken**. If the ID check (which comes after the payment) shows you are under 18, registration stops there, and you can ask for the full {{fee}} back (clause 9.5). The stop stays even if you try another ID. Only a Laboura Manager or the CEO can lift it, for example if the date on the card was wrong or a family member's card was used by mistake.
 
 3.3 **If you cannot read these terms**, a Laboura agent will read them aloud to you in your language on a recorded call before you give your OTP. The recording is kept as proof that the terms were explained to you.
 
@@ -60,8 +66,10 @@ export const JOB_SEEKER_TERMS_EN: LegalDocumentSource = {
 4.2 **The registration link.** We send one link by SMS. It works for **{{linkHours}} hours** and opens only after an OTP sent to your registered number. You can open it on any smartphone (yours, a family member's or the agent's), but the OTP always goes to your number. It takes you through four steps in this order:
 1. **Consent**: you tick each permission separately (Part B).
 2. **Selfie**: a live camera photo. Gallery photos are not accepted.
-3. **ID check**: Aadhaar Secure QR, or a PAN, driving licence or voter ID (clause 13).
-4. **Terms and payment**: you see your exact guarantee terms, tick to agree, and pay {{fee}}.
+3. **Terms and payment**: you see your exact guarantee terms, tick to agree, and pay {{fee}}.
+4. **ID check**: Aadhaar Secure QR, or a PAN, driving licence or voter ID (clause 13).
+
+**Your {{guaranteeDays}} days start only after your government ID is verified. Until then your registration is paused**: you are not matched with jobs, you get no offers and no hits, and your {{guaranteeDays}} days do not run. If you have paid but not finished the ID check, we remind you once a day for 3 days. An ID check done before you pay (for example by a field agent in person) still counts.
 
 Each step is saved as soon as you finish it. If you open the link again, or a new one, you carry on from the first unfinished step. Only one link works at a time: sending a new one switches off the old one.
 
@@ -69,7 +77,7 @@ Each step is saved as soon as you finish it. If you open the link again, or a ne
 
 4.4 **Someone else paying.** Once you reach the payment step, you or the agent can send a payment-only link to another number, such as a family member's. It shows only your first name, your Laboura ID and {{fee}}. It works for **{{payOnlyMinutes}} minutes**, and a fresh one can be sent with one tap.
 
-4.5 **If your trade is not on our list**, you can finish consent, selfie and ID, but payment waits until Laboura adds your trade. Your {{guaranteeDays}} days never run while we cannot match you.
+4.5 **If your trade is not on our list**, you can finish consent and selfie, but payment waits until Laboura adds your trade. Your {{guaranteeDays}} days never run while we cannot match you.
 
 ### 5. The {{fee}} registration fee
 
@@ -79,7 +87,7 @@ Each step is saved as soon as you finish it. If you open the link again, or a ne
 
 5.3 **A screenshot is not proof of payment.** Your payment counts only when the money reaches Laboura's bank. Until then your status shows "Paid — confirming".
 
-5.4 **Your {{guaranteeDays}} days start on the day the {{fee}} is confirmed in Laboura's bank.**
+5.4 **Your {{guaranteeDays}} days start when both of these are done: your {{fee}} is confirmed in Laboura's bank, and your ID is verified** (the Aadhaar QR check passes, or a Laboura Team Lead, Manager or the CEO approves your PAN, driving licence or voter ID). They start on the later of the two days. If your ID was already verified (for example when you register again after a refund), they start on the day the {{fee}} is confirmed.
 
 5.5 If the same registration is paid twice by mistake, **the second payment is refunded in full**.
 
@@ -87,7 +95,7 @@ Each step is saved as soon as you finish it. If you open the link again, or a ne
 
 ### 6. The {{guaranteeDays}}-day guarantee
 
-6.1 **Our promise.** Within {{guaranteeDays}} days of your {{fee}} being confirmed in Laboura's bank, Laboura gives you at least **one suitable job offer**. If we don't, **you get the full {{fee}} back, with nothing taken off** (clause 9).
+6.1 **Our promise.** Within {{guaranteeDays}} days of the start of your guarantee (clause 5.4), Laboura gives you at least **one suitable job offer**. If we don't, **you get the full {{fee}} back, with nothing taken off** (clause 9).
 
 6.2 **What an "offer" is.** An offer is a **confirmed interview**: a real business, a suitable vacancy and a set interview time. If you go to the interview and the business does not select you, it is not your fault. You get no hit, your {{guaranteeDays}} days keep running, and Laboura keeps looking for you.
 
@@ -155,6 +163,8 @@ Each step is saved as soon as you finish it. If you open the link again, or a ne
 
 9.4 A refund that has already been approved is always paid, including if you later delete your account (clause 16.6).
 
+9.5 **Refund before your ID is verified.** If you have paid but your ID could not be verified — the ID check shows you are under 18, the check fails or the name does not match, or you could not finish it — you can **contact Laboura and ask for the full {{fee}} back**. It is refunded only when you ask, never by itself, and the CEO or Finance approves it as in clause 9.3. If someone else paid for you with a payment-only link (clause 4.4), the refund goes back to that person. **There is no refund if your ID was forged or altered** (clause 15.4).
+
 ### 10. {{joiningReward}} joining reward
 
 10.1 If you join a job through Laboura and are **still working there {{joiningRewardDays}} days after joining**, Laboura pays you **{{joiningReward}}**.
@@ -221,7 +231,7 @@ Each step is saved as soon as you finish it. If you open the link again, or a ne
 
 15.3 Do not share business details that Laboura gives you with anyone else, and do not use them to bypass Laboura.
 
-15.4 **Permanent ban.** A Laboura Manager or the CEO may permanently ban you from Laboura, with no refund, for a **forged or altered ID**, **fraud**, or **theft or violence** connected with a Laboura interview or job. Laboura shares your records with the police **only on a lawful request**, such as a written notice under the law.
+15.4 **Permanent ban.** A Laboura Manager or the CEO may permanently ban you from Laboura, with no refund, for a **forged or altered ID**, **fraud**, or **theft or violence** connected with a Laboura interview or job. A forged or altered ID also means no refund of the {{fee}} before your ID check passed (clause 9.5). Laboura shares your records with the police **only on a lawful request**, such as a written notice under the law.
 
 ### 16. The Laboura app
 
@@ -265,6 +275,8 @@ Each step is saved as soon as you finish it. If you open the link again, or a ne
 ---
 
 ## Part B: Your consent (permissions)
+
+**Your {{guaranteeDays}} days start only after your government ID is verified. Until then your registration is paused.**
 
 Read each permission and tick it separately. **The first five are required**: without them Laboura cannot register you or find you a job. **The sixth is optional**: you can say no and still use Laboura fully.
 

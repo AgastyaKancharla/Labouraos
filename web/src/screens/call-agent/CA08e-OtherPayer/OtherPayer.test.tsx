@@ -7,7 +7,8 @@ import OtherPayer from './index';
 const done = { state: 'done', time: null, reason: null };
 const status = (paymentReached: boolean) => ({
   id: 'js-uuid', code: 'JS-01042', name: 'Kavya Reddy', gender: 'female', stage: 'in_progress', nextStep: 'payment', trades: [], phone: '******2345',
-  steps: { phone: done, consent: done, selfie: done, idCheck: paymentReached ? done : { state: 'in_progress' }, payment: { state: 'in_progress' } },
+  // Rev 211: Consent → Selfie → Payment → ID check — the payer link needs consent and the selfie, not the ID.
+  steps: { phone: done, consent: done, selfie: paymentReached ? done : { state: 'in_progress' }, payment: { state: 'in_progress' }, idCheck: { state: 'not_started' } },
 });
 
 describe('Send payment link to another number (CA08e)', () => {
@@ -22,16 +23,18 @@ describe('Send payment link to another number (CA08e)', () => {
     expect(await screen.findByText(/someone else pays for Kavya/)).toBeInTheDocument();
     await user.type(screen.getByLabelText(/Their mobile number/), '9886041207');
     await user.selectOptions(screen.getByLabelText('Who is it?'), 'brother');
-    await user.click(screen.getByRole('button', { name: 'Send payment link' }));
-    await waitFor(() => expect(api.calls('POST /job-seekers/js-uuid/payment-only-link')[0]?.body).toEqual({ phone: '9886041207', relation: 'brother' }));
+    expect(screen.getByText('Send payment link')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Send on WhatsApp' }));
+    await waitFor(() => expect(api.calls('POST /job-seekers/js-uuid/payment-only-link')[0]?.body).toEqual({ phone: '9886041207', relation: 'brother', channel: 'whatsapp' }));
     expect(await screen.findByTestId('navigated-away')).toBeInTheDocument();
   });
 
-  it('is not allowed before consent, selfie and ID are finished', async () => {
+  it('is not allowed before consent and the selfie are finished', async () => {
     mockApi({ 'GET /screens/call-registration/job-seekers/js-uuid': status(false) });
     signInAs('call_agent');
     renderScreen(<OtherPayer />, { portal: 'call-agent', path: '/call-agent/register/job-seeker/js-uuid/other-payer', route: '/call-agent/register/job-seeker/:id/other-payer' });
-    expect(await screen.findByText(/Not yet: consent, selfie and ID must be finished first/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Send payment link' })).toBeDisabled();
+    expect(await screen.findByText(/Not yet: consent and the selfie must be finished first/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send on WhatsApp' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Send by SMS' })).toBeDisabled();
   });
 });

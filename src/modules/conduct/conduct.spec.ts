@@ -1,3 +1,4 @@
+import { withSendingRules } from '../../test-support/messaging-double';
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { ConductService } from './conduct.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
@@ -54,7 +55,7 @@ function setup(overrides: Record<string, unknown> = {}) {
   };
   const withTx = Object.assign(prisma, { $executeRaw: jest.fn().mockResolvedValue(1), $transaction: jest.fn(async (cb: (tx: unknown) => unknown): Promise<unknown> => cb(prisma)) });
   const audit = { log: jest.fn() };
-  const messaging = { send: jest.fn().mockResolvedValue({}) };
+  const messaging = withSendingRules({ send: jest.fn().mockResolvedValue({}) });
   const notifications = { notify: jest.fn().mockResolvedValue({}) };
   const flags = { raise: jest.fn().mockResolvedValue({ id: 'flag-1' }), refreshBell: jest.fn() };
   const service = new ConductService(withTx as never, audit as never, { now: () => NOW } as never, messaging as never, notifications as never, flags as never);

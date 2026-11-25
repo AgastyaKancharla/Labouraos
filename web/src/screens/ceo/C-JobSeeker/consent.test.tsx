@@ -1,4 +1,5 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { mockApi, renderScreen, signInAs } from '../../../test/utils';
 import JobSeekerDetail from './index';
@@ -50,5 +51,28 @@ describe('C-JobSeeker consent and registration (17 Nov)', () => {
     // Each accepted text once: the repeated payment-step acceptance is one line, with how many times.
     expect(await screen.findAllByText('View signed copy')).toHaveLength(2);
     expect(screen.getByText(/accepted 2 times, first 10 Nov/)).toBeInTheDocument();
+  });
+
+  it('rev 211: paid, waiting for ID — the CEO can record "Refund requested (ID not verified)"', async () => {
+    const api = mockApi({
+      'GET /login-codes/pending': [], 'GET /review-flags': [], 'GET /refunds/due': [],
+      'GET /ceo/job-seekers/js3': {
+        ...detail,
+        status: 'paid_waiting_id',
+        guarantee: { days: 30, paidAt: '2026-11-15T05:00:00Z', startsAt: null, paidWaitingForId: true, daysLeft: null, floorPaise: 1600000 },
+        activation: { amountPaise: 49900, at: '2026-11-15T05:00:00Z', utr: '431200001111', confirmedBy: 'bank_feed' },
+        registration: { ...detail.registration, consentsGranted: 5, selfieAt: '2026-11-14T05:00:00Z', paymentAt: '2026-11-15T05:00:00Z' },
+      },
+      'GET /permanent-bans/job_seeker/js3': { banned: false },
+      'GET /legal/acceptances/job_seeker/js3': { status: { documentKey: 'job_seeker_terms', currentVersion: '1.2', acceptedVersion: '1.2', needsReconsent: false, noticeVersion: '1.3', currentNoticeVersion: '1.3' }, acceptances: [] },
+      'POST /job-seekers/js3/refund': { id: 'r1', status: 'approved' },
+    });
+    signInAs('ceo');
+    renderScreen(<JobSeekerDetail />, { portal: 'ceo', path: '/ceo/job-seekers/js3', route: '/ceo/job-seekers/:id', now: NOW });
+    expect((await screen.findAllByText('Paid, waiting for ID')).length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole('button', { name: 'Refund requested (ID not verified)' }));
+    const d = await screen.findByRole('dialog');
+    await userEvent.click(within(d).getByRole('button', { name: 'Refund requested by the job seeker (ID not verified)' }));
+    await waitFor(() => expect(api.calls('POST /job-seekers/js3/refund')[0]?.body).toEqual({ idNotVerified: true }));
   });
 });

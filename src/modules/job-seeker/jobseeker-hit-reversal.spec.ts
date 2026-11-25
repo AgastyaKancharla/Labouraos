@@ -124,7 +124,7 @@ describe('Phase 12 Task 6 — JobSeekerHit Changes and Reversals', () => {
         preferredCallWindowEnd: '18:00',
         status: options?.status ?? 'active',
         hitCount: options?.hitCount ?? 0,
-        paymentReceivedAt: options?.paymentReceivedAt ?? null,
+        paymentReceivedAt: options?.paymentReceivedAt ?? null, guaranteeStartsAt: options?.paymentReceivedAt ?? null,
         registeredByStaffId: options?.registeredByStaffId === undefined ? callAgentId : options.registeredByStaffId,
       },
     });

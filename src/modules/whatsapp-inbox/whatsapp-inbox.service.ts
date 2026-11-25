@@ -6,7 +6,9 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { OTP_PROVIDER, OtpProvider } from '../../common/otp/otp.interface';
 import { Prisma, WhatsAppConversation } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -96,6 +98,8 @@ export class WhatsAppInboxService {
     private readonly leadCalls: LeadCallService,
     private readonly events: WhatsAppEventsService,
     private readonly pricing: PricingService,
+    /** Login and confirmation codes on WhatsApp (rev 211): a failed one goes by SMS. */
+    @Optional() @Inject(OTP_PROVIDER) private readonly otpProvider?: OtpProvider & { onWhatsAppFailed?(providerMessageId: string, errorCode: string | null): Promise<boolean> },
   ) {}
 
   /** Every call agent with whether they are on shift now (their own shift, 21 Nov). */
@@ -116,8 +120,10 @@ export class WhatsAppInboxService {
     let statuses = 0;
     for (const s of parsed.statuses) {
       if (s.status !== 'sent') {
-        const applied = await this.messaging.applyProviderStatus(s.providerMessageId, s.status);
-        if (applied && !applied.unchanged && s.status === 'failed') await this.onLinkMessageFailed(applied.id);
+        const applied = await this.messaging.applyProviderStatus(s.providerMessageId, s.status, s.errorCode ?? null, this.clock.now());
+        if (applied && !applied.unchanged && s.status === 'failed') await this.onLinkMessageFailed(applied.id, Boolean(applied.backupHandled));
+        // A login or confirmation code that went on WhatsApp (not a message-log row): its SMS goes now.
+        if (!applied && s.status === 'failed') await this.otpFailed(s.providerMessageId, s.errorCode ?? null);
       }
       const row = await this.prisma.whatsAppMessage.findUnique({ where: { providerMessageId: s.providerMessageId }, select: { id: true, status: true } });
       if (row && canAdvanceMessageStatus(row.status, s.status)) {
@@ -806,12 +812,18 @@ export class WhatsAppInboxService {
    * and the agent who sent it gets a bell. Runs once per message (a repeated
    * "failed" status changes nothing).
    */
-  private async onLinkMessageFailed(messageLogId: string) {
+  private async onLinkMessageFailed(messageLogId: string, backupHandled = false) {
     // The webhook must always answer 200: anything that goes wrong here is logged, never thrown.
     try {
       const row = await this.prisma.messageLog.findUnique({ where: { id: messageLogId } });
       if (!row || row.channel !== 'whatsapp' || !row.subjectId) return;
       const kind = LINK_TEMPLATE_KIND[row.template];
+      if (backupHandled) {
+        // WhatsApp first (rev 211): the message's own SMS backup already went with the same link.
+        const staffId = kind && row.relatedType === LINK_SENT_BY_STAFF ? row.relatedId : null;
+        if (staffId) await this.tellLinkFailed(row, staffId);
+        return;
+      }
       if (!kind) {
         // An automatic event message to someone without WhatsApp: once by SMS (never again on WhatsApp).
         await this.events.smsFallbackForFailed(row);
@@ -819,26 +831,45 @@ export class WhatsAppInboxService {
       }
       const staffId = row.relatedType === LINK_SENT_BY_STAFF ? row.relatedId : null;
       // A fresh link by SMS; the earlier links keep working; not a contact attempt (hit rule).
-      const fallback = { revokeOthers: false, contactAttempt: false } as const;
+      const fallback = { revokeOthers: false, contactAttempt: false, channel: 'sms' } as const;
       let sms: 'sms' | 'whatsapp' | null = null;
       if (kind === 'registration') sms = (await this.consentLinks.createLink(row.subjectId, fallback)).sentBy;
-      else if (kind === 'agreement') sms = (await this.consentLinks.createAgreementLink(row.subjectId, staffId, undefined, { contactAttempt: false })).sentBy;
+      else if (kind === 'agreement') sms = (await this.consentLinks.createAgreementLink(row.subjectId, staffId, undefined, { contactAttempt: false, channel: 'sms' })).sentBy;
       else sms = (await this.consentLinks.createReferralTermsLink(row.subjectId, staffId, undefined, fallback)).sentBy;
       if (!staffId) return;
-      const subject = await this.subjectOf({ subjectType: row.subjectType, subjectId: row.subjectId });
-      const staff = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { role: true } });
-      await this.notifications.open({
-        recipientStaffId: staffId,
-        kind: LINK_FAILED_NOTIFICATION_KIND,
-        title: sms ? `WhatsApp did not reach ${subject?.code ?? 'them'}: the link went by SMS` : `WhatsApp did not reach ${subject?.code ?? 'them'}, and SMS failed too`,
-        body: sms ? 'A fresh link was sent by SMS; the earlier one still works.' : 'Call them and resend the link.',
-        link: staff ? notificationLink(staff.role, LINK_FAILED_NOTIFICATION_KIND) : null,
-        subjectType: 'message_log',
-        subjectId: row.id,
-        once: true,
-      });
+      await this.tellLinkFailed(row, staffId, sms !== null, true);
     } catch (error) {
       this.logger.warn(`SMS fallback for failed WhatsApp message ${messageLogId} did not go: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /** The agent who sent a link hears that WhatsApp did not reach the person, and whether the SMS went. */
+  private async tellLinkFailed(row: { id: string; subjectType: string; subjectId: string }, staffId: string, smsWent?: boolean, freshLink = false) {
+    let sms = smsWent;
+    if (sms === undefined) {
+      const fresh = await this.prisma.messageLog.findUnique({ where: { id: row.id }, select: { smsBackup: true, smsBackupDueAt: true } });
+      sms = fresh?.smsBackup === 'sent' || fresh?.smsBackup === 'pending';
+    }
+    const subject = await this.subjectOf({ subjectType: row.subjectType, subjectId: row.subjectId });
+    const staff = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { role: true } });
+    await this.notifications.open({
+      recipientStaffId: staffId,
+      kind: LINK_FAILED_NOTIFICATION_KIND,
+      title: sms ? `WhatsApp did not reach ${subject?.code ?? 'them'}: the link went by SMS` : `WhatsApp did not reach ${subject?.code ?? 'them'}, and SMS failed too`,
+      body: sms ? (freshLink ? 'A fresh link was sent by SMS; the earlier one still works.' : 'The same link went by SMS (at 9 AM when it failed after 9 PM).') : 'Call them and resend the link.',
+      link: staff ? notificationLink(staff.role, LINK_FAILED_NOTIFICATION_KIND) : null,
+      subjectType: 'message_log',
+      subjectId: row.id,
+      once: true,
+    });
+  }
+
+  /** A WhatsApp code Meta could not deliver: the code goes by SMS now (WhatsAppFirstOtpProvider). Never throws. */
+  private async otpFailed(providerMessageId: string, errorCode: string | null) {
+    try {
+      await this.otpProvider?.onWhatsAppFailed?.(providerMessageId, errorCode);
+    } catch (error) {
+      this.logger.warn(`SMS backup for a WhatsApp code did not go: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

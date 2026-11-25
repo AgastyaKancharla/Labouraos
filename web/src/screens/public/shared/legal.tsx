@@ -31,6 +31,8 @@ export interface LegalDocument {
   bodyHtml: string;
   hash: string;
   noticeVersion: string | null;
+  /** Notice 1.3 (rev 211): the line shown above a job seeker's ticks ("Your 30 days start only after…"). */
+  consentNotice?: string | null;
   consents: LegalTick[];
 }
 
@@ -154,6 +156,7 @@ export function ReconsentForm({
       <PageTitle emoji="📜">{t('legal.updated.title')}</PageTitle>
       <Muted>{acceptedVersion ? t('legal.updated.intro', { old: acceptedVersion, version: d.version }) : t('legal.updated.introNew', { version: d.version })}</Muted>
       <LegalSummary summaryHtml={d.summaryHtml} bodyHtml={d.bodyHtml} version={d.version} />
+      {d.consentNotice && <ConsentNotice text={d.consentNotice} />}
       <strong>{t('legal.updated.ticks')}</strong>
       {d.consents.map((c) => (
         <Choice
@@ -197,5 +200,16 @@ export function useInShortScript(key: LegalDocumentKey): string | null {
   });
   if (!doc.data) return null;
   const d = doc.data;
-  return `${d.summary.map((line) => `• ${plainText(line)}`).join('\n')}\n\n(${d.title} · v${d.version})`;
+  // Notice 1.3 (rev 211): the agent reads the "30 days start after the ID check" line too.
+  const notice = d.consentNotice ? `\n\n${d.consentNotice}` : '';
+  return `${d.summary.map((line) => `• ${plainText(line)}`).join('\n')}${notice}\n\n(${d.title} · v${d.version})`;
+}
+
+/** Notice 1.3 (rev 211): the line every job seeker consent page shows above the ticks, word for word. */
+export function ConsentNotice({ text }: { text: string }) {
+  return (
+    <p className="lb-pub-notice" data-testid="consent-notice">
+      <strong>{text}</strong>
+    </p>
+  );
 }

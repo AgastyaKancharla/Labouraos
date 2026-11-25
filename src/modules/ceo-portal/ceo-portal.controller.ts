@@ -17,6 +17,7 @@ import { CeoAdminService } from './ceo-admin.service';
 import { CeoBreachService } from './ceo-breach.service';
 import { cleanOption, cleanSearch, parseOptionalRange, parsePage, parseRange } from './ceo-common';
 import { RecordPhotosService } from './record-photos.service';
+import { BusinessChecksService } from './business-checks.service';
 
 type AuthedRequest = Request & { user: JwtPayload };
 type Q = Record<string, string | undefined>;
@@ -45,6 +46,7 @@ export class CeoPortalController {
     private readonly admin: CeoAdminService,
     private readonly breaches: CeoBreachService,
     private readonly recordPhotos: RecordPhotosService,
+    private readonly checkQueue: BusinessChecksService,
   ) {}
 
   // Command Center and reports ------------------------------------------
@@ -176,6 +178,20 @@ export class CeoPortalController {
   @RequireRoles('ceo')
   partnerPhoto(@Req() req: AuthedRequest, @Param('id') id: string) {
     return this.recordPhotos.partnerPhoto({ id: req.user.sub, role: req.user.role }, null, id);
+  }
+
+  /** 25 Nov (rev 211, B3/B4): every business and vacancy waiting for a Team Lead check, with the reasons. */
+  @Get('business-checks')
+  @RequireRoles('ceo')
+  businessChecks() {
+    return this.checkQueue.queue({ business: null, vacancy: null });
+  }
+
+  /** 25 Nov (rev 211, B1): the owner's live selfie and shop photo, through short-lived private links (audited). */
+  @Get('businesses/:id/owner-photos')
+  @RequireRoles('ceo')
+  ownerPhotos(@Req() req: AuthedRequest, @Param('id') id: string) {
+    return this.recordPhotos.ownerPhotos({ id: req.user.sub, role: req.user.role }, null, id);
   }
 
   /** C-Business: one visit's name-board photo and the agent's selfie, through short-lived private links (audited). */

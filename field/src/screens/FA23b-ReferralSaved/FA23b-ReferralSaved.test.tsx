@@ -22,9 +22,10 @@ describe('FA23b Referral partner saved', () => {
     expect(screen.getByTestId('fa23b-saved')).toHaveTextContent(/Saved · RF-00019/);
     await waitFor(() => expect(screen.getByTestId('fa23b-terms')).toHaveTextContent(/Terms and consent.*Done 10:40 AM/));
     expect(screen.getByTestId('fa23b-selfie')).toHaveTextContent(/Selfie.*Not yet/);
-    await fireEvent.press(screen.getByTestId('fa23b-resend'));
-    await waitFor(() => expect(screen.getByTestId('fa23b-resend')).toHaveTextContent('Link sent again'));
-    expect(calls).toContainEqual({ method: 'POST', path: '/referrals/rf-1/terms-links', body: {} });
+    // Rev 211: "Send on WhatsApp" (SMS as backup) or the small "Send by SMS".
+    await fireEvent.press(screen.getByTestId('fa23b-resend-whatsapp'));
+    await waitFor(() => expect(screen.getByTestId('fa23b-resend')).toHaveTextContent(/Link sent again/));
+    expect(calls).toContainEqual({ method: 'POST', path: '/referrals/rf-1/terms-links', body: { channel: 'whatsapp' } });
     await fireEvent.press(screen.getByTestId('fa23b-done'));
     expect(router.dismissTo).toHaveBeenCalledWith('/job-seekers');
   });

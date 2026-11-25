@@ -98,7 +98,7 @@ describe('21 Nov fixes: call work and leads', () => {
         status: data.status ?? 'active',
         registeredByStaffId: data.registeredByStaffId ?? null,
         assignedStaffId: data.assignedStaffId ?? null,
-        paymentReceivedAt: data.paidDaysAgo !== undefined ? new Date(NOW.getTime() - data.paidDaysAgo * DAY) : null,
+        paymentReceivedAt: data.paidDaysAgo !== undefined ? new Date(NOW.getTime() - data.paidDaysAgo * DAY) : null, guaranteeStartsAt: data.paidDaysAgo !== undefined ? new Date(NOW.getTime() - data.paidDaysAgo * DAY) : null,
         trades: { create: { trade: 'Electrician', isPrimary: true } },
       },
     });
@@ -468,7 +468,8 @@ describe('21 Nov fixes: call work and leads', () => {
     expect(await prisma.messageLog.count({ where: { subjectId: blocked.id, template: 'call_attempt_notice' } })).toBe(0);
     expect(await prisma.jobSeekerHit.count({ where: { jobSeekerId: blocked.id } })).toBe(0);
     // Someone not blocked gets the notice once, never again on the next run.
-    expect(await prisma.messageLog.count({ where: { subjectId: free.id, template: 'call_attempt_notice' } })).toBe(1);
+    // "We tried to call you" goes on WhatsApp and SMS together (rev 211), once.
+    expect(await prisma.messageLog.count({ where: { subjectId: free.id, template: 'call_attempt_notice' } })).toBe(2);
 
     // POST /consent/links (Resend): refused with a clear message.
     const resend = await request(app.getHttpServer()).post('/consent/links').set('Authorization', `Bearer ${token(agentA)}`).send({ jobSeekerId: blocked.id }).expect(409);
@@ -530,7 +531,8 @@ describe('21 Nov fixes: call work and leads', () => {
     for (const purpose of ['profile_sharing', 'aadhaar_verification', 'job_updates']) {
       await prisma.consent.create({ data: { subjectType: 'job_seeker', subjectId: waiting.id, purpose, noticeVersion: 'fix-21nov', granted: true, language: 'en', method: 'sms_link', grantedAt: NOW } });
     }
-    await prisma.jobSeeker.update({ where: { id: waiting.id }, data: { photoStoragePath: `job-seekers/${waiting.id}/selfie.jpg` } });
+    // Rev 211: paid, and the ID check waits for the Team Lead ("paid, waiting for ID").
+    await prisma.jobSeeker.update({ where: { id: waiting.id }, data: { photoStoragePath: `job-seekers/${waiting.id}/selfie.jpg`, status: 'paid_waiting_id', paymentReceivedAt: NOW } });
     await prisma.identityVerification.create({ data: { jobSeekerId: waiting.id, method: 'other_id', vendor: 'team_lead', status: 'pending' } });
     await prisma.publicLink.create({
       data: { tokenHash: crypto.randomBytes(16).toString('hex'), purpose: 'registration', subjectType: 'job_seeker', subjectId: waiting.id, phone: waiting.phone, expiresAt: new Date(NOW.getTime() + DAY) },

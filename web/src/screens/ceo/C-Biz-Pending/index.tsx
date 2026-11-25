@@ -23,16 +23,20 @@ interface Row {
   cameBy: string | null;
   since: string;
   waitingDays: number;
-  waitingFor: 'visit' | 'agreement' | 'tl_review';
+  waitingFor: 'visit' | 'agreement' | 'auto_check' | 'tl_review';
+  /** 25 Nov (rev 211): households keep the visit; others are checked automatically. */
+  household?: boolean;
+  autoCheck?: { status: string; failed: string[]; distanceMeters: number | null } | null;
   agreementSigned: boolean;
   candidatesShown: boolean;
   assignment: { id: string; status: string; suggested: { id: string; name: string | null } | null; assigned: { id: string; name: string | null } | null } | null;
 }
 
 const WAITING = {
-  visit: 'Needs a verification visit',
-  agreement: 'Agreement not signed by OTP yet',
-  tl_review: 'Team Lead review (same day)',
+  visit: 'Needs a verification visit (household)',
+  agreement: 'Agreement and owner photos not done yet',
+  auto_check: 'Signed: the automatic check runs once the owner photos and proofs are in',
+  tl_review: 'Team Lead check',
 };
 
 export default function BusinessesWaiting() {
@@ -51,8 +55,10 @@ export default function BusinessesWaiting() {
         </span>
       );
     }
+    if (r.waitingFor === 'auto_check') return <Link to={to('T-Checks')}>Open the checks</Link>;
     if (r.waitingFor === 'agreement') {
-      return <ActionButton label="Resend link" title="Resend the agreement link" description="The contact person gets a fresh link to sign the agreement by OTP." run={() => api.post(`/businesses/${r.id}/agreement-links`, {})} success="Agreement link sent" />;
+      // Rev 211: no send buttons for the CEO or a Manager; the account's agent sends the agreement link.
+      return <span className="ceo-sub">Waiting for the owner to sign</span>;
     }
     return (
       <ActionButton
@@ -79,7 +85,7 @@ export default function BusinessesWaiting() {
       <TopBar back={{ to: to('C-Businesses'), label: 'Businesses' }} title="Businesses waiting" subtitle="Leads to visit, agreements to sign and Team Lead reviews." />
       <BusinessTabs />
       <StatGrid>
-        <StatTile label="Need a verification visit" value={rows.filter((r) => r.waitingFor === 'visit').length} tone="orange" loading={query.isPending} />
+        <StatTile label="Households: visit needed" value={rows.filter((r) => r.waitingFor === 'visit').length} tone="orange" loading={query.isPending} />
         <StatTile label="Agreement not signed yet" value={rows.filter((r) => r.waitingFor === 'agreement').length} tone="gold" loading={query.isPending} />
         <StatTile label="Team Lead review" value={rows.filter((r) => r.waitingFor === 'tl_review').length} tone="royal" loading={query.isPending} />
         <StatTile label="Waiting more than 2 days" value={rows.filter((r) => r.waitingDays > 2).length} tone="red" loading={query.isPending} />
@@ -121,7 +127,10 @@ export default function BusinessesWaiting() {
                         {r.cameFrom === 'in_person' ? `Onboarded in person${r.cameBy ? ` by ${r.cameBy}` : ''}` : `${humanize(r.cameFrom)}${r.cameBy ? ` · ${r.cameBy}` : ''}`} · {formatDateIST(r.since)}
                       </td>
                       <td>
-                        {WAITING[r.waitingFor]}
+                        {WAITING[r.waitingFor] ?? humanize(r.waitingFor)}
+                        {r.autoCheck?.status === 'failed' && r.autoCheck.failed.length > 0 && (
+                          <div className="ceo-cell-sub" data-testid="auto-check-failed">{r.autoCheck.failed.join('; ')}</div>
+                        )}
                         {r.waitingDays > 2 && (
                           <>
                             {' '}
@@ -138,7 +147,7 @@ export default function BusinessesWaiting() {
             </div>
           )}
           <div className="ceo-note" style={{ padding: '10px 16px' }}>
-            No candidate is shown until the business is visited in person and the agreement is signed by OTP; the Team Lead reviews the same day.
+            No candidate is shown until the business is verified: automatically after the agreement (owner photos, 2 proofs, location), or by the Team Lead when anything is missing. Households keep the visit and the Team Lead check.
           </div>
         </Card>
       )}

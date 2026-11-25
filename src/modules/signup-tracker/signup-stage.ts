@@ -10,9 +10,16 @@ import type { SignupStage } from '../../common/customer-auth/customer-app.consta
  * | A     | phone verified, role     | phone verified              | phone verified   |
  * | B     | profile filled           | business form filled        | details filled   |
  * | C     | consent given            | agreement signed            | terms accepted   |
- * | D     | selfie and ID done       | visit booked                | selfie and ID    |
- * | E     | terms agreed, pay pending| visit done, TL approval     | UPI added        |
- * | done  | ₹499 received            | verified                    | active (UPI ok)  |
+ * | D     | selfie done, pay pending | visit booked (households)   | selfie and ID    |
+ * | E     | paid, waiting for ID     | TL check (households: after | UPI added        |
+ * |       |                          | the visit; others: only when|                  |
+ * |       |                          | the automatic check failed) |                  |
+ * | done  | paid and ID verified     | verified                    | active (UPI ok)  |
+ *
+ * Job seekers follow Consent → Selfie → Payment → ID check (Master Guide rev
+ * 211, 25 Nov): stage E is "Paid, waiting for ID" and a sign-up is done when
+ * he is paid AND his ID passed (his 30 days started), which is also when the
+ * agent's credit counts.
  */
 export const STAGE_ORDER: readonly SignupStage[] = ['A', 'B', 'C', 'D', 'E', 'done'];
 
@@ -25,7 +32,7 @@ export interface SeekerFacts {
   /** Every required consent purpose granted and not withdrawn. */
   consentDone: boolean;
   selfie: boolean;
-  /** Latest ID check passed. */
+  /** An ID check passed (verified, name matches, 18+). */
   idVerified: boolean;
   /** An ID check was tried and failed (name mismatch, not adult, unreadable). */
   idFailed: boolean;
@@ -33,10 +40,16 @@ export interface SeekerFacts {
   termsAgreed: boolean;
   paymentFailures: number;
   paid: boolean;
+  /** Rev 211: his 30 days started (paid and ID passed; JobSeeker.guaranteeStartsAt). */
+  guaranteeStarted?: boolean;
 }
 
 export interface BusinessFacts {
   agreementSigned: boolean;
+  /** 25 Nov (rev 211): a household hiring help keeps the visit; every other business is checked automatically. */
+  household?: boolean;
+  /** The automatic check failed: waiting for the Team Lead. */
+  autoCheckFailed?: boolean;
   /** A verification or app sign-up visit has a field agent assigned (or is done). */
   visitBooked: boolean;
   /** The visit request exists but nobody is assigned yet. */
@@ -68,26 +81,43 @@ export interface StageResult {
 }
 
 export function seekerStage(f: SeekerFacts): StageResult {
+  // Rev 211: Consent → Selfie → (terms) Payment → ID check.
+  const done = Boolean(f.guaranteeStarted) || (f.paid && f.idVerified);
   const missing: string[] = [];
   if (!f.consentDone) missing.push('consent');
   if (!f.selfie) missing.push('selfie');
-  if (!f.idVerified) missing.push('id_check');
-  if (!f.termsAgreed) missing.push('terms');
+  if (!f.paid && !f.termsAgreed) missing.push('terms');
   if (!f.paid) missing.push('payment');
+  if (!done && !f.idVerified) missing.push('id_check');
   let stage: SignupStage = 'B';
-  if (f.paid) stage = 'done';
-  else if (f.consentDone && f.selfie && f.idVerified && f.termsAgreed) stage = 'E';
-  else if (f.consentDone && f.selfie && f.idVerified) stage = 'D';
+  if (done) stage = 'done';
+  else if (f.paid) stage = 'E';
+  else if (f.consentDone && f.selfie) stage = 'D';
   else if (f.consentDone) stage = 'C';
   let stuckReason: string | null = null;
-  if (!f.idVerified && f.idFailed) stuckReason = 'ID check did not pass';
+  if (f.paid && !done) stuckReason = f.idFailed ? 'Paid, waiting for ID: the ID check did not pass' : 'Paid, waiting for ID';
   else if (!f.paid && f.paymentFailures >= 2) stuckReason = `UPI failed ${f.paymentFailures} times`;
   else if (!f.paid && f.paymentFailures === 1) stuckReason = 'UPI failed once';
-  const step = missing[0] ?? 'complete';
-  return { stage, step: step === 'payment' && f.paymentFailures > 0 ? 'payment_failed' : step, missing, stuckReason };
+  const step = done ? 'complete' : (missing[0] ?? 'complete');
+  return { stage, step: step === 'payment' && f.paymentFailures > 0 ? 'payment_failed' : step, missing: done ? [] : missing, stuckReason };
 }
 
 export function businessStage(f: BusinessFacts): StageResult {
+  // 25 Nov (rev 211, B5): agreement (with the owner photos) → automatic check → Team Lead check
+  // only when it failed → verified. Households keep the visit stages below.
+  if (f.household === false) {
+    const missing: string[] = [];
+    if (!f.agreementSigned) missing.push('agreement');
+    if (!f.verified) missing.push('approval');
+    let stage: SignupStage = 'B';
+    if (f.verified) stage = 'done';
+    else if (f.agreementSigned && f.autoCheckFailed) stage = 'E';
+    else if (f.agreementSigned) stage = 'C';
+    let stuckReason: string | null = null;
+    if (f.rejected) stuckReason = 'Rejected at verification';
+    else if (f.autoCheckFailed && !f.verified) stuckReason = 'Automatic check did not pass: Team Lead checking';
+    return { stage, step: missing[0] ?? 'complete', missing, stuckReason };
+  }
   const missing: string[] = [];
   if (!f.agreementSigned) missing.push('agreement');
   if (!f.visitBooked && !f.visitDone && !f.verified) missing.push('visit_booked');

@@ -352,7 +352,8 @@ export class FieldSellingScreensService {
     const distanceKm = seeker.latitude !== null && seeker.longitude !== null && lat !== null && lon !== null
       ? Math.round(kmBetween(seeker.latitude, seeker.longitude, lat, lon)) : null;
     const days = policy.jobSeekerGuaranteeDays;
-    const deadline = seeker.paymentReceivedAt ? refundGuaranteeDeadline(seeker.paymentReceivedAt, days) : null;
+    // Rev 211: the guarantee day counts from guaranteeStartsAt (paid and ID passed).
+    const deadline = seeker.guaranteeStartsAt ? refundGuaranteeDeadline(seeker.guaranteeStartsAt, days) : null;
     const guaranteeDay = deadline
       ? Math.min(days, Math.max(1, days - Math.ceil((deadline.getTime() - now.getTime()) / DAY_MS))) : null;
     const liked = await this.prisma.ownerFavourite.findUnique({
@@ -573,6 +574,9 @@ export class FieldSellingScreensService {
       walkInStart: settings.walkInStart,
       walkInEnd: settings.walkInEnd,
       threeWayCalls: settings.threeWayCalls,
+      // 25 Nov (rev 212, B9f): a home workplace's first interview is by phone or at the Laboura office.
+      workplaceIsHome: vacancy.business.runsFromHome,
+      firstInterviewHere: (await this.prisma.interview.count({ where: { businessId: vacancy.businessId, status: { notIn: ['cancelled', 'declined'] } } })) === 0,
     };
   }
 }

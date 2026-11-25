@@ -550,11 +550,18 @@ Households are hidden in v1 (C24). → `201`
 { "profileId": "uuid", "kind": "business", "code": "BZ-00456", "verificationStatus": "lead", "next": "agreement" }
 ```
 
-The server (A) creates the verification visit request at once (proposal 4.2):
-a `VisitAssignment` with purpose `business_signup`, status `pending`,
-`requestedFor` = `visitPreferredAt` and `signupTrackerId` set, with no field
-agent yet. **The back office (D) suggests and assigns the field agent on that
-row and never creates a second one.** Branches, a visit, a selfie or a
+**Changed 25 Nov (Master Guide rev 211, automatic business verification).** Two optional
+fields are accepted: `runsFromHome` (boolean — the business runs from the owner's home, so
+the second owner photo on the agreement page is the owner holding the FSSAI licence) and
+`mapsLink` (a Google Maps link to the shop, one of the proofs; the server reads its pin).
+Only a **household** (`businessType` `household` or `villa_gated_community`) still gets the
+verification visit request at once (proposal 4.2): a `VisitAssignment` with purpose
+`business_signup`, status `pending`, `requestedFor` = `visitPreferredAt` and
+`signupTrackerId` set, with no field agent yet; **the back office (D) suggests and assigns
+the field agent on that row and never creates a second one.** Every other business gets
+**no visit request**: after it signs the agreement (owner selfie and shop photo taken on the
+agreement page first, see §16) the automatic check verifies it, or sends it to a Team Lead
+when something is missing; `visitPreferredAt` is then ignored. Branches, a visit, a selfie or a
 household cannot be sent from the app (an agent adds branches; households wait, C24).
 Errors: `409 PROFILE_EXISTS` (my mobile already has a business: linked);
 `409 VALIDATION_FAILED` with the generic message "We couldn't finish this
@@ -641,7 +648,7 @@ The answer depends on the profile kind (`kind`).
   "stopped": null,
   "idCheck": { "lastResult": "verified", "waitingForTeamLead": false },
   "payment": { "state": "confirmed", "amountPaise": 49900, "confirmedAt": "…" },
-  "guarantee": { "active": true, "day": 12, "days": 30, "startedAt": "…", "endsAt": "…" },
+  "guarantee": { "active": true, "day": 12, "days": 30, "startedAt": "…", "endsAt": "…", "paidWaitingForId": false },
   "hits": { "count": 0, "max": 3 },
   "interview": null,
   "refund": { "state": "none", "dueOn": null, "paidAt": null, "reference": null },
@@ -655,8 +662,23 @@ The answer depends on the profile kind (`kind`).
   expired before the check: take a new one on the registration link), `failed`. There is no outside
   ID company, so no "service down" state.
 - `payment.state`: `not_started`, `pending`, `confirming` ("Paid, confirming" until the
-  bank credit is matched), `failed`, `confirmed`. The 30 days start only at `confirmed`.
-- `guarantee.day` counts from the confirmed payment, 1 to 30 (null before payment).
+  bank credit is matched), `failed`, `confirmed`.
+- **Order (Master Guide rev 211, 25 Nov): Consent → Selfie → Payment → ID check.**
+  `currentStep` goes `consent` → `selfie` → `payment` → `id_check` → `complete`; payment no
+  longer waits for the ID check (an ID check done before payment still counts).
+- **The 30 days start when he is paid AND his ID is verified** (Aadhaar QR passed, or another
+  ID approved by a Team Lead, Manager or the CEO): the later of the two. Paid with no passed ID
+  check, `status` is `paid_waiting_id` and `guarantee.paidWaitingForId` is true: not matched, no
+  offers, no hits, `guarantee.active` false, `startedAt` / `endsAt` / `day` null. Show
+  "Your 30 days start only after your government ID is verified. Until then your registration is
+  paused." and lead him to the ID check (`nextAction` `open_registration_link`, or
+  `wait_for_id_check` while another ID waits for a Team Lead).
+- `guarantee.startedAt` is that start (`JobSeeker.guaranteeStartsAt`, no longer the payment);
+  `guarantee.day` counts from it, 1 to 30 (null before it). `endsAt` = start + 30 days.
+- The payment notification (`payment_confirmed`) now reads "Your receipt is in Laboura. Your
+  {days}-day guarantee runs from when your ID is verified."
+- Account deletion: `guaranteeRunning` is also true while he is `paid_waiting_id` (his ₹499 can
+  still come back on request; deleting gives that up).
 - `interview`: `null` until an interview is **booked**. Then
   `{ "at": "…", "businessName": "…", "address": "…", "latitude": …, "longitude": …, "replyBy": "…", "state": "booked" }`.
   **The business name and address never appear before an interview is booked**
@@ -690,7 +712,8 @@ The answer depends on the profile kind (`kind`).
 A branch manager sees only that branch's vacancies, drafts and counts, and
 `tracker.agreement` only as true/false. **No candidate is listed here in v1**, and
 never a phone number. `nextAction`: `sign_agreement`, `wait_for_visit`,
-`wait_for_approval`, `add_vacancy`, `none`. `counts.workersPlaced`: workers whose
+`wait_for_approval`, `add_vacancy`, `none` (25 Nov: `wait_for_visit` only for households; a
+signed business that is not verified yet answers `wait_for_approval`). `counts.workersPlaced`: workers whose
 fee is paid (working now, or due to join); the app shows "Report a worker left"
 when it is above 0 (§8.2).
 
@@ -1253,7 +1276,8 @@ records, so calling it twice is harmless; without a call the tracker job
 What D does with each sign-up (one run at a time per sign-up: Postgres advisory lock; tries and reminders are claimed with conditional updates):
 
 - **Stage** is read from the records (`signup-stage.ts`): job seeker consent → selfie
-  and ID → terms (guarantee floor frozen) → ₹499 received; business agreement →
+  → terms and ₹499 (D) → paid, waiting for ID (E) → paid and ID verified (done; rev 211:
+  the agent's credit counts then); business agreement →
   visit booked → visit done (`pending_tl_check`) → `verified`; partner terms →
   selfie and ID → UPI added → UPI verified. Moving forward resets the reminders
   and call tries (a new stop) and reopens a closed sign-up.
@@ -1361,3 +1385,60 @@ its API is `GET /referral-links/:slug`, `POST /referral-links/:slug/send-code { 
 `POST /referral-links/:slug/leads { name, phone, lookingFor: job|staff, area?, consent: true, requestId, code }`
 (always `{ received: true }`, no oracle; at most 30 leads and 60 codes a day per link,
 the usual public-page code limits per number). The app does not need these.
+
+## 25 Nov changes (Master Guide rev 211: job seeker order)
+
+Server endpoints the app uses changed; the app (`customer/`) itself is not changed here.
+
+- **Order: Consent → Selfie → Payment → ID check.** The job seeker home's `currentStep`, `steps`
+  and `nextAction` follow it (section 7.1). The registration link pages do the same.
+- **New status `paid_waiting_id`** ("Paid, waiting for ID"): paid, no ID check passed. Not active
+  (no matching, offers or hits); `guarantee.paidWaitingForId: true`, `guarantee.active: false`.
+- **`guarantee.startedAt` / `endsAt` / `day`** count from when he is paid AND ID-verified (the later
+  of the two), not from the payment.
+- **Legal:** job seeker terms **v1.2** and consent notice **1.3**. `GET /legal/documents/job_seeker_terms`
+  also returns `consentNotice` ("Your 30 days start only after your government ID is verified. Until
+  then your registration is paused."): show it above the ticks. Anyone who accepted 1.1 / notice 1.2
+  gets the usual `RECONSENT_REQUIRED` re-consent.
+- **Messages** (WhatsApp first, SMS backup): `details_saved_pay_next`, `payment_received_id_left`,
+  `guarantee_started`, `id_check_failed_refund`, `id_check_reminder` (at most 3, one a day, 9 AM–9 PM).
+  `registration_done` is no longer sent to job seekers.
+- **Refund before a passed ID check** (under 18, or an ID that could not be verified): full ₹499,
+  only when he contacts Laboura and asks (staff record it); the app's `refund.state` shows it as
+  `with_finance` / `paid` like any refund. A forged or altered ID gets no refund.
+
+## 16. Automatic business verification (changed 25 Nov, Master Guide rev 211)
+
+What changed on the server for the app (no app change is required):
+
+- **Agreement page (`/p/agreement/<token>`, the same link the app opens).** Before signing,
+  the page asks for the owner's live selfie and a live photo of the shop's name board (home
+  business: the owner holding the FSSAI licence), camera only, with the phone's location on
+  the shop photo: `POST /consent/:token/owner-photo` (multipart `photo`, `kind` = `selfie` |
+  `shop`, `captureSource=live_camera`, `latitude`, `longitude`, `accuracyMeters` or
+  `locationStatus=refused`). `GET /consent/:token` now carries
+  `ownerPhotos: { selfie, shop, shopKind }`; `POST /consent/submit` answers
+  `400 OWNER_PHOTOS_REQUIRED` until both photos exist.
+- **Business agreement version 1.2** (clauses 3.2–3.4). A business that signed 1.1 is asked to
+  sign 1.2 like any re-consent (`needsReconsent` on Home).
+- **Verification.** Right after signing, the business is verified automatically (no visit)
+  when every condition holds, else it waits for a Team Lead (`verificationStatus`
+  `pending_tl_check`). Home's `nextAction` follows (above).
+- **Vacancies.** A vacancy with a salary more than 1.5 times its trade's usual top, or more
+  than 5 openings, goes to `status: "pending_tl_check"` after the owner confirms it (instead
+  of `open`) until a Team Lead approves it (`open`) or rejects it (`cancelled`). The app shows
+  any status it does not know as text.
+- **Interviews.** The candidate page "Did they offer you the job?" may also ask "Was the shop
+  real, at this address, and was the job as described?" (`askShopCheck` on
+  `GET /interviews/check/:token`, `shopAnswer` on `POST /interviews/check/:token`). A "No"
+  pauses the business (the existing paused state).
+
+## 17. WhatsApp first, SMS as backup (25 Nov, Master Guide rev 211) — for the customer-app session
+
+What changed on the server (no endpoint was removed or renamed; the app needs no change to keep working):
+
+- **Codes go on WhatsApp first.** While the server's WhatsApp is live (`WHATSAPP_PROVIDER_MODE=meta`), every code the app asks for (`POST /auth/otp/send`, add-mobile, fresh-OTP / step-up sends) goes as a WhatsApp Authentication message (copy-code button); SMS is the backup (sent at once if WhatsApp refuses it or later reports it failed). The `requestId` stays the same for the whole request; either code (WhatsApp or SMS) is accepted, with the same 5 minutes, 5 wrong tries, 30-second resend wait and 3 resends. Request ids of WhatsApp codes start `wa_otp_`; treat `requestId` as opaque as before.
+- **New optional body field `channel` on every code send:** `"sms"` asks for the code by SMS instead ("Send by SMS"). The guide wants the code screen to offer **"Send by SMS" 30 seconds after a code went** (with Resend): send the same body as a resend (`requestId` of the open request) plus `"channel": "sms"`. Any other value is ignored on the customer routes. Example: `{ "phone": "9876543210", "requestId": "wa_otp_…", "channel": "sms" }`.
+- **Test-mode code:** `testModeCode` is now also returned while WhatsApp is live, as long as the OTP and SMS vendors are still mock (customer OTP test mode rules otherwise unchanged).
+- **Messages to the person** (receipts, invoices, interview booked / offer check, joining confirmed, payout-details link and so on) now go on WhatsApp first with SMS as backup; interview offers and "we tried to call you" still go on both. The in-app inbox and pushes are unchanged.
+- The SMS link pages (`/p/...`) that the app opens or shares accept the same optional `channel: "sms"` on their "Send code" calls (`POST /consent/send-otp`, `/registration/payment/:token/send-otp`, `/interviews/result/:token/otp`, `/vacancy-confirm/:token/send-otp`, `/referral-links/:slug/send-code`, `/payout-accounts/send-otp`).

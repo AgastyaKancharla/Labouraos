@@ -1,3 +1,4 @@
+import { LINK_SENDING_ROLES, linkChannel } from '../message/link-channel';
 import {
   BadRequestException,
   Body,
@@ -84,23 +85,26 @@ export class JobSeekerController {
   }
 
   @Post(':id/activation-payment')
-  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
+  // Rev 211: sends the payment link, so agents only (Team Leads, Managers and the CEO keep the stuck view).
+  @RequireRoles(...LINK_SENDING_ROLES)
   @RequirePermission('job_seeker', 'write')
   async createActivationPayment(
     @Param('id') id: string,
     @Req() req: Request & { user?: JwtPayload },
+    @Body('channel') channel?: unknown,
   ) {
-    return this.jobSeekerService.createActivationPayment(id, req.user?.sub);
+    return this.jobSeekerService.createActivationPayment(id, req.user?.sub, linkChannel(channel));
   }
 
   @Post(':id/resend-payment')
-  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
+  @RequireRoles(...LINK_SENDING_ROLES)
   @RequirePermission('job_seeker', 'write')
   async resendPayment(
     @Param('id') id: string,
     @Req() req: Request & { user?: JwtPayload },
+    @Body('channel') channel?: unknown,
   ) {
-    return this.jobSeekerService.createActivationPayment(id, req.user?.sub);
+    return this.jobSeekerService.createActivationPayment(id, req.user?.sub, linkChannel(channel));
   }
 
   /**
@@ -124,15 +128,16 @@ export class JobSeekerController {
   }
 
   @Post(':id/payment-only-link')
-  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
+  @RequireRoles(...LINK_SENDING_ROLES)
   @RequirePermission('job_seeker', 'write')
   async createPaymentOnlyLink(
     @Param('id') id: string,
     @Body('phone') phone: string,
     @Req() req: Request & { user: JwtPayload },
     @Body('relation') relation?: string,
+    @Body('channel') channel?: unknown,
   ) {
-    return this.jobSeekerService.createPaymentOnlyLink(id, phone, req.user.sub, relation);
+    return this.jobSeekerService.createPaymentOnlyLink(id, phone, req.user.sub, relation, linkChannel(channel));
   }
 
   @Post(':id/hits')

@@ -60,7 +60,10 @@ export function VerificationJobCard({ job, showVerify = true, testID }: { job: V
     <Card stripe accent={job.purpose === 'business_signup' ? 'green' : 'royal'} testID={testID ?? `job-${job.assignmentId}`}>
       <View style={styles.head}>
         <Text variant="bodyStrong" style={styles.flex1}>{b.name || b.code}</Text>
-        <StatusChip tone={job.purpose === 'business_signup' ? 'green' : 'blue'} label={job.purpose === 'business_signup' ? t('job.signup') : t('job.lead')} />
+        <StatusChip
+          tone={job.purpose === 'business_signup' ? 'green' : job.purpose === 'candidate_report' ? 'tomato' : 'blue'}
+          label={job.purpose === 'business_signup' ? t('job.signup') : job.purpose === 'candidate_report' ? t('job.candidateReport') : t('job.lead')}
+        />
       </View>
       <Text variant="muted" testID="job-address">{[b.address, b.locality].filter(Boolean).join(' · ') || t('job.noAddress')}</Text>
       {owner ? <Text testID="job-owner">{owner}</Text> : null}

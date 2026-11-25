@@ -66,7 +66,7 @@ describe('Job seeker rules from the Master Guide', () => {
 
   async function paidSeeker(daysAgo: number, data: Record<string, unknown> = {}) {
     const paidAt = new Date(Date.now() - daysAgo * DAY_MS);
-    const seeker = await createSeeker({ paymentReceivedAt: paidAt, ...data });
+    const seeker = await createSeeker({ paymentReceivedAt: paidAt, guaranteeStartsAt: paidAt, ...data });
     await prisma.payment.create({
       data: {
         code: `PAY-GR-${randomUUID().replace(/-/g, '').slice(0, 10)}`,
@@ -311,13 +311,15 @@ describe('Job seeker rules from the Master Guide', () => {
   describe('paying ₹499 again after 3 hits', () => {
     it('starts a fresh guarantee: earlier hits no longer count for hits, the refund or the refund check', async () => {
       const oldPaidAt = new Date(Date.now() - 60 * DAY_MS);
-      const seeker = await createSeeker({ status: 'deactivated', hitCount: 3, paymentReceivedAt: oldPaidAt });
+      const seeker = await createSeeker({ status: 'deactivated', hitCount: 3, paymentReceivedAt: oldPaidAt, guaranteeStartsAt: oldPaidAt });
       for (const reason of ['offer_declined', 'interview_no_show', 'no_pickup']) {
         await prisma.jobSeekerHit.create({
           data: { jobSeekerId: seeker.id, reason, recordedBy: 'system', recordedAt: new Date(oldPaidAt.getTime() + DAY_MS) },
         });
       }
       await recordRefundCheck(prisma, seeker.id, 'not_working', new Date(oldPaidAt.getTime() + 28 * DAY_MS));
+      // His ID was verified at the first registration (rev 211: then paying again starts the 30 days at once).
+      await giveVerifiedId(prisma, seeker.id);
 
       const reactivation = await prisma.payment.create({
         data: {
@@ -337,6 +339,7 @@ describe('Job seeker rules from the Master Guide', () => {
       const after = await prisma.jobSeeker.findUniqueOrThrow({ where: { id: seeker.id } });
       expect(after).toMatchObject({ status: 'active', hitCount: 0 });
       expect(after.paymentReceivedAt?.getTime()).toBe(confirmedAt.getTime());
+      expect(after.guaranteeStartsAt?.getTime()).toBe(confirmedAt.getTime());
       const hits = await prisma.jobSeekerHit.findMany({ where: { jobSeekerId: seeker.id } });
       expect(hits).toHaveLength(3);
       expect(hits.every((hit) => hit.supersededAt?.getTime() === confirmedAt.getTime())).toBe(true);
@@ -348,7 +351,7 @@ describe('Job seeker rules from the Master Guide', () => {
 
       // Day 31 of the new guarantee: the old decline no longer blocks the refund.
       const newPaidAt = new Date(Date.now() - 31 * DAY_MS);
-      await prisma.jobSeeker.update({ where: { id: seeker.id }, data: { paymentReceivedAt: newPaidAt } });
+      await prisma.jobSeeker.update({ where: { id: seeker.id }, data: { paymentReceivedAt: newPaidAt, guaranteeStartsAt: newPaidAt } });
       await prisma.payment.update({ where: { id: reactivation.id }, data: { createdAt: newPaidAt } });
 
       const sweepStartedAt = new Date();
