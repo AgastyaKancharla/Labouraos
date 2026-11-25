@@ -358,7 +358,7 @@ describe('Phase 18 Task 4: Collecting Payout Details and Paying', () => {
 
       await prisma.jobSeeker.update({
         where: { id: candidate.id },
-        data: { paymentReceivedAt: thirtyOneDaysAgo },
+        data: { paymentReceivedAt: thirtyOneDaysAgo, guaranteeStartsAt: thirtyOneDaysAgo },
       });
 
       const sendSpy = jest.spyOn(paymentService, 'sendPayoutDetailsLinkIfNoAccount');

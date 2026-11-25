@@ -130,7 +130,8 @@ describe('Phase 6 Task 1: Referral Payout Trigger', () => {
     const updatedCandidate = await prisma.jobSeeker.findUnique({
       where: { id: candidate.id },
     });
-    expect(updatedCandidate?.status).toBe('active');
+    // Rev 211: paid with no passed ID check yet — "paid, waiting for ID" (his 30 days start at the ID check).
+    expect(updatedCandidate?.status).toBe('paid_waiting_id');
     expect(updatedCandidate?.paymentReceivedAt).toBeDefined();
 
     // Verify NO referral payout payment was created

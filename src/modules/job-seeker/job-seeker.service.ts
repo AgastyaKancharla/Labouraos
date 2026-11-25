@@ -1796,7 +1796,8 @@ export class JobSeekerService {
           : latestVerification?.failureReason ?? null,
     };
     const payment = {
-      state: latestPayment?.status === 'succeeded' || latestPayment?.status === 'completed'
+      // Rev 211: "paid, waiting for ID" has paid even when no payment row is at hand.
+      state: latestPayment?.status === 'succeeded' || latestPayment?.status === 'completed' || seeker.status === PAID_WAITING_ID
         ? 'done'
         : seeker.guaranteeFloorPaise === null
           ? 'stuck'
