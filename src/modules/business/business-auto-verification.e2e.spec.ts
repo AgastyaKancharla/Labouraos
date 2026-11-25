@@ -181,6 +181,45 @@ describe('Business automatic verification (rev 211–212)', () => {
     expect(await prisma.reviewFlag.count({ where: { kind: 'business_auto_check_failed', subjectId: business.id, status: 'open' } })).toBe(0);
   });
 
+  /** Rev 213: a field agent's in-person visit — board photo with GPS and his selfie at the board. */
+  async function fieldVisit(businessId: string, at: { latitude: number; longitude: number }, extra: { gpsSuspect?: boolean } = {}) {
+    return prisma.businessVisit.create({
+      data: {
+        businessId, staffId: callAgent.id, latitude: at.latitude, longitude: at.longitude, shopName: 'Field shop',
+        boardPhotoPath: `visits/${businessId}/board.jpg`, selfieUrl: `visits/${businessId}/selfie.jpg`, photoLive: true,
+        gpsSuspect: extra.gpsSuspect ?? false, visitedAt: new Date(),
+      },
+    });
+  }
+
+  it('rev 213: onboarded in the field — the visit photos count; no owner photos, signing works, verified automatically', async () => {
+    const business = await makeBusiness();
+    await fieldVisit(business.id, { latitude: business.mapsLatitude! + 0.0005, longitude: business.mapsLongitude! });
+    const link = await consentLinks.createAgreementLink(business.id, callAgent.id, 'en');
+    const page = await request(app.getHttpServer()).get(`/consent/${link.token}`).expect(200);
+    expect(page.body.ownerPhotos).toMatchObject({ selfie: true, shop: true, fromFieldVisit: true });
+    await sign(business.id);
+    const after = await prisma.business.findUniqueOrThrow({ where: { id: business.id } });
+    expect(after).toMatchObject({ verificationStatus: 'verified', autoCheckStatus: 'passed' });
+    expect(JSON.stringify(after.autoCheckReasons)).toMatch(/in-person visit/);
+    expect(await prisma.businessOwnerPhoto.count({ where: { businessId: business.id } })).toBe(0);
+  });
+
+  it('rev 213: the visit GPS is checked against the Maps pin; a GPS-suspect visit does not count', async () => {
+    const far = await makeBusiness();
+    await fieldVisit(far.id, { latitude: far.mapsLatitude! + 400 / 111_195, longitude: far.mapsLongitude! });
+    await sign(far.id);
+    const farAfter = await prisma.business.findUniqueOrThrow({ where: { id: far.id } });
+    expect(farAfter.verificationStatus).toBe('pending_tl_check');
+    expect(JSON.stringify(farAfter.autoCheckReasons)).toMatch(/more than 200 m/);
+
+    const suspect = await makeBusiness();
+    await fieldVisit(suspect.id, { latitude: suspect.mapsLatitude!, longitude: suspect.mapsLongitude! }, { gpsSuspect: true });
+    const link = await consentLinks.createAgreementLink(suspect.id, callAgent.id, 'en');
+    const page = await request(app.getHttpServer()).get(`/consent/${link.token}`).expect(200);
+    expect(page.body.ownerPhotos).toMatchObject({ selfie: false, shop: false, fromFieldVisit: false });
+  });
+
   it('B3 duplicates: the same GST as another business fails the check', async () => {
     const first = await makeBusiness();
     const twin = await makeBusiness({ gstNumber: first.gstNumber });

@@ -1,3 +1,4 @@
+import { findFieldVisitProof } from './business-field-proof';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -63,6 +64,8 @@ export interface OwnerPhotoState {
   shopKinds: ShopPhotoKind[];
   /** Fewer than 2 proofs: the small-business checks apply (B9). */
   smallBusiness: boolean;
+  /** Onboarded in person by a field agent: the visit's board photo and selfie count (rev 213). */
+  fromFieldVisit: boolean;
 }
 
 /** Parses a coordinate the page sent as text or a number. */
@@ -115,9 +118,13 @@ export class BusinessOwnerPhotoService {
       where: { businessId, kind: { in: ['owner_selfie', ...shopKinds] } },
       select: { kind: true },
     });
+    // Rev 213: a field agent's in-person visit (board photo with GPS + his selfie at the board +
+    // the owner's OTP) is the proof; the owner takes no extra photos then.
+    const visit = await findFieldVisitProof(this.prisma, businessId);
     return {
-      selfie: rows.some((r) => r.kind === 'owner_selfie'),
-      shop: rows.some((r) => (shopKinds as string[]).includes(r.kind)),
+      selfie: Boolean(visit) || rows.some((r) => r.kind === 'owner_selfie'),
+      shop: Boolean(visit) || rows.some((r) => (shopKinds as string[]).includes(r.kind)),
+      fromFieldVisit: Boolean(visit),
       shopKind: shopKinds[0],
       shopKinds,
       smallBusiness: verificationPathOf(business) === 'small_business',

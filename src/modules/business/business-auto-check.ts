@@ -39,6 +39,8 @@ export interface AutoCheckFacts extends ProofInput {
   /** The second photo: the name board, or for a home business the owner holding the FSSAI licence. */
   hasShopPhoto: boolean;
   runsFromHome: boolean;
+  /** Rev 213: onboarded in person — the field visit's board photo and selfie stand in for the owner's photos. */
+  photosFromFieldVisit?: boolean;
   /** Where the shop photo was taken, when the phone gave its location. */
   shopPhotoLatitude: number | null;
   shopPhotoLongitude: number | null;
@@ -77,9 +79,13 @@ export function decideAutoCheck(f: AutoCheckFacts): AutoCheckResult {
 
   add('owner_phone_verified', f.phoneVerified, f.phoneVerified ? "Owner's phone verified by code" : "Owner's phone is not verified by code");
   add('agreement_signed_by_otp', f.agreementSignedByOtp, f.agreementSignedByOtp ? 'Agreement signed by code' : 'Agreement not signed by code');
-  add('owner_selfie', f.hasOwnerSelfie, f.hasOwnerSelfie ? "Owner's live selfie taken" : "No live selfie of the owner");
+  add('owner_selfie', f.hasOwnerSelfie, f.photosFromFieldVisit
+    ? "Field agent's selfie at the shop board with the owner's code (in-person visit)"
+    : f.hasOwnerSelfie ? "Owner's live selfie taken" : "No live selfie of the owner");
   const shopWord = f.runsFromHome ? 'Live photo of the owner holding the FSSAI licence' : "Live photo of the shop's name board";
-  add('shop_photo', f.hasShopPhoto, f.hasShopPhoto ? `${shopWord} taken` : `${shopWord} missing`);
+  add('shop_photo', f.hasShopPhoto, f.photosFromFieldVisit
+    ? "Field agent's live photo of the shop board at the visit"
+    : f.hasShopPhoto ? `${shopWord} taken` : `${shopWord} missing`);
 
   const proofs = evaluateProofs(f);
   const valid = proofs.filter((p) => p.valid);
