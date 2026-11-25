@@ -69,6 +69,8 @@ export const v2En = {
   'ivResult.tooEarly': 'You can give the result about an hour after the interview starts.',
   'ivResult.failed': 'Could not open the result. Check your internet and try again.',
   'ivResult.retry': 'Try again',
+  'ivResult.closed': 'This result is already given, or the time to give it in the app is over. Our team will call you if anything is needed.',
+  'ivResult.noShowLater': 'If {name} did not come, you can mark it after {time}, when the interview time is over.',
   'ivResult.alreadySent': 'The result for this interview is already sent.',
   'ivResult.intro': '{name} · {job} interview on {day}, {time}',
   'ivResult.happened': 'Did the interview happen?',

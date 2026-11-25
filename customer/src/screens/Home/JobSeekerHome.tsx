@@ -30,6 +30,9 @@ export function JobSeekerHomeView({ profileId, home, hero, belowHero }: { profil
   // Rev 211: paid but the ID check is still to do → registration is not finished yet.
   const waitingId = g.status === 'waiting_id';
   const registrationDone = home.payment.status !== 'not_paid' && !waitingId;
+  // While the bank confirms the ₹499 he can already do the ID check: keep the steps and Continue on Home.
+  const idWhileConfirming = home.payment.status === 'confirming' && home.steps.idCheck !== 'done';
+  const showSteps = !registrationDone || idWhileConfirming;
   const hasPartner = (account?.profiles ?? []).some((p) => p.kind === 'referral_partner');
   // Each step has its own colour and drawn icon (Master Guide: colour-coded steps).
   const steps: StepItem[] = [
@@ -102,12 +105,12 @@ export function JobSeekerHomeView({ profileId, home, hero, belowHero }: { profil
       </HeroCard>
       {belowHero}
 
-      {!registrationDone ? (
+      {showSteps ? (
         <Card title={t('jsHome.finishTitle')} accent="royal" testID="js-home-steps">
           <View style={styles.gap}>
             <StepList testID="js-step" steps={steps} />
             {home.stuckReason ? <Banner tone="warn" message={home.stuckReason} testID="js-home-stuck" /> : null}
-            {waitingId ? <Banner tone="info" message={t('jsHome.waitingId')} testID="js-home-waiting-id-note" /> : <Text variant="muted">{t('jsHome.payLast')}</Text>}
+            {waitingId || idWhileConfirming ? <Banner tone="info" message={t('jsHome.waitingId')} testID="js-home-waiting-id-note" /> : <Text variant="muted">{t('jsHome.payLast')}</Text>}
             <Button label={t('jsHome.continue')} onPress={() => router.push(routes.verify('registration', profileId))} testID="js-home-continue" />
             <Button label={t('jsHome.needHelp')} variant="secondary" onPress={() => router.push(routes.help)} testID="js-home-help" />
           </View>

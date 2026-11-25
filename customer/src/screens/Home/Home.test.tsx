@@ -73,6 +73,20 @@ describe('Job seeker Home', () => {
     expect(screen.queryByTestId('js-home-steps')).toBeNull();
   });
 
+  it('rev 211: paying is confirming and the ID check is not done — the steps and Continue stay on Home', async () => {
+    await renderHome(
+      jsHome({
+        steps: { phone: 'done', profile: 'done', consent: 'done', selfie: 'done', idCheck: 'not_started', payment: 'in_progress' },
+        payment: { status: 'confirming', amountPaise: 49_900 },
+      }),
+    );
+    expect(await screen.findByTestId('js-home-confirming')).toBeTruthy();
+    expect(screen.getByTestId('js-home-steps')).toBeTruthy();
+    expect(screen.getByTestId('js-home-waiting-id-note')).toHaveTextContent(/after your government ID is verified/);
+    await fireEvent.press(screen.getByTestId('js-home-continue'));
+    expect(router.push).toHaveBeenCalledWith('/verify/registration?profileId=p-js');
+  });
+
   it('guarantee running: day X of 30 and hits so far', async () => {
     await renderHome(runningJsHome());
     expect(await screen.findByTestId('js-home-running')).toHaveTextContent(/Day 12 of 30/);

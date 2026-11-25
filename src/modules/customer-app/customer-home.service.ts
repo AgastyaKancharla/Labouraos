@@ -252,7 +252,9 @@ export class CustomerHomeService {
           ...(branchId ? { vacancy: { branchId } } : {}),
           OR: [
             { status: 'offered', slotStartsAt: { gt: now } },
-            { status: 'confirmed' },
+            // A confirmed interview stays until its result (or the close sweep); old rows the sweep has not
+            // reached yet must not push today's and upcoming cards out of the first 20.
+            { status: 'confirmed', slotEndsAt: { gte: new Date(now.getTime() - RECENT_RESULT_MS) } },
             { resultRecordedAt: { gte: new Date(now.getTime() - RECENT_RESULT_MS) } },
           ],
         },
@@ -291,7 +293,8 @@ export class CustomerHomeService {
           ? 'waiting_for_candidate'
           : now.getTime() >= opensAt.getTime() ? 'result_due' : 'upcoming';
       const primary = iv.jobSeeker.trades.find((tr) => tr.isPrimary) ?? iv.jobSeeker.trades.find((tr) => tr.trade === iv.vacancy.tradeSkill) ?? iv.jobSeeker.trades[0];
-      const photoUrl = iv.jobSeeker.photoStoragePath && this.candidatePhotos
+      // The photo helps the owner recognise who is coming; once the result is given it is not needed.
+      const photoUrl = !recorded && iv.jobSeeker.photoStoragePath && this.candidatePhotos
         ? await this.candidatePhotos.signedUrl(iv.jobSeeker.photoStoragePath, CANDIDATE_PHOTO_LINK_TTL_SECONDS).catch(() => null)
         : null;
       return {

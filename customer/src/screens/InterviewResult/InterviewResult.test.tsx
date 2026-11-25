@@ -13,10 +13,11 @@ jest.mock('expo-router', () => require('@/test/expo-router-mock'));
 
 const IV = 'iv-p-biz-1';
 const results: [string, string, string | null][] = [];
+let slot = { startsAt: '2026-11-01T06:30:00Z', endsAt: '2026-11-01T07:30:00Z' };
 
 function spiedSteps(): jest.Mocked<StepsApi> {
   onMockInterview(
-    (id) => (id === IV ? { id, candidateFirstName: 'Ravi', businessName: 'Hotel Annapoorna', job: 'Cook', startsAt: '2026-11-26T06:30:00Z', endsAt: '2026-11-26T07:30:00Z', salaryMinPaise: 1_500_000 } : null),
+    (id) => (id === IV ? { id, candidateFirstName: 'Ravi', businessName: 'Hotel Annapoorna', job: 'Cook', ...slot, salaryMinPaise: 1_500_000 } : null),
     (id, result, reason) => void results.push([id, result, reason]),
   );
   const steps = mockStepsApi(0);
@@ -43,6 +44,7 @@ async function confirmWithCode() {
 beforeEach(() => {
   jest.clearAllMocks();
   results.length = 0;
+  slot = { startsAt: '2026-11-01T06:30:00Z', endsAt: '2026-11-01T07:30:00Z' };
 });
 
 describe('Interview result in the app (26 Nov)', () => {
@@ -98,12 +100,31 @@ describe('Interview result in the app (26 Nov)', () => {
     expect(await screen.findByTestId('iv-result-done')).toHaveTextContent(/more profiles/);
   });
 
+  it('"did not come" waits for the end of the slot (it costs him his refund): a walk-in window still running', async () => {
+    const start = Date.now() - 90 * 60_000;
+    slot = { startsAt: new Date(start).toISOString(), endsAt: new Date(start + 8 * 60 * 60_000).toISOString() };
+    const steps = spiedSteps();
+    await renderResult(steps);
+    expect(await screen.findByTestId('iv-result-happened-yes')).toBeTruthy();
+    expect(screen.queryByTestId('iv-result-happened-no')).toBeNull();
+    expect(screen.getByTestId('iv-result-no-show-later')).toHaveTextContent(/If Ravi did not come, you can mark it after/);
+  });
+
   it('too early: the server says when it opens', async () => {
     const steps = spiedSteps();
     await renderResult(steps, async () => {
-      throw new ApiError({ status: 409, messages: ['You can give the result after the interview'] });
+      throw new ApiError({ status: 409, messages: ['You can give the result after the interview'], body: { statusCode: 409, code: 'NOT_ALLOWED', message: 'x', opensAt: '2026-11-26T07:30:00.000Z' } });
     });
     expect(await screen.findByTestId('iv-result-early')).toHaveTextContent(/about an hour after the interview starts/);
     expect(steps.interviewResultDetails).not.toHaveBeenCalled();
+  });
+
+  it('already given (on WhatsApp) or closed: says so instead of "too early"', async () => {
+    const steps = spiedSteps();
+    await renderResult(steps, async () => {
+      throw new ApiError({ status: 409, messages: ['This interview is no longer waiting for a result'], body: { statusCode: 409, code: 'NOT_ALLOWED', message: 'x' } });
+    });
+    expect(await screen.findByTestId('iv-result-closed')).toHaveTextContent(/already given/);
+    expect(screen.queryByTestId('iv-result-retry')).toBeNull();
   });
 });

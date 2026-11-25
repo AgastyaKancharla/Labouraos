@@ -773,6 +773,11 @@ export class InterviewService {
       throw new BadRequestException('This interview is no longer awaiting an owner result');
     }
     const now = this.clock.now();
+    // "Did not come" costs the job seeker his refund: like the field agent's "Didn't come", only once the
+    // slot is over — a walk-in window can still be running when the owner opens the result in the app (26 Nov).
+    if (input.result === 'candidate_no_show' && now.getTime() < interview.slotEndsAt.getTime()) {
+      throw new BadRequestException('"Did not come" can be given once the interview time is over');
+    }
     // M10 (rev 178): a suspended business selects no one (it interviews no one while suspended).
     if (input.result === 'selected' && isBusinessSuspended(interview.business, now)) throw new BadRequestException(BUSINESS_SUSPENDED_MESSAGE);
     const status = input.result === 'candidate_no_show' ? 'no_show' : 'completed';

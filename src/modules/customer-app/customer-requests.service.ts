@@ -133,6 +133,13 @@ export class CustomerRequestsService {
     if (now.getTime() < opensAt.getTime()) {
       throw new CustomerApiError(HttpStatus.CONFLICT, CUSTOMER_ERROR_CODES.NOT_ALLOWED, 'You can give the result after the interview', { opensAt: opensAt.toISOString() });
     }
+    // The general limit counts links by the profile's subject; result links are kept by interview, so they get their own.
+    const recent = await this.prisma.publicLink.count({
+      where: { subjectType: 'interview', subjectId: interview.id, purpose: 'interview_owner_result', createdAt: { gt: new Date(now.getTime() - 60 * 60 * 1000) } },
+    });
+    if (recent >= MAX_LINKS_PER_HOUR) {
+      throw new CustomerApiError(HttpStatus.TOO_MANY_REQUESTS, CUSTOMER_ERROR_CODES.LIMIT_REACHED, 'Too many links in an hour. Try again later.');
+    }
     const branch = interview.vacancy.branchId
       ? await this.prisma.businessBranch.findUnique({ where: { id: interview.vacancy.branchId }, select: { contactPersonPhone: true } })
       : null;

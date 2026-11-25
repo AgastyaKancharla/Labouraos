@@ -488,7 +488,7 @@ describe('Customer app API', () => {
       const ahead = await book(120, 60, 2); // in two hours: not yet
 
       const home = await auth(http().get(`${API}/me/profiles/${res.body.profileId}/home`), session.accessToken).expect(200);
-      const cards = home.body.interviews as Array<Record<string, any>>;
+      const cards = home.body.interviews as Array<{ id: string; state: string; candidate: unknown }>;
       expect(cards.map((c) => [c.id, c.state])).toEqual([[done.id, 'result_due'], [ahead.id, 'upcoming']]);
       expect(cards[0].candidate).toEqual({ firstName: 'Ravi', age: expect.any(Number), trade: 'Baker', yearsExperience: 4, languages: ['Kannada'], photoUrl: null });
       // Never the surname or a phone number on the card (no-bypass rule).

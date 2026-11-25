@@ -401,8 +401,17 @@ describe('InterviewService booking', () => {
     expect(tx.interview.updateMany).not.toHaveBeenCalled();
   });
 
+  it('26 Nov: "did not come" is refused while the slot is still running (a walk-in window may not be over)', async () => {
+    prisma.interview.findUnique.mockResolvedValue({ ...confirmedInterview(), slotStartsAt: new Date('2026-11-06T04:30:00.000Z'), slotEndsAt: new Date('2026-11-06T12:30:00.000Z') });
+    await expect(service.submitOwnerResult('single-use-token', {
+      otpRequestId: 'otp-request-id', otpCode: '123456', result: 'candidate_no_show',
+    })).rejects.toThrow('once the interview time is over');
+    expect(hits.recordHit).not.toHaveBeenCalled();
+    expect(tx.interview.updateMany).not.toHaveBeenCalled();
+  });
+
   it('records a no-show hit but never a hit for not selected', async () => {
-    prisma.interview.findUnique.mockResolvedValue(confirmedInterview());
+    prisma.interview.findUnique.mockResolvedValue({ ...confirmedInterview(), slotStartsAt: new Date('2026-11-06T07:00:00.000Z'), slotEndsAt: new Date('2026-11-06T08:00:00.000Z') });
     await service.submitOwnerResult('single-use-token', {
       otpRequestId: 'otp-request-id', otpCode: '123456', result: 'candidate_no_show',
     });

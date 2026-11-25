@@ -17,6 +17,11 @@ import type { InterviewResultInput, InterviewResultValue } from '@/verify/types'
 import { OtpCodeCard } from '../shared/OtpCodeCard';
 
 type Happened = 'yes' | 'no';
+
+function hasOpensAt(error: unknown): boolean {
+  const body = (error as { body?: { details?: { opensAt?: unknown }; opensAt?: unknown } } | null)?.body;
+  return Boolean(body?.details?.opensAt ?? body?.opensAt);
+}
 type Decision = 'selected' | 'not_selected';
 
 /**
@@ -58,6 +63,8 @@ export default function InterviewResultScreen() {
   const [typedSalary, setSalary] = useState<number | null | undefined>(undefined);
   const [joining, setJoining] = useState('');
   const [sent, setSent] = useState<InterviewResultValue | null>(null);
+  // When the screen opened (the server refuses an early "did not come" anyway).
+  const [openedAt] = useState(() => Date.now());
 
   const d = details.data;
   // Starts at the vacancy's salary until the owner changes it.
@@ -85,11 +92,17 @@ export default function InterviewResultScreen() {
   if (!profileId || !interviewId) body = <ErrorState />;
   else if (link.isLoading || details.isLoading) body = <LoadingState label={t('ivResult.loading')} />;
   else if (link.isError || details.isError || !token || !d) {
-    const early = isApiError(link.error) && link.error.status === 409;
+    // 409 with opensAt: not open yet. Any other 409: the result is already given or the time to give it is over.
+    const conflict = isApiError(link.error) && link.error.status === 409;
+    const early = conflict && hasOpensAt(link.error);
     body = (
       <View style={styles.gap}>
-        <Banner tone={early ? 'info' : 'error'} message={early ? t('ivResult.tooEarly') : t('ivResult.failed')} testID={early ? 'iv-result-early' : 'iv-result-failed'} />
-        {early ? null : <Button label={t('ivResult.retry')} onPress={() => void link.refetch()} testID="iv-result-retry" />}
+        <Banner
+          tone={conflict ? 'info' : 'error'}
+          message={early ? t('ivResult.tooEarly') : conflict ? t('ivResult.closed') : t('ivResult.failed')}
+          testID={early ? 'iv-result-early' : conflict ? 'iv-result-closed' : 'iv-result-failed'}
+        />
+        {conflict ? null : <Button label={t('ivResult.retry')} onPress={() => void link.refetch()} testID="iv-result-retry" />}
       </View>
     );
   } else if (sent) {
@@ -112,6 +125,8 @@ export default function InterviewResultScreen() {
     body = <Banner tone="info" message={t('ivResult.alreadySent')} testID="iv-result-already" />;
   } else {
     const name = d.candidateFirstName;
+    // "Did not come" costs him his refund, so (like the field agent's) it opens only when the slot is over.
+    const slotOver = openedAt >= Date.parse(d.slotEndsAt);
     body = (
       <View style={styles.gap} testID="iv-result-form">
         <Text variant="h1">{name}</Text>
@@ -123,10 +138,15 @@ export default function InterviewResultScreen() {
             onChange={setHappened}
             options={[
               { value: 'yes', label: t('ivResult.yes') },
-              { value: 'no', label: t('ivResult.noShow', { name }), tone: 'bad' },
+              ...(slotOver ? [{ value: 'no' as const, label: t('ivResult.noShow', { name }), tone: 'bad' as const }] : []),
             ]}
             testID="iv-result-happened"
           />
+          {slotOver ? null : (
+            <Text variant="muted" testID="iv-result-no-show-later">
+              {t('ivResult.noShowLater', { name, time: formatTimeIst(d.slotEndsAt) })}
+            </Text>
+          )}
         </Card>
         {happened === 'yes' ? (
           <Card>
