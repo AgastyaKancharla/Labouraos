@@ -34,6 +34,8 @@ export interface CreateUpiRequestInput {
   notifySubjectType?: 'job_seeker' | 'business';
   notifySubjectId?: string;
   notifyRecipientPhone?: string;
+  /** "Send by SMS" picked by the agent; otherwise WhatsApp first with SMS as backup (rev 211). */
+  notifyChannel?: 'whatsapp' | 'sms';
   reactivation?: boolean;
 }
 
@@ -191,10 +193,12 @@ export class UpiCollectionService {
     const link = publicPageLink('payment', await this.payPageToken(payment.id));
     const notifySubjectType = input.notifySubjectType ?? (input.subjectType === 'job_seeker' ? 'job_seeker' : undefined);
     const notifySubjectId = input.notifySubjectId ?? (input.subjectType === 'job_seeker' ? input.subjectId : undefined);
+    let sentBy: 'whatsapp' | 'sms' | null = null;
     if (notifySubjectType && notifySubjectId) {
-      await this.sendPaymentLink(payment, notifySubjectType, notifySubjectId, link, payeeName, input.notifyRecipientPhone);
+      sentBy = await this.sendPaymentLink(payment, notifySubjectType, notifySubjectId, link, payeeName, input.notifyRecipientPhone, input.notifyChannel);
     }
     return {
+      sentBy,
       paymentId: payment.id,
       paymentCode: payment.code,
       amountPaise: payment.expectedAmountPaise,
@@ -230,7 +234,7 @@ export class UpiCollectionService {
     }
   }
 
-  async resendRequest(paymentId: string, notifySubjectType?: 'job_seeker' | 'business', notifySubjectId?: string, recipientPhone?: string) {
+  async resendRequest(paymentId: string, notifySubjectType?: 'job_seeker' | 'business', notifySubjectId?: string, recipientPhone?: string, channel?: 'whatsapp' | 'sms') {
     const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
     if (!payment || payment.method !== 'upi_direct' || payment.gatewayReference !== null || payment.status !== 'pending' || !payment.upiReference || payment.expectedAmountPaise === null) {
       throw new NotFoundException('Pending UPI payment request not found');
@@ -268,10 +272,11 @@ export class UpiCollectionService {
         }
       }
     }
+    let sentBy: 'whatsapp' | 'sms' | null = null;
     if (subjectType && subjectId) {
-      await this.sendPaymentLink(payment, subjectType, subjectId, link, payeeName, recipientPhone);
+      sentBy = await this.sendPaymentLink(payment, subjectType, subjectId, link, payeeName, recipientPhone, channel);
     }
-    return { paymentId: payment.id, paymentLink: link, upiReference: payment.upiReference };
+    return { paymentId: payment.id, paymentLink: link, upiReference: payment.upiReference, sentBy };
   }
 
   private async sendPaymentLink(
@@ -281,16 +286,19 @@ export class UpiCollectionService {
     link: string,
     payeeName: string,
     recipientPhone?: string,
-  ) {
+    channel?: 'whatsapp' | 'sms',
+  ): Promise<'whatsapp' | 'sms' | null> {
     const variables = {
       link,
       amount: amountInRupees(payment.expectedAmountPaise ?? 0),
       payeeName,
     };
-    await Promise.all((['sms', 'whatsapp'] as const).map((channel) => this.messagingService.send({
-      channel, template: 'payment_request', subjectType, subjectId,
+    // WhatsApp first, SMS as backup; "Send by SMS" when the agent picked it (rev 211).
+    const sent = await this.messagingService.sendOn(channel, {
+      template: 'payment_request', subjectType, subjectId,
       relatedType: 'payment', relatedId: payment.id, variables, recipientPhone,
-    })));
+    });
+    return sent.channel;
   }
 
   /**

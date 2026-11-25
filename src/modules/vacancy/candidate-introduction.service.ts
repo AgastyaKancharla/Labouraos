@@ -34,7 +34,7 @@ export class CandidateIntroductionService {
     private readonly clock: ConsentClock,
   ) {}
 
-  async shareByLink(vacancyId: string, jobSeekerIds: string[], staffId: string, channel: 'sms' | 'whatsapp' = 'sms') {
+  async shareByLink(vacancyId: string, jobSeekerIds: string[], staffId: string, channel: 'sms' | 'whatsapp' = 'whatsapp') {
     if (channel !== 'sms' && channel !== 'whatsapp') throw new BadRequestException('channel must be sms or whatsapp');
     const { vacancy, matches } = await this.currentlyEligible(vacancyId, jobSeekerIds);
     const ranked = this.rankMatches(matches);
@@ -53,8 +53,8 @@ export class CandidateIntroductionService {
         jobSeekerIds,
       },
     });
-    const message = await this.messagingService.send({
-      channel,
+    // 'whatsapp': WhatsApp first, SMS as backup; 'sms': the agent picked "Send by SMS" (rev 211).
+    const message = await this.messagingService.sendOn(channel, {
       template: 'candidates_shared',
       subjectType: 'business',
       subjectId: vacancy.businessId,
@@ -83,7 +83,7 @@ export class CandidateIntroductionService {
         })),
       });
     });
-    return { count: selected.length, channel: 'share_link' as const, messageLogId: message.id };
+    return { count: selected.length, channel: 'share_link' as const, messageLogId: message.id, sentBy: message.channel };
   }
 
   async redeemShareLink(token: string) {

@@ -1,3 +1,4 @@
+import { LINK_SENDING_ROLES, linkChannel } from '../message/link-channel';
 import {
   Body,
   Controller,
@@ -140,10 +141,11 @@ export class PlacementController {
   }
 
   @Post(':id/resend-payment')
-  @RequireRoles('ceo', 'manager', 'team_lead', 'call_agent', 'field_agent')
+  // Rev 211: only agents press send buttons; Team Leads, Managers and the CEO keep the stuck view.
+  @RequireRoles(...LINK_SENDING_ROLES)
   @RequirePermission('placement', 'write')
-  async resendPayment(@Param('id') id: string) {
-    return this.placementService.resendPaymentLink(id);
+  async resendPayment(@Param('id') id: string, @Body('channel') channel?: unknown) {
+    return this.placementService.resendPaymentLink(id, linkChannel(channel));
   }
 
   @Post(':id/refund')

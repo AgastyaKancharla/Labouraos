@@ -1,23 +1,63 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { FREE_TEXT_TEMPLATE, WhatsAppMessageResult, WhatsAppProvider } from './whatsapp.interface';
 import { parseIndianMobile } from '../phone/indian-mobile';
-import { NEW_WHATSAPP_TEMPLATE_NAMES, whatsappTemplate } from '../../modules/message/whatsapp-templates';
+import { metaParameterName, NEW_WHATSAPP_TEMPLATE_NAMES, whatsappTemplate } from '../../modules/message/whatsapp-templates';
 
-export const APPROVED_TEMPLATES = [
-  'call_attempt_notice',
-  'interview_reminder',
-  'interview_offer',
-  'interview_booked',
-  'interview_candidate_for_owner',
-  'interview_result_request',
-  'candidate_offer_check',
-  'joining_confirmed',
-  'job_offer_notice',
-  'candidate_activation_confirmation',
-  // 21 Nov (rev 202): event messages, links sent on WhatsApp and inbound replies
-  // (texts in src/modules/message/whatsapp-templates.ts).
-  ...NEW_WHATSAPP_TEMPLATE_NAMES,
-];
+/**
+ * Every template with an approved text in src/modules/message/whatsapp-templates.ts
+ * (rev 211: every message the software sends has one). Nothing else is sent.
+ */
+export const APPROVED_TEMPLATES: string[] = [...NEW_WHATSAPP_TEMPLATE_NAMES];
+
+/** Meta's error code when a number cannot get WhatsApp messages (not on WhatsApp, or too old a version). */
+export const NO_WHATSAPP_ERROR_CODES = ['131026'] as const;
+
+export function isNoWhatsAppError(code: string | number | null | undefined): boolean {
+  return code !== null && code !== undefined && (NO_WHATSAPP_ERROR_CODES as readonly string[]).includes(String(code));
+}
+
+/**
+ * The Cloud API `template` object (rev 211). Utility templates carry named
+ * parameters, lowercase with underscores (`first_name`), only those the
+ * approved text declares, in its order. An Authentication template (a login or
+ * confirmation code) carries the code positionally in the body and again for
+ * its copy-code button, as Meta asks.
+ */
+export function templatePayload(templateName: string, params: Record<string, string>) {
+  const def = whatsappTemplate(templateName);
+  if (def?.category === 'authentication') {
+    const code = String(params?.code ?? '');
+    return {
+      name: templateName,
+      language: { code: 'en' },
+      components: [
+        { type: 'body', parameters: [{ type: 'text', text: code }] },
+        { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: code }] },
+      ],
+    };
+  }
+  // Only the variables the approved template declares, in its order (21 Nov): Meta refuses a
+  // wrong parameter count, and nothing else (a raw link token, for one) ever leaves for Meta.
+  const declared = def?.variables;
+  const sent: Array<[string, string]> = declared
+    ? declared.map((key) => [key, String(params?.[key] ?? '')])
+    : Object.entries(params ?? {});
+  return {
+    name: templateName,
+    language: { code: 'en' },
+    // A template without variables sends no body component (Meta refuses an empty parameter list).
+    components: sent.length === 0 ? [] : [
+      {
+        type: 'body',
+        parameters: sent.map(([key, value]) => ({
+          type: 'text',
+          text: value,
+          parameter_name: metaParameterName(key),
+        })),
+      },
+    ],
+  };
+}
 
 export interface RealWhatsAppProviderOptions {
   apiUrl?: string;
@@ -75,35 +115,12 @@ export class RealWhatsAppProvider implements WhatsAppProvider {
     const indian = parseIndianMobile(phone);
     const cleanPhone = indian ? indian.slice(1) : phone.replace(/\D/g, '');
 
-    // Only the variables the approved template declares, in its order (21 Nov): Meta refuses a
-    // wrong parameter count, and nothing else (a raw link token, for one) ever leaves for Meta.
-    const declared = whatsappTemplate(templateName)?.variables;
-    const sent: Array<[string, string]> = declared
-      ? declared.map((key) => [key, String(params?.[key] ?? '')])
-      : Object.entries(params ?? {});
-
     const bodyPayload = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
       to: cleanPhone,
       type: 'template',
-      template: {
-        name: templateName,
-        language: {
-          code: 'en',
-        },
-        // A template without variables sends no body component (Meta refuses an empty parameter list).
-        components: sent.length === 0 ? [] : [
-          {
-            type: 'body',
-            parameters: sent.map(([key, value]) => ({
-              type: 'text',
-              text: value,
-              parameter_name: key,
-            })),
-          },
-        ],
-      },
+      template: templatePayload(templateName, params),
     };
 
     try {
@@ -125,6 +142,7 @@ export class RealWhatsAppProvider implements WhatsAppProvider {
         const errorMsg =
           (data.error as { message?: string })?.message ||
           `WhatsApp API returned status ${response.status}`;
+        const errorCode = (data.error as { code?: number | string } | undefined)?.code;
         this.logger.error(`[REAL WHATSAPP] API send failed: ${errorMsg}`);
         return {
           messageId: '',
@@ -132,6 +150,7 @@ export class RealWhatsAppProvider implements WhatsAppProvider {
           phone,
           templateName,
           error: errorMsg,
+          ...(errorCode !== undefined && errorCode !== null ? { errorCode: String(errorCode) } : {}),
           timestamp,
         };
       }

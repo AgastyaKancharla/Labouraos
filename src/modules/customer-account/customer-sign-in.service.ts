@@ -112,7 +112,7 @@ export class CustomerSignInService {
   private async send(
     phone: string,
     purpose: string,
-    body: { requestId?: unknown; humanCheckToken?: unknown },
+    body: { requestId?: unknown; humanCheckToken?: unknown; channel?: unknown },
     caller: OtpCaller,
     accountId: string | null,
   ) {
@@ -140,7 +140,9 @@ export class CustomerSignInService {
     let result;
     try {
       // Codes the person asked for are sent at any hour (the real sender exempts customer_* purposes).
-      result = await this.otp.getProvider().sendOtp(phone, { purpose, requestId: resendOf });
+      // Rev 211: WhatsApp first; `channel: 'sms'` is "Send by SMS" (docs/customer-app-api.md).
+      const channel = body?.channel === 'sms' || body?.channel === 'whatsapp' ? body.channel : undefined;
+      result = await this.otp.getProvider().sendOtp(phone, { purpose, requestId: resendOf, ...(channel ? { channel } : {}) });
     } catch (error) {
       // A send that failed does not use up the person's hourly and daily codes.
       await this.limiter.releaseSend(rowId);

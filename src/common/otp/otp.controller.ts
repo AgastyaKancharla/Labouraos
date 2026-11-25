@@ -11,6 +11,13 @@ import { RequireRoles } from '../rbac/roles.decorator';
 import { ALL_STAFF_ROLES } from '../rbac/rbac.types';
 import { testModeFields } from './otp-test-mode';
 
+/** The channel a code was asked for (rev 211): undefined (WhatsApp first), 'whatsapp' or 'sms'; anything else is 400. */
+export function otpChannel(value: unknown): 'whatsapp' | 'sms' | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (value === 'whatsapp' || value === 'sms') return value;
+  throw new BadRequestException('channel must be whatsapp or sms');
+}
+
 @Controller('otp')
 @UseGuards(JwtAuthGuard, RbacGuard, AuthThrottlerGuard)
 @RequireRoles(...ALL_STAFF_ROLES)
@@ -20,7 +27,7 @@ export class OtpController {
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('send')
   async sendOtp(
-    @Body() body: { phone: string; purpose: OtpPurpose; requestId?: string },
+    @Body() body: { phone: string; purpose: OtpPurpose; requestId?: string; channel?: string },
     @Req() req: Request & { user: JwtPayload },
   ) {
     if (!body || !body.phone || !body.purpose) {
@@ -35,6 +42,8 @@ export class OtpController {
       req.user.sub,
       req.user.role,
       body.requestId,
+      // "Send by SMS" (rev 211): the code screens offer it after 30 seconds.
+      otpChannel(body.channel),
     );
     if ('alreadyRegistered' in result) return result;
     return {

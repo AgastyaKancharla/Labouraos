@@ -1,3 +1,4 @@
+import { otpChannel } from '../../common/otp/otp.controller';
 import { Body, Controller, Get, Headers, Param, Post, Query, Req, Res, UseGuards, UseInterceptors } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { PublicPage, publicPageLink, wantsHtml } from '../../common/public-pages';
@@ -80,8 +81,9 @@ export class InterviewController {
 
   @Post('result/:token/otp')
   @Public('token page: the job seeker, business or partner proves who they are with the link token')
-  sendOwnerOtp(@Param('token') token: string) {
-    return this.interviews.sendOwnerResultOtp(token);
+  sendOwnerOtp(@Param('token') token: string, @Body('channel') channel?: unknown) {
+    // "Send by SMS" (rev 211) after 30 seconds; otherwise WhatsApp first.
+    return this.interviews.sendOwnerResultOtp(token, otpChannel(channel));
   }
 
   @Post('result/:token')

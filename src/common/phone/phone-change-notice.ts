@@ -9,8 +9,7 @@ import { phoneLast4 } from './indian-mobile';
 export const PHONE_CHANGED_SMS_TEMPLATE = 'phone_number_changed';
 
 interface Messenger {
-  send(input: {
-    channel: 'sms';
+  sendPreferWhatsApp(input: {
     template: string;
     subjectType: string;
     subjectId: string;
@@ -25,9 +24,9 @@ export async function sendPhoneChangedNotice(
 ): Promise<void> {
   if (!messaging || !input.oldPhone) return;
   // A failed SMS never undoes the change; the message log keeps the failure.
+  // WhatsApp first, SMS as backup (rev 211), to the old number.
   await messaging
-    .send({
-      channel: 'sms',
+    .sendPreferWhatsApp({
       template: PHONE_CHANGED_SMS_TEMPLATE,
       subjectType: input.subjectType,
       subjectId: input.subjectId,

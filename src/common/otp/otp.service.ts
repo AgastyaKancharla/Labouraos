@@ -40,6 +40,7 @@ export class OtpService {
     actorId: string,
     actorRole: string,
     requestId?: string,
+    channel?: 'whatsapp' | 'sms',
   ): Promise<OtpSendResult | { alreadyRegistered: true; type?: string; code?: string }>;
   async sendOtp(
     rawPhone: string,
@@ -47,6 +48,7 @@ export class OtpService {
     actorId?: string,
     actorRole = '',
     requestId?: string,
+    channel?: 'whatsapp' | 'sms',
   ): Promise<OtpSendResult | { alreadyRegistered: true; type?: string; code?: string }> {
     if (typeof rawPhone !== 'string' || !rawPhone.trim()) throw new BadRequestException('Phone number is required');
     // One format everywhere: the code goes to, and is checked against, +91 and 10 digits.
@@ -85,7 +87,7 @@ export class OtpService {
       }
     }
 
-    const options: OtpSendOptions = { purpose, requestId };
+    const options: OtpSendOptions = { purpose, requestId, ...(channel ? { channel } : {}) };
     let result: OtpSendResult;
     try {
       result = await this.provider.sendOtp(phone, options);
@@ -143,9 +145,9 @@ export class OtpService {
    * so it only confirms that record in that round. Never reachable from POST /otp/send
    * (OTP_PURPOSES). Audited like any staff send.
    */
-  async sendBoundOtp(rawPhone: string, purpose: string, actorId: string, requestId?: string): Promise<OtpSendResult> {
+  async sendBoundOtp(rawPhone: string, purpose: string, actorId: string, requestId?: string, channel?: 'whatsapp' | 'sms'): Promise<OtpSendResult> {
     const phone = requireIndianMobile(rawPhone);
-    const result = await this.provider.sendOtp(phone, { purpose, requestId });
+    const result = await this.provider.sendOtp(phone, { purpose, requestId, ...(channel ? { channel } : {}) });
     await this.auditService.log({
       actorId,
       action: 'otp.send_attempt',
@@ -163,9 +165,10 @@ export class OtpService {
    * (public-page-otp.ts). Only isVerifiedForPage / consumeVerifiedForPage with
    * the same link accept it, and no staff-sent code is accepted there.
    */
-  async sendPublicPageOtp(rawPhone: string, linkToken: string): Promise<OtpSendResult> {
+  async sendPublicPageOtp(rawPhone: string, linkToken: string, channel?: 'whatsapp' | 'sms'): Promise<OtpSendResult> {
     const phone = requireIndianMobile(rawPhone);
-    return this.provider.sendOtp(phone, { purpose: publicPageOtpPurpose(linkToken) });
+    // "Send by SMS" (rev 211) asks for a fresh code by SMS; otherwise WhatsApp first.
+    return this.provider.sendOtp(phone, { purpose: publicPageOtpPurpose(linkToken), ...(channel ? { channel } : {}) });
   }
 
   /** A code sent from this link's own page, verified, unused and for this phone. */

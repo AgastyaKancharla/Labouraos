@@ -16,6 +16,9 @@ import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 import { normaliseIndianMobile } from '../../common/phone/indian-mobile';
 import { blocksFor, ContactBlockKind, phoneHash } from '../call/contact-block';
 import { recordTestModeLink } from '../../common/test-mode-link';
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'crypto';
+import { isNoWhatsAppError } from '../../common/whatsapp/real-whatsapp.provider';
+import { addWorkingTime, inWorkingHours, isNoWhatsApp, markNoWhatsApp } from './no-whatsapp';
 
 export interface SendMessageInput {
   channel: 'sms' | 'whatsapp';
@@ -51,6 +54,60 @@ export interface PreferWhatsAppResult {
   status: 'sent' | 'failed' | 'blocked';
   whatsappMessageId: string | null;
   smsMessageId: string | null;
+  /** The message-log row that carried it (else the last one tried), or null when nothing was logged. */
+  id: string | null;
+}
+
+/**
+ * The exceptions that always go on both WhatsApp and SMS (Master Guide rev 211):
+ * interview offers and "we tried to call you". With the call they are the three
+ * ways of reaching a job seeker, and the hit rule needs proof of all of them
+ * (InterviewService.processDueReplies, the no-pickup evaluation). They never get
+ * an SMS backup: the SMS already went.
+ */
+export const BOTH_CHANNEL_TEMPLATES = ['interview_offer', 'call_attempt_notice'] as const;
+
+/** A WhatsApp with no "delivered" or "read" within this much working time (9 AM–9 PM) gets its SMS once. */
+export const SMS_BACKUP_AFTER_MS = 60 * 60 * 1000;
+
+/** Where a WhatsApp message's SMS backup stands (MessageLog.smsBackup). */
+export const SMS_BACKUP = {
+  pending: 'pending',
+  sending: 'sending',
+  sent: 'sent',
+  notNeeded: 'not_needed',
+  failed: 'failed',
+  skipped: 'skipped',
+} as const;
+
+interface BackupPayload {
+  v: Record<string, string>;
+  p: string;
+  a: boolean;
+}
+
+function backupKey(): Buffer {
+  return createHash('sha256').update(`laboura:sms-backup:${process.env.JWT_SECRET ?? ''}`).digest();
+}
+
+/** The backup SMS's variables (they can carry live link tokens) are stored only sealed, never in the clear. */
+export function sealBackupPayload(payload: BackupPayload): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', backupKey(), iv);
+  const body = Buffer.concat([cipher.update(JSON.stringify(payload), 'utf8'), cipher.final()]);
+  return Buffer.concat([iv, cipher.getAuthTag(), body]).toString('base64url');
+}
+
+export function openBackupPayload(sealed: string | null | undefined): BackupPayload | null {
+  if (!sealed) return null;
+  try {
+    const raw = Buffer.from(sealed, 'base64url');
+    const decipher = createDecipheriv('aes-256-gcm', backupKey(), raw.subarray(0, 12));
+    decipher.setAuthTag(raw.subarray(12, 28));
+    return JSON.parse(Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString('utf8')) as BackupPayload;
+  } catch {
+    return null;
+  }
 }
 
 /** The ContactBlock kinds that stop messages to a person (src/modules/call/contact-block.ts). */
@@ -85,25 +142,89 @@ export class MessagingService {
   ) {}
 
   /**
-   * Sends on WhatsApp and, when WhatsApp is not available or the send fails,
-   * the same template by SMS (21 Nov, rev 202). Nothing goes to a person with a
-   * live "wrong number" or "do not call" block (contactBlocksFor), unless the
-   * template is exempt (MESSAGE_BLOCK_EXEMPT_TEMPLATES).
+   * The one sending rule (Master Guide rev 211): WhatsApp first, SMS as backup.
+   * - Nothing goes to a person with a live "wrong number" or "do not call" block
+   *   (contactBlocksFor), unless the template is exempt (MESSAGE_BLOCK_EXEMPT_TEMPLATES).
+   * - A number marked "No WhatsApp" gets the SMS straight away.
+   * - WhatsApp refuses it: the SMS goes at once; when Meta says the number cannot
+   *   get WhatsApp (131026) the number is marked "No WhatsApp".
+   * - WhatsApp takes it: if no "delivered" or "read" comes within 1 working hour
+   *   (9 AM–9 PM), or a "failed" comes first, the SMS goes once
+   *   (sweepSmsBackups / applyProviderStatus). Never both when it was delivered.
+   * The both-channel exceptions (BOTH_CHANNEL_TEMPLATES) use sendBoth instead.
    */
-  async sendPreferWhatsApp(input: Omit<SendMessageInput, 'channel'>): Promise<PreferWhatsAppResult> {
+  async sendPreferWhatsApp(input: Omit<SendMessageInput, 'channel'>, now: Date = new Date()): Promise<PreferWhatsAppResult> {
     if (!input.agentReply && (await this.messagingBlocked(input.subjectType, input.subjectId, input.template))) {
-      return { channel: null, status: 'blocked', whatsappMessageId: null, smsMessageId: null };
+      return { channel: null, status: 'blocked', whatsappMessageId: null, smsMessageId: null, id: null };
     }
-    const wa = await this.send({ ...input, channel: 'whatsapp' });
-    if (wa.status === 'sent') {
-      return { channel: 'whatsapp', status: 'sent', whatsappMessageId: wa.id, smsMessageId: null };
+    const phone = normaliseIndianMobile(input.recipientPhone ?? (await this.phoneFor(input.subjectType, input.subjectId)));
+    const withPhone = { ...input, ...(phone ? { recipientPhone: phone } : {}) };
+    if (phone && (await isNoWhatsApp(this.prisma, phone))) {
+      return this.smsOnly(withPhone, null);
     }
-    const sms = await this.send({ ...input, channel: 'sms' });
+    const wa = await this.deliver({ ...withPhone, channel: 'whatsapp' });
+    if (wa.row.status === 'sent') {
+      if (phone) {
+        await this.prisma.messageLog.update({
+          where: { id: wa.row.id },
+          data: {
+            smsBackup: SMS_BACKUP.pending,
+            smsBackupDueAt: addWorkingTime(now, SMS_BACKUP_AFTER_MS),
+            smsBackupPayload: sealBackupPayload({ v: input.variables ?? {}, p: phone, a: input.contactAttempt !== false }),
+          },
+        });
+      }
+      return { channel: 'whatsapp', status: 'sent', whatsappMessageId: wa.row.id, smsMessageId: null, id: wa.row.id };
+    }
+    if (phone && isNoWhatsAppError(wa.errorCode)) {
+      await markNoWhatsApp(this.prisma, phone, { source: 'meta', errorCode: wa.errorCode });
+    }
+    return this.smsOnly(withPhone, wa.row.id);
+  }
+
+  /**
+   * "Send by SMS" (the small button beside "Send on WhatsApp"): the agent chose
+   * SMS, so no WhatsApp is tried. Same blocks as every message.
+   */
+  async sendBySms(input: Omit<SendMessageInput, 'channel'>): Promise<PreferWhatsAppResult> {
+    if (!input.agentReply && (await this.messagingBlocked(input.subjectType, input.subjectId, input.template))) {
+      return { channel: null, status: 'blocked', whatsappMessageId: null, smsMessageId: null, id: null };
+    }
+    return this.smsOnly(input, null);
+  }
+
+  /** WhatsApp first (sendPreferWhatsApp), or SMS only when the agent picked "Send by SMS". */
+  async sendOn(channel: 'whatsapp' | 'sms' | undefined, input: Omit<SendMessageInput, 'channel'>): Promise<PreferWhatsAppResult> {
+    return channel === 'sms' ? this.sendBySms(input) : this.sendPreferWhatsApp(input);
+  }
+
+  /**
+   * The both-channel exceptions (BOTH_CHANNEL_TEMPLATES): WhatsApp and SMS
+   * together, no backup. A number Meta says cannot get WhatsApp is still marked
+   * "No WhatsApp" (the WhatsApp leg is tried anyway: the proof rules count it).
+   */
+  async sendBoth(input: Omit<SendMessageInput, 'channel'>): Promise<{ sms: ReturnType<MessagingService['toPublic']>; whatsapp: ReturnType<MessagingService['toPublic']> }> {
+    const phone = input.recipientPhone ?? undefined;
+    const [sms, whatsapp] = await Promise.all([
+      this.deliver({ ...input, channel: 'sms' }),
+      this.deliver({ ...input, channel: 'whatsapp' }),
+    ]);
+    if (isNoWhatsAppError(whatsapp.errorCode)) {
+      const target = normaliseIndianMobile(phone ?? (await this.phoneFor(input.subjectType, input.subjectId)));
+      if (target) await markNoWhatsApp(this.prisma, target, { source: 'meta', errorCode: whatsapp.errorCode });
+    }
+    return { sms: sms.row, whatsapp: whatsapp.row };
+  }
+
+  private async smsOnly(input: Omit<SendMessageInput, 'channel'>, whatsappMessageId: string | null): Promise<PreferWhatsAppResult> {
+    const sms = await this.deliver({ ...input, channel: 'sms' });
+    const status = sms.row.status === 'sent' ? 'sent' : sms.row.status === 'blocked' ? 'blocked' : 'failed';
     return {
-      channel: sms.status === 'sent' ? 'sms' : null,
-      status: sms.status === 'sent' ? 'sent' : 'failed',
-      whatsappMessageId: wa.id,
-      smsMessageId: sms.id,
+      channel: status === 'sent' ? 'sms' : null,
+      status,
+      whatsappMessageId,
+      smsMessageId: sms.row.id,
+      id: sms.row.id,
     };
   }
 
@@ -132,6 +253,11 @@ export class MessagingService {
   }
 
   async send(input: SendMessageInput) {
+    return (await this.deliver(input)).row;
+  }
+
+  /** One message on one channel, with Meta's error code when WhatsApp refused it. */
+  private async deliver(input: SendMessageInput): Promise<{ row: ReturnType<MessagingService['toPublic']>; errorCode: string | null }> {
     // Wrong number / do not call (rev 202): no automatic message reaches the person.
     if (!input.agentReply && (await this.messagingBlocked(input.subjectType, input.subjectId, input.template))) {
       const blocked = await this.prisma.messageLog.create({
@@ -145,7 +271,7 @@ export class MessagingService {
           status: 'blocked',
         },
       });
-      return this.toPublic(blocked);
+      return { row: this.toPublic(blocked), errorCode: null };
     }
     // Test site only (pretend SMS): the request that sent a link answers with it (DEPLOY.md F12).
     recordTestModeLink(input.template, input.variables?.link);
@@ -165,7 +291,7 @@ export class MessagingService {
     const phone = normaliseIndianMobile(input.recipientPhone ?? await this.phoneFor(input.subjectType, input.subjectId));
     const attempt = input.contactAttempt !== false;
     if (!phone) {
-      return this.mark(row.id, 'failed', null, attempt);
+      return { row: await this.mark(row.id, 'failed', null, attempt), errorCode: null };
     }
 
     const variables = input.variables ?? {};
@@ -173,9 +299,10 @@ export class MessagingService {
       if (input.channel === 'whatsapp') {
         const result = await this.whatsapp.sendTemplateMessage(phone, input.template, variables);
         if (result.status === 'failed') {
-          return this.mark(row.id, 'failed', result.messageId || null, attempt);
+          const errorCode = result.errorCode ?? null;
+          return { row: await this.mark(row.id, 'failed', result.messageId || null, attempt, errorCode), errorCode };
         }
-        return this.mark(row.id, 'sent', result.messageId || null, attempt);
+        return { row: await this.mark(row.id, 'sent', result.messageId || null, attempt), errorCode: null };
       }
       const result = await this.sms.sendTemplate(
         phone,
@@ -184,11 +311,11 @@ export class MessagingService {
         variables,
       );
       if (result.status === 'failed') {
-        return this.mark(row.id, 'failed', result.messageId || null, attempt);
+        return { row: await this.mark(row.id, 'failed', result.messageId || null, attempt), errorCode: null };
       }
-      return this.mark(row.id, 'sent', result.messageId || null, attempt);
+      return { row: await this.mark(row.id, 'sent', result.messageId || null, attempt), errorCode: null };
     } catch {
-      return this.mark(row.id, 'failed', null, attempt);
+      return { row: await this.mark(row.id, 'failed', null, attempt), errorCode: null };
     }
   }
 
@@ -220,26 +347,119 @@ export class MessagingService {
    * provider's message id. Null when no message has that id. The caller has
    * already checked who sent it (signature). Used by the generic status webhook
    * and by the WhatsApp Cloud API webhook (statuses).
+   *
+   * WhatsApp first (rev 211): "delivered" or "read" means the SMS backup is not
+   * needed; "failed" sends the backup SMS at once (between 9 AM and 9 PM; else at
+   * 9 AM), and Meta's 131026 marks the number "No WhatsApp". A repeated status
+   * changes nothing. `backupHandled` is true when this message has an SMS backup
+   * of its own (so the caller sends no other fallback).
    */
-  async applyProviderStatus(providerMessageId: string, status: string): Promise<{ id: string; unchanged: boolean } | null> {
+  async applyProviderStatus(
+    providerMessageId: string,
+    status: string,
+    errorCode?: string | null,
+    now: Date = new Date(),
+  ): Promise<{ id: string; unchanged: boolean; backupHandled?: boolean } | null> {
     if (!['delivered', 'read', 'failed'].includes(status)) return null;
     const existing = await this.prisma.messageLog.findUnique({ where: { providerMessageId } });
     if (!existing) {
       return null;
     }
+    const backupHandled = existing.smsBackup !== null && existing.smsBackup !== undefined;
     if (!canAdvanceMessageStatus(existing.status, status)) {
-      return { id: existing.id, unchanged: true };
+      return { id: existing.id, unchanged: true, backupHandled };
     }
-    const now = new Date();
     await this.prisma.messageLog.update({
       where: { id: existing.id },
       data: {
         status,
         deliveredAt: status === 'delivered' || status === 'read' ? existing.deliveredAt ?? now : existing.deliveredAt,
         failedAt: status === 'failed' ? now : existing.failedAt,
+        ...(status === 'failed' && errorCode ? { errorCode: String(errorCode) } : {}),
       },
     });
-    return { id: existing.id, unchanged: false };
+    if (status === 'delivered' || status === 'read') {
+      await this.prisma.messageLog.updateMany({
+        where: { id: existing.id, smsBackup: SMS_BACKUP.pending },
+        data: { smsBackup: SMS_BACKUP.notNeeded, smsBackupPayload: null },
+      });
+    }
+    if (status === 'failed' && existing.channel === 'whatsapp') {
+      if (isNoWhatsAppError(errorCode)) {
+        const phone = openBackupPayload(existing.smsBackupPayload)?.p
+          ?? normaliseIndianMobile(await this.phoneFor(existing.subjectType, existing.subjectId));
+        if (phone) await markNoWhatsApp(this.prisma, phone, { source: 'meta', errorCode: String(errorCode) });
+      }
+      if (existing.smsBackup === SMS_BACKUP.pending) {
+        if (inWorkingHours(now)) {
+          await this.runSmsBackup(existing.id);
+        } else {
+          // Quiet hours: the SMS goes at 9 AM (the sweep picks it up).
+          await this.prisma.messageLog.updateMany({
+            where: { id: existing.id, smsBackup: SMS_BACKUP.pending },
+            data: { smsBackupDueAt: addWorkingTime(now, 0) },
+          });
+        }
+      }
+    }
+    return { id: existing.id, unchanged: false, backupHandled };
+  }
+
+  /**
+   * Sends the SMS backups that are due (WhatsApp first, rev 211): every WhatsApp
+   * still not delivered or read 1 working hour after it went. Runs every 2
+   * minutes with the WhatsApp sweep; only between 9 AM and 9 PM. Each backup is
+   * claimed before it is sent, so two runs never send it twice.
+   */
+  async sweepSmsBackups(now: Date = new Date(), limit = 200): Promise<{ sent: number; failed: number }> {
+    if (!inWorkingHours(now)) return { sent: 0, failed: 0 };
+    const due = await this.prisma.messageLog.findMany({
+      where: { smsBackup: SMS_BACKUP.pending, smsBackupDueAt: { lte: now } },
+      orderBy: { smsBackupDueAt: 'asc' },
+      take: limit,
+      select: { id: true },
+    });
+    let sent = 0;
+    let failed = 0;
+    for (const row of due) {
+      const outcome = await this.runSmsBackup(row.id);
+      if (outcome === 'sent') sent += 1;
+      else if (outcome) failed += 1;
+    }
+    return { sent, failed };
+  }
+
+  /** Sends one SMS backup, once: null when it was not (or no longer) waiting. */
+  private async runSmsBackup(messageLogId: string): Promise<'sent' | 'failed' | 'skipped' | null> {
+    // The claim also checks the WhatsApp was not delivered meanwhile: never both when it was delivered.
+    const claimed = await this.prisma.messageLog.updateMany({
+      where: { id: messageLogId, smsBackup: SMS_BACKUP.pending, status: { notIn: ['delivered', 'read'] } },
+      data: { smsBackup: SMS_BACKUP.sending },
+    });
+    if (claimed.count !== 1) return null;
+    const row = await this.prisma.messageLog.findUnique({ where: { id: messageLogId } });
+    const payload = openBackupPayload(row?.smsBackupPayload);
+    if (!row || !payload) {
+      await this.prisma.messageLog.update({ where: { id: messageLogId }, data: { smsBackup: SMS_BACKUP.failed, smsBackupPayload: null } });
+      return 'failed';
+    }
+    const sms = await this.send({
+      channel: 'sms',
+      template: row.template,
+      subjectType: row.subjectType,
+      subjectId: row.subjectId,
+      relatedType: row.relatedType,
+      relatedId: row.relatedId,
+      variables: payload.v,
+      recipientPhone: payload.p,
+      contactAttempt: payload.a,
+    });
+    const outcome = sms.status === 'sent' ? 'sent' : sms.status === 'blocked' ? 'skipped' : 'failed';
+    await this.prisma.messageLog.update({
+      where: { id: messageLogId },
+      data: { smsBackup: SMS_BACKUP[outcome === 'sent' ? 'sent' : outcome === 'skipped' ? 'skipped' : 'failed'], smsBackupMessageLogId: sms.id, smsBackupPayload: null },
+    });
+    return outcome;
   }
 
   async list(actor: MessageActor, subjectType: string, subjectId: string) {
@@ -253,7 +473,7 @@ export class MessagingService {
     return rows.map((row) => this.toPublic(row));
   }
 
-  private async mark(id: string, status: 'sent' | 'failed', providerMessageId: string | null, recordAttempt = true) {
+  private async mark(id: string, status: 'sent' | 'failed', providerMessageId: string | null, recordAttempt = true, errorCode: string | null = null) {
     const now = new Date();
     const row = await this.prisma.messageLog.update({
       where: { id },
@@ -262,6 +482,7 @@ export class MessagingService {
         providerMessageId,
         sentAt: status === 'sent' ? now : null,
         failedAt: status === 'failed' ? now : null,
+        errorCode,
       },
     });
     if (recordAttempt && status === 'sent' && row.subjectType === 'job_seeker' && row.subjectId) {
@@ -315,7 +536,8 @@ export class MessagingService {
     };
   }
 
-  private async phoneFor(subjectType: string, subjectId: string): Promise<string | null> {
+  /** The record's own phone (job seeker, business owner, referral partner). */
+  async phoneFor(subjectType: string, subjectId: string): Promise<string | null> {
     if (subjectType === 'job_seeker') {
       const row = await this.prisma.jobSeeker.findUnique({ where: { id: subjectId }, select: { phone: true } });
       return row?.phone ?? null;

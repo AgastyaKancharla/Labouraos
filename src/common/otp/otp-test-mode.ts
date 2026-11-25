@@ -8,7 +8,9 @@
  *   - OTP_PROVIDER_MODE is `mock` (or unset, which means mock);
  *   - OTP_TEST_MODE is not `off`;
  *   - not NODE_ENV=production with any live vendor (any *_PROVIDER_MODE other
- *     than mock) — a production system with a real vendor never shows codes;
+ *     than mock) — a production system with a real vendor never shows codes —
+ *     except WhatsApp: while SMS is not live the code stays on screen even if
+ *     WhatsApp is live (Master Guide rev 211, CODE_HIDING_VENDOR_SETTINGS);
  *   - not the automated test suite (NODE_ENV=test), unless OTP_TEST_MODE=on.
  *
  * With a real OTP vendor (`OTP_PROVIDER_MODE=real`) the code is never known to
@@ -21,6 +23,14 @@ export const VENDOR_MODE_SETTINGS = [
   'WHATSAPP_PROVIDER_MODE',
   'TELEPHONY_PROVIDER_MODE',
 ] as const;
+
+/**
+ * The vendors whose going live hides the test-mode code in production (rev 211):
+ * every vendor but WhatsApp. A live WhatsApp alone does not hide it — codes go
+ * on WhatsApp first, and while OTP_PROVIDER_MODE and SMS_PROVIDER_MODE are mock
+ * the code stays on screen.
+ */
+export const CODE_HIDING_VENDOR_SETTINGS = VENDOR_MODE_SETTINGS.filter((key) => key !== 'WHATSAPP_PROVIDER_MODE');
 
 function modeOf(env: NodeJS.ProcessEnv, key: string): string {
   const raw = env[key]?.trim().toLowerCase();
@@ -36,7 +46,7 @@ export function otpTestModeEnabled(env: NodeJS.ProcessEnv = process.env): boolea
   if (modeOf(env, 'OTP_PROVIDER_MODE') !== 'mock') return false;
   const setting = env.OTP_TEST_MODE?.trim().toLowerCase();
   if (setting === 'off') return false;
-  if (env.NODE_ENV === 'production' && anyLiveVendor(env)) return false;
+  if (env.NODE_ENV === 'production' && CODE_HIDING_VENDOR_SETTINGS.some((key) => modeOf(env, key) !== 'mock')) return false;
   if (env.NODE_ENV === 'test' && setting !== 'on') return false;
   return true;
 }

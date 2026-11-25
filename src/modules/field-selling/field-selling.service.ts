@@ -1,3 +1,4 @@
+import { otpChannel } from '../../common/otp/otp.controller';
 import { coversPiece } from '../field-visit/field-handover.service';
 import { LegalDocumentService } from '../legal/legal-document.service';
 import { BUSINESS_SUSPENDED_MESSAGE, isBusinessSuspended } from '../business/business-candidate-access';
@@ -393,17 +394,20 @@ export class FieldSellingService {
    * reason). Needs signal — the owner reads the code out in the shop.
    */
   async sendDecisionOtp(actor: SellingActor, interviewId: string, body: {
-    decision?: string; salaryPaise?: number; joiningDate?: string; reason?: string; otpRequestId?: string;
+    decision?: string; salaryPaise?: number; joiningDate?: string; reason?: string; otpRequestId?: string; channel?: string;
   }) {
     const interview = await this.interviewFor(actor, interviewId);
     this.assertAwaitingDecision(interview);
     const decision = this.validateDecision(body, this.clock.now());
     const contact = this.contactOf({ branch: interview.vacancy.branch, business: interview.business });
     // Bound to this interview: recordDecision checks the same purpose.
-    const result = await this.otp.sendBoundOtp(contact.phone, interviewResultOtpPurpose(interview.id), actor.id, body.otpRequestId);
+    // "Send by SMS" (rev 211) after 30 seconds; otherwise WhatsApp first.
+    const result = await this.otp.sendBoundOtp(contact.phone, interviewResultOtpPurpose(interview.id), actor.id, body.otpRequestId, otpChannel(body.channel));
     if (!body.otpRequestId) {
-      await this.messaging.send({
-        channel: 'sms',
+      const salary = decision === 'selected' ? formatINR(body.salaryPaise as number) : '';
+      const joiningDate = decision === 'selected' ? istDayText(istInstant(body.joiningDate as string, '00:00')) : '';
+      // WhatsApp first, SMS as backup (rev 211). `result` is the one line the WhatsApp text shows.
+      await this.messaging.sendPreferWhatsApp({
         template: 'interview_result_confirm_details',
         subjectType: 'business',
         subjectId: interview.businessId,
@@ -414,10 +418,16 @@ export class FieldSellingService {
           ? {
             candidateFirstName: firstName(interview.jobSeeker.name),
             decision: 'selected',
-            salary: formatINR(body.salaryPaise as number),
-            joiningDate: istDayText(istInstant(body.joiningDate as string, '00:00')),
+            salary,
+            joiningDate,
+            result: `selected, salary ${salary}, joining ${joiningDate}`,
           }
-          : { candidateFirstName: firstName(interview.jobSeeker.name), decision: 'not_selected', reason: body.reason as string },
+          : {
+            candidateFirstName: firstName(interview.jobSeeker.name),
+            decision: 'not_selected',
+            reason: body.reason as string,
+            result: `not selected (${String(body.reason ?? '').replace(/_/g, ' ')})`,
+          },
       });
     }
     return {
@@ -804,15 +814,14 @@ export class FieldSellingService {
       data: { joiningDate, joiningMovedCount: { increment: 1 } },
     });
     const dayText = istDayText(istInstant(newDate, '12:00'));
-    for (const channel of ['sms', 'whatsapp'] as const) {
-      await this.messaging.send({
-        channel, template: 'joining_confirmed', subjectType: 'job_seeker', subjectId: placement.jobSeekerId,
-        relatedType: 'placement', relatedId: placement.id,
-        variables: { candidateName: placement.jobSeeker.name, businessName: placement.business.name, joiningDate: dayText },
-      });
-    }
-    await this.messaging.send({
-      channel: 'sms', template: 'joining_date_moved', subjectType: 'business', subjectId: placement.businessId,
+    // WhatsApp first, SMS as backup (rev 211).
+    await this.messaging.sendPreferWhatsApp({
+      template: 'joining_confirmed', subjectType: 'job_seeker', subjectId: placement.jobSeekerId,
+      relatedType: 'placement', relatedId: placement.id,
+      variables: { candidateName: placement.jobSeeker.name, businessName: placement.business.name, joiningDate: dayText },
+    });
+    await this.messaging.sendPreferWhatsApp({
+      template: 'joining_date_moved', subjectType: 'business', subjectId: placement.businessId,
       relatedType: 'placement', relatedId: placement.id,
       variables: { candidateFirstName: firstName(placement.jobSeeker.name), joiningDate: dayText },
     });

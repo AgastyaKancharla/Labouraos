@@ -1,3 +1,4 @@
+import { otpChannel } from '../../common/otp/otp.controller';
 import {
   Body,
   Controller,
@@ -27,13 +28,14 @@ export class PayoutAccountController {
   constructor(private readonly payoutAccountService: PayoutAccountService) {}
 
   /**
-   * Send the "add your UPI or bank details" link by hand: CEO and Finance only
-   * (FN-Payouts is the one screen that does this; the link sent at joining is
-   * sent by the system). Payout details are money, which a Manager never sees.
+   * Send the "add your UPI or bank details" link by hand: Finance only
+   * (FN-Payouts is the one screen that does this, with "Send on WhatsApp" and
+   * "Send by SMS"; the link sent at joining is sent by the system). Payout
+   * details are money, which a Manager never sees; the CEO has no send buttons (rev 211).
    */
   @Post('links')
   @UseGuards(JwtAuthGuard, RbacGuard)
-  @RequireRoles('ceo', 'finance')
+  @RequireRoles('finance')
   async createPayoutLink(
     @Body() dto: CreatePayoutLinkDto,
     @Req() req: Request & { user: JwtPayload },
@@ -54,8 +56,9 @@ export class PayoutAccountController {
   @Post('send-otp')
   @Public('token page: the job seeker, business or partner proves who they are with the link token')
   @HttpCode(HttpStatus.OK)
-  async sendOtp(@Body('token') token: string) {
-    return this.payoutAccountService.sendOtp(token);
+  async sendOtp(@Body('token') token: string, @Body('channel') channel?: unknown) {
+    // "Send by SMS" (rev 211) after 30 seconds; otherwise WhatsApp first.
+    return this.payoutAccountService.sendOtp(token, otpChannel(channel));
   }
 
   @Post('submit')
