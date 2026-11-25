@@ -19,6 +19,8 @@ export const ceoScreens: readonly ScreenDef[] = [
   // Customer app (proposal 4.4): every app sign-up, funnels by stage, kind and area.
   { id: 'C-AppSignups', path: 'app-signups', title: 'screen.C-AppSignups' },
   { id: 'C-Biz-Pending', path: 'businesses/waiting', title: 'screen.C-Biz-Pending' },
+  // 25 Nov (rev 211–212): the Team Lead's check queue, also open to the CEO.
+  { id: 'T-Checks', path: 'businesses/checks', title: 'screen.T-Checks' },
   { id: 'C-Business', path: 'businesses/:id', title: 'screen.C-Business' },
   { id: 'C-Vacancies', path: 'vacancies', title: 'screen.C-Vacancies' },
   { id: 'C-Vacancy', path: 'vacancies/:id', title: 'screen.C-Vacancy' },
@@ -101,6 +103,7 @@ export const managerScreens: readonly ScreenDef[] = [
   { id: 'MG-CallCenter', path: 'call-center', title: 'screen.MG-CallCenter' },
   { id: 'MG-FieldOps', path: 'field-ops', title: 'screen.MG-FieldOps' },
   { id: 'MG-Flags', path: 'flags', title: 'screen.MG-Flags' },
+  { id: 'T-Checks', path: 'checks', title: 'screen.T-Checks' },
   { id: 'MG-LoginCodes', path: 'login-codes', title: 'screen.MG-LoginCodes' },
   { id: 'MG-Staff', path: 'staff', title: 'screen.MG-Staff' },
   { id: 'MG-Notifications', path: 'notifications', title: 'screen.MG-Notifications' },
@@ -128,6 +131,8 @@ export const teamLeadScreens: readonly ScreenDef[] = [
   { id: 'T-Attendance-Live', path: 'attendance/live', title: 'screen.T-Attendance-Live' },
   { id: 'T-Quality', path: 'quality', title: 'screen.T-Quality' },
   { id: 'T-Verify', path: 'verify', title: 'screen.T-Verify' },
+  // 25 Nov (rev 211–212): businesses and vacancies the automatic check sent to the Team Lead.
+  { id: 'T-Checks', path: 'checks', title: 'screen.T-Checks' },
   { id: 'T-Visits', path: 'visits', title: 'screen.T-Visits' },
   { id: 'T-Work', path: 'work', title: 'screen.T-Work' },
   // Customer app (proposal 4.4): the team's app sign-ups, move one to another agent.

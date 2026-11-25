@@ -4,7 +4,9 @@ import { useParams } from 'react-router-dom';
 import { TextField } from '../../../components/fields/TextField';
 import { useI18n } from '../../../i18n/I18nProvider';
 import { isApiError } from '../../../lib/api/errors';
-import { agreementApi, type SignedAgreement } from '../shared/api';
+import { agreementApi, type OwnerPhotoState, type SignedAgreement } from '../shared/api';
+import { OwnerPhotos } from './OwnerPhotos';
+import { SmallBusinessSteps } from './SmallBusinessSteps';
 import { LegalSummary } from '../shared/legal';
 import { dateTimeLabel } from '../shared/format';
 import { ActionError, Choice, LinkProblem, Loading, Muted, Ok, OtpBlock, PageTitle, Row } from '../shared/ui';
@@ -33,6 +35,8 @@ export default function Agreement() {
   const [error, setError] = useState<unknown>(null);
   // 22 Nov: after a press of "Send code to sign" with something missing, the missing fields are marked.
   const [showMissing, setShowMissing] = useState(false);
+  // 25 Nov (rev 211, B1): the owner's live photos, updated as he takes them.
+  const [photos, setPhotos] = useState<OwnerPhotoState | null>(null);
 
   const ownerName = details.data?.ownerName;
   useEffect(() => {
@@ -53,6 +57,8 @@ export default function Agreement() {
           </Row>
         </div>
         <Muted>{t('pub.agree.next')}</Muted>
+        {/* B9 (rev 212): a business with few documents finishes its checks on this same link. */}
+        <SmallBusinessSteps token={token} ownerName={done.signedName} />
       </>
     );
   }
@@ -62,10 +68,13 @@ export default function Agreement() {
 
   // Rev 193: one button. The name and the three ticks come first; "Send code to sign" sends the
   // owner's code, and typing it signs in the same step (no separate "Sign agreement" button).
-  const ready = name.trim().length >= 2 && agreeTerms && agreeAuthority && agreeRecording;
+  const ownerPhotos = photos ?? d.ownerPhotos ?? null;
+  const photosDone = !ownerPhotos || (ownerPhotos.selfie && ownerPhotos.shop);
+  const ready = name.trim().length >= 2 && agreeTerms && agreeAuthority && agreeRecording && photosDone;
   // What is missing, said next to the button (never a silently disabled button).
   const missingReason = (): string | null => {
     const parts: string[] = [];
+    if (!photosDone) parts.push(t('pub.owner.missing'));
     if (name.trim().length < 2) parts.push(t('pub.agree.missingName'));
     const boxes = [agreeTerms, agreeAuthority, agreeRecording].filter((v) => !v).length;
     if (boxes) parts.push(t('pub.agree.missingBoxes', { count: boxes }));
@@ -116,6 +125,7 @@ export default function Agreement() {
           <div dangerouslySetInnerHTML={{ __html: d.agreementTermsHtml }} />
         </details>
       )}
+      {ownerPhotos && <OwnerPhotos token={token} state={ownerPhotos} onChange={setPhotos} />}
       <TextField
         label={t('pub.agree.name')}
         value={name}

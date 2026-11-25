@@ -941,7 +941,13 @@ export class InterviewService {
     if (!['team_lead', 'manager', 'ceo'].includes(actor.role)) {
       if (channel === 'call') {
         const callId = typeof body.callRecordId === 'string' ? body.callRecordId : '';
-        const call = callId ? await this.prisma.callRecord.findUnique({ where: { id: callId } }) : null;
+        // Without an id: his own latest answered call to this candidate since the interview.
+        const call = callId
+          ? await this.prisma.callRecord.findUnique({ where: { id: callId } })
+          : await this.prisma.callRecord.findFirst({
+            where: { staffId: actor.id, subjectType: 'job_seeker', subjectId: interview.jobSeekerId, answered: true, startedAt: { gte: interview.slotStartsAt } },
+            orderBy: { startedAt: 'desc' },
+          });
         if (!call || call.staffId !== actor.id || call.subjectType !== 'job_seeker' || call.subjectId !== interview.jobSeekerId || !call.answered
           || (call.startedAt ?? call.createdAt).getTime() < interview.slotStartsAt.getTime()) {
           throw new ForbiddenException('Record it on your own answered call to this candidate after the interview');

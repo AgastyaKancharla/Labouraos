@@ -58,6 +58,10 @@ export interface BusinessForm {
   licenceNumber: string;
   pan: string;
   noDocuments: boolean;
+  /** 25 Nov (rev 211, B2): a Google Maps link to the shop, one of the proofs. */
+  mapsLink?: string;
+  /** 25 Nov (rev 211, B1): the business runs from the owner's home (not a household hiring help). */
+  runsFromHome?: boolean;
   staff: StaffRow[];
 }
 
@@ -113,8 +117,18 @@ export const EMPTY_BUSINESS: BusinessForm = {
   licenceNumber: '',
   pan: '',
   noDocuments: false,
+  mapsLink: '',
+  runsFromHome: false,
   staff: [],
 };
+
+/** 25 Nov (rev 211, B2): how many of the 3 proofs the form has (GST, a licence number, a Maps link). Fewer than 2 → small-business checks. */
+export function proofCount(form: BusinessForm): number {
+  const gst = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(form.gstin.trim().toUpperCase()) ? 1 : 0;
+  const licence = form.fssai.trim().length === 14 || form.licenceNumber.trim().length >= 5 ? 1 : 0;
+  const maps = /^https?:\/\/(www\.)?(google\.(com|co\.in)\/maps|maps\.google\.(com|co\.in)|maps\.app\.goo\.gl|goo\.gl\/maps)/i.test((form.mapsLink ?? '').trim()) ? 1 : 0;
+  return gst + licence + maps;
+}
 
 export function staffTrade(row: StaffRow): string {
   return (row.trade === OTHER_TRADE ? row.other : row.trade).trim();
@@ -211,6 +225,8 @@ export function businessBody(form: BusinessForm, otpRequestId: string, branchOtp
           ...(form.licenceNumber.trim() ? { [form.licenceKind]: form.licenceNumber.trim() } : {}),
           ...(form.pan.trim() ? { pan: form.pan.trim().toUpperCase() } : {}),
         }),
+    ...(!household && (form.mapsLink ?? '').trim() ? { mapsLink: (form.mapsLink ?? '').trim() } : {}),
+    ...(!household && form.runsFromHome ? { runsFromHome: true } : {}),
     ...(form.branches.length
       ? {
           branches: form.branches.map((b, i) => ({
