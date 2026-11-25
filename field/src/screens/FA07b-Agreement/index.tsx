@@ -15,6 +15,7 @@ import { AppHeader } from '../_shared/AppHeader';
 import { FinishLaterButton } from '../_visits/FinishLater';
 import { StepHeader } from '../_visits/StepHeader';
 import { Script } from '../_selling';
+import { OwnerPhotosCard } from './OwnerPhotosCard';
 
 /** How often the screen asks whether the owner has signed. */
 export const AGREEMENT_POLL_MS = 10_000;
@@ -96,6 +97,8 @@ function Agreement({ status: a, businessId, visitId, linkFailed }: { status: Agr
 
   return (
     <>
+      {/* 25 Nov (rev 211–212, B1): the owner's photos first; he cannot sign before both exist. */}
+      {a.ownerPhotos?.needed && (!signed || !a.ownerPhotos.selfie || !a.ownerPhotos.shop) ? <OwnerPhotosCard businessId={businessId} photos={a.ownerPhotos} /> : null}
       {signed ? (
         <Banner
           tone="ok"

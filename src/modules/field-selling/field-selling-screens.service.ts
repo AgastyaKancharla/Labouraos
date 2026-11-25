@@ -573,6 +573,9 @@ export class FieldSellingScreensService {
       walkInStart: settings.walkInStart,
       walkInEnd: settings.walkInEnd,
       threeWayCalls: settings.threeWayCalls,
+      // 25 Nov (rev 212, B9f): a home workplace's first interview is by phone or at the Laboura office.
+      workplaceIsHome: vacancy.business.runsFromHome,
+      firstInterviewHere: (await this.prisma.interview.count({ where: { businessId: vacancy.businessId, status: { notIn: ['cancelled', 'declined'] } } })) === 0,
     };
   }
 }

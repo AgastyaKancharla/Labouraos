@@ -19,6 +19,7 @@ import {
   ConsentLinkService,
 } from '../consent/consent-link.service';
 import { LEGAL_DOCUMENT_VERSIONS } from '../legal/legal-documents';
+import { allowedShopKinds, verificationPathOf } from '../business/business-paths';
 import { FieldAgentMetricsService } from '../target/field-agent-metrics.service';
 import { VacancyConfirmationService } from '../vacancy/vacancy-confirmation.service';
 import { REVISIT_OUTCOMES } from '../field-visit/field-visit.constants';
@@ -1132,6 +1133,30 @@ export class FieldRedesignService {
       resendAvailableAt: signedCurrent || resend.allowedNow ? null : resend.retryAt?.toISOString() ?? null,
       canShowCandidates: businessCandidateAccess(business, now).allowed,
       candidatesHiddenReason: this.candidatesHiddenReason(business, agreement, outside.has(business.id), now),
+      ownerPhotos: await this.ownerPhotoState(business.id),
+    };
+  }
+
+  /**
+   * 25 Nov (rev 211–212, B1): the owner's live selfie and second photo for FA07b — the agent takes
+   * them before the owner signs (POST /businesses/:id/owner-photos). Households take none.
+   */
+  private async ownerPhotoState(businessId: string) {
+    const b = await this.prisma.business.findUniqueOrThrow({
+      where: { id: businessId },
+      select: {
+        businessType: true, runsFromHome: true, gstNumber: true, fssaiNumber: true, licenceNumber: true, shopEstablishmentNumber: true,
+        udyamNumber: true, mapsLink: true, mapsLatitude: true, mapsLongitude: true, ownerPhotos: { select: { kind: true } },
+      },
+    });
+    const path = verificationPathOf(b);
+    const shopKinds: string[] = allowedShopKinds(b);
+    return {
+      needed: path !== 'household',
+      selfie: b.ownerPhotos.some((p) => p.kind === 'owner_selfie'),
+      shop: b.ownerPhotos.some((p) => shopKinds.includes(p.kind)),
+      shopKinds,
+      smallBusiness: path === 'small_business',
     };
   }
 

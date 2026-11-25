@@ -11,6 +11,7 @@ import { attendanceStart22En } from './attendanceStart22.en';
 import { reg21NovEn } from './reg21nov.en';
 import { visit22En } from './visit22.en';
 import { lists22En } from './lists22.en';
+import { bizAutoEn } from './bizAuto.en';
 /**
  * English — the only language of Laboura Field (Master Guide rev 193). Keys are grouped by the
  * screen that owns them: `fa03.*` belongs to FA03-Home, and so on. Shared
@@ -21,6 +22,7 @@ import { lists22En } from './lists22.en';
  */
 export const en = {
   ...sellingEn,
+  ...bizAutoEn,
   ...attendanceEn,
   ...searchEn,
   ...staffPhotoEn,
