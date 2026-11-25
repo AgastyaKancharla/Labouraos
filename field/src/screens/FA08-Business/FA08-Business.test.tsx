@@ -28,9 +28,10 @@ describe('FA08 the one business page', () => {
     // Checklist: registered, phone confirmed, agreement waiting with Resend, Team Lead check.
     expect(screen.getByTestId('fa08-check-agreement')).toHaveTextContent(/Agreement.*Link sent to \*\*\*\*\*\*4321.*Waiting/);
     expect(screen.getByTestId('fa08-check-tl')).toHaveTextContent(/Team Lead check.*Not yet/);
-    await fireEvent.press(screen.getByTestId('fa08-resend'));
-    await waitFor(() => expect(screen.getByTestId('fa08-resend')).toHaveTextContent('Sent again to ******4321'));
-    expect(calls).toContainEqual({ method: 'POST', path: '/field-work/businesses/b-1/agreement-link', body: {} });
+    // Rev 211: "Send on WhatsApp" (SMS as backup) under the link's name, with a small "Send by SMS".
+    await fireEvent.press(screen.getByTestId('fa08-resend-whatsapp'));
+    await waitFor(() => expect(screen.getByTestId('fa08-resend')).toHaveTextContent(/Sent again to \*\*\*\*\*\*4321/));
+    expect(calls).toContainEqual({ method: 'POST', path: '/field-work/businesses/b-1/agreement-link', body: { channel: 'whatsapp' } });
     // Vacancies: draft → Check and send to owner (then the owner's code), waiting → code or link, confirmed → candidates.
     expect(screen.getByTestId('vacancy-vac-1')).toHaveTextContent(/Cook × 2 · ₹15,000–18,000.*Draft.*Check and send to owner/);
     expect(screen.getByTestId('vacancy-vac-2')).toHaveTextContent(/Helper.*Waiting for owner.*Enter owner’s code.*Resend link/);
@@ -103,7 +104,7 @@ describe('FA08 the one business page', () => {
     await waitFor(() => screen.getByTestId('fa08-view-only'));
     expect(screen.getByTestId('fa08-agent')).toHaveTextContent('Account agent: Ravi K');
     expect(screen.getByTestId('fa08-view-only')).toHaveTextContent(/View only.*belongs to another agent/);
-    for (const id of ['fa08-visit', 'fa08-call', 'fa08-resend', 'fa08-vacancy', 'fa08-show', 'vacancy-vac-1-send', 'vacancy-vac-1-show']) {
+    for (const id of ['fa08-visit', 'fa08-call', 'fa08-resend-whatsapp', 'fa08-resend-sms', 'fa08-vacancy', 'fa08-show', 'vacancy-vac-1-send', 'vacancy-vac-1-show']) {
       expect(screen.queryByTestId(id)).toBeNull();
     }
     expect(screen.getByTestId('vacancy-vac-1')).toHaveTextContent(/Cook × 2.*Confirmed/);

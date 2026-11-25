@@ -100,7 +100,8 @@ describe('FA09 My businesses (Laboura Field lists, 22 Nov evening)', () => {
     expect(screen.queryByTestId('fa09-action-b-5')).toBeNull();
     // Each row has at most one button.
     for (const id of ['b-1', 'b-2', 'b-3', 'b-4', 'b-5']) {
-      expect(within(screen.getByTestId(`fa09-business-${id}`)).queryAllByRole('button').length).toBeLessThanOrEqual(1);
+      // ONE next step; a link's button sends on WhatsApp and has its small "Send by SMS" (rev 211).
+      expect(within(screen.getByTestId(`fa09-business-${id}`)).queryAllByRole('button').length).toBeLessThanOrEqual(2);
     }
   });
 
@@ -112,7 +113,7 @@ describe('FA09 My businesses (Laboura Field lists, 22 Nov evening)', () => {
     await waitFor(() => screen.getByTestId('fa09-action-b-1'));
     await fireEvent.press(screen.getByTestId('fa09-action-b-1'));
     await waitFor(() => expect(screen.getByTestId('fa09-action-b-1')).toHaveTextContent('Sent ✓'));
-    expect(calls).toContainEqual({ method: 'POST', path: '/field-work/businesses/b-1/agreement-link', body: {} });
+    expect(calls).toContainEqual({ method: 'POST', path: '/field-work/businesses/b-1/agreement-link', body: { channel: 'whatsapp' } });
     expect(router.push).not.toHaveBeenCalledWith('/businesses/b-1');
     await fireEvent.press(screen.getByTestId('fa09-action-b-2'));
     expect(router.push).toHaveBeenCalledWith('/businesses/candidates/b-2?vacancyId=vac-9');

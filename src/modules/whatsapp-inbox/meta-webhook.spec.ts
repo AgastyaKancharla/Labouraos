@@ -11,6 +11,21 @@ function envelope(value: Record<string, unknown>) {
 }
 
 describe('WhatsApp Cloud API webhook format (rev 202)', () => {
+  it('rev 211: a "failed" status carries Meta\'s first error code (131026: the number cannot get WhatsApp)', () => {
+    const parsed = parseWhatsAppWebhook(envelope({
+      statuses: [
+        { id: 'wamid.F1', status: 'failed', timestamp: '1', recipient_id: '919876543210', errors: [{ code: 131026, title: 'Message undeliverable' }] },
+        { id: 'wamid.D1', status: 'delivered', timestamp: '1', recipient_id: '919876543210' },
+        { id: 'wamid.F2', status: 'failed', timestamp: '1' },
+      ],
+    }));
+    expect(parsed.statuses).toEqual([
+      { providerMessageId: 'wamid.F1', status: 'failed', errorCode: '131026' },
+      { providerMessageId: 'wamid.D1', status: 'delivered' },
+      { providerMessageId: 'wamid.F2', status: 'failed' },
+    ]);
+  });
+
   it('reads an inbound text with the sender name, number and time', () => {
     const parsed = parseWhatsAppWebhook(envelope({
       contacts: [{ profile: { name: 'Ravi Kumar' }, wa_id: '919876543210' }],

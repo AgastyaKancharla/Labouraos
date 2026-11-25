@@ -40,8 +40,9 @@ describe('FA17b a vacancy and its next step', () => {
     await waitFor(() => screen.getByTestId('vacancy-otp-sent'));
     expect(screen.getByText(/We sent an OTP to Manjunath \(owner, \*\*\*\*\*\*4321\)/)).toBeTruthy();
     expect(screen.getByTestId('show-matches')).toBeDisabled();
-    await fireEvent.press(screen.getByTestId('send-link'));
-    await waitFor(() => expect(screen.getByTestId('send-link')).toHaveTextContent('Link sent to ******4321'));
+    // Rev 211: "Send on WhatsApp" (SMS as backup) or the small "Send by SMS".
+    await fireEvent.press(screen.getByTestId('send-link-sms'));
+    await waitFor(() => expect(screen.getByTestId('send-link')).toHaveTextContent(/Link sent to \*\*\*\*\*\*4321/));
     await fireEvent.changeText(screen.getByTestId('vacancy-otp-code'), '714026');
     await waitFor(() => screen.getByTestId('vacancy-confirmed'));
     expect(calls).toContainEqual({ method: 'POST', path: '/vacancies/vac-2/confirm', body: { otpRequestId: 'otp-3', code: '714026', method: 'code_on_visit' } });

@@ -83,9 +83,10 @@ describe('FA10d My job seekers (Laboura Field lists, 22 Nov evening)', () => {
     await waitFor(() => screen.getByTestId('fa10d-action-5'));
     await fireEvent.press(screen.getByTestId('fa10d-action-5'));
     await waitFor(() => expect(screen.getByTestId('fa10d-action-5')).toHaveTextContent('Sent ✓'));
-    expect(calls).toContainEqual({ method: 'POST', path: '/job-seekers/5/resend-payment', body: {} });
-    await fireEvent.press(screen.getByTestId('fa10d-action-6'));
-    await waitFor(() => expect(calls).toContainEqual({ method: 'POST', path: '/consent/links', body: { jobSeekerId: '6' } }));
+    // Rev 211: the row's button sends on WhatsApp first; the small "Send by SMS" sends by SMS only.
+    expect(calls).toContainEqual({ method: 'POST', path: '/job-seekers/5/resend-payment', body: { channel: 'whatsapp' } });
+    await fireEvent.press(screen.getByTestId('fa10d-action-6-sms'));
+    await waitFor(() => expect(calls).toContainEqual({ method: 'POST', path: '/consent/links', body: { jobSeekerId: '6', channel: 'sms' } }));
     await fireEvent.press(screen.getByTestId('fa10d-action-8'));
     expect(router.push).toHaveBeenCalledWith('/job-seekers/8?open=scan');
     await fireEvent.press(screen.getByTestId('fa10d-action-9'));
