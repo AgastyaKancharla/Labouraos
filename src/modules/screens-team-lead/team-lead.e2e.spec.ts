@@ -132,7 +132,7 @@ describe('Team Lead portal endpoints', () => {
     expect((await get(lead, `/team-lead/agents/${outsider.id}`)).status).toBe(404);
     const agent = await get(lead, `/team-lead/agents/${caller.id}`);
     expect(agent.status).toBe(200);
-    expect(agent.body.main.label).toBe('Paid the ₹499 fee');
+    expect(agent.body.main.label).toBe('Paid the ₹499 fee and ID verified');
   });
 
   it('gives the month in the plain format, with no rupee amounts', async () => {
@@ -215,7 +215,7 @@ describe('Team Lead portal endpoints', () => {
 
   it("marks a team registration fake: a flag the Manager owns; another team's is not found", async () => {
     const seeker = await prisma.jobSeeker.create({
-      data: { code: `JS-TL-${stamp}`, name: 'Venkatesh', phone: `+9196${stamp.slice(-8)}`, minSalary: 1500000, maxSalary: 2000000, preferredCallWindowStart: '09:00', preferredCallWindowEnd: '21:00', status: 'active', registeredByStaffId: caller.id, paymentReceivedAt: shared.at, createdAt: shared.at },
+      data: { code: `JS-TL-${stamp}`, name: 'Venkatesh', phone: `+9196${stamp.slice(-8)}`, minSalary: 1500000, maxSalary: 2000000, preferredCallWindowStart: '09:00', preferredCallWindowEnd: '21:00', status: 'active', registeredByStaffId: caller.id, paymentReceivedAt: shared.at, guaranteeStartsAt: shared.at, createdAt: shared.at },
     });
     cleanup.seekers.push(seeker.id);
     const list = await get(lead, '/team-lead/registrations');

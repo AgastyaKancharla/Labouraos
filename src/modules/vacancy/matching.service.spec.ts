@@ -20,7 +20,7 @@ describe('MatchingService', () => {
     minSalary: 1500000,
     maxSalary: 2000000,
     salaryPeriod: 'monthly',
-    paymentReceivedAt: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000),
+    paymentReceivedAt: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000), guaranteeStartsAt: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000),
     dateOfBirth: new Date('1990-01-01T00:00:00.000Z'),
     gender: 'female',
     latitude: 12.9716,
@@ -303,8 +303,8 @@ describe('MatchingService', () => {
 
   it('ranks day 27 above day 5 for otherwise identical seekers', async () => {
     candidates = [
-      baseCandidate('day-5', { paymentReceivedAt: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000) }),
-      baseCandidate('day-27', { paymentReceivedAt: new Date(now.getTime() - 27 * 24 * 60 * 60 * 1000) }),
+      baseCandidate('day-5', { paymentReceivedAt: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000), guaranteeStartsAt: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000) }),
+      baseCandidate('day-27', { paymentReceivedAt: new Date(now.getTime() - 27 * 24 * 60 * 60 * 1000), guaranteeStartsAt: new Date(now.getTime() - 27 * 24 * 60 * 60 * 1000) }),
     ];
     consentRows = candidates.flatMap(({ id }) => [
       { subjectId: id, purpose: 'job_matching', granted: true, grantedAt: now, withdrawnAt: null },
@@ -316,8 +316,8 @@ describe('MatchingService', () => {
 
   it('reads weights from PricingPolicy and their changes alter ranking', async () => {
     candidates = [
-      baseCandidate('clock-priority', { paymentReceivedAt: new Date(now.getTime() - 27 * 24 * 60 * 60 * 1000), latitude: 12.98 }),
-      baseCandidate('distance-priority', { paymentReceivedAt: new Date(now.getTime() - 4 * 24 * 60 * 60 * 1000), latitude: 12.9717 }),
+      baseCandidate('clock-priority', { paymentReceivedAt: new Date(now.getTime() - 27 * 24 * 60 * 60 * 1000), guaranteeStartsAt: new Date(now.getTime() - 27 * 24 * 60 * 60 * 1000), latitude: 12.98 }),
+      baseCandidate('distance-priority', { paymentReceivedAt: new Date(now.getTime() - 4 * 24 * 60 * 60 * 1000), guaranteeStartsAt: new Date(now.getTime() - 4 * 24 * 60 * 60 * 1000), latitude: 12.9717 }),
     ];
     consentRows = candidates.flatMap(({ id }) => [
       { subjectId: id, purpose: 'job_matching', granted: true, grantedAt: now, withdrawnAt: null },

@@ -216,13 +216,22 @@ describe('Stages from the records', () => {
     paid: false,
   };
 
-  it('job seeker: B → C consent → D selfie and ID → E terms → done when ₹499 arrives', () => {
+  it('job seeker (rev 211): B → C consent → D selfie, terms and payment → E paid, waiting for ID → done when paid AND ID passed', () => {
     expect(seekerStage(seeker)).toMatchObject({ stage: 'B', step: 'consent' });
     expect(seekerStage({ ...seeker, consentDone: true })).toMatchObject({ stage: 'C', step: 'selfie' });
-    expect(seekerStage({ ...seeker, consentDone: true, selfie: true, idVerified: true })).toMatchObject({ stage: 'D', missing: ['terms', 'payment'] });
-    const atPayment = seekerStage({ ...seeker, consentDone: true, selfie: true, idVerified: true, termsAgreed: true, paymentFailures: 2 });
-    expect(atPayment).toMatchObject({ stage: 'E', step: 'payment_failed', stuckReason: 'UPI failed 2 times' });
-    expect(seekerStage({ ...seeker, paid: true }).stage).toBe('done');
+    // The payment comes before the ID check.
+    expect(seekerStage({ ...seeker, consentDone: true, selfie: true })).toMatchObject({ stage: 'D', step: 'terms', missing: ['terms', 'payment', 'id_check'] });
+    const atPayment = seekerStage({ ...seeker, consentDone: true, selfie: true, termsAgreed: true, paymentFailures: 2 });
+    expect(atPayment).toMatchObject({ stage: 'D', step: 'payment_failed', stuckReason: 'UPI failed 2 times' });
+    // Paid, no passed ID: stage E "Paid, waiting for ID" — not done, no credit yet.
+    const waiting = seekerStage({ ...seeker, consentDone: true, selfie: true, termsAgreed: true, paid: true });
+    expect(waiting).toMatchObject({ stage: 'E', step: 'id_check', missing: ['id_check'], stuckReason: 'Paid, waiting for ID' });
+    expect(seekerStage({ ...seeker, consentDone: true, selfie: true, termsAgreed: true, paid: true, idFailed: true }).stuckReason).toBe('Paid, waiting for ID: the ID check did not pass');
+    // Done when he is paid AND his ID passed (in either order), or his 30 days started.
+    expect(seekerStage({ ...seeker, consentDone: true, selfie: true, termsAgreed: true, paid: true, idVerified: true })).toMatchObject({ stage: 'done', step: 'complete', missing: [] });
+    expect(seekerStage({ ...seeker, paid: true, guaranteeStarted: true }).stage).toBe('done');
+    // An ID verified before payment (a field agent in person) is not done until he pays.
+    expect(seekerStage({ ...seeker, consentDone: true, selfie: true, idVerified: true }).stage).toBe('D');
   });
 
   it('business: agreement, visit booked, visit done, verified', () => {
