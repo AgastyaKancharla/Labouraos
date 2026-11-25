@@ -75,4 +75,25 @@ describe('Real WhatsApp provider: template payload shape', () => {
     const res = await provider.sendTemplateMessage('+919876543210', 'consent_link', { link: 'https://x' });
     expect(res).toMatchObject({ status: 'failed', errorCode: '131026' });
   });
+
+  it('rev 211: reads the templates\' review state from the business account (WHATSAPP_BUSINESS_ACCOUNT_ID), page by page', async () => {
+    const urls: string[] = [];
+    const pages = [
+      { data: [{ name: 'verification_code', status: 'APPROVED', category: 'AUTHENTICATION' }], paging: { next: 'https://graph.example/v21.0/next-page' } },
+      { data: [{ name: 'payment_receipt', status: 'PENDING', category: 'UTILITY' }] },
+    ];
+    const fetchFn = jest.fn(async (url: string, init: { headers: Record<string, string> }) => {
+      urls.push(url);
+      expect(init.headers.Authorization).toBe('Bearer t');
+      return { ok: true, status: 200, json: async () => pages[urls.length - 1] };
+    });
+    const provider = new RealWhatsAppProvider({ apiUrl: 'https://graph.example/v21.0', accessToken: 't', phoneNumberId: '123', businessAccountId: 'waba-9', fetchFn: fetchFn as unknown as typeof fetch });
+    expect(await provider.templateStatuses()).toEqual([
+      { name: 'verification_code', status: 'APPROVED', category: 'AUTHENTICATION' },
+      { name: 'payment_receipt', status: 'PENDING', category: 'UTILITY' },
+    ]);
+    expect(urls).toEqual(['https://graph.example/v21.0/waba-9/message_templates?fields=name,status,category&limit=200', 'https://graph.example/v21.0/next-page']);
+    const unset = new RealWhatsAppProvider({ apiUrl: 'https://graph.example/v21.0', accessToken: 't', businessAccountId: '', fetchFn: fetchFn as unknown as typeof fetch });
+    await expect(unset.templateStatuses()).rejects.toThrow('WHATSAPP_BUSINESS_ACCOUNT_ID is not set');
+  });
 });

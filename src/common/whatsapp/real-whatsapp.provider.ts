@@ -63,7 +63,16 @@ export interface RealWhatsAppProviderOptions {
   apiUrl?: string;
   accessToken?: string;
   phoneNumberId?: string;
+  /** The WhatsApp Business Account that owns the templates (WHATSAPP_BUSINESS_ACCOUNT_ID). */
+  businessAccountId?: string;
   fetchFn?: typeof fetch;
+}
+
+/** One template as Meta has it (name, review status, category). */
+export interface MetaTemplateStatus {
+  name: string;
+  status: string;
+  category: string | null;
 }
 
 @Injectable()
@@ -72,6 +81,7 @@ export class RealWhatsAppProvider implements WhatsAppProvider {
   private readonly apiUrl: string;
   private readonly accessToken: string;
   private readonly phoneNumberId: string;
+  private readonly businessAccountId: string;
   private readonly fetchFn: typeof fetch;
 
   constructor(options?: RealWhatsAppProviderOptions) {
@@ -85,7 +95,29 @@ export class RealWhatsAppProvider implements WhatsAppProvider {
       options?.phoneNumberId ??
       process.env.WHATSAPP_PHONE_NUMBER_ID ??
       '100000000000001';
+    this.businessAccountId = options?.businessAccountId ?? process.env.WHATSAPP_BUSINESS_ACCOUNT_ID ?? '';
     this.fetchFn = options?.fetchFn ?? globalThis.fetch;
+  }
+
+  /**
+   * Rev 211 (C9): the templates' review state at Meta, read from the WhatsApp Business Account,
+   * so the submission sheet can be checked against what Meta approved. Needs
+   * WHATSAPP_BUSINESS_ACCOUNT_ID; never sends anything.
+   */
+  async templateStatuses(): Promise<MetaTemplateStatus[]> {
+    if (!this.businessAccountId) throw new Error('WHATSAPP_BUSINESS_ACCOUNT_ID is not set');
+    const rows: MetaTemplateStatus[] = [];
+    let url: string | null = `${this.apiUrl}/${encodeURIComponent(this.businessAccountId)}/message_templates?fields=name,status,category&limit=200`;
+    for (let page = 0; url && page < 20; page += 1) {
+      const response = await this.fetchFn(url, { headers: { Authorization: `Bearer ${this.accessToken}` } });
+      const body = (await response.json()) as { data?: Array<{ name?: string; status?: string; category?: string }>; paging?: { next?: string }; error?: { message?: string } };
+      if (!response.ok) throw new Error(`Meta template list failed (${response.status}): ${body.error?.message ?? 'unknown error'}`);
+      for (const row of body.data ?? []) {
+        if (row.name) rows.push({ name: row.name, status: row.status ?? 'UNKNOWN', category: row.category ?? null });
+      }
+      url = body.paging?.next ?? null;
+    }
+    return rows;
   }
 
   async sendTemplateMessage(
