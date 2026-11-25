@@ -18,7 +18,7 @@ export function notificationHref(target: FieldNotificationTarget | null): Href |
   switch (target.type) {
     case 'visit_assignment':
       // 21 Nov review: the visit itself — a verification opens its steps, an interview to attend its day screen.
-      if (target.open && (target.purpose === 'verification' || target.purpose === 'business_signup') && target.businessId) {
+      if (target.open && (target.purpose === 'verification' || target.purpose === 'business_signup' || target.purpose === 'candidate_report') && target.businessId) {
         return { pathname: routes.visitVerify, params: { businessId: target.businessId, assignmentId: target.id } };
       }
       if (target.open && target.interviewId) return sellingRoutesFor('/visit').interviewDay(target.interviewId);

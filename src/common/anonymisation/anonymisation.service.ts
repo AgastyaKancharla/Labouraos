@@ -154,9 +154,16 @@ export class AnonymisationService {
             pan: null,
             fssaiNumber: null,
             legalName: null,
+            // 25 Nov (rev 211–212): the Maps link and the owner's photos and checks go too.
+            mapsLink: null,
+            mapsLatitude: null,
+            mapsLongitude: null,
+            mapsPlaceName: null,
             anonymisedAt: now,
           },
         });
+        await this.prisma.businessOwnerPhoto.deleteMany({ where: { businessId: id } });
+        await this.prisma.businessOwnerCheck.deleteMany({ where: { businessId: id } });
         await this.prisma.businessBranch.updateMany({
           where: { businessId: id },
           data: {

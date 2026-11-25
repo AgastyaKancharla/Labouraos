@@ -16,6 +16,7 @@ import { callAgentEn } from '../screens/call-agent/_lib/i18n.en';
 import { fixes17En } from './fixes17';
 import { reg21NovEn } from './reg21nov';
 import { visit22En } from './visit22';
+import { bizAutoEn } from './bizAuto';
 import { whatsappEn } from './whatsapp';
 import { waFirst25En } from './waFirst25';
 import { consoleListsEn } from '../screens/call-agent/_lists/i18n';
@@ -622,6 +623,7 @@ export const en = {
   "screen.P06-DidTheyOffer": "Did they offer you the job?",
   "screen.P07-VacancyConfirm": "Confirm vacancy",
   ...registrationEn,
+  ...bizAutoEn,
   ...staffAccessEn,
   ...referralTermsEn,
   ...legalEn,

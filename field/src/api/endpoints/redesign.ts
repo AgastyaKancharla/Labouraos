@@ -390,6 +390,8 @@ export interface AgreementStatus {
   resendAvailableAt: string | null;
   canShowCandidates: boolean;
   candidatesHiddenReason: CandidatesHiddenReason;
+  /** 25 Nov (rev 211–212): the owner's photos the agent takes before the owner signs (absent on older servers). */
+  ownerPhotos?: { needed: boolean; selfie: boolean; shop: boolean; shopKinds: ('shop_board' | 'fssai_with_owner' | 'workspace')[]; smallBusiness: boolean };
 }
 
 export interface MyJobSeekerRow {

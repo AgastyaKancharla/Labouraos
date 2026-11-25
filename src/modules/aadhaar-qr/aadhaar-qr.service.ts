@@ -188,6 +188,46 @@ export class AadhaarQrService {
     );
   }
 
+  /**
+   * 25 Nov (rev 212, B9): a small business owner's Aadhaar, read on his agreement page. The same
+   * in-house check (UIDAI's signature with UIDAI's key, 18+, the name against the owner's name,
+   * the permanent-ban fingerprint), but nothing is written here: the caller keeps only the
+   * result, the last 4 digits and the name (BusinessOwnerCheck). Never the QR text or a photo.
+   */
+  async checkBusinessOwner(ownerName: string, qrText: unknown, now: Date = new Date()): Promise<{ result: QrResult; verified: boolean; last4: string | null; nameOnId: string | null; failureReason: string | null }> {
+    let parsed;
+    try {
+      parsed = parseSecureQr(qrText);
+    } catch (error) {
+      if (!(error instanceof SecureQrError)) throw error;
+      const result: QrResult = error.code === 'old_unsigned_qr' ? 'old_qr' : 'unreadable';
+      return { result, verified: false, last4: null, nameOnId: null, failureReason: error.message };
+    }
+    const signer = verifySecureQrSignature(parsed, this.keys);
+    if (!signer) {
+      const issued = qrIssuedAt(parsed);
+      if (issued && this.newestCertEnd && issued.getTime() > this.newestCertEnd.getTime()) {
+        await this.flagCertificateMissing(now);
+        return { result: 'cert_missing', verified: false, last4: null, nameOnId: null, failureReason: SECURE_QR_MESSAGES.cert_missing };
+      }
+      return { result: 'bad_signature', verified: false, last4: null, nameOnId: null, failureReason: SECURE_QR_MESSAGES.bad_signature };
+    }
+    const policy = await this.pricing.current();
+    const dob = parseQrDateOfBirth(parsed.dateOfBirth);
+    if (dob) await assertNotBanned(this.prisma, { idFingerprints: [aadhaarFingerprint(parsed.referenceLast4, dob.value, parsed.name)] });
+    const isAdult = isAdultOn(dob, now, policy.adultMinimumAge);
+    const name = checkIdName(ownerName, parsed.name);
+    const result: QrResult = !isAdult ? 'under_18' : !name.matches ? 'name_mismatch' : 'verified';
+    const verified = result === 'verified';
+    return {
+      result,
+      verified,
+      last4: verified ? parsed.referenceLast4 : null,
+      nameOnId: verified ? parsed.name : null,
+      failureReason: result === 'under_18' ? 'The owner must be 18 or older' : result === 'name_mismatch' ? "The name on the Aadhaar does not match the owner's name" : null,
+    };
+  }
+
   private async check(subject: Subject, consentId: string, qrText: unknown, context: Context): Promise<AadhaarQrOutcome> {
     const now = context.now ?? new Date();
     const attemptId = await this.claimAttempt(subject, context, now);

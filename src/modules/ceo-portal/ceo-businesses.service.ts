@@ -18,6 +18,8 @@ import {
   sumPaise,
 } from './ceo-common';
 import { phoneSearchDigits } from '../../common/phone/indian-mobile';
+import { verificationView } from '../business/business-verification-view';
+import { isHouseholdBusiness } from '../business/business-auto-check.service';
 
 export interface ListQuery {
   range: Partial<DateRange>;
@@ -200,6 +202,7 @@ export class CeoBusinessesService {
         placements: { orderBy: { createdAt: 'desc' }, include: { jobSeeker: { select: { id: true, code: true, name: true } } } },
         payments: { where: { type: 'placement_fee', status: { in: RECEIVED_STATUSES } }, select: { amount: true } },
         visits: { orderBy: { visitedAt: 'desc' }, take: 10, include: { staff: { select: { name: true } } } },
+        ownerPhotos: { select: { kind: true, takenAt: true, takenVia: true, locationStatus: true } },
         candidateIntroductions: {
           orderBy: { shownAt: 'desc' },
           take: 50,
@@ -259,6 +262,8 @@ export class CeoBusinessesService {
         ? { since: b.suspendedAt?.toISOString() ?? null, until: b.suspendedUntil?.toISOString() ?? null, permanent: !b.suspendedUntil, reason: b.suspensionReason }
         : null,
       noDocuments: b.documentsStatus === 'no_documents',
+      // 25 Nov (rev 211): the automatic verification, proofs and owner photos (pictures via owner-photos).
+      verification: verificationView(b),
       createdAt: b.createdAt.toISOString(),
       tiles: {
         openVacancies: b.vacancies.filter((v) => v.status === 'open').length,
@@ -339,6 +344,10 @@ export class CeoBusinessesService {
         accountAgentId: true,
         inPersonOnboardedAt: true,
         createdAt: true,
+        businessType: true,
+        autoCheckStatus: true,
+        autoCheckReasons: true,
+        autoCheckDistanceMeters: true,
         agreements: { select: { id: true }, take: 1 },
         visitAssignments: {
           where: { status: { in: ['pending', 'assigned'] } },
@@ -355,9 +364,17 @@ export class CeoBusinessesService {
     const rows = businesses.map((b) => {
       const assignment = b.visitAssignments[0] ?? null;
       let waitingFor: string;
+      // 25 Nov (rev 211, B5): only households wait for a verification visit; every other business
+      // waits for its agreement (with the owner photos), then the automatic check decides.
+      const household = isHouseholdBusiness(b.businessType);
       if (b.verificationStatus === 'pending_tl_check') waitingFor = 'tl_review';
+      else if (!household && !b.agreements.length) waitingFor = 'agreement';
+      else if (!household) waitingFor = 'auto_check';
       else if (!b.agreements.length && b.inPersonOnboardedAt === null && b.verificationStatus === 'pending_visit') waitingFor = 'agreement';
       else waitingFor = 'visit';
+      const failed = Array.isArray(b.autoCheckReasons)
+        ? (b.autoCheckReasons as Array<{ ok?: boolean; detail?: string }>).filter((r) => r && r.ok === false).map((r) => String(r.detail ?? ''))
+        : [];
       return {
         id: b.id,
         code: b.code,
@@ -369,6 +386,8 @@ export class CeoBusinessesService {
         waitingDays: daysSince(b.createdAt, now),
         waitingFor,
         agreementSigned: b.agreements.length > 0,
+        household,
+        autoCheck: b.autoCheckStatus ? { status: b.autoCheckStatus, failed, distanceMeters: b.autoCheckDistanceMeters } : null,
         candidatesShown: b.candidateIntroductions.length > 0,
         assignment: assignment
           ? {

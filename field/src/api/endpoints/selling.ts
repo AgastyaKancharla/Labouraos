@@ -280,6 +280,9 @@ export interface BookingContext {
   walkInStart: string;
   walkInEnd: string;
   threeWayCalls: boolean;
+  /** 25 Nov (rev 212): the workplace is the owner's home; the first interview there is by phone or at the Laboura office. */
+  workplaceIsHome?: boolean;
+  firstInterviewHere?: boolean;
 }
 
 export interface CallStatus {
@@ -310,7 +313,7 @@ export interface DecisionBody {
 export interface BookBody {
   date: string;
   time: string;
-  type: 'at_shop' | 'walk_in' | 'phone';
+  type: 'at_shop' | 'walk_in' | 'phone' | 'laboura_office';
   agentWillAttend?: boolean;
 }
 

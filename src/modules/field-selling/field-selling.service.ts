@@ -31,7 +31,7 @@ import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { TELEPHONY_PROVIDER, TelephonyProvider } from '../telephony/telephony.interface';
 import { MatchingService } from '../vacancy/matching.service';
 import { InterviewService, NOT_SELECTED_REASONS } from '../vacancy/interview.service';
-import { isUnconfirmedVacancyStatus } from '../vacancy/vacancy-confirmation.service';
+import { isUnconfirmedVacancyStatus, isVacancyWaitingForTeamLead, VACANCY_WAITS_FOR_TEAM_LEAD_MESSAGE } from '../vacancy/vacancy-confirmation.service';
 import { businessAccessMessage, businessCandidateAccess } from '../business/business-candidate-access';
 import { FieldVisitService } from '../field-visit/field-visit.service';
 import { testModeFields } from '../../common/otp/otp-test-mode';
@@ -43,7 +43,8 @@ export interface SellingActor {
 }
 
 /** How an interview booked from the field app happens (FA15g). */
-export const BOOKED_INTERVIEW_TYPES = ['at_shop', 'walk_in', 'phone'] as const;
+// laboura_office (25 Nov, rev 212 B9f): the first interview at a workplace inside the owner's home.
+export const BOOKED_INTERVIEW_TYPES = ['at_shop', 'walk_in', 'phone', 'laboura_office'] as const;
 export type BookedInterviewType = (typeof BOOKED_INTERVIEW_TYPES)[number];
 
 /** The owner's answer on the joining call (FA11) besides "he joined" (POST /placements/:id/joined). */
@@ -190,6 +191,7 @@ export class FieldSellingService {
     if (isUnconfirmedVacancyStatus(vacancy.status)) {
       throw new BadRequestException('The contact person must confirm this vacancy by OTP first');
     }
+    if (isVacancyWaitingForTeamLead(vacancy.status)) throw new BadRequestException(VACANCY_WAITS_FOR_TEAM_LEAD_MESSAGE);
     const access = businessCandidateAccess(vacancy.business);
     if (!access.allowed) {
       throw new BadRequestException(businessAccessMessage(access, 'The business must be verified (or onboarded in person) first'));
@@ -512,7 +514,7 @@ export class FieldSellingService {
 
   private validateBooking(body: BookBody, policy: { walkInStart: string; walkInEnd: string; callingHoursStart: string; callingHoursEnd: string }, now: Date) {
     if (!(BOOKED_INTERVIEW_TYPES as readonly string[]).includes(body?.type ?? '')) {
-      throw new BadRequestException('type must be at_shop, walk_in or phone');
+      throw new BadRequestException('type must be at_shop, walk_in, phone or laboura_office');
     }
     const type = body.type as BookedInterviewType;
     if (type === 'phone' && !this.telephony.supportsThreeWayCalls?.()) {
@@ -558,7 +560,7 @@ export class FieldSellingService {
     });
     let booked: { id: string; code: string };
     try {
-      booked = await this.interviews.book({ vacancyId: vacancy.id, jobSeekerId: body.jobSeekerId, slotId: slot.id }, actor.id);
+      booked = await this.interviews.book({ vacancyId: vacancy.id, jobSeekerId: body.jobSeekerId, slotId: slot.id, interviewType: type }, actor.id);
     } catch (error) {
       await this.prisma.vacancyInterviewSlot.deleteMany({ where: { id: slot.id, interviews: { none: {} } } });
       throw error;

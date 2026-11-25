@@ -47,8 +47,8 @@ export class InterviewController {
   @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
   // A Team Lead books only for their own team's job seekers (owner rule, 14 Nov).
   @RequirePermission('job_seeker', 'write', { kind: 'job_seeker', from: 'body:jobSeekerId' })
-  book(@Body() body: { vacancyId: string; jobSeekerId: string; slotId: string }, @Req() req: AuthenticatedRequest) {
-    return this.interviews.book(body, req.user.sub);
+  book(@Body() body: { vacancyId: string; jobSeekerId: string; slotId: string; interviewType?: string }, @Req() req: AuthenticatedRequest) {
+    return this.interviews.book({ vacancyId: body?.vacancyId, jobSeekerId: body?.jobSeekerId, slotId: body?.slotId, interviewType: typeof body?.interviewType === 'string' ? body.interviewType : undefined }, req.user.sub);
   }
 
   @Get('reply/:token')
@@ -112,8 +112,24 @@ export class InterviewController {
 
   @Post('check/:token')
   @Public('token page: the job seeker, business or partner proves who they are with the link token')
-  check(@Param('token') token: string, @Body() body: { answer: 'yes' | 'no' }) {
-    return this.interviews.submitCandidateOfferCheck(token, body?.answer);
+  check(@Param('token') token: string, @Body() body: { answer: 'yes' | 'no'; shopAnswer?: 'yes' | 'no' }) {
+    return this.interviews.submitCandidateOfferCheck(token, body?.answer, body?.shopAnswer);
+  }
+
+  /**
+   * 25 Nov (rev 211, B6): the candidate's answer to "Was the shop real, at this address, and was
+   * the job as described?", recorded by the agent who heard it (his own answered call, or his own
+   * WhatsApp conversation with the candidate). "No" pauses the business and tells the Team Lead.
+   */
+  @Post(':id/shop-check')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
+  recordShopCheck(
+    @Param('id') id: string,
+    @Body() body: { answer?: 'yes' | 'no'; channel?: 'call' | 'whatsapp'; callRecordId?: string; note?: string },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.interviews.recordShopCheckByStaff(id, { id: req.user.sub, role: req.user.role }, body ?? {});
   }
 
   @Post(':id/call-reply')

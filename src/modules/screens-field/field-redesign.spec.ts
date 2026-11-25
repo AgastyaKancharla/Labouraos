@@ -167,7 +167,7 @@ describe('Laboura Field redesign: Today, Today\'s work, businesses, agreement, j
     });
   }
 
-  function signAgreement(businessId: string, version = '1.1') {
+  function signAgreement(businessId: string, version = '1.2') {
     return prisma.businessAgreement.create({
       data: {
         businessId, version, termsHash: 'h', noBypassMonths: 12, noBypassPenaltyPercent: 50, feePercent: 50, gstPercent: 18,
@@ -537,7 +537,7 @@ describe('Laboura Field redesign: Today, Today\'s work, businesses, agreement, j
     await post(agent, `/businesses/${third.id}/agreement-links`, { language: 'en' }).expect(201);
 
     // Signed (current version): no resend.
-    await signAgreement(shop.id, '1.1');
+    await signAgreement(shop.id, '1.2');
     expect((await post(agent, `/field-work/businesses/${shop.id}/agreement-link`).expect(409)).body.code).toBe('AGREEMENT_ALREADY_SIGNED');
     expect((await get(agent, `/field-work/businesses/${shop.id}/agreement`).expect(200)).body).toMatchObject({ state: 'signed', canResend: false, resendAvailableAt: null });
     clock.at = NOON;

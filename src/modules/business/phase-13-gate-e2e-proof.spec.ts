@@ -15,6 +15,7 @@ import { JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } from '../consent/consent.constan
 import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 import { confirmVacancyForTest } from '../../test-support/confirm-vacancy';
 import { jobSeekerTermsHash } from '../../test-support/terms-hash';
+import { seedOwnerPhotos } from '../../test-support/owner-photos';
 
 class Phase13GateClock extends BusinessClock {
   nowValue = new Date();
@@ -166,6 +167,7 @@ describe('Phase 13 gate — complete verification and consent journeys', () => {
     expect(visitResponse.body.ownerOtpRequestId).toBe(ownerPresenceOtp.body.requestId);
     expect(visitResponse.body.photoLive).toBe(false);
 
+    await seedOwnerPhotos(prisma, businessId);
     const signingOtp = await request(server).post('/consent/send-otp')
       .send({ token: agreementLinkToken }).expect(201);
     const signingCode = provider.getCode(signingOtp.body.requestId)!;

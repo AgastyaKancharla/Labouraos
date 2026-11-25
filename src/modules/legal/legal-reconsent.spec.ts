@@ -67,10 +67,11 @@ describe('Re-consent (rev 176): who must accept the current version', () => {
     expect(prisma.legalAcceptance.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ context: { not: 'payment_terms' } }) }));
   });
 
-  it('a business that signed agreement 1.0 must sign 1.1; one that signed 1.1 is up to date; one that never signed is not asked', async () => {
+  it('a business that signed agreement 1.1 must sign 1.2 (rev 211); one that signed 1.2 is up to date; one that never signed is not asked', async () => {
     const signedAt = new Date('2026-11-01T10:00:00Z');
     expect(await legalWith({ agreement: { version: '1.0', signedAt } }).service.status('business', 'bz-1')).toMatchObject({ acceptedVersion: '1.0', needsReconsent: true });
-    expect(await legalWith({ agreement: { version: '1.1', signedAt } }).service.status('business', 'bz-1')).toMatchObject({ acceptedVersion: '1.1', needsReconsent: false });
+    expect(await legalWith({ agreement: { version: '1.1', signedAt } }).service.status('business', 'bz-1')).toMatchObject({ acceptedVersion: '1.1', needsReconsent: true });
+    expect(await legalWith({ agreement: { version: '1.2', signedAt } }).service.status('business', 'bz-1')).toMatchObject({ acceptedVersion: '1.2', needsReconsent: false });
     expect((await legalWith({}).service.status('business', 'bz-1')).needsReconsent).toBe(false);
   });
 

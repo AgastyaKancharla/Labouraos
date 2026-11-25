@@ -81,6 +81,43 @@ export class RecordPhotosService {
   }
 
   /**
+   * 25 Nov (rev 211, B1): the owner's live selfie and the shop photo (name board, or the owner
+   * holding the FSSAI licence for a home business) taken before he signed — the latest of each,
+   * through short-lived private links, for a business the viewer may open. Audited.
+   */
+  async ownerPhotos(viewer: PhotoViewer, scope: Prisma.BusinessWhereInput | null, businessId: string) {
+    const where: Prisma.BusinessWhereInput = { AND: [{ OR: [{ id: businessId }, { code: businessId }] }, ...(scope ? [scope] : [])] };
+    const business = await this.prisma.business.findFirst({ where, select: { id: true, code: true, city: true, runsFromHome: true, ownerCheck: { select: { idPhotoPath: true, addressPhotoPath: true } } } });
+    if (!business) throw new NotFoundException(`Business '${businessId}' not found`);
+    const rows = await this.prisma.businessOwnerPhoto.findMany({ where: { businessId: business.id }, orderBy: { takenAt: 'desc' } });
+    const SHOP_KINDS = ['shop_board', 'fssai_with_owner', 'workspace'];
+    const sign = async (kind: string) => {
+      const row = rows.find((r) => (kind === 'shop' ? SHOP_KINDS.includes(r.kind) : r.kind === kind));
+      if (!row) return { kept: false, url: null, expiresInSeconds: 0, takenAt: null, takenVia: null, locationStatus: null, kind };
+      const url = this.businessPhotos.signedUrl ? await this.businessPhotos.signedUrl(row.storagePath, BUSINESS_PHOTO_LINK_TTL_SECONDS) : null;
+      return {
+        kept: Boolean(url), url: url ?? null, expiresInSeconds: url ? BUSINESS_PHOTO_LINK_TTL_SECONDS : 0,
+        takenAt: row.takenAt.toISOString(), takenVia: row.takenVia, locationStatus: row.locationStatus, kind: row.kind,
+      };
+    };
+    // B9: the small business owner's ID card photo and address proof, only until the Team Lead's check.
+    const signPath = async (path: string | null | undefined) => {
+      if (!path || !this.businessPhotos.signedUrl) return null;
+      const url = await this.businessPhotos.signedUrl(path, BUSINESS_PHOTO_LINK_TTL_SECONDS);
+      return url ? { url, expiresInSeconds: BUSINESS_PHOTO_LINK_TTL_SECONDS } : null;
+    };
+    const result = {
+      selfie: await sign('owner_selfie'),
+      shop: await sign('shop'),
+      idCard: await signPath(business.ownerCheck?.idPhotoPath),
+      addressProof: await signPath(business.ownerCheck?.addressPhotoPath),
+      expiresInSeconds: BUSINESS_PHOTO_LINK_TTL_SECONDS,
+    };
+    if (rows.length) await this.logView(viewer, 'record.owner_photos_viewed', 'business', business.code, business.city);
+    return result;
+  }
+
+  /**
    * Audits a photo view at most once per viewer, record and kind of photo per
    * 30 minutes: the page asks for a fresh link every few minutes while open,
    * and each refresh is not a new view.

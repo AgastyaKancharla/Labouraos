@@ -7,6 +7,7 @@ import { stripMoney } from '../../common/rbac/money-visibility';
 import { AttendanceClock } from '../attendance/attendance-clock';
 import { DateRange } from '../ceo-portal/ceo-common';
 import { RecordPhotosService } from '../ceo-portal/record-photos.service';
+import { BusinessChecksService } from '../ceo-portal/business-checks.service';
 import { RecordWheres, eitherWheres } from '../ceo-portal/record-scope';
 import type { AssignKind, RecordSection, SectionScope, Viewer } from './record-section-scope';
 import { NotificationKind, notificationLink } from '../notification/notification.constants';
@@ -41,6 +42,7 @@ export class RecordSectionsService {
     private readonly records: ManagerRecordsService,
     private readonly photos: RecordPhotosService,
     private readonly notifications: NotificationService,
+    private readonly checks: BusinessChecksService,
   ) {}
 
   private pick(s: SectionScope, section: RecordSection): RecordWheres {
@@ -112,6 +114,20 @@ export class RecordSectionsService {
 
   async visitPhotos(s: SectionScope, businessId: string, visitId: string) {
     return this.photos.visitPhotos(s.viewer, this.viewable(s).business, businessId, visitId);
+  }
+
+  /**
+   * 25 Nov (rev 211, B3/B4): every business and vacancy waiting for the Team Lead's check in his
+   * view (no limit). A Team Lead decides his own team's; an unowned one he assigns to his team first.
+   */
+  async businessChecks(s: SectionScope, teamDecides: boolean) {
+    const view = this.viewable(s);
+    return stripMoney(await this.checks.queue({ business: view.business, vacancy: view.vacancy, decidable: teamDecides ? s.team.business : null }));
+  }
+
+  /** 25 Nov (rev 211, B1): the owner's selfie and shop photo, for a business he may open. */
+  async ownerPhotos(s: SectionScope, businessId: string) {
+    return this.photos.ownerPhotos(s.viewer, this.viewable(s).business, businessId);
   }
 
   // Assign ---------------------------------------------------------------------

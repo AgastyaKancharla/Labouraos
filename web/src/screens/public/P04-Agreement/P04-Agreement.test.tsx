@@ -123,4 +123,63 @@ describe('P04-Agreement / P04b-Signed', () => {
     await waitFor(() => expect(api.calls('POST /consent/send-otp')).toHaveLength(1));
     expect(await screen.findByText('This link has no phone number for the code. Ask Laboura for a new link.')).toBeInTheDocument();
   });
+
+  it('25 Nov (B1): before signing the owner takes a live selfie and a second photo — camera only; sending waits for both', async () => {
+    const getUserMedia = vi.fn().mockRejectedValue(new DOMException('denied', 'NotAllowedError'));
+    Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia }, configurable: true });
+    const api = mockApi({
+      'GET /consent/atok': { ...details, ownerPhotos: { selfie: false, shop: false, shopKind: 'shop_board', shopKinds: ['shop_board'], smallBusiness: false } },
+      'POST /consent/send-otp': { requestId: 'areq', phone: '******4321' },
+    });
+    const { container } = render();
+    expect(await screen.findByText('Before you sign: two live photos')).toBeInTheDocument();
+    expect(screen.getByText('Your live selfie')).toBeInTheDocument();
+    expect(container.querySelector('input[type="file"]')).toBeNull();
+    for (const box of screen.getAllByRole('checkbox')) await userEvent.click(box);
+    await userEvent.click(screen.getByRole('button', { name: 'Send code to sign' }));
+    expect(screen.getByTestId('send-blocked')).toHaveTextContent('take both photos');
+    expect(api.calls('POST /consent/send-otp')).toHaveLength(0);
+  });
+
+  it('25 Nov (B1/B9): with the selfie taken, a small business picks the workspace or the name board for the second photo', async () => {
+    const getUserMedia = vi.fn().mockRejectedValue(new DOMException('denied', 'NotAllowedError'));
+    Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia }, configurable: true });
+    mockApi({
+      'GET /consent/atok': { ...details, ownerPhotos: { selfie: true, shop: false, shopKind: 'shop_board', shopKinds: ['shop_board', 'workspace'], smallBusiness: true } },
+    });
+    render();
+    expect(await screen.findByText(/Your business has fewer than 2 documents/)).toBeInTheDocument();
+    const kinds = screen.getByTestId('shop-photo-kind');
+    expect(kinds).toHaveTextContent("The shop's name board");
+    expect(kinds).toHaveTextContent('The place you work from');
+    await userEvent.click(screen.getByRole('radio', { name: /The place you work from/ }));
+    expect(screen.getByRole('heading', { name: /The place you work from/ })).toBeInTheDocument();
+  });
+
+  it('25 Nov (B9): a signed small business finishes its checks on the same link (business proof saved)', async () => {
+    const state = {
+      required: true,
+      ownerId: { method: null, type: null, result: null, last4: null, failureReason: null },
+      businessProof: { given: false, kind: null, fromProofs: false },
+      addressProof: { submitted: false, docType: null, result: null },
+      videoCall: { done: false, at: null },
+      photos: { selfie: true, workspace: true },
+      missing: [],
+    };
+    const getUserMedia = vi.fn().mockRejectedValue(new DOMException('denied', 'NotAllowedError'));
+    Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia }, configurable: true });
+    const api = mockApi({
+      'GET /consent/atok': apiError(400, 'Consent link has already been used'),
+      'GET /consent/atok/signed': { signedAt: '2026-11-09T07:10:00Z', signedName: 'Shankar Rao', businessName: 'Annapoorna Mess', preferredLanguage: 'en' },
+      'GET /consent/atok/small-business': state,
+      'POST /consent/atok/small-business/business-proof': { ...state, businessProof: { given: true, kind: 'bank_upi', fromProofs: false } },
+    });
+    render();
+    expect(await screen.findByText('A few more checks for your business')).toBeInTheDocument();
+    expect(screen.getByText('Your government ID')).toBeInTheDocument();
+    await userEvent.type(screen.getByRole('textbox', { name: /Number, UPI ID or link/ }), 'shankar@upi');
+    await userEvent.click(screen.getByRole('button', { name: 'Save business proof' }));
+    expect(await screen.findByText('Business proof saved')).toBeInTheDocument();
+    expect(api.calls('POST /consent/atok/small-business/business-proof')[0]!.body).toEqual({ kind: 'bank_upi', value: 'shankar@upi' });
+  });
 });

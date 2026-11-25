@@ -12,6 +12,7 @@ import { jobSeekerTermsHash } from '../../test-support/terms-hash';
 import { JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } from './consent.constants';
 import { ConsentLinkService } from './consent-link.service';
 import { AGREEMENT_DOCUMENT_STORAGE, MemoryAgreementDocumentStorage } from './agreement-document.storage';
+import { seedOwnerPhotos } from '../../test-support/owner-photos';
 
 /**
  * Security AC-3 + AUTH-2 (proved on the range): a staff member could complete a
@@ -73,6 +74,7 @@ describe('Security AC-3: public-page codes are the person’s own, bound to the 
       },
     });
     ids.business = business.id;
+    await seedOwnerPhotos(prisma, business.id);
     const referral = await prisma.referral.create({
       data: { code: `RF-AC3-${suffix}`, name: 'AC3 Partner', phone: `+9191${suffix}1`.slice(0, 13), phoneVerified: true, language: 'en', registeredByStaffId: staff.id },
     });

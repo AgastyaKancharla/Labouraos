@@ -75,6 +75,10 @@ export default function OfferReply() {
           <strong>{o.job}</strong>
         </Row>
         {o.area && <Row label={t('pub.offer.area')}>{o.area}</Row>}
+        {/* B9f (rev 212): told before the interview that the workplace is a home. */}
+        {o.workplaceIsHome && <Row label={t('pub.offer.area')}><strong data-testid="home-workplace">{t('pub.reply.homeWorkplace')}</strong></Row>}
+        {o.interviewType === 'laboura_office' && <Row label={t('pub.offer.interview')}>{t('pub.reply.officeInterview')}</Row>}
+        {o.interviewType === 'phone' && <Row label={t('pub.offer.interview')}>{t('pub.reply.phoneInterview')}</Row>}
         {o.salaryMinPaise !== null && <Row label={t('pub.offer.salary')}>{`${rupeeRange(o.salaryMinPaise, o.salaryMaxPaise)} ${period}`}</Row>}
         {o.shift && <Row label={t('pub.offer.shift')}>{shiftText(o.shift, t)}</Row>}
         <Row label={t('pub.offer.interview')}>

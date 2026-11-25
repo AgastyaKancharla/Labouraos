@@ -71,6 +71,13 @@ export const REVIEW_FLAG_KINDS = [
   'wrong_number_paid',
   /** 21 Nov fixes: an app sign-up help call task closed without the agent placing a call. */
   'signup_call_not_attempted',
+  // ---- 25 Nov (rev 211): business automatic verification ----
+  /** B3: the automatic business check failed; the Team Lead sees every failed reason and approves or rejects. */
+  'business_auto_check_failed',
+  /** B4: a vacancy with an unusually high salary for its trade or more than 5 openings waits for the Team Lead. */
+  'vacancy_tl_check',
+  /** B6: after the first interview the candidate said the shop was not real, not at the address or the job not as described: business paused. */
+  'candidate_shop_report',
 ] as const;
 
 export type ReviewFlagKind = (typeof REVIEW_FLAG_KINDS)[number];

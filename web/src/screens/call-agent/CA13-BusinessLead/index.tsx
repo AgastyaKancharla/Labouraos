@@ -56,6 +56,7 @@ import {
   type BranchRow,
   type BusinessForm,
   type StaffRow,
+  proofCount,
 } from './payload';
 
 /**
@@ -324,6 +325,16 @@ export default function RegisterBusiness() {
               />{' '}
               {t('reg.biz.noDocuments')}
             </label>
+            {/* 25 Nov (rev 211–212): proofs for the automatic check, and a business run from home. */}
+            <div className="fg">
+              <TextField label={t('reg.biz.mapsLink')} value={form.mapsLink ?? ''} onChange={(v) => set('mapsLink', v)} placeholder="https://maps.app.goo.gl/…" hint={t('reg.biz.mapsLinkHint')} />
+            </div>
+            <label className={`reg-check${form.runsFromHome ? ' on' : ''}`}>
+              <input type="checkbox" checked={Boolean(form.runsFromHome)} onChange={(e) => setForm((f) => ({ ...f, runsFromHome: e.target.checked }))} /> {t('reg.biz.runsFromHome')}
+            </label>
+            <p className="sub" data-testid="proof-count">
+              {proofCount(form) >= 2 ? t('reg.biz.proofsEnough', { count: proofCount(form) }) : t('reg.biz.proofsSmall', { count: proofCount(form) })}
+            </p>
           </fieldset>
         )}
 
