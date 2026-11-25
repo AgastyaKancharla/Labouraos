@@ -648,7 +648,7 @@ The answer depends on the profile kind (`kind`).
   "stopped": null,
   "idCheck": { "lastResult": "verified", "waitingForTeamLead": false },
   "payment": { "state": "confirmed", "amountPaise": 49900, "confirmedAt": "…" },
-  "guarantee": { "active": true, "day": 12, "days": 30, "startedAt": "…", "endsAt": "…" },
+  "guarantee": { "active": true, "day": 12, "days": 30, "startedAt": "…", "endsAt": "…", "paidWaitingForId": false },
   "hits": { "count": 0, "max": 3 },
   "interview": null,
   "refund": { "state": "none", "dueOn": null, "paidAt": null, "reference": null },
@@ -662,8 +662,23 @@ The answer depends on the profile kind (`kind`).
   expired before the check: take a new one on the registration link), `failed`. There is no outside
   ID company, so no "service down" state.
 - `payment.state`: `not_started`, `pending`, `confirming` ("Paid, confirming" until the
-  bank credit is matched), `failed`, `confirmed`. The 30 days start only at `confirmed`.
-- `guarantee.day` counts from the confirmed payment, 1 to 30 (null before payment).
+  bank credit is matched), `failed`, `confirmed`.
+- **Order (Master Guide rev 211, 25 Nov): Consent → Selfie → Payment → ID check.**
+  `currentStep` goes `consent` → `selfie` → `payment` → `id_check` → `complete`; payment no
+  longer waits for the ID check (an ID check done before payment still counts).
+- **The 30 days start when he is paid AND his ID is verified** (Aadhaar QR passed, or another
+  ID approved by a Team Lead, Manager or the CEO): the later of the two. Paid with no passed ID
+  check, `status` is `paid_waiting_id` and `guarantee.paidWaitingForId` is true: not matched, no
+  offers, no hits, `guarantee.active` false, `startedAt` / `endsAt` / `day` null. Show
+  "Your 30 days start only after your government ID is verified. Until then your registration is
+  paused." and lead him to the ID check (`nextAction` `open_registration_link`, or
+  `wait_for_id_check` while another ID waits for a Team Lead).
+- `guarantee.startedAt` is that start (`JobSeeker.guaranteeStartsAt`, no longer the payment);
+  `guarantee.day` counts from it, 1 to 30 (null before it). `endsAt` = start + 30 days.
+- The payment notification (`payment_confirmed`) now reads "Your receipt is in Laboura. Your
+  {days}-day guarantee runs from when your ID is verified."
+- Account deletion: `guaranteeRunning` is also true while he is `paid_waiting_id` (his ₹499 can
+  still come back on request; deleting gives that up).
 - `interview`: `null` until an interview is **booked**. Then
   `{ "at": "…", "businessName": "…", "address": "…", "latitude": …, "longitude": …, "replyBy": "…", "state": "booked" }`.
   **The business name and address never appear before an interview is booked**
@@ -1261,7 +1276,8 @@ records, so calling it twice is harmless; without a call the tracker job
 What D does with each sign-up (one run at a time per sign-up: Postgres advisory lock; tries and reminders are claimed with conditional updates):
 
 - **Stage** is read from the records (`signup-stage.ts`): job seeker consent → selfie
-  and ID → terms (guarantee floor frozen) → ₹499 received; business agreement →
+  → terms and ₹499 (D) → paid, waiting for ID (E) → paid and ID verified (done; rev 211:
+  the agent's credit counts then); business agreement →
   visit booked → visit done (`pending_tl_check`) → `verified`; partner terms →
   selfie and ID → UPI added → UPI verified. Moving forward resets the reminders
   and call tries (a new stop) and reopens a closed sign-up.
@@ -1369,6 +1385,27 @@ its API is `GET /referral-links/:slug`, `POST /referral-links/:slug/send-code { 
 `POST /referral-links/:slug/leads { name, phone, lookingFor: job|staff, area?, consent: true, requestId, code }`
 (always `{ received: true }`, no oracle; at most 30 leads and 60 codes a day per link,
 the usual public-page code limits per number). The app does not need these.
+
+## 25 Nov changes (Master Guide rev 211: job seeker order)
+
+Server endpoints the app uses changed; the app (`customer/`) itself is not changed here.
+
+- **Order: Consent → Selfie → Payment → ID check.** The job seeker home's `currentStep`, `steps`
+  and `nextAction` follow it (section 7.1). The registration link pages do the same.
+- **New status `paid_waiting_id`** ("Paid, waiting for ID"): paid, no ID check passed. Not active
+  (no matching, offers or hits); `guarantee.paidWaitingForId: true`, `guarantee.active: false`.
+- **`guarantee.startedAt` / `endsAt` / `day`** count from when he is paid AND ID-verified (the later
+  of the two), not from the payment.
+- **Legal:** job seeker terms **v1.2** and consent notice **1.3**. `GET /legal/documents/job_seeker_terms`
+  also returns `consentNotice` ("Your 30 days start only after your government ID is verified. Until
+  then your registration is paused."): show it above the ticks. Anyone who accepted 1.1 / notice 1.2
+  gets the usual `RECONSENT_REQUIRED` re-consent.
+- **Messages** (WhatsApp first, SMS backup): `details_saved_pay_next`, `payment_received_id_left`,
+  `guarantee_started`, `id_check_failed_refund`, `id_check_reminder` (at most 3, one a day, 9 AM–9 PM).
+  `registration_done` is no longer sent to job seekers.
+- **Refund before a passed ID check** (under 18, or an ID that could not be verified): full ₹499,
+  only when he contacts Laboura and asks (staff record it); the app's `refund.state` shows it as
+  `with_finance` / `paid` like any refund. A forged or altered ID gets no refund.
 
 ## 16. Automatic business verification (changed 25 Nov, Master Guide rev 211)
 

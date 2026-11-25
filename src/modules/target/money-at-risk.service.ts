@@ -194,9 +194,11 @@ export class MoneyAtRiskService {
 
     // --- 2. CANDIDATES AT RISK ---
     // Candidates who paid activation fee, not placed, not deactivated, approaching 30-day deadline
+    // Rev 211: only someone whose 30 days run (paid AND ID passed) can come close to a day-30 refund.
     const candidateWhere: Record<string, unknown> = {
       status: { notIn: ['placed', 'deactivated', 'closed', 'refunded'] },
       paymentReceivedAt: { not: null },
+      guaranteeStartsAt: { not: null },
     };
     if (filterStaffIds !== null) {
       candidateWhere.registeredByStaffId = { in: filterStaffIds };
@@ -212,6 +214,7 @@ export class MoneyAtRiskService {
         phone: true,
         trades: { select: { trade: true, isPrimary: true } },
         paymentReceivedAt: true,
+        guaranteeStartsAt: true,
         status: true,
         registeredByStaffId: true,
         registeredBy: {
@@ -290,15 +293,16 @@ export class MoneyAtRiskService {
     const candidateRows: MoneyAtRiskRow[] = [];
 
     for (const c of candidates) {
-      if (!c.paymentReceivedAt) continue;
+      if (!c.paymentReceivedAt || !c.guaranteeStartsAt) continue;
       // Disqualifiers from shared eligibility
       if (c.status === 'placed' || c.status === 'deactivated' || c.status === 'closed' || c.status === 'refunded') continue;
       if (rejectedCandidateIdSet.has(c.id)) continue;
       if (refundedCandidateIdSet.has(c.id)) continue;
+      // A suitable offer made since paying (his "has paid" moment: offers only come once the 30 days run).
       const paidAt = c.paymentReceivedAt;
       if ((offeredSince.get(c.id) ?? []).some((sentAt) => sentAt >= paidAt)) continue;
 
-      const deadline = refundGuaranteeDeadline(c.paymentReceivedAt, guaranteeDays);
+      const deadline = refundGuaranteeDeadline(c.guaranteeStartsAt, guaranteeDays);
       const diffMs = deadline.getTime() - now.getTime();
 
       // APPROACHING ONLY RULE: If deadline already passed (diffMs <= 0), it is owed/lost money on /refunds/due

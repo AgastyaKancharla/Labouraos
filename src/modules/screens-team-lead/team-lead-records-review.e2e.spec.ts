@@ -111,7 +111,7 @@ describe('Team Lead / Manager records: review fixes', () => {
     // City spelled differently.
     rec.sCity = await seeker('CITY', null, { city: '  bengaluru ' });
     // Registered by the other team, assigned to this team's agent, close to a refund.
-    rec.sNear = await seeker('NEAR', people.caB.id, { status: 'active', assignedStaffId: people.caA.id, assignedAt: new Date(), paymentReceivedAt: new Date(Date.now() - 27 * DAY) });
+    rec.sNear = await seeker('NEAR', people.caB.id, { status: 'active', assignedStaffId: people.caA.id, assignedAt: new Date(), paymentReceivedAt: new Date(Date.now() - 27 * DAY), guaranteeStartsAt: new Date(Date.now() - 27 * DAY) });
     rec.sRace = await seeker('RACE', null, { photoStoragePath: `selfies/${tail}/race.jpg` });
     rec.bTeam = await business('T', people.faA.id);
   });

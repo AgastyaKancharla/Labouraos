@@ -43,15 +43,16 @@ export class RefundService {
     const replacementSearchDays = policy.replacementSearchDays;
 
     // --- 1. JOB SEEKERS (Set-Based Query) ---
-    // Candidate pool: active or pending candidates who paid activation fee at least guaranteeDays ago
-    const maxPaymentDate = new Date(now.getTime() - guaranteeDays * 24 * 60 * 60 * 1000);
+    // Candidate pool: paid, and his 30 days started (paid AND ID passed, rev 211) at least guaranteeDays ago.
+    const maxStartDate = new Date(now.getTime() - guaranteeDays * 24 * 60 * 60 * 1000);
 
     const candidates = await this.prisma.jobSeeker.findMany({
       where: {
         status: { notIn: ['placed', 'deactivated', 'closed', 'refunded'] },
-        paymentReceivedAt: {
+        paymentReceivedAt: { not: null },
+        guaranteeStartsAt: {
           not: null,
-          lte: maxPaymentDate,
+          lte: maxStartDate,
         },
       },
       include: { trades: true },
@@ -180,6 +181,7 @@ export class RefundService {
         {
           code: candidate.code,
           paymentReceivedAt: candidate.paymentReceivedAt,
+          guaranteeStartsAt: candidate.guaranteeStartsAt,
           status: candidate.status,
           hasOfferRejectedHit: rejectedCandidateIdSet.has(candidate.id),
           hasExistingRefund: refundedCandidateIdSet.has(candidate.id),
@@ -207,6 +209,7 @@ export class RefundService {
           phone: candidate.phone,
           tradeSkill: primaryJobSeekerTrade(candidate) ?? '',
           paymentReceivedAt: candidate.paymentReceivedAt!.toISOString(),
+          guaranteeStartsAt: candidate.guaranteeStartsAt!.toISOString(),
           jobSeeker: {
             id: candidate.id,
             code: candidate.code,

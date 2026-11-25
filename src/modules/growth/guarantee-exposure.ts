@@ -18,8 +18,13 @@ import { GuaranteeState } from './growth.constants';
 export interface ActivationExposureInput {
   code: string;
   amountPaise: number;
-  /** When this ₹499 was confirmed in the bank (starts its 30 days). */
+  /** When this ₹499 was confirmed in the bank. */
   receivedAt: Date;
+  /**
+   * Rev 211 (25 Nov): when the 30 days of the current guarantee started (paid AND ID passed). Null
+   * while he is paid and waiting for the ID check: the ₹499 may still go back (refund on request).
+   */
+  guaranteeStartsAt: Date | null;
   /** False when he paid again later: this payment belongs to an earlier guarantee. */
   isLatestActivation: boolean;
   /** A live refund in this payment's guarantee cycle. */
@@ -39,10 +44,14 @@ export interface ExposureResult {
 }
 
 export function classifyActivationPayment(input: ActivationExposureInput, now: Date): ExposureResult {
-  const deadline = refundGuaranteeDeadline(input.receivedAt, input.guaranteeDays);
+  // An earlier ₹499 (he paid again later) keeps the dates it had; the current one counts from guaranteeStartsAt.
+  const start = input.isLatestActivation ? input.guaranteeStartsAt : input.receivedAt;
+  const deadline = start ? refundGuaranteeDeadline(start, input.guaranteeDays) : null;
   if (input.refundedThisCycle) return { state: 'refunded', guaranteeEndsAt: deadline };
   // A later ₹499 starts a new guarantee only after this one ended with no refund.
   if (!input.isLatestActivation) return { state: 'safely_earned', guaranteeEndsAt: deadline };
+  // Paid, waiting for the ID check: the 30 days have not started and the ₹499 may still go back on request.
+  if (!deadline) return { state: 'under_guarantee', guaranteeEndsAt: null };
   const forfeited =
     ['placed', 'closed', 'deactivated'].includes(input.seekerStatus) ||
     input.hasForfeitingHit ||
@@ -53,6 +62,7 @@ export function classifyActivationPayment(input: ActivationExposureInput, now: D
     {
       code: input.code,
       paymentReceivedAt: input.receivedAt,
+      guaranteeStartsAt: input.guaranteeStartsAt,
       status: input.seekerStatus,
       hasOfferRejectedHit: input.hasForfeitingHit,
       hasExistingRefund: false,

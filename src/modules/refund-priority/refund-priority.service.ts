@@ -108,14 +108,15 @@ export class RefundPriorityService {
     const searchDays = policy.replacementSearchDays;
     const rows: PriorityRow[] = [];
 
-    // Job seekers: paid within (guaranteeDays − windowDays − 1 .. guaranteeDays) days ago.
+    // Job seekers: 30 days started (paid AND ID passed, rev 211) within (guaranteeDays − windowDays − 1 .. guaranteeDays) days ago.
     const oldest = new Date(now.getTime() - guaranteeDays * DAY_MS);
     const newest = new Date(now.getTime() - (guaranteeDays - windowDays - 1) * DAY_MS);
     const seekers = await this.prisma.jobSeeker.findMany({
       where: {
         anonymisedAt: null,
         status: { notIn: SEEKER_ENDED_STATUSES },
-        paymentReceivedAt: { gt: oldest, lte: newest },
+        paymentReceivedAt: { not: null },
+        guaranteeStartsAt: { gt: oldest, lte: newest },
       },
       include: {
         trades: { select: { trade: true, isPrimary: true } },
@@ -154,7 +155,7 @@ export class RefundPriorityService {
         continue;
       }
       if (s.interviews.some((i) => i.offerSentAt >= paidAt && OFFER_STATUSES.includes(i.status))) continue;
-      const deadline = new Date(paidAt.getTime() + guaranteeDays * DAY_MS);
+      const deadline = new Date((s.guaranteeStartsAt as Date).getTime() + guaranteeDays * DAY_MS);
       const left = daysLeftOn(deadline, now);
       const bucket = priorityBucket(left, windowDays);
       if (!bucket) continue;

@@ -269,12 +269,13 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
         bankUtr: 'UTR1122334455',
       });
 
-      // Assert candidate active and clock started at confirmedAt
+      // Rev 211: no ID check has passed yet, so he is "paid, waiting for ID" and the 30 days have not started.
       expect(prisma.jobSeeker.update).toHaveBeenCalledWith({
         where: { id: 'js-1' },
         data: {
-          status: 'active',
+          status: 'paid_waiting_id',
           paymentReceivedAt: confirmedAt,
+          guaranteeStartsAt: null,
           hitCount: 0,
         },
       });

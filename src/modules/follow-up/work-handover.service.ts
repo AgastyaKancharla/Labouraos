@@ -1,4 +1,5 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
+import { PAID_WAITING_ID } from '../job-seeker/job-seeker.status';
 import { ModuleRef } from '@nestjs/core';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -279,12 +280,14 @@ export class WorkHandoverService {
       anonymisedAt: null,
     };
     const [stuck, nearRefund] = await Promise.all([
-      this.prisma.jobSeeker.findMany({ where: { ...mine, paymentReceivedAt: null, status: { in: STUCK_STATUSES } }, select: { id: true }, take: 500 }),
+      // Rev 211: paid but waiting for the ID check is stuck work too.
+      this.prisma.jobSeeker.findMany({ where: { AND: [mine, { OR: [{ paymentReceivedAt: null, status: { in: STUCK_STATUSES } }, { status: PAID_WAITING_ID }] }] }, select: { id: true }, take: 500 }),
       this.prisma.jobSeeker.findMany({
         where: {
           ...mine,
           status: { notIn: SEEKER_ENDED_STATUSES },
-          paymentReceivedAt: {
+          // Close to a refund: counted from the start of his 30 days (paid and ID passed).
+          guaranteeStartsAt: {
             not: null,
             gt: new Date(now.getTime() - policy.jobSeekerGuaranteeDays * DAY_MS),
             lte: new Date(now.getTime() - (policy.jobSeekerGuaranteeDays - policy.refundPriorityWindowDays) * DAY_MS),

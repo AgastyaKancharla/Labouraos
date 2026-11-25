@@ -70,6 +70,8 @@ export const NOTIFICATION_KINDS = [
   'start_of_day_long',
   // Another ID approved: the ₹499 payment link went to the job seeker by itself, or why it did not (22 Nov; for the agent).
   'payment_link_after_id',
+  // Rev 211 (25 Nov): another ID approved for a paid job seeker — his 30 days have started (for the agent).
+  'guarantee_started',
   // A Team Lead or Manager assigned a record to this person (rev 196).
   'job_seeker_assigned',
   'referral_assigned',
@@ -91,7 +93,7 @@ export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
  * Kinds that tell someone something rather than ask them to do something.
  * Reading them is the work: marking one as seen clears it.
  */
-export const INFORMATIONAL_KINDS: readonly NotificationKind[] = ['request_decided', 'hit_reversed', 'stuck_work_reminder', 'agent_reminder', 'payslip_ready', 'weekly_report', 'fee_unpaid_reminder', 'new_match_registered', 'password_reset', 'signed_in_without_code', 'day_resumed_again', 'job_seeker_assigned', 'referral_assigned', 'business_assigned', 'whatsapp_link_failed', 'field_visit_assigned', 'field_agreement_signed', 'field_work_handed_over', 'payment_link_after_id'];
+export const INFORMATIONAL_KINDS: readonly NotificationKind[] = ['request_decided', 'hit_reversed', 'stuck_work_reminder', 'agent_reminder', 'payslip_ready', 'weekly_report', 'fee_unpaid_reminder', 'new_match_registered', 'password_reset', 'signed_in_without_code', 'day_resumed_again', 'job_seeker_assigned', 'referral_assigned', 'business_assigned', 'whatsapp_link_failed', 'field_visit_assigned', 'field_agreement_signed', 'field_work_handed_over', 'payment_link_after_id', 'guarantee_started'];
 
 /** Kinds that carry rupee amounts. They only ever go to the CEO or Finance. */
 export const MONEY_KINDS: readonly NotificationKind[] = [
@@ -201,6 +203,7 @@ const LINKS: Record<NotificationKind, LinkTable> = {
   day_resumed_again: { team_lead: 'attendance', manager: 'attendance', ceo: 'team/attendance' },
   start_of_day_long: { team_lead: 'attendance/live', manager: 'attendance/live', ceo: 'attendance/live' },
   payment_link_after_id: { call_agent: 'people/:id', field_agent: '', team_lead: 'job-seekers/:id', manager: 'job-seekers/:id', ceo: 'job-seekers/:id' },
+  guarantee_started: { call_agent: 'people/:id', field_agent: '', team_lead: 'job-seekers/:id', manager: 'job-seekers/:id', ceo: 'job-seekers/:id' },
   // Field agents read their bell in Laboura Field (no web link); the others open the record.
   job_seeker_assigned: { call_agent: 'people/:id', team_lead: 'job-seekers/:id', manager: 'job-seekers/:id', field_agent: '' },
   referral_assigned: { call_agent: 'people/:id', team_lead: 'referrals/:id', manager: 'referrals/:id', field_agent: '' },

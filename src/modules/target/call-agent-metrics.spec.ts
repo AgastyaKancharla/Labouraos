@@ -155,7 +155,9 @@ describe('Phase 6.7 Task 3: Call Agent Metrics', () => {
       expect(prismaMock.jobSeeker.count).toHaveBeenCalledWith({
         where: {
           registeredByStaffId: mockAgentId,
-          paymentReceivedAt: {
+          paymentReceivedAt: { not: null },
+          // Rev 211: counted when the 30 days start (paid AND ID passed), not at payment.
+          guaranteeStartsAt: {
             not: null,
             gte: new Date('2026-10-31T18:30:00.000Z'),
             lte: new Date('2026-11-30T18:29:59.999Z'),
@@ -210,7 +212,9 @@ describe('Phase 6.7 Task 3: Call Agent Metrics', () => {
       expect(prismaMock.jobSeeker.findMany).toHaveBeenCalledWith({
         where: {
           registeredByStaffId: mockAgentId,
-          paymentReceivedAt: {
+          paymentReceivedAt: { not: null },
+          // Rev 211: counted when the 30 days start (paid AND ID passed), not at payment.
+          guaranteeStartsAt: {
             not: null,
             gte: startPaymentDate,
             lte: thirtyDaysAgo,
@@ -243,7 +247,9 @@ describe('Phase 6.7 Task 3: Call Agent Metrics', () => {
       expect(prismaMock.jobSeeker.findMany).toHaveBeenCalledWith({
         where: {
           registeredByStaffId: mockAgentId,
-          paymentReceivedAt: {
+          paymentReceivedAt: { not: null },
+          // Rev 211: counted when the 30 days start (paid AND ID passed), not at payment.
+          guaranteeStartsAt: {
             not: null,
             gte: startPaymentDate,
             lte: thirtyDaysAgo,

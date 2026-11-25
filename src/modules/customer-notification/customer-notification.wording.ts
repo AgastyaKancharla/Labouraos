@@ -33,7 +33,8 @@ export const CUSTOMER_NOTIFICATION_WORDING: Record<CustomerEventKind, Record<Cus
     en: { title: 'ID check needs another try', body: 'We could not finish your ID check. Open Laboura to try again.' },
   },
   payment_confirmed: {
-    en: { title: 'Payment received', body: 'Your {days}-day guarantee has started. Your receipt is in Laboura.' },
+    // Rev 211: the 30 days start when he is paid AND his ID is verified (it may already be).
+    en: { title: 'Payment received', body: 'Your receipt is in Laboura. Your {days}-day guarantee runs from when your ID is verified.' },
   },
   fee_paid: {
     en: { title: 'Payment received', body: 'Thank you. Your invoice and the candidate details are in Laboura.' },

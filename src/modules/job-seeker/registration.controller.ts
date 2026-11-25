@@ -12,6 +12,7 @@ import {
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { PublicLinkStoreService } from '../../common/public-link-store.service';
 import { OtpService } from '../../common/otp/otp.service';
@@ -212,6 +213,9 @@ export class RegistrationController {
   async verifyPaymentOnlyOtp(@Param('token') token: string, @Body() body: { requestId?: string; code?: string }) {
     const link = await this.requirePaymentLink(token);
     await this.verifyCode(body, link.phone!, token);
+    // Rev 211: the payer proved this number on the link — a refund of this ₹499 goes back to him.
+    const payerMetadata = Object.assign({}, (link.metadata ?? {}) as Prisma.InputJsonObject, { payerVerifiedAt: new Date().toISOString() });
+    await this.prisma.publicLink.update({ where: { id: link.id }, data: { metadata: payerMetadata } });
     return this.paymentOnlyDetails(link);
   }
 

@@ -225,7 +225,11 @@ function Guarantee({ p }: { p: SeekerPage }) {
   const { t } = useI18n();
   return (
     <Card title={t('fa10e.guarantee')} icon="shield" accent="green" testID="fa10e-guarantee">
-      <KeyValue label={t('fa10e.guarantee')} value={p.guarantee ? t('lists.js.dayOf', { day: p.guarantee.day, days: p.guarantee.days }) : t('fa10e.guaranteeNotStarted')} strong />
+      <KeyValue
+        label={t('fa10e.guarantee')}
+        value={p.guarantee ? t('lists.js.dayOf', { day: p.guarantee.day, days: p.guarantee.days }) : p.paidWaitingForId ? t('fa10e.paidWaitingId') : t('fa10e.guaranteeNotStarted')}
+        strong
+      />
       <KeyValue label={t('fa10e.hits')} value={String(p.hits)} last={!p.nextInterviewAt} />
       {p.nextInterviewAt ? <KeyValue label={t('fa10e.nextInterview')} value={`${formatDayIst(p.nextInterviewAt)} ${formatTimeIst(p.nextInterviewAt)}`} last /> : null}
       {p.guarantee ? <Text variant="tiny" testID="fa10e-guarantee-line">{seekerGuaranteeLine(p, t)}</Text> : null}
@@ -274,7 +278,7 @@ function History({ p }: { p: SeekerPage }) {
           key={`${h.kind}-${h.at}-${i}`}
           title={t(`fa10e.h.${h.kind}` as MessageKey, { name: h.detail ?? '' })}
           subtitle={`${formatDayIst(h.at)} ${formatTimeIst(h.at)}`}
-          leading={<IconTile icon={h.kind === 'paid' || h.kind === 'id_checked' || h.kind === 'placement' ? 'check' : 'clock'} accent={h.kind === 'paid' || h.kind === 'placement' ? 'green' : 'navy'} size={30} />}
+          leading={<IconTile icon={h.kind === 'paid' || h.kind === 'id_checked' || h.kind === 'guarantee_started' || h.kind === 'placement' ? 'check' : 'clock'} accent={h.kind === 'paid' || h.kind === 'guarantee_started' || h.kind === 'placement' ? 'green' : 'navy'} size={30} />}
           last={i === p.history.length - 1}
         />
       ))}

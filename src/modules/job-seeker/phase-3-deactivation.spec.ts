@@ -65,7 +65,7 @@ describe('Phase 3 Task 4: 3-Hit Deactivation and Refund Entitlement', () => {
         preferredCallWindowEnd: '18:00',
         status: 'active',
         hitCount: 0,
-        paymentReceivedAt: fiveDaysAgo,
+        paymentReceivedAt: fiveDaysAgo, guaranteeStartsAt: fiveDaysAgo,
         city: 'Bengaluru',
       },
     });

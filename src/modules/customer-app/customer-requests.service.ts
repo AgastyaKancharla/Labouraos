@@ -6,6 +6,7 @@ import { CustomerAuthClock } from '../../common/customer-auth/customer-auth.cloc
 import { CustomerScopeService } from '../../common/customer-auth/customer-scope.service';
 import { CUSTOMER_ERROR_CODES, CustomerApiError } from '../../common/customer-auth/customer-auth.errors';
 import { refundGuaranteeDeadline } from '../../common/money/money';
+import { PAID_WAITING_ID } from '../job-seeker/job-seeker.status';
 import { publicPageLink } from '../../common/public-pages';
 import { ConsentLinkService } from '../consent/consent-link.service';
 import { PricingService } from '../pricing/pricing.service';
@@ -162,13 +163,15 @@ export class CustomerRequestsService {
   private async guaranteeRunning(accountId: string): Promise<boolean> {
     const profiles = await this.prisma.customerProfile.findMany({
       where: { accountId, status: 'active', kind: 'job_seeker' },
-      select: { jobSeeker: { select: { paymentReceivedAt: true, status: true } } },
+      select: { jobSeeker: { select: { paymentReceivedAt: true, guaranteeStartsAt: true, status: true } } },
     });
     const policy = await this.pricing.current();
     const now = this.clock.now();
     return profiles.some(({ jobSeeker }) => {
       if (!jobSeeker?.paymentReceivedAt || ACTIVE_JOB_SEEKER_STATUSES_ENDED.includes(jobSeeker.status)) return false;
-      return now.getTime() <= refundGuaranteeDeadline(jobSeeker.paymentReceivedAt, policy.jobSeekerGuaranteeDays).getTime();
+      // Rev 211: paid and waiting for the ID check — his ₹499 can still come back on request, so deleting gives that up.
+      if (!jobSeeker.guaranteeStartsAt) return jobSeeker.status === PAID_WAITING_ID;
+      return now.getTime() <= refundGuaranteeDeadline(jobSeeker.guaranteeStartsAt, policy.jobSeekerGuaranteeDays).getTime();
     });
   }
 

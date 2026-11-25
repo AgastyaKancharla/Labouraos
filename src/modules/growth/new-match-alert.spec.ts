@@ -34,7 +34,7 @@ describe('new match alert to the field agent', () => {
     const { service, matching, notifications } = setup();
     expect(await service.sweep(now)).toEqual({ alerted: 1 });
     // Only job seekers who became active in the last day are matched, with the engine's own rules.
-    expect(matching.suitableSeekerIds).toHaveBeenCalledWith(['v-1', 'v-2'], { status: 'active', paymentReceivedAt: { gte: new Date('2026-11-11T08:00:00Z'), lte: now } });
+    expect(matching.suitableSeekerIds).toHaveBeenCalledWith(['v-1', 'v-2'], { status: 'active', guaranteeStartsAt: { gte: new Date('2026-11-11T08:00:00Z'), lte: now } });
     expect(notifications.open).toHaveBeenCalledTimes(1);
     const draft = notifications.open.mock.calls[0][0];
     expect(draft).toMatchObject({ recipientStaffId: 'fa-1', kind: 'new_match_registered', subjectType: 'vacancy_new_match', subjectId: 'v-1:js-1', once: true });

@@ -29,7 +29,8 @@ export default function Selfie() {
     try {
       await registrationApi.selfie(token, requestId, photo);
       await queryClient.invalidateQueries({ queryKey: ['registration', token] });
-      navigate(to('P01d-IDCheck', { token }));
+      // Rev 211: Consent → Selfie → Payment → ID check.
+      navigate(to('P02-Payment', { token }));
       return 'done';
     } catch (e) {
       if (isOtpExpired(e)) {

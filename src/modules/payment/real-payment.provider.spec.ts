@@ -328,7 +328,8 @@ describe('Phase 7 Task 2: Real Payment Gateway & Payout API Integration', () => 
       const candidateAfterFirst = await prisma.jobSeeker.findUnique({
         where: { id: candidate.id },
       });
-      expect(candidateAfterFirst?.status).toBe('active');
+      // Rev 211: paid, no ID check passed yet — "paid, waiting for ID".
+      expect(candidateAfterFirst?.status).toBe('paid_waiting_id');
       expect(candidateAfterFirst?.paymentReceivedAt).toBeDefined();
 
       const paymentAfterFirst = await prisma.payment.findUnique({

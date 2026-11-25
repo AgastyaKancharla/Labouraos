@@ -105,7 +105,7 @@ model JobSeeker {
   maxSalary                 Int         // paise
   preferredCallWindowStart  String      // "09:00" IST
   preferredCallWindowEnd    String      // "21:00" IST
-  status                    String      @default("lead") // lead, consented, pending_activation, active, paused, deactivated, placed, closed
+  status                    String      @default("lead") // lead, consented, pending_activation, paid_waiting_id, active, paused, deactivated, placed, closed, refunded, banned
   hitCount                  Int         @default(0)
   referredById              String?
   referredBy                Referral?   @relation(fields: [referredById], references: [id], onDelete: SetNull)
@@ -118,6 +118,12 @@ model JobSeeker {
   assignedStaff             Staff?      @relation("JobSeekerAssignedTo", fields: [assignedStaffId], references: [id], onDelete: SetNull)
   assignedAt                DateTime?
   paymentReceivedAt         DateTime?   // when the ₹499 activation fee was received
+  /// Master Guide rev 211 (25 Nov): when his 30 days start — the later of the ₹499 confirmation
+  /// and the ID check passing (Aadhaar QR verified, or another ID approved by a Team Lead, Manager
+  /// or the CEO). Null while he is paid but waiting for the ID check ("paid_waiting_id"): no
+  /// matching, no offers, no hits, no clock. Paying ₹499 again with an ID already verified starts
+  /// it at that payment.
+  guaranteeStartsAt         DateTime?
   guaranteeFloorPaise       Int?        // frozen salary guarantee term once activation is paid
   termsAcceptedAt           DateTime?   // when he ticked the exact terms on the registration link (Phase 20 Task 5)
   termsAcceptedFloorPaise   Int?        // the salary floor shown when he agreed
@@ -189,6 +195,7 @@ model JobSeeker {
   @@index([city])
   @@index([status])
   @@index([status, paymentReceivedAt])
+  @@index([status, guaranteeStartsAt])
   @@index([registeredByStaffId])
   @@index([assignedStaffId])
 }
@@ -1230,6 +1237,13 @@ model Payment {
   sentToCeoAt       DateTime?
   outsideRules      Boolean     @default(false)
   approvalNote      String?
+  /// Rev 211 (25 Nov): why a job seeker's ₹499 refund is owed. Null: the day-30 guarantee refund (or
+  /// goodwill, see outsideRules); "id_not_verified": under 18 or an ID that could not be verified,
+  /// recorded by the CEO or Finance only when he asked for it.
+  refundKind        String?
+  /// Rev 211: the ₹499 was paid by someone else through a payment-only link (PublicLink.id): the
+  /// refund goes back to that payer, not to the job seeker.
+  refundPayerLinkId String?
   /// M4 / review M1 (rev 178): a business refund's parts at approval — [{ placementId, kind, feePaise, gstPaise }] — for the credit notes.
   refundParts       Json?
   // Phase 22: a payout the bank refused (account closed, name mismatch…), recorded by Finance.

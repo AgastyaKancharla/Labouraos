@@ -51,7 +51,8 @@ export const WHATSAPP_TEMPLATES = {
   registration_done: {
     name: 'registration_done',
     label: 'Registration done',
-    // Sent when the ₹499 arrives; the Team Lead's ID check may still be open, so it claims nothing more.
+    // Retired for job seekers (rev 211): the payment and the ID check send payment_received_id_left /
+    // guarantee_started instead. Kept so an SMS fallback of an older message can still be rebuilt.
     text: 'Hi {{firstName}}, thank you! Your payment for Laboura registration {{code}} has arrived. Our team will call you about suitable jobs. Save this number to reach us on WhatsApp.',
     variables: ['firstName', 'code'],
   },
@@ -311,6 +312,47 @@ export const WHATSAPP_TEMPLATES = {
     samples: { dates: '24 Nov 2026' },
   },
   // ---- end of Builder C's section ----
+
+  // ==== Builder A (25 Nov, Master Guide rev 211): job seeker order Consent → Selfie → Payment → ID check ====
+  // Sent by src/modules/job-seeker/job-seeker-flow.service.ts with sendPreferWhatsApp (WhatsApp first, SMS
+  // backup). None starts or ends with a variable. registration_done is no longer sent to job seekers
+  // (replaced by payment_received_id_left and guarantee_started); its entry above stays for old messages.
+  details_saved_pay_next: {
+    name: 'details_saved_pay_next',
+    label: 'Job seeker: details saved, pay next',
+    text: 'Hi {{firstName}}, your details for Laboura registration {{code}} are saved. Next, pay {{amount}} on your link: {{link}} Your {{days}} days start once your ID is verified.',
+    variables: ['firstName', 'code', 'amount', 'link', 'days'],
+    samples: { days: '30', link: 'https://app.laboura.com/p/register/k7m4q2px' },
+  },
+  payment_received_id_left: {
+    name: 'payment_received_id_left',
+    label: 'Job seeker: payment received, only the ID check is left',
+    text: 'Hi {{firstName}}, payment received for Laboura registration {{code}}. Only your ID check is left: {{link}} Your {{days}} days start once your ID is verified.',
+    variables: ['firstName', 'code', 'link', 'days'],
+    samples: { days: '30', link: 'https://app.laboura.com/p/register/k7m4q2px' },
+  },
+  guarantee_started: {
+    name: 'guarantee_started',
+    label: 'Job seeker: your 30 days have started',
+    text: 'Hi {{firstName}}, your ID is verified and your {{days}} days have started. They end on {{endDate}}. Our team will call you about suitable jobs.',
+    variables: ['firstName', 'days', 'endDate'],
+    samples: { days: '30', endDate: '25 Dec 2026' },
+  },
+  id_check_failed_refund: {
+    name: 'id_check_failed_refund',
+    label: 'Job seeker: ID check did not pass, refund on request',
+    text: 'Hi {{firstName}}, your ID check for Laboura registration {{code}} did not pass: {{reason}}. If your ID cannot be verified, contact us for a full refund of {{amount}}. Reply to this message or call us.',
+    variables: ['firstName', 'code', 'reason', 'amount'],
+    samples: { reason: 'the name on the ID does not match your registration', amount: 'Rs 499' },
+  },
+  id_check_reminder: {
+    name: 'id_check_reminder',
+    label: 'Job seeker: reminder to finish the ID check',
+    text: 'Hi {{firstName}}, your Laboura payment is received, but your ID check is not done yet, so your {{days}} days have not started. Finish it here: {{link}} It takes two minutes.',
+    variables: ['firstName', 'days', 'link'],
+    samples: { days: '30', link: 'https://app.laboura.com/p/register/k7m4q2px' },
+  },
+  // ==== end of Builder A section ====
 } as const satisfies Record<string, WhatsAppTemplateDef>;
 
 export type WhatsAppTemplateName = keyof typeof WHATSAPP_TEMPLATES;

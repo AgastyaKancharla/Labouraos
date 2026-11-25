@@ -318,11 +318,14 @@ export class SignupTrackerService {
     return updated;
   }
 
-  /** When the record says it finished: the ₹499 arrived, or the business was verified. */
+  /**
+   * When the record says it finished: the job seeker's 30 days started (paid AND ID passed, rev 211 —
+   * the agent's credit counts then, not at payment), or the business was verified.
+   */
   private async completedAt(tracker: SignupTracker, ctx: TrackerRunContext): Promise<Date> {
     if (tracker.subjectType === 'job_seeker' && tracker.subjectId) {
-      const s = await this.prisma.jobSeeker.findUnique({ where: { id: tracker.subjectId }, select: { paymentReceivedAt: true } });
-      if (s?.paymentReceivedAt) return s.paymentReceivedAt;
+      const s = await this.prisma.jobSeeker.findUnique({ where: { id: tracker.subjectId }, select: { guaranteeStartsAt: true } });
+      if (s?.guaranteeStartsAt) return s.guaranteeStartsAt;
     }
     if (tracker.subjectType === 'business' && tracker.subjectId) {
       const b = await this.prisma.business.findUnique({ where: { id: tracker.subjectId }, select: { verifiedAt: true } });
@@ -347,7 +350,7 @@ export class SignupTrackerService {
 
   /**
    * The assigned call agent, only with that agent's answered call of at least
-   * ASSISTED_CALL_MIN_SECONDS after the assignment and before the payment
+   * ASSISTED_CALL_MIN_SECONDS after the assignment and before his 30 days started (rev 211: paid AND ID passed)
    * (question 13). See signup-plan.ts for why GPS visits do not count here.
    */
   async creditFor(tracker: SignupTracker, completedAt: Date): Promise<string | null> {

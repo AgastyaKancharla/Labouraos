@@ -31,7 +31,7 @@ export class NewMatchAlertService implements OnModuleInit {
 
   async sweep(now: Date = new Date()): Promise<{ alerted: number }> {
     const since = new Date(now.getTime() - NEW_MATCH_LOOKBACK_MS);
-    const fresh = await this.prisma.jobSeeker.count({ where: { status: 'active', paymentReceivedAt: { gte: since, lte: now } } });
+    const fresh = await this.prisma.jobSeeker.count({ where: { status: 'active', guaranteeStartsAt: { gte: since, lte: now } } });
     if (!fresh) return { alerted: 0 };
     const agents = await this.prisma.staff.findMany({ where: { role: 'field_agent', status: 'active' }, select: { id: true } });
     if (!agents.length) return { alerted: 0 };
@@ -43,7 +43,8 @@ export class NewMatchAlertService implements OnModuleInit {
     if (!vacancies.length) return { alerted: 0 };
     const suitable = await this.matching.suitableSeekerIds(
       vacancies.map((v) => v.id),
-      { status: 'active', paymentReceivedAt: { gte: since, lte: now } },
+      // Rev 211: newly matchable = his 30 days just started (paid and ID passed), not merely paid.
+      { status: 'active', guaranteeStartsAt: { gte: since, lte: now } },
     );
     const seekerIds = [...new Set([...suitable.values()].flatMap((ids) => ids ?? []))];
     if (!seekerIds.length) return { alerted: 0 };

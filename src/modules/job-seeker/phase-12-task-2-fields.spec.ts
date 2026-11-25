@@ -92,6 +92,7 @@ describe('Phase 12 Task 2 — JobSeeker new fields and status list', () => {
       'lead',
       'consented',
       'pending_activation',
+      'paid_waiting_id',
       'active',
       'paused',
       'deactivated',

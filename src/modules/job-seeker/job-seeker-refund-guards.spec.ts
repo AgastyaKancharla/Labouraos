@@ -9,6 +9,7 @@ describe('₹499 refund guards (Master Guide: refund check, 48-hour offer reply,
   const base: JobSeekerRefundEligibilityInput = {
     code: 'JS-00042',
     paymentReceivedAt: paidAt,
+    guaranteeStartsAt: paidAt,
     status: 'active',
     hasOfferRejectedHit: false,
     hasExistingRefund: false,

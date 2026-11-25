@@ -89,7 +89,7 @@ describe('Phase 21 Task 7: close to a refund, the 15-day priority', () => {
         preferredCallWindowStart: '09:00',
         preferredCallWindowEnd: '21:00',
         status: 'active',
-        paymentReceivedAt: new Date(shared.at.getTime() - paidDaysAgo * DAY),
+        paymentReceivedAt: new Date(shared.at.getTime() - paidDaysAgo * DAY), guaranteeStartsAt: new Date(shared.at.getTime() - paidDaysAgo * DAY),
         registeredByStaffId: registeredBy.id,
       },
     });

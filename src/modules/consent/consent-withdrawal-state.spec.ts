@@ -65,7 +65,7 @@ describe('Is a consent purpose withdrawn right now? (refund guards, rev 200)', (
         data: {
           code: `JS-WS-${suffix}`, name: `Refund guard ${suffix}`, phone: `+9196${Math.floor(10000000 + Math.random() * 90000000)}`,
           trades: { create: { trade: 'Cook', isPrimary: true } }, minSalary: 1200000, maxSalary: 2200000,
-          preferredCallWindowStart: '09:00', preferredCallWindowEnd: '20:00', status: 'active', paymentReceivedAt: paidAt, guaranteeFloorPaise: 1200000,
+          preferredCallWindowStart: '09:00', preferredCallWindowEnd: '20:00', status: 'active', paymentReceivedAt: paidAt, guaranteeStartsAt: paidAt, guaranteeFloorPaise: 1200000,
         },
       });
       ids.push(seeker.id);

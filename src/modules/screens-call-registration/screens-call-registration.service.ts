@@ -3,6 +3,7 @@ import { isHouseholdBusiness } from '../business/business-auto-check.service';
 import { ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { refundGuaranteeDeadline } from '../../common/money/money';
+import { PAID_WAITING_ID } from '../job-seeker/job-seeker.status';
 import { RBAC_MATRIX, Role } from '../../common/rbac/rbac.types';
 import { OwnTeam, businessOwners, businessesOwnedBy } from '../../common/rbac/own-team';
 import { JobSeekerService } from '../job-seeker/job-seeker.service';
@@ -144,19 +145,22 @@ export class ScreensCallRegistrationService {
     const otherPayerLink = paymentLinks[0] ?? null;
     const paid = Boolean(seeker.paymentReceivedAt);
     const steps = registration.steps;
-    const stage = paid && steps.payment.state === 'done'
-      ? 'active'
-      : registration.registrationLinkExpiresAt || [steps.consent, steps.selfie, steps.idCheck].some((s) => s.state !== 'not_started')
-        ? 'in_progress'
-        : 'registered';
+    // Rev 211: Consent → Selfie → Payment → ID check; paid but no passed ID is "Paid, waiting for ID".
+    const stage = seeker.status === PAID_WAITING_ID
+      ? 'paid_waiting_id'
+      : paid && steps.payment.state === 'done'
+        ? 'active'
+        : registration.registrationLinkExpiresAt || [steps.consent, steps.selfie, steps.idCheck].some((s) => s.state !== 'not_started')
+          ? 'in_progress'
+          : 'registered';
     const nextStep = steps.consent.state !== 'done'
       ? 'consent'
       : steps.selfie.state !== 'done'
         ? 'selfie'
-        : steps.idCheck.state !== 'done'
-          ? 'id_check'
-          : steps.payment.state !== 'done'
-            ? 'payment'
+        : steps.payment.state !== 'done'
+          ? 'payment'
+          : steps.idCheck.state !== 'done'
+            ? 'id_check'
             : 'complete';
     return {
       id: seeker.id,
@@ -206,8 +210,10 @@ export class ScreensCallRegistrationService {
         : null,
       paymentConfirmedAt: payment?.confirmedAt ?? null,
       paymentReceivedAt: seeker.paymentReceivedAt,
-      guaranteeEndsAt: seeker.paymentReceivedAt
-        ? refundGuaranteeDeadline(seeker.paymentReceivedAt, policy.jobSeekerGuaranteeDays)
+      // Rev 211: the 30 days run from guaranteeStartsAt (paid and ID passed).
+      guaranteeStartsAt: seeker.guaranteeStartsAt,
+      guaranteeEndsAt: seeker.guaranteeStartsAt
+        ? refundGuaranteeDeadline(seeker.guaranteeStartsAt, policy.jobSeekerGuaranteeDays)
         : null,
     };
   }

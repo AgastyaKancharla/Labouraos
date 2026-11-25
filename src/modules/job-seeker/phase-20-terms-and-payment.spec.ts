@@ -147,9 +147,9 @@ describe('Phase 20 terms-and-payment step and a second activation payment', () =
       .attach('photo', LIVE_CARD_JPEG, { filename: 'pan.jpg', contentType: 'image/jpeg' })
       .expect(201);
     expect(sent.body.status).toBe('pending');
-    // Pending: no terms, no payment yet.
-    const waiting = await terms(token, requestId).expect(400);
-    expect(messageOf(waiting.body)).toContain('Team Lead');
+    // Rev 211: an ID waiting for the Team Lead no longer holds back the terms and the payment.
+    const waiting = await terms(token, requestId);
+    expect(messageOf(waiting.body)).not.toContain('Team Lead');
     await prisma.identityVerification.update({
       where: { id: sent.body.verificationId },
       data: { status: 'verified', nameMatches: true, isAdult: true, verifiedAt: new Date() },
@@ -160,7 +160,7 @@ describe('Phase 20 terms-and-payment step and a second activation payment', () =
     return request(server()).get(`/registration/${token}/terms`).query({ requestId });
   }
 
-  it('refuses terms before consent, the selfie and the ID check', async () => {
+  it('refuses terms before consent and the selfie; rev 211: the ID check comes after the payment', async () => {
     const seeker = await register('Housekeeping');
     const requestId = await verifiedLinkOtp(seeker.token);
 
@@ -178,9 +178,16 @@ describe('Phase 20 terms-and-payment step and a second activation payment', () =
     expect(messageOf(beforeSelfie.body)).toContain('Take the selfie first');
 
     await takeSelfie(seeker.token, requestId);
-    const beforeId = await terms(seeker.token, requestId).expect(400);
-    expect(messageOf(beforeId.body)).toContain('Finish the ID check first');
-    expect(await prisma.payment.count({ where: { jobSeekerId: seeker.id } })).toBe(0);
+    // Rev 211: Consent → Selfie → Payment → ID check — the terms open before any ID check.
+    await terms(seeker.token, requestId).expect(200);
+    const paid = await request(server())
+      .post(`/registration/${seeker.token}/terms-and-payment`)
+      .send({ requestId, acceptTerms: true })
+      .expect(201);
+    expect(paid.body.payment).toMatchObject({ amountPaise: 49900, status: 'pending' });
+    expect(await prisma.identityVerification.count({ where: { jobSeekerId: seeker.id } })).toBe(0);
+    const journey = await request(server()).get(`/registration/${seeker.token}/status`).query({ requestId }).expect(200);
+    expect(journey.body).toMatchObject({ currentStep: 'payment', steps: { consent: true, selfie: true, idCheck: false, payment: false } });
   });
 
   it('refuses terms while the primary trade is an unlisted Other', async () => {

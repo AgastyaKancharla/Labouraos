@@ -438,6 +438,23 @@ describe('Refunds (FN-Refunds)', () => {
     await waitFor(() => expect(api.calls('POST /finance/payouts/pay-new/pay')[0]?.body).toEqual({ utr: '431200002222', receiverNameShown: 'LAKSHMI BAI' }));
     expect(api.calls('POST /job-seekers/11111111-1111-1111-1111-111111111111/refund')).toHaveLength(1);
   });
+
+  it('rev 211: records "Refund requested by the job seeker (ID not verified)" by his code, only when he asked', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /finance/refunds': { rows: [], summary: refundsSummary },
+      'POST /job-seekers/JS-00412/refund': { id: 'pay-412', status: 'approved', refundKind: 'id_not_verified', refundTo: { kind: 'job_seeker' } },
+    });
+    signInAs('finance');
+    renderScreen(<Refunds />, { portal: 'finance', path: '/finance/refunds', now: NOW });
+    await userEvent.click(await screen.findByRole('button', { name: 'Refund requested (ID not verified)' }));
+    const d = await screen.findByRole('dialog');
+    expect(within(d).getByText(/Never for a forged or altered ID/)).toBeInTheDocument();
+    await userEvent.type(within(d).getByLabelText(/Job seeker code/), ' js-00412 ');
+    await userEvent.type(within(d).getByLabelText(/Note/), 'Under 18 at the ID check, asked on the phone');
+    await userEvent.click(within(d).getByRole('button', { name: 'Record and approve' }));
+    await waitFor(() => expect(api.calls('POST /job-seekers/JS-00412/refund')[0]?.body).toEqual({ idNotVerified: true, reason: 'Under 18 at the ID check, asked on the phone' }));
+  });
 });
 
 describe('One refund (FN-Refund)', () => {

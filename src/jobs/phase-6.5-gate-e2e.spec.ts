@@ -421,6 +421,7 @@ describe('Phase 6.5 Gate: End-to-End Proof for Daily No-Pickup Sweep', () => {
       {
         code: js.code,
         paymentReceivedAt: js.paymentReceivedAt,
+        guaranteeStartsAt: js.paymentReceivedAt,
         status: jsAfterSweep4!.status,
         hasOfferRejectedHit: false,
         hasExistingRefund: false,

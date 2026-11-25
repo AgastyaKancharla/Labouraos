@@ -35,7 +35,7 @@ export class RegistrationJourneyService {
       where: { id: jobSeekerId },
       select: {
         id: true, name: true, code: true, phone: true, messageLanguage: true, photoStoragePath: true,
-        paymentReceivedAt: true, termsAcceptedAt: true, guaranteeFloorPaise: true, dateOfBirth: true,
+        paymentReceivedAt: true, guaranteeStartsAt: true, termsAcceptedAt: true, guaranteeFloorPaise: true, dateOfBirth: true,
       },
     });
     if (!seeker) throw new NotFoundException('Job seeker not found');
@@ -67,7 +67,7 @@ export class RegistrationJourneyService {
         where: { jobSeekerId: seeker.id, method: 'aadhaar_qr', vendor: 'uidai_secure_qr', isAdult: false, under18LiftedAt: null },
         select: { id: true },
       }),
-      // The same gate as the payment (id-payment-gate.ts): any verified check counts.
+      // Any verified check counts (guarantee-start.ts PASSED_ID_WHERE), not only the latest.
       this.prisma.identityVerification.findFirst({
         where: { jobSeekerId: seeker.id, status: 'verified', nameMatches: true, isAdult: true },
         select: { id: true },

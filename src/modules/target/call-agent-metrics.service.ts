@@ -55,8 +55,10 @@ export interface CallAgentMetricsResult {
  * Nothing self-reported; no stored aggregate column.
  *
  * 1. Candidates activated:
- *    Job seekers with `registeredByStaffId` = this agent whose ₹499 was received
- *    within the period (paymentReceivedAt in period boundary), plus app sign-ups
+ *    Job seekers with `registeredByStaffId` = this agent whose 30 days started
+ *    within the period (guaranteeStartsAt in period boundary: paid AND ID passed —
+ *    Master Guide rev 211, the credit counts when the ID check passes, not at
+ *    payment), plus app sign-ups
  *    this agent helped finish ("assisted", proven by a connected call or GPS
  *    visit; customer app question 13).
  *
@@ -153,11 +155,13 @@ export class CallAgentMetricsService {
     const { startUtc, endUtc } = period;
 
     // 4. Metric 1: Candidates Activated
-    // Job seekers with registeredByStaffId = this agent whose ₹499 was received within the period
+    // Job seekers with registeredByStaffId = this agent whose 30 days started within the period
+    // (rev 211: paid AND ID passed; the credit counts when the ID check passes, not at payment).
     const registeredActivations = await this.prisma.jobSeeker.count({
       where: {
         registeredByStaffId: effectiveStaffId,
-        paymentReceivedAt: {
+        paymentReceivedAt: { not: null },
+        guaranteeStartsAt: {
           not: null,
           gte: startUtc,
           lte: endUtc,
@@ -187,7 +191,7 @@ export class CallAgentMetricsService {
     // PERIOD-SCOPING & 30-DAY LAG (CRITICAL ARCHITECTURAL DESIGN):
     // The denominator is scoped strictly to candidates whose 30-day refund guarantee
     // deadline fell within the evaluation period. Because a candidate's 30-day guarantee
-    // deadline is computed as paymentReceivedAt + jobSeekerGuaranteeDays from PricingPolicy,
+    // deadline is computed as guaranteeStartsAt + jobSeekerGuaranteeDays from PricingPolicy (rev 211),
     // candidates maturing in the period had their payment received between:
     //   startPaymentDate = period.startUtc - 30 days
     //   endPaymentDate = period.endUtc - 30 days
@@ -217,7 +221,8 @@ export class CallAgentMetricsService {
       const maturedCandidates = await this.prisma.jobSeeker.findMany({
         where: {
           registeredByStaffId: effectiveStaffId,
-          paymentReceivedAt: {
+          paymentReceivedAt: { not: null },
+          guaranteeStartsAt: {
             not: null,
             gte: startPaymentDate,
             lte: maxPaymentDate,

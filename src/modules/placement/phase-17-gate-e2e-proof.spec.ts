@@ -295,6 +295,7 @@ describe('Phase 17 Gate: Comprehensive End-to-End Proof & Rule Verification', ()
         {
           code: 'JS-00001',
           paymentReceivedAt: new Date('2026-10-01T10:00:00Z'),
+          guaranteeStartsAt: new Date('2026-10-01T10:00:00Z'),
           status: 'active',
           hasOfferRejectedHit: false,
           hasExistingRefund: false,
@@ -313,6 +314,7 @@ describe('Phase 17 Gate: Comprehensive End-to-End Proof & Rule Verification', ()
         {
           code: 'JS-00002',
           paymentReceivedAt: new Date('2026-10-01T10:00:00Z'),
+          guaranteeStartsAt: new Date('2026-10-01T10:00:00Z'),
           status: 'active',
           hasOfferRejectedHit: false,
           hasExistingRefund: false,

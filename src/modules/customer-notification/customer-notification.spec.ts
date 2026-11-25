@@ -391,7 +391,7 @@ describe('Customer notifications: switches and the promotions consent', () => {
     const t = setup();
     const accountId = await t.account({ jobSeekerId: 'js-1' });
     await t.prisma.pricingPolicy.create({ data: { jobSeekerGuaranteeDays: 30, effectiveFrom: new Date('2026-01-01') } });
-    await t.prisma.jobSeeker.create({ data: { id: 'js-1', status: 'active', paymentReceivedAt: new Date(t.clock.at.getTime() - 5 * 86_400_000) } });
+    await t.prisma.jobSeeker.create({ data: { id: 'js-1', status: 'active', paymentReceivedAt: new Date(t.clock.at.getTime() - 5 * 86_400_000), guaranteeStartsAt: new Date(t.clock.at.getTime() - 5 * 86_400_000) } });
     expect((await t.settings.view(accountId)).serviceLocked).toBe(true);
     await expectCode(t.settings.update(accountId, { service: false }), 'SERVICE_LOCKED');
     // After the 30 days it can be switched off.
@@ -629,7 +629,7 @@ describe('Customer notifications: privacy review fixes', () => {
     const accountId = await t.account({ jobSeekerId: 'js-1' });
     await t.settings.update(accountId, { service: false });
     await t.prisma.pricingPolicy.create({ data: { jobSeekerGuaranteeDays: 30, effectiveFrom: new Date('2026-01-01') } });
-    await t.prisma.jobSeeker.create({ data: { id: 'js-1', status: 'active', paymentReceivedAt: t.clock.at } });
+    await t.prisma.jobSeeker.create({ data: { id: 'js-1', status: 'active', paymentReceivedAt: t.clock.at, guaranteeStartsAt: t.clock.at } });
     expect(await t.notifications.notify({ jobSeekerId: 'js-1' }, 'interview_booked', { hours: 48 }, { urgent: true })).toMatchObject({ queued: 1 });
     expect(await t.sender.sendDue()).toMatchObject({ sent: 1, off: 0 });
     // A row queued before, with the switch off and the guarantee running, is sent by the worker too.

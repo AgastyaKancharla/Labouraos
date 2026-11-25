@@ -17,7 +17,7 @@ describe('FA10b Saved — send the link', () => {
     await waitFor(() => screen.getByTestId('seeker-banner'));
     expect(screen.getByTestId('seeker-banner')).toHaveTextContent('✓ Job seeker details saved · JS-1042');
     expect(screen.getByTestId('step-consent')).toHaveTextContent(/1 · ConsentNot sent yet/);
-    expect(screen.getByTestId('step-payment')).toHaveTextContent(/4 · ₹499 paymentNot sent yet/);
+    expect(screen.getByTestId('step-payment')).toHaveTextContent(/3 · ₹499 paymentNot sent yet/);
     expect(screen.queryByTestId('other-payer')).toBeNull();
     await fireEvent.press(screen.getByTestId('send-link-whatsapp'));
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/job-seekers/js-uuid/registration'));
@@ -34,8 +34,10 @@ describe('FA10b Saved — send the link', () => {
     const card = screen.getByTestId('preview-card');
     expect(card).toHaveTextContent(/1 Consent — each purpose ticked separately/);
     expect(card).toHaveTextContent(/2 Selfie — live camera only/);
-    expect(card).toHaveTextContent(/3 ID check — Aadhaar: scan the QR code on the card, or open the e-Aadhaar PDF/);
+    expect(card).toHaveTextContent(/4 ID check — Aadhaar: scan the QR code on the card, or open the e-Aadhaar PDF/);
     expect(card).not.toHaveTextContent(/digi\s?locker/i);
-    expect(card).toHaveTextContent(/4 ₹499 payment — their exact terms/);
+    expect(card).toHaveTextContent(/3 ₹499 payment — their exact terms/);
+    // Rev 211: Consent → Selfie → Payment → ID check.
+    expect(card).toHaveTextContent(/3 terms and ₹499 → 4 ID check/);
   });
 });

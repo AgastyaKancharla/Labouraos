@@ -4,6 +4,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { peopleOwnedBy } from '../../common/rbac/own-team';
 import { phoneLast4 } from '../../common/phone/indian-mobile';
 import { refundGuaranteeDeadline } from '../../common/money/money';
+import { PAID_WAITING_ID } from '../job-seeker/job-seeker.status';
 import { agentViewerFor, fieldAgentCanAct } from '../business/business-agent-view';
 import { CANDIDATE_PHOTO_LINK_TTL_SECONDS, CANDIDATE_PHOTO_STORAGE, CandidatePhotoStorage } from '../job-seeker/photo-storage';
 import { PricingService } from '../pricing/pricing.service';
@@ -387,7 +388,8 @@ export class FieldPeopleService {
     const results = await Promise.all(
       list.results.map(async (s) => {
         const e = extra.get(s.id)!;
-        const unpaid = !s.steps.paidAt && !ENDED_SEEKER.includes(s.status) && s.status !== 'active';
+        // Rev 211: paid but waiting for the ID check still has a step to finish (the ID check).
+        const unpaid = (!s.steps.paidAt || s.status === PAID_WAITING_ID) && !ENDED_SEEKER.includes(s.status) && s.status !== 'active';
         const stuck = unpaid ? await this.stuckOf(s.id).catch(() => null) : null;
         const fieldRow = seekerRowState({
           status: s.status,
@@ -405,7 +407,7 @@ export class FieldPeopleService {
           yearsExperience: e.yearsExperience,
           locality: e.locality,
           hits: e.hits,
-          guarantee: this.guarantee(e.paidAt, s.status, policy.jobSeekerGuaranteeDays, now),
+          guarantee: this.guarantee(e.guaranteeStartsAt, s.status, policy.jobSeekerGuaranteeDays, now),
           nextInterviewAt: e.nextInterviewAt?.toISOString() ?? null,
           row,
         };
@@ -478,7 +480,7 @@ export class FieldPeopleService {
     const seeker = await this.prisma.jobSeeker.findFirst({
       where: { AND: [peopleOwnedBy([actor.sub]), { anonymisedAt: null }, { OR: [{ id: key }, { code: key.toUpperCase() }] }] },
       select: {
-        id: true, code: true, name: true, phone: true, status: true, createdAt: true, paymentReceivedAt: true, hitCount: true,
+        id: true, code: true, name: true, phone: true, status: true, createdAt: true, paymentReceivedAt: true, guaranteeStartsAt: true, hitCount: true,
         photoStoragePath: true, locality: true, gender: true, dateOfBirth: true, shiftPreference: true, jobType: true, travelDistanceKm: true,
         lastRole: true, lastEmployer: true, availableFrom: true, registeredByStaffId: true, assignedStaffId: true,
         trades: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }], select: { trade: true, yearsExperience: true, isPrimary: true } },
@@ -519,7 +521,8 @@ export class FieldPeopleService {
     const placed = placements.some((p) => !LIVE_PLACEMENT_EXCLUDE.includes(p.status));
     const row = seekerRowState({
       status: seeker.status,
-      stuck: seeker.paymentReceivedAt ? null : stuck,
+      // Rev 211: paid but waiting for the ID check is still stuck (at the ID check).
+      stuck: seeker.paymentReceivedAt && seeker.status !== PAID_WAITING_ID ? null : stuck,
       linkSent: links.length > 0,
       placed,
       nextInterviewAt: e.nextInterviewAt,
@@ -534,6 +537,7 @@ export class FieldPeopleService {
       if (v.status === 'verified' && v.verifiedAt) history.push({ at: v.verifiedAt.toISOString(), kind: 'id_checked', detail: v.method ?? null });
     }
     if (seeker.paymentReceivedAt) history.push({ at: seeker.paymentReceivedAt.toISOString(), kind: 'paid', detail: null });
+    if (seeker.guaranteeStartsAt) history.push({ at: seeker.guaranteeStartsAt.toISOString(), kind: 'guarantee_started', detail: null });
     for (const i of interviews) history.push({ at: i.createdAt.toISOString(), kind: 'interview_booked', detail: i.business.name });
     for (const p of placements) history.push({ at: p.createdAt.toISOString(), kind: 'placement', detail: p.business.name });
     history.sort((a, b) => b.at.localeCompare(a.at));
@@ -565,7 +569,9 @@ export class FieldPeopleService {
       stuck: { step: stuck.step, state: stuck.state, reason: stuck.reason, waitingForTeamLead: stuck.waitingForTeamLead, actions: stuck.actions },
       row,
       hits: seeker.hitCount,
-      guarantee: this.guarantee(seeker.paymentReceivedAt, seeker.status, policy.jobSeekerGuaranteeDays, now),
+      // Rev 211: "Day X of 30" from guaranteeStartsAt (paid and ID passed); null while paid, waiting for ID.
+      guarantee: this.guarantee(seeker.guaranteeStartsAt, seeker.status, policy.jobSeekerGuaranteeDays, now),
+      paidWaitingForId: seeker.status === PAID_WAITING_ID,
       nextInterviewAt: e.nextInterviewAt?.toISOString() ?? null,
       interviews: interviews.map((i) => ({
         id: i.id,
@@ -595,10 +601,10 @@ export class FieldPeopleService {
     return this.stuck.forJobSeeker(id);
   }
 
-  /** "Day X of 30" once paid, while the guarantee runs (no amounts). */
-  private guarantee(paidAt: Date | null, status: string, days: number, now: Date): { day: number; days: number; endsAt: string } | null {
-    if (!paidAt || ENDED_SEEKER.includes(status)) return null;
-    const deadline = refundGuaranteeDeadline(paidAt, days);
+  /** "Day X of 30" once his 30 days run (paid and ID passed, rev 211), while the guarantee runs (no amounts). */
+  private guarantee(startsAt: Date | null, status: string, days: number, now: Date): { day: number; days: number; endsAt: string } | null {
+    if (!startsAt || ENDED_SEEKER.includes(status)) return null;
+    const deadline = refundGuaranteeDeadline(startsAt, days);
     const day = Math.min(days, Math.max(1, days - Math.ceil((deadline.getTime() - now.getTime()) / DAY_MS)));
     return { day, days, endsAt: deadline.toISOString() };
   }
@@ -620,7 +626,7 @@ export class FieldPeopleService {
       this.prisma.jobSeeker.findMany({
         where: { id: { in: ids } },
         select: {
-          id: true, photoStoragePath: true, locality: true, hitCount: true, paymentReceivedAt: true,
+          id: true, photoStoragePath: true, locality: true, hitCount: true, paymentReceivedAt: true, guaranteeStartsAt: true, status: true,
           trades: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }], take: 1, select: { trade: true, yearsExperience: true } },
         },
       }),
@@ -652,8 +658,10 @@ export class FieldPeopleService {
           locality: s.locality,
           hits: s.hitCount,
           paidAt: s.paymentReceivedAt,
+          guaranteeStartsAt: s.guaranteeStartsAt,
           nextInterviewAt: next.get(s.id) ?? null,
-          bookableVacancyId: s.paymentReceivedAt ? (bookable.get(s.id) ?? null) : null,
+          // Rev 211: bookable only once his 30 days run (paid and ID passed): no offers while waiting for the ID.
+          bookableVacancyId: s.guaranteeStartsAt && s.status !== PAID_WAITING_ID ? (bookable.get(s.id) ?? null) : null,
         },
       ]),
     );

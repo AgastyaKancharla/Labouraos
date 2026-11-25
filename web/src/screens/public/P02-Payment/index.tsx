@@ -13,7 +13,7 @@ import { UpiAppButtons } from '../shared/UpiApps';
 import { ActionError, Choice, isOtpExpired, LinkProblem, Loading, Muted, PageTitle, Row, StepsBar, tabMemory, UpiQr, Warn } from '../shared/ui';
 
 /**
- * P02-Payment, the last step: his exact guarantee terms, a tick to agree, then
+ * P02-Payment, step 3 (rev 211: the ID check comes after it): his exact guarantee terms, a tick to agree, then
  * a UPI QR and link made just for him (exact amount and reference, to the
  * company account). Someone else can pay with a payment-only link. Paying
  * never shows "done" here — the next page waits for the bank.
@@ -71,7 +71,7 @@ export default function Payment() {
 
   const header = (
     <>
-      <StepsBar current={4} label={t('pub.pay.stepLabel')} />
+      <StepsBar current={3} label={t('pub.pay.stepLabel')} />
       <PageTitle emoji="💳">{t('pub.pay.title', { amount: rupees(status.payment.amountPaise) })}</PageTitle>
     </>
   );
@@ -223,6 +223,8 @@ export default function Payment() {
         </div>
       )}
       {accepted && <Muted>{t('pub.pay.bankNote')}</Muted>}
+      {/* Rev 211: the ID check comes after the payment; the 30 days wait for it. */}
+      {!status.steps.idCheck && <Muted>{t('pub.pay.idNext')}</Muted>}
     </>
   );
 }

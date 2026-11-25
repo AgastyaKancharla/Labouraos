@@ -520,7 +520,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
       where: { id: pendingId },
       data: {
         status: 'active',
-        paymentReceivedAt: paymentTime,
+        paymentReceivedAt: paymentTime, guaranteeStartsAt: paymentTime,
       },
     });
 

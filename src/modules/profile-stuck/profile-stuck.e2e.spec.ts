@@ -77,7 +77,8 @@ describe("GET /profile-stuck — where they're stuck", () => {
 
     // Job seekers at each step.
     rec.sNew = await seeker('new', 1, people.caA.id);
-    rec.sIdWait = await seeker('idw', 2, people.caA.id, { photoStoragePath: `selfies/${tail}/w.jpg`, photoTakenAt: new Date() });
+    // Rev 211: paid, and another ID waits for the Team Lead — "Paid, waiting for ID".
+    rec.sIdWait = await seeker('idw', 2, people.caA.id, { photoStoragePath: `selfies/${tail}/w.jpg`, photoTakenAt: new Date(), status: 'paid_waiting_id', paymentReceivedAt: new Date() });
     for (const purpose of ['job_matching', 'profile_sharing', 'call_recording', 'aadhaar_verification', 'job_updates']) {
       await prisma.consent.create({ data: { subjectType: 'job_seeker', subjectId: rec.sIdWait, purpose, granted: true, grantedAt: new Date(), noticeVersion: '1.2', language: 'en', method: 'sms_link' } });
     }
@@ -125,6 +126,8 @@ describe("GET /profile-stuck — where they're stuck", () => {
   it("waiting for the Team Lead's ID check shows that, with no resend button", async () => {
     const res = await get('caA', 'job_seeker', rec.sIdWait).expect(200);
     expect(res.body).toMatchObject({ step: 'id_check', state: 'in_progress', waitingForTeamLead: true, actions: [], reason: expect.stringContaining('Team Lead') });
+    // Rev 211: he has paid — the stage staff see is "Paid, waiting for ID" (view only).
+    expect(res.body).toMatchObject({ stage: 'paid_waiting_id', reason: expect.stringContaining('Paid, waiting for ID') });
   });
 
   it("keeps each role's record scope: another team's Team Lead and another tree's Manager get 404; Finance and field agents are refused", async () => {

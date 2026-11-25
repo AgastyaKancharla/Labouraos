@@ -504,7 +504,8 @@ export class ScreensFieldService {
     const parts = getCalendarPartsInTimezone(now, 'Asia/Kolkata');
     const period = getPeriodBoundaries(parts.year, parts.month);
     const activated = await this.prisma.jobSeeker.count({
-      where: { registeredByStaffId: actor.sub, paymentReceivedAt: { not: null, gte: period.startUtc, lte: period.endUtc } },
+      // Rev 211: activated = paid AND ID passed (his 30 days started in the month), not the payment alone.
+      where: { registeredByStaffId: actor.sub, paymentReceivedAt: { not: null }, guaranteeStartsAt: { not: null, gte: period.startUtc, lte: period.endUtc } },
     });
     return { year: parts.year, month: parts.month, candidatesActivated: activated };
   }

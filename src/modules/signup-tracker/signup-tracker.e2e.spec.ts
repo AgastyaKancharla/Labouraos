@@ -397,7 +397,7 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
       },
     });
     clock.at = new Date(WED_11.getTime() + 60 * 60_000);
-    await prisma.jobSeeker.update({ where: { id: helped.id }, data: { paymentReceivedAt: clock.at, status: 'active' } });
+    await prisma.jobSeeker.update({ where: { id: helped.id }, data: { paymentReceivedAt: clock.at, guaranteeStartsAt: clock.at, status: 'active' } });
     await tracker.process(t.id, await tracker.context(clock.at));
     expect(await prisma.signupTracker.findUniqueOrThrow({ where: { id: t.id } })).toMatchObject({ outcome: 'assisted', stage: 'done' });
     expect(await prisma.callTask.count({ where: { signupTrackerId: t.id, status: 'open' } })).toBe(0);
@@ -406,7 +406,7 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
 
     const alone = await makeSeeker('Alone Appsignup');
     const t2 = await makeTracker({ subjectType: 'job_seeker', subjectId: alone.id, remindersSent: 0, stoppedAt: clock.at });
-    await prisma.jobSeeker.update({ where: { id: alone.id }, data: { paymentReceivedAt: clock.at, status: 'active' } });
+    await prisma.jobSeeker.update({ where: { id: alone.id }, data: { paymentReceivedAt: clock.at, guaranteeStartsAt: clock.at, status: 'active' } });
     await tracker.process(t2.id, await tracker.context(clock.at));
     expect(await prisma.signupTracker.findUniqueOrThrow({ where: { id: t2.id } })).toMatchObject({ outcome: 'self', assignedStaffId: null });
   });
@@ -527,7 +527,7 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
     expect(after).toMatchObject({ assignedStaffId: owner.id, assignmentReason: 'language' });
 
     await prisma.signupTracker.update({ where: { id: t.id }, data: { outcome: 'assisted', finishedAt: WED_11 } });
-    await prisma.jobSeeker.update({ where: { id: seeker.id }, data: { paymentReceivedAt: new Date(WED_11.getTime() + 3600_000), status: 'active' } });
+    await prisma.jobSeeker.update({ where: { id: seeker.id }, data: { paymentReceivedAt: new Date(WED_11.getTime() + 3600_000), guaranteeStartsAt: new Date(WED_11.getTime() + 3600_000), status: 'active' } });
     const month = { from: new Date('2026-11-30T18:30:00.000Z'), to: new Date('2026-12-31T18:29:59.999Z') };
     expect(await assistedActivations(prisma, owner.id, month.from, month.to)).toBe(0);
     await prisma.staff.update({ where: { id: owner.id }, data: { isOwnerAccount: false } });
@@ -704,7 +704,7 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
         },
       });
       clock.at = new Date(WED_11.getTime() + 30 * 60_000);
-      await prisma.jobSeeker.update({ where: { id: seeker.id }, data: { paymentReceivedAt: clock.at, status: 'active' } });
+      await prisma.jobSeeker.update({ where: { id: seeker.id }, data: { paymentReceivedAt: clock.at, guaranteeStartsAt: clock.at, status: 'active' } });
       await tracker.process(t.id, await tracker.context(clock.at));
       expect((await prisma.signupTracker.findUniqueOrThrow({ where: { id: t.id } })).outcome).toBe('self');
     });

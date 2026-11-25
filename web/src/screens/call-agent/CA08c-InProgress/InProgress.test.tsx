@@ -135,4 +135,30 @@ describe('Registration step panel (CA08b / CA08c / CA08f)', () => {
     render();
     expect(await screen.findByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
+
+  it('rev 211: payment comes before the ID check, and paid with the ID open shows "Paid, waiting for ID"', async () => {
+    mockApi({
+      'GET /screens/call-registration/job-seekers/js-uuid': {
+        ...base,
+        status: 'paid_waiting_id',
+        stage: 'paid_waiting_id',
+        nextStep: 'id_check',
+        registrationLinkExpiresAt: '2026-11-13T05:05:00Z',
+        consent: { requiredGiven: 5, requiredTotal: 5, promotions: false },
+        steps: {
+          ...base.steps,
+          consent: step('done', '2026-11-11T05:12:00Z'),
+          selfie: step('done', '2026-11-11T05:14:00Z'),
+          payment: step('done', '2026-11-11T05:20:00Z'),
+          idCheck: step('in_progress'),
+        },
+        paymentReceivedAt: '2026-11-11T05:20:00Z',
+      },
+    });
+    signInAs('call_agent');
+    render();
+    expect(await screen.findByTestId('paid-waiting-id')).toHaveTextContent('Paid, waiting for ID · Kavya Reddy has paid. The 30 days start when the ID check passes');
+    expect(screen.getByText('3 · ₹499 payment')).toBeInTheDocument();
+    expect(screen.getByText('4 · ID check')).toBeInTheDocument();
+  });
 });

@@ -13,8 +13,9 @@ import { WhatsAppInboxClock } from './whatsapp-inbox.clock';
  * Automatic WhatsApp messages on registration events (Master Guide rev 202,
  * 21 Nov), SMS when WhatsApp is not available or fails:
  *
- * - registration done: a job seeker's ₹499 arrived, a partner finished every
- *   step (terms, selfie, ID, UPI), a business was verified;
+ * - registration done: a partner finished every step (terms, selfie, ID, UPI),
+ *   a business was verified (a job seeker's is retired, rev 211: the payment
+ *   and the ID check send their own messages);
  * - stopped part-way: a job seeker with a registration link has made no
  *   progress for STOPPED_AFTER_MS at a step before the payment;
  * - stuck at payment: only the payment is left and nothing happened for
@@ -81,7 +82,9 @@ export class WhatsAppEventsService {
 
   async sweep(now: Date = this.clock.now()) {
     if (inQuietHours(now)) return { quietHours: true, done: 0, stopped: 0, payment: 0, leadNotices: 0 };
-    const done = (await this.seekersDone(now)) + (await this.partnersDone(now)) + (await this.businessesDone(now));
+    // Rev 211: a job seeker's "registration done" is retired — the payment and the ID check send their own
+    // messages (payment_received_id_left, guarantee_started; job-seeker-flow.service.ts).
+    const done = (await this.partnersDone(now)) + (await this.businessesDone(now));
     const nudges = await this.nudges(now);
     const leadNotices = await this.leadNotices(now);
     return { quietHours: false, done, ...nudges, leadNotices };
@@ -119,26 +122,6 @@ export class WhatsAppEventsService {
       this.logger.warn(`Automatic ${template} to ${subjectType} ${subjectId} failed ${MAX_SEND_TRIES} times on WhatsApp and SMS; no more tries.`);
     }
     return false;
-  }
-
-  private async seekersDone(now: Date): Promise<number> {
-    const rows = await this.prisma.jobSeeker.findMany({
-      where: { paymentReceivedAt: { gte: new Date(now.getTime() - DONE_LOOKBACK_MS) }, anonymisedAt: null },
-      select: { id: true, code: true, name: true },
-      take: 200,
-    });
-    let sent = 0;
-    for (const s of rows) {
-      const ok = await this.attempt('job_seeker', s.id, 'registration_done', now, undefined, () => this.messaging.sendPreferWhatsApp({
-        template: 'registration_done',
-        subjectType: 'job_seeker',
-        subjectId: s.id,
-        variables: { firstName: firstName(s.name), code: s.code },
-        contactAttempt: false,
-      }));
-      if (ok) sent += 1;
-    }
-    return sent;
   }
 
   private async partnersDone(now: Date): Promise<number> {

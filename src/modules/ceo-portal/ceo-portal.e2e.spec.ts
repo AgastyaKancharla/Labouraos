@@ -87,7 +87,7 @@ describe('CEO portal endpoints', () => {
         preferredCallWindowStart: '10:00',
         preferredCallWindowEnd: '18:00',
         status: 'active',
-        paymentReceivedAt: paidAt,
+        paymentReceivedAt: paidAt, guaranteeStartsAt: paidAt,
         registeredByStaffId: agent.id,
       },
     });

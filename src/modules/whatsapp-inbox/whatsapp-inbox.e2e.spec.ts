@@ -484,16 +484,22 @@ describe('WhatsApp (rev 202): inbound conversations as tracked leads, the WhatsA
       await prisma.publicLink.updateMany({ where: { subjectId: seekerId }, data: { createdAt: when } });
     }
 
-    it('registration done: one WhatsApp when the ₹499 arrived; never twice; nothing in quiet hours', async () => {
+    it('registration done (rev 211: retired for job seekers, who get the payment / ID messages instead); a business: once; nothing in quiet hours', async () => {
       clock.at = at('2027-03-10T05:30:00.000Z'); // 11:00 IST
       const paid = await makeSeeker({ status: 'active', paymentReceivedAt: at('2027-03-10T04:30:00.000Z') });
+      const biz = await prisma.business.create({
+        data: { code: `BZ-WD${Date.now().toString().slice(-7)}`, name: 'Done Bakery', ownerName: 'Lakshmi', phone: newPhone(), verificationStatus: 'verified', verifiedAt: at('2027-03-10T04:30:00.000Z') },
+      });
       const first = await events.sweep(clock.now());
       expect(first.done).toBeGreaterThanOrEqual(1);
-      const logs = await prisma.messageLog.findMany({ where: { subjectId: paid.id, template: 'registration_done' } });
+      expect(await prisma.messageLog.count({ where: { subjectId: paid.id, template: 'registration_done' } })).toBe(0);
+      const logs = await prisma.messageLog.findMany({ where: { subjectId: biz.id, template: 'business_registration_done' } });
       expect(logs.map((l) => `${l.channel}:${l.status}`)).toEqual(['whatsapp:sent']);
       await events.sweep(clock.now());
-      expect(await prisma.messageLog.count({ where: { subjectId: paid.id, template: 'registration_done' } })).toBe(1);
+      expect(await prisma.messageLog.count({ where: { subjectId: biz.id, template: 'business_registration_done' } })).toBe(1);
       expect(await prisma.contactAttempt.count({ where: { jobSeekerId: paid.id } })).toBe(0);
+      await prisma.messageLog.deleteMany({ where: { subjectId: biz.id } });
+      await prisma.business.delete({ where: { id: biz.id } });
 
       clock.at = at('2027-03-10T16:30:00.000Z'); // 22:00 IST
       expect(await events.sweep(clock.now())).toEqual({ quietHours: true, done: 0, stopped: 0, payment: 0, leadNotices: 0 });

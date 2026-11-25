@@ -173,7 +173,7 @@ export class TeamLeadScreensService {
         if (t !== null && !owner) paidTarget = (paidTarget ?? 0) + t;
         agents.push({
           staff: member,
-          mainLabel: 'Paid the ₹499 fee',
+          mainLabel: 'Paid the ₹499 fee and ID verified',
           second: { label: 'Vacancies added', done: metrics.metrics.vacanciesCaptured, target: target?.vacanciesCaptured ?? null },
           ...paceRow(t, metrics.metrics.candidatesActivated, dayOfMonth, daysInMonth),
         });
@@ -191,7 +191,8 @@ export class TeamLeadScreensService {
       }
     }
     const [paidDone, signedRows, interviewsDone, registeredDone] = await Promise.all([
-      this.prisma.jobSeeker.count({ where: { registeredByStaffId: { in: people }, paymentReceivedAt: { gte: monthFrom, lte: now } } }),
+      // Rev 211: the registration credit counts when the ID check passes and his 30 days start, not at payment.
+      this.prisma.jobSeeker.count({ where: { registeredByStaffId: { in: people }, guaranteeStartsAt: { gte: monthFrom, lte: now } } }),
       this.prisma.businessAgreement.findMany({ where: { signedAt: { gte: monthFrom, lte: now }, business: { accountAgentId: { in: people } } }, select: { businessId: true } }),
       this.prisma.interview.count({
         where: { status: 'completed', slotStartsAt: { gte: monthFrom, lte: now }, OR: [{ proposedByStaffId: { in: people } }, { business: { accountAgentId: { in: people } } }] },
@@ -202,7 +203,7 @@ export class TeamLeadScreensService {
     const plan = this.plans ? valuesOf((await this.plans.teamPlans(year, month, [actor.id]))[0]) : null;
     const teamRows = [
       { key: 'placed', label: 'People placed in jobs', hint: 'Each one earns a placement fee', ...paceRow(plan?.placed ?? placedTarget, placedDone, dayOfMonth, daysInMonth) },
-      { key: 'paid', label: 'Paid the ₹499 registration fee', hint: 'Job seekers who paid on their own phone', ...paceRow(plan?.paid ?? paidTarget, paidDone, dayOfMonth, daysInMonth) },
+      { key: 'paid', label: 'Paid the ₹499 registration fee and ID verified', hint: 'Counts when the ID check passes and the 30 days start', ...paceRow(plan?.paid ?? paidTarget, paidDone, dayOfMonth, daysInMonth) },
       { key: 'businesses', label: 'Businesses signed up', hint: 'Owner confirmed by OTP', ...paceRow(plan?.businessesSignedUp ?? null, new Set(signedRows.map((row) => row.businessId)).size, dayOfMonth, daysInMonth) },
       { key: 'interviews', label: 'Interviews done', hint: 'Job seeker met the owner', ...paceRow(plan?.interviewsDone ?? null, interviewsDone, dayOfMonth, daysInMonth) },
       { key: 'registered', label: 'Job seekers registered', hint: 'Profile made by an agent', ...paceRow(plan?.registered ?? null, registeredDone, dayOfMonth, daysInMonth) },

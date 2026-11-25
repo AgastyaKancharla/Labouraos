@@ -8,6 +8,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { CustomerAuthClock } from '../../common/customer-auth/customer-auth.clock';
 import { CustomerScopeService, ScopedProfile } from '../../common/customer-auth/customer-scope.service';
 import { refundGuaranteeDeadline } from '../../common/money/money';
+import { PAID_WAITING_ID } from '../job-seeker/job-seeker.status';
 import { ensureShareSlug, shareLinkUrl } from '../referral/referral-share-link';
 import { PricingService } from '../pricing/pricing.service';
 import { RegistrationJourneyService } from '../job-seeker/registration-journey.service';
@@ -76,14 +77,16 @@ export class CustomerHomeService {
     const [seeker, policy, journey] = await Promise.all([
       this.prisma.jobSeeker.findUniqueOrThrow({
         where: { id },
-        select: { code: true, name: true, status: true, hitCount: true, paymentReceivedAt: true },
+        select: { code: true, name: true, status: true, hitCount: true, paymentReceivedAt: true, guaranteeStartsAt: true },
       }),
       this.pricing.current(),
       this.journey.status(id, true),
     ]);
     const status = journey as Exclude<typeof journey, { otpRequired: true }>;
     const paidAt = seeker.paymentReceivedAt;
-    const deadline = paidAt ? refundGuaranteeDeadline(paidAt, policy.jobSeekerGuaranteeDays) : null;
+    // Rev 211: the 30 days run from guaranteeStartsAt (paid AND ID passed); paidAt only marks this ₹499's cycle.
+    const startsAt = seeker.guaranteeStartsAt;
+    const deadline = startsAt ? refundGuaranteeDeadline(startsAt, policy.jobSeekerGuaranteeDays) : null;
 
     const [refundEndingHit, withdrawn, refundPayment, interview] = await Promise.all([
       paidAt
@@ -183,10 +186,12 @@ export class CustomerHomeService {
       },
       guarantee: {
         active: guaranteeActive,
-        day: paidAt && guaranteeActive ? Math.min(policy.jobSeekerGuaranteeDays, Math.floor((now.getTime() - paidAt.getTime()) / DAY_MS) + 1) : null,
+        day: startsAt && guaranteeActive ? Math.min(policy.jobSeekerGuaranteeDays, Math.floor((now.getTime() - startsAt.getTime()) / DAY_MS) + 1) : null,
         days: policy.jobSeekerGuaranteeDays,
-        startedAt: paidAt,
+        startedAt: startsAt,
         endsAt: deadline,
+        /** Rev 211: paid, waiting for the ID check — the 30 days have not started. */
+        paidWaitingForId: seeker.status === PAID_WAITING_ID,
       },
       hits,
       interview: interviewOut,

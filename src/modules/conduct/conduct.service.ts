@@ -58,7 +58,8 @@ function coveredOf(ban: { coveredProfiles: Prisma.JsonValue; subjectType: string
 }
 
 /** H1: a lifted ban puts a job seeker back only to one of these; anything else is paused for review. */
-const RESTORABLE_JOB_SEEKER_STATUSES: readonly string[] = ['active', 'paused', 'inactive'];
+// Rev 211: "paid, waiting for ID" goes back as it was too (his ₹499 is in; the ID check decides the rest).
+const RESTORABLE_JOB_SEEKER_STATUSES: readonly string[] = ['active', 'paused', 'inactive', 'paid_waiting_id'];
 
 const dateOrNull = (value: unknown): Date | null => (typeof value === 'string' && value ? new Date(value) : null);
 

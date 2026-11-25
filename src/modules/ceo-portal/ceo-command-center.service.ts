@@ -360,13 +360,13 @@ export class CeoCommandCenterService {
       .sort((a, b) => b.open - b.pool - (a.open - a.pool))
       .slice(0, 5);
 
-    // Cohort: job seekers who paid in the month before the period's month — their 30 days are over.
+    // Cohort: job seekers whose 30 days started (paid AND ID passed, rev 211) in the month before the period's month — their 30 days are over.
     const cohortMonth = monthBuckets(range.to, 2)[0];
     const cohort = await this.prisma.jobSeeker.findMany({
-      where: { paymentReceivedAt: { gte: cohortMonth.from, lte: cohortMonth.to } },
-      select: { status: true, paymentReceivedAt: true, placements: { select: { selectedAt: true } }, payments: { where: { type: 'refund', status: { notIn: ['failed', 'rejected', 'reversed'] } }, select: { id: true } } },
+      where: { guaranteeStartsAt: { gte: cohortMonth.from, lte: cohortMonth.to } },
+      select: { status: true, guaranteeStartsAt: true, placements: { select: { selectedAt: true } }, payments: { where: { type: 'refund', status: { notIn: ['failed', 'rejected', 'reversed'] } }, select: { id: true } } },
     });
-    const placedWithin = cohort.filter((c) => c.placements.some((p) => p.selectedAt && c.paymentReceivedAt && p.selectedAt.getTime() - c.paymentReceivedAt.getTime() <= policy.jobSeekerGuaranteeDays * DAY_MS)).length;
+    const placedWithin = cohort.filter((c) => c.placements.some((p) => p.selectedAt && c.guaranteeStartsAt && p.selectedAt.getTime() - c.guaranteeStartsAt.getTime() <= policy.jobSeekerGuaranteeDays * DAY_MS)).length;
     const refunded = cohort.filter((c) => c.payments.length > 0).length;
     const deactivated = cohort.filter((c) => c.status === 'deactivated').length;
     const placementCount = totals.placementCount;

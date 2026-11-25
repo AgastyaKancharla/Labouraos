@@ -79,12 +79,13 @@ describe('A refunded job seeker leaves the pool and can pay again', () => {
         maxSalary: 2500000,
         preferredCallWindowStart: '09:00',
         preferredCallWindowEnd: '21:00',
-        paymentReceivedAt: paidAt,
+        paymentReceivedAt: paidAt, guaranteeStartsAt: paidAt,
       },
     });
     seekerIds.push(seeker.id);
-    // He paid once, so his ID was verified (the gate before any ₹499, L-5).
+    // His ID was verified at that registration (rev 211: his 30 days started then).
     await giveVerifiedId(prisma, seeker.id);
+    await prisma.identityVerification.updateMany({ where: { jobSeekerId: seeker.id }, data: { verifiedAt: paidAt } });
     await prisma.payment.create({
       data: {
         code: await idService.generateCode('payment'),
@@ -148,6 +149,8 @@ describe('A refunded job seeker leaves the pool and can pay again', () => {
     const active = await prisma.jobSeeker.findUniqueOrThrow({ where: { id: seeker.id } });
     expect(active).toMatchObject({ status: 'active', hitCount: 0 });
     expect(active.paymentReceivedAt?.getTime()).toBe(paidAgainAt.getTime());
+    // Rev 211: his ID is already verified, so the new 30 days start at that payment.
+    expect(active.guaranteeStartsAt?.getTime()).toBe(paidAgainAt.getTime());
     const hits = await prisma.jobSeekerHit.findMany({ where: { jobSeekerId: seeker.id } });
     expect(hits.every((h) => h.supersededAt !== null)).toBe(true);
     expect((await matching.jobsForSeeker(seeker.id, { page: 1 })).blockedReason).not.toBe('not_active');

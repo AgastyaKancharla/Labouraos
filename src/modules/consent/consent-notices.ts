@@ -1,6 +1,7 @@
 /**
- * The job seeker's six itemised consent ticks — notice version 1.2, taken word
- * for word from Job Seeker Terms v1.1, Part B (Master Guide rev 176, 15 Nov).
+ * The job seeker's six itemised consent ticks — taken word for word from Job
+ * Seeker Terms v1.1, Part B (notice 1.2, Master Guide rev 176, 15 Nov), unchanged
+ * in notice 1.3 (rev 211), which adds GUARANTEE_START_NOTICE above them.
  * `withdrawal` is the document's "If you withdraw it later" column.
  *
  * The English is the owner-approved text (English only, rev 193). Consents
@@ -8,6 +9,13 @@
  * person accepts 1.2 (re-consent, legal-document.service.ts).
  */
 export type ConsentNotice = { title: string; description: string; withdrawal: string };
+
+/**
+ * Notice version 1.3 (Master Guide rev 211, "Decided 25 Nov"): the line every consent page shows a job
+ * seeker above the ticks, word for word. The order is Consent → Selfie → Payment → ID check, so the
+ * 30 days wait for the ID check. Someone who consented under 1.2 is asked again (re-consent).
+ */
+export const GUARANTEE_START_NOTICE = 'Your 30 days start only after your government ID is verified. Until then your registration is paused.';
 
 export const CONSENT_NOTICES: Record<string, Record<'en', ConsentNotice>> = {
   job_matching: {

@@ -13,6 +13,7 @@ import { CARD_PHOTO_MESSAGES, checkCardPhoto } from './id-card-image';
 import { AADHAAR_ONLY_BY_QR, isOtherIdMethod, OTHER_ID_METHODS, OtherIdMethod } from './id-methods';
 import { OtherIdApprovalService, OtherIdSubjectType } from './other-id-approval.service';
 import { OtherIdDecisionHooks, OtherIdFollowUp } from './other-id-decision-hooks';
+import { JobSeekerFlowEvents } from '../job-seeker/job-seeker-flow-events';
 import { UNDER_18_STOP_MESSAGE, Under18StopService } from './under18-stop.service';
 
 /** What a typed number must look like (spaces ignored, capitals). */
@@ -98,12 +99,14 @@ export class OtherIdService {
     private readonly approvals: OtherIdApprovalService,
     @Optional() private readonly flags?: ReviewFlagService,
     @Optional() private readonly decisionHooks?: OtherIdDecisionHooks,
+    @Optional() private readonly flowEvents?: JobSeekerFlowEvents,
   ) {}
 
   /**
    * After a decision has been saved (called by the deciders once their check is recorded): an
-   * approved other ID sends the person's next-step link by itself (22 Nov: the ₹499 payment link to a
-   * job seeker who hasn't paid, the same way as Resend). Never undoes or fails the decision.
+   * approved other ID runs the follow-up registered for its subject type (rev 211: a job seeker who
+   * has paid gets his 30 days started and "your 30 days have started"; the 22 Nov automatic payment
+   * link is gone). Never undoes or fails the decision.
    */
   async afterDecision(
     subjectType: OtherIdSubjectType,
@@ -112,6 +115,15 @@ export class OtherIdService {
     actor: { id: string; role: string },
     now = new Date(),
   ): Promise<OtherIdFollowUp> {
+    // Rev 211: a rejected other ID of a job seeker who has paid tells him what went wrong and how a refund works.
+    if (otherIdDecided === 'failed' && subjectType === 'job_seeker' && this.flowEvents) {
+      const rejected = await this.prisma.identityVerification.findFirst({
+        where: { jobSeekerId: subjectId, vendor: 'team_lead_check', status: 'failed' },
+        orderBy: { updatedAt: 'desc' },
+        select: { id: true },
+      });
+      if (rejected) await this.flowEvents.idFailed({ jobSeekerId: subjectId, verificationId: rejected.id, result: 'rejected', now });
+    }
     if (otherIdDecided !== 'verified' || !this.decisionHooks) return { status: 'none', reason: null };
     return this.decisionHooks.approved({ subjectType, subjectId, actor, now });
   }

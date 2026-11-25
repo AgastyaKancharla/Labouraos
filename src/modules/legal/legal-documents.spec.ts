@@ -46,12 +46,12 @@ const EMPTY_COMPANY: LegalCompanyDetails = legalCompanyFrom({ companyLegalName: 
 
 const text = (html: string) => html.replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
 
-describe('Legal documents v1.1 (Master Guide rev 176)', () => {
-  it('has the approved versions: job seeker terms 1.1, business agreement 1.1, referral partner terms 1.0, consent notice 1.2', () => {
-    expect(LEGAL_DOCUMENT_VERSIONS).toEqual({ job_seeker_terms: '1.1', business_agreement: '1.2', referral_terms: '1.0' });
+describe('Legal documents (Master Guide rev 176; job seeker terms v1.2 and business agreement v1.2, rev 211)', () => {
+  it('has the approved versions: job seeker terms 1.2 (rev 211), business agreement 1.2 (rev 211), referral partner terms 1.0, consent notice 1.3 (rev 211)', () => {
+    expect(LEGAL_DOCUMENT_VERSIONS).toEqual({ job_seeker_terms: '1.2', business_agreement: '1.2', referral_terms: '1.0' });
     expect(BUSINESS_AGREEMENT_VERSION).toBe('1.2');
     expect(REFERRAL_TERMS_VERSION).toBe('1.0');
-    expect(DEFAULT_NOTICE_VERSION).toBe('1.2');
+    expect(DEFAULT_NOTICE_VERSION).toBe('1.3');
   });
 
   it.each(LEGAL_DOCUMENT_KEYS.flatMap((key) => LEGAL_LANGUAGES.map((lang) => [key, lang] as const)))('%s in %s renders with every placeholder filled', (key, lang) => {
@@ -77,7 +77,17 @@ describe('Legal documents v1.1 (Master Guide rev 176)', () => {
   it('the English is the owner-approved text: every clause of the documents is there, numbers from Settings', () => {
     const src = '/home/claude/status/legal';
     const js = text(renderLegalDocument('job_seeker_terms', 'en', NUMBERS, EMPTY_COMPANY).html);
-    expect(js).toContain('within 30 days of your ₹499 reaching Laboura\'s bank');
+    // v1.2 (rev 211): the 30 days start when he is paid AND his ID is verified.
+    expect(js).toContain('within 30 days of your registration being complete — your ₹499 in Laboura\'s bank and your ID verified');
+    expect(js).toContain('Your 30 days start only after your government ID is verified. Until then your registration is paused.');
+    expect(js).toContain('5.4 Your 30 days start when both of these are done: your ₹499 is confirmed in Laboura\'s bank, and your ID is verified');
+    // The link's steps in the new order: the terms and payment before the ID check.
+    expect(js.indexOf('Terms and payment: you see your exact guarantee terms')).toBeGreaterThan(-1);
+    expect(js.indexOf('Terms and payment: you see your exact guarantee terms')).toBeLessThan(js.indexOf('ID check: Aadhaar Secure QR'));
+    expect(js).toContain('9.5 Refund before your ID is verified.');
+    expect(js).toContain('contact Laboura and ask for the full ₹499 back');
+    expect(js).toContain('There is no refund if your ID was forged or altered');
+    expect(js).toContain('A forged or altered ID also means no refund of the ₹499 before your ID check passed');
     expect(js).toContain('3 hits switch off (deactivate) your profile.');
     expect(js).toContain('You have 48 hours to reply.');
     expect(js).toContain('Laboura pays you ₹200');
@@ -105,7 +115,7 @@ describe('Legal documents v1.1 (Master Guide rev 176)', () => {
 
   it('a change in Settings changes the text (no number written in the code)', () => {
     const doc = text(renderLegalDocument('job_seeker_terms', 'en', { ...NUMBERS, activationFeePaise: 59_900, jobSeekerGuaranteeDays: 45 }, EMPTY_COMPANY).html);
-    expect(doc).toContain('within 45 days of your ₹599');
+    expect(doc).toContain('within 45 days of your registration being complete — your ₹599');
     expect(doc).not.toContain('₹499');
     const bz = text(renderLegalDocument('business_agreement', 'en', { ...NUMBERS, placementFeePercent: 40 }, EMPTY_COMPANY).html);
     expect(bz).toContain('fee ₹4,000 + GST ₹720 = ₹4,720');

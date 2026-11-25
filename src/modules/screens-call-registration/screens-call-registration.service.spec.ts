@@ -46,7 +46,7 @@ const seekerRow = {
   minSalary: 1300000,
   maxSalary: 1600000,
   status: 'lead',
-  paymentReceivedAt: null as Date | null,
+  paymentReceivedAt: null as Date | null, guaranteeStartsAt: null as Date | null,
   trades: [
     { trade: 'Housekeeping', yearsExperience: 3, isPrimary: true },
     { trade: 'Laundry / ironing', yearsExperience: 2, isPrimary: false },
@@ -203,7 +203,7 @@ describe('ScreensCallRegistrationService', () => {
 
     it('shows an active job seeker with the 30-day end date once the bank confirmed the ₹499', async () => {
       const paidAt = new Date('2026-11-09T05:50:00.000Z');
-      const prisma = seekerPrisma({ paymentReceivedAt: paidAt, status: 'active' });
+      const prisma = seekerPrisma({ paymentReceivedAt: paidAt, guaranteeStartsAt: paidAt, status: 'active' });
       prisma.consent.findMany.mockResolvedValue(
         ['job_matching', 'profile_sharing', 'call_recording', 'aadhaar_verification', 'job_updates'].map((purpose) => ({ purpose })),
       );

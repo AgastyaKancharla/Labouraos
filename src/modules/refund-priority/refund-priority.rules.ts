@@ -38,6 +38,8 @@ export function priorityBucket(daysLeft: number, windowDays: number): PriorityBu
 export interface PriorityInput {
   status: string;
   paymentReceivedAt: Date | null;
+  /** Rev 211: when his 30 days started (paid and ID passed); the window counts from here. */
+  guaranteeStartsAt: Date | null;
   hits: Array<{ reason: string; reversedAt: Date | null }>;
   payments: Array<{ type: string; status: string; createdAt?: Date }>;
   interviews: Array<{ status: string; offerSentAt?: Date | null }>;
@@ -58,8 +60,9 @@ export function refundPriorityOf(
   windowDays: number,
 ): { priority: boolean; daysLeft: number | null } {
   const paidAt = seeker.paymentReceivedAt;
-  if (!paidAt || SEEKER_ENDED_STATUSES.includes(seeker.status)) return { priority: false, daysLeft: null };
-  const daysLeft = daysLeftOn(new Date(paidAt.getTime() + guaranteeDays * DAY_MS), now);
+  const startsAt = seeker.guaranteeStartsAt;
+  if (!paidAt || !startsAt || SEEKER_ENDED_STATUSES.includes(seeker.status)) return { priority: false, daysLeft: null };
+  const daysLeft = daysLeftOn(new Date(startsAt.getTime() + guaranteeDays * DAY_MS), now);
   if (!priorityBucket(daysLeft, windowDays)) return { priority: false, daysLeft };
   if (seeker.hits.some((hit) => !hit.reversedAt && REFUND_ENDING_HITS.includes(hit.reason))) {
     return { priority: false, daysLeft };

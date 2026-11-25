@@ -104,6 +104,8 @@ export interface SeekerPage {
   row: SeekerRowState;
   hits: number;
   guarantee: GuaranteeDay | null;
+  /** Rev 211: paid, and the ID check has not passed — "Paid, waiting for ID" (older servers leave it out). */
+  paidWaitingForId?: boolean;
   nextInterviewAt: string | null;
   interviews: { id: string; code: string; startsAt: string; status: string; result: string | null; businessName: string; trade: string }[];
   placements: { id: string; code: string; status: string; joiningDate: string | null; businessName: string; trade: string }[];

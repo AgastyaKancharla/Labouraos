@@ -98,7 +98,7 @@ describe('21 Nov fixes: call work and leads', () => {
         status: data.status ?? 'active',
         registeredByStaffId: data.registeredByStaffId ?? null,
         assignedStaffId: data.assignedStaffId ?? null,
-        paymentReceivedAt: data.paidDaysAgo !== undefined ? new Date(NOW.getTime() - data.paidDaysAgo * DAY) : null,
+        paymentReceivedAt: data.paidDaysAgo !== undefined ? new Date(NOW.getTime() - data.paidDaysAgo * DAY) : null, guaranteeStartsAt: data.paidDaysAgo !== undefined ? new Date(NOW.getTime() - data.paidDaysAgo * DAY) : null,
         trades: { create: { trade: 'Electrician', isPrimary: true } },
       },
     });
@@ -531,7 +531,8 @@ describe('21 Nov fixes: call work and leads', () => {
     for (const purpose of ['profile_sharing', 'aadhaar_verification', 'job_updates']) {
       await prisma.consent.create({ data: { subjectType: 'job_seeker', subjectId: waiting.id, purpose, noticeVersion: 'fix-21nov', granted: true, language: 'en', method: 'sms_link', grantedAt: NOW } });
     }
-    await prisma.jobSeeker.update({ where: { id: waiting.id }, data: { photoStoragePath: `job-seekers/${waiting.id}/selfie.jpg` } });
+    // Rev 211: paid, and the ID check waits for the Team Lead ("paid, waiting for ID").
+    await prisma.jobSeeker.update({ where: { id: waiting.id }, data: { photoStoragePath: `job-seekers/${waiting.id}/selfie.jpg`, status: 'paid_waiting_id', paymentReceivedAt: NOW } });
     await prisma.identityVerification.create({ data: { jobSeekerId: waiting.id, method: 'other_id', vendor: 'team_lead', status: 'pending' } });
     await prisma.publicLink.create({
       data: { tokenHash: crypto.randomBytes(16).toString('hex'), purpose: 'registration', subjectType: 'job_seeker', subjectId: waiting.id, phone: waiting.phone, expiresAt: new Date(NOW.getTime() + DAY) },

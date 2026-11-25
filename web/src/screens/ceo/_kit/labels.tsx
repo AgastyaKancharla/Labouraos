@@ -5,6 +5,8 @@ export const SEEKER_STATUS: Record<string, { label: string; tone: StatusTone }> 
   lead: { label: 'Registered, not paid', tone: 'muted' },
   consented: { label: 'Consent given', tone: 'muted' },
   pending_activation: { label: 'Paid — confirming', tone: 'warn' },
+  // Rev 211 (25 Nov): paid, the ID check has not passed — not active, the 30 days have not started.
+  paid_waiting_id: { label: 'Paid, waiting for ID', tone: 'warn' },
   active: { label: 'Active', tone: 'info' },
   paused: { label: 'Paused', tone: 'warn' },
   deactivated: { label: 'Deactivated', tone: 'danger' },

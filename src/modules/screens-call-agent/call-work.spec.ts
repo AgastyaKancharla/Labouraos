@@ -83,7 +83,7 @@ describe('Call agent console: work queue, Call next, search, live channel, no-an
         preferredCallWindowEnd: '21:00',
         status: data.status ?? 'active',
         registeredByStaffId: data.registeredByStaffId ?? null,
-        paymentReceivedAt: data.paidDaysAgo !== undefined ? new Date(NOON_ISH.getTime() - data.paidDaysAgo * DAY) : null,
+        paymentReceivedAt: data.paidDaysAgo !== undefined ? new Date(NOON_ISH.getTime() - data.paidDaysAgo * DAY) : null, guaranteeStartsAt: data.paidDaysAgo !== undefined ? new Date(NOON_ISH.getTime() - data.paidDaysAgo * DAY) : null,
         trades: { create: { trade: 'Electrician', isPrimary: true } },
       },
     });

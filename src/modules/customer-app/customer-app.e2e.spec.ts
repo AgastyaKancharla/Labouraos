@@ -503,7 +503,7 @@ describe('Customer app API', () => {
         .expect(201);
       const referral = await prisma.referral.findUniqueOrThrow({ where: { code: res.body.code } });
       expect(referral.registeredByStaffId).toBeNull();
-      await agentJobSeeker(newPhone(), { name: 'Suresh Kumar Rao', referredById: referral.id, paymentReceivedAt: new Date() });
+      await agentJobSeeker(newPhone(), { name: 'Suresh Kumar Rao', referredById: referral.id, paymentReceivedAt: new Date(), guaranteeStartsAt: new Date() });
       const home = await auth(http().get(`${API}/me/profiles/${res.body.profileId}/home`), session.accessToken).expect(200);
       expect(home.body.referred).toEqual([expect.objectContaining({ firstName: 'Suresh', stage: 'paid' })]);
       expect(JSON.stringify(home.body.referred)).not.toMatch(/Kumar|Rao|\+91|phone/);
@@ -569,7 +569,7 @@ describe('Customer app API', () => {
   describe('delete my account', () => {
     it('needs a fresh OTP and, during a running guarantee, the refund warning', async () => {
       const phone = newPhone();
-      await agentJobSeeker(phone, { status: 'active', paymentReceivedAt: new Date() });
+      await agentJobSeeker(phone, { status: 'active', paymentReceivedAt: new Date(), guaranteeStartsAt: new Date() });
       const session = await signIn(phone);
       const info = await auth(http().get(`${API}/me/deletion`), session.accessToken).expect(200);
       expect(info.body).toEqual(expect.objectContaining({ guaranteeRunning: true, endsRefund: true, openRequest: null }));

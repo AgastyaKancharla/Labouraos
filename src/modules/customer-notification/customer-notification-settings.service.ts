@@ -145,7 +145,8 @@ export class CustomerNotificationSettingsService {
         where: {
           id: { in: jobSeekerIds },
           status: 'active',
-          paymentReceivedAt: policy
+          // Rev 211: his 30 days run from guaranteeStartsAt (paid and ID passed).
+          guaranteeStartsAt: policy
             ? { not: null, gt: new Date(now.getTime() - policy.jobSeekerGuaranteeDays * DAY_MS) }
             : { not: null },
         },

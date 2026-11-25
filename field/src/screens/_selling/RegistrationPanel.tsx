@@ -25,7 +25,7 @@ const NEXT_STEP_KEYS: Record<JobSeekerStatus['nextStep'], MessageKey> = {
   selfie: 'fa10b.step.selfie',
   id_check: 'fa10b.step.idCheck',
   payment: 'fa10b.step.payment',
-  complete: 'fa10b.step.payment',
+  complete: 'fa10b.step.idCheck',
 };
 
 /** Each step's mark in a coloured disc: done green, stuck red, in progress gold, not started grey-navy. */
@@ -38,12 +38,12 @@ function mark(step: Step): { icon: string; color: string; fill: string } {
 
 /**
  * The registration status panel shared by FA10b (just saved) and FA10c
- * (following the link): Phone verified, Consent, Selfie, ID check, ₹499 —
+ * (following the link): Phone verified, Consent, Selfie, ₹499, ID check (rev 211 order) —
  * each done / sent / stuck / not started, with the reason when stuck.
  * The same endpoints as the call agent's panel (CA08b/c): one SMS link,
  * valid 48 hours, that resumes at the first unfinished step; a payment-only
  * link to another number once payment is reached. Sending needs signal.
- * At the ID step, with his consent given on his link, "Scan Aadhaar QR" lets
+ * From the payment step on (rev 211: an ID check before payment still counts), with his consent given on his link, "Scan Aadhaar QR" lets
  * the field agent scan the QR on his Aadhaar card live (guide, 14 Nov), or
  * "Photo of another ID" photograph his PAN / driving licence / voter ID card
  * live for the Team Lead's check (rev 154).
@@ -104,6 +104,8 @@ function Panel({ status: s, variant, refetch: refetchStatus }: { status: JobSeek
         : '',
     },
     { key: 'selfie', label: t('fa10b.selfie'), step: s.steps.selfie, detail: s.steps.selfie.state === 'done' ? t('fa10b.selfieDone') : '' },
+    // Rev 211: Consent → Selfie → Payment → ID check.
+    { key: 'payment', label: t('fa10b.payment'), step: s.steps.payment, detail: s.steps.payment.state === 'confirming' ? t('fa10b.confirming') : '' },
     {
       key: 'idCheck',
       label: t('fa10b.idCheck'),
@@ -111,8 +113,9 @@ function Panel({ status: s, variant, refetch: refetchStatus }: { status: JobSeek
       // Another ID waiting for the Team Lead (rev 154): say so instead of "in progress".
       detail: s.steps.idCheck.state === 'in_progress' && s.steps.idCheck.reason ? t('fa10b.idWaiting') : '',
     },
-    { key: 'payment', label: t('fa10b.payment'), step: s.steps.payment, detail: s.steps.payment.state === 'confirming' ? t('fa10b.confirming') : '' },
   ];
+  // Rev 211: the ID check comes after the payment, but a field agent may still scan it in person before (it counts).
+  const canCheckId = s.stage !== 'active' && s.steps.consent.state === 'done' && s.steps.idCheck.state !== 'done' && (s.nextStep === 'payment' || s.nextStep === 'id_check');
   const stateText = (step: Step) =>
     step.state === 'done'
       ? step.time ? formatTimeIst(step.time) : t('fa10b.done')
@@ -125,7 +128,15 @@ function Panel({ status: s, variant, refetch: refetchStatus }: { status: JobSeek
     <>
       <Banner
         tone="ok"
-        title={variant === 'saved' && !linkLive ? t('fa10b.saved', { code: s.code }) : s.stage === 'active' ? t('fa10b.active', { code: s.code }) : t('fa10b.linkSent')}
+        title={
+          variant === 'saved' && !linkLive
+            ? t('fa10b.saved', { code: s.code })
+            : s.stage === 'active'
+              ? t('fa10b.active', { code: s.code })
+              : s.stage === 'paid_waiting_id'
+                ? t('fa10b.paidWaitingId', { code: s.code })
+                : t('fa10b.linkSent')
+        }
         testID="seeker-banner"
       />
       {s.terms?.needsReconsent ? (
@@ -152,7 +163,7 @@ function Panel({ status: s, variant, refetch: refetchStatus }: { status: JobSeek
           );
         })}
       </Card>
-      {s.stage !== 'active' && s.nextStep === 'id_check' && s.steps.consent.state === 'done' ? (
+      {canCheckId ? (
         scanOpen ? (
           <AadhaarQrScan jobSeekerId={s.id} onFinished={refetch} onClose={() => setScanOpen(false)} />
         ) : otherIdOpen ? (
@@ -204,8 +215,8 @@ function Panel({ status: s, variant, refetch: refetchStatus }: { status: JobSeek
               <Text>{t('fa10b.previewBody')}</Text>
               <Text>{t('fa10b.preview.consent')}</Text>
               <Text>{t('fa10b.preview.selfie')}</Text>
-              <Text>{t('fa10b.preview.id')}</Text>
               <Text>{t('fa10b.preview.payment')}</Text>
+              <Text>{t('fa10b.preview.id')}</Text>
               <Text variant="muted">{t('fa10b.preview.note')}</Text>
             </Card>
           ) : null}

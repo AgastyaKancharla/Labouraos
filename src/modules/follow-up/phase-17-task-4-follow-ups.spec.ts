@@ -78,7 +78,7 @@ describe('Phase 17 Task 4: Follow-up calls, the refund check and catching bypass
     name: 'Ravi Kumar',
     status: 'active',
     city: 'Bengaluru',
-    paymentReceivedAt: new Date('2026-10-01T10:00:00.000Z'),
+    paymentReceivedAt: new Date('2026-10-01T10:00:00.000Z'), guaranteeStartsAt: new Date('2026-10-01T10:00:00.000Z'),
     registeredByStaffId: sampleStaff.id,
     registeredBy: sampleStaff,
     hits: [],
@@ -229,7 +229,7 @@ describe('Phase 17 Task 4: Follow-up calls, the refund check and catching bypass
     it('creates refund_check approaching day 30 guarantee expiry for eligible candidate', async () => {
       const candidate = {
         ...sampleJobSeeker,
-        paymentReceivedAt: new Date('2026-10-01T10:00:00.000Z'),
+        paymentReceivedAt: new Date('2026-10-01T10:00:00.000Z'), guaranteeStartsAt: new Date('2026-10-01T10:00:00.000Z'),
       };
       prisma.jobSeeker.findMany.mockResolvedValue([candidate]);
 
@@ -492,6 +492,7 @@ describe('Phase 17 Task 4: Follow-up calls, the refund check and catching bypass
         {
           code: 'JS-00001',
           paymentReceivedAt: new Date('2026-10-01T10:00:00.000Z'),
+          guaranteeStartsAt: new Date('2026-10-01T10:00:00.000Z'),
           status: 'active',
           hasOfferRejectedHit: false,
           hasExistingRefund: false,
@@ -511,6 +512,7 @@ describe('Phase 17 Task 4: Follow-up calls, the refund check and catching bypass
         {
           code: 'JS-00001',
           paymentReceivedAt: new Date('2026-10-01T10:00:00.000Z'),
+          guaranteeStartsAt: new Date('2026-10-01T10:00:00.000Z'),
           status: 'active',
           hasOfferRejectedHit: false,
           hasExistingRefund: false,
@@ -530,6 +532,7 @@ describe('Phase 17 Task 4: Follow-up calls, the refund check and catching bypass
         {
           code: 'JS-00001',
           paymentReceivedAt: new Date('2026-10-01T10:00:00.000Z'),
+          guaranteeStartsAt: new Date('2026-10-01T10:00:00.000Z'),
           status: 'active',
           hasOfferRejectedHit: false,
           hasExistingRefund: false,
@@ -549,6 +552,7 @@ describe('Phase 17 Task 4: Follow-up calls, the refund check and catching bypass
         {
           code: 'JS-00001',
           paymentReceivedAt: new Date('2026-10-01T10:00:00.000Z'),
+          guaranteeStartsAt: new Date('2026-10-01T10:00:00.000Z'),
           status: 'active',
           hasOfferRejectedHit: false,
           hasExistingRefund: false,

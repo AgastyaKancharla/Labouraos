@@ -1,5 +1,6 @@
 import { withSendingRules } from '../../test-support/messaging-double';
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { idPassedMock } from '../../test-support/id-passed-mock';
 import * as crypto from 'crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -71,6 +72,7 @@ describe('Money rules (payment service)', () => {
         findUnique: jest.fn().mockImplementation(({ where }) => Promise.resolve(staff[where.id] ?? null)),
         findFirst: jest.fn().mockResolvedValue({ id: 'ceo-1' }),
       },
+      identityVerification: idPassedMock(),
       jobSeeker: { update: jest.fn() },
       $transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(prisma)),
     };

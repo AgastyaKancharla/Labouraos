@@ -22,15 +22,16 @@ import '../_registration/registration.css';
 /**
  * Registration step panel — designs CA08b-Registered (saved, nothing sent),
  * CA08c-InProgress (ticks update live while he works through the link) and
- * CA08f-Active (every step green, 30 days running). Polls every 5 s until
- * the registration is complete.
+ * CA08f-Active (every step green, 30 days running). Rev 211: Consent →
+ * Selfie → Payment → ID check; paid with the ID check open shows "Paid,
+ * waiting for ID". Polls every 5 s until the registration is complete.
  */
 const NEXT_STEP_LABEL: Record<JobSeekerStatus['nextStep'], MessageKey> = {
   consent: 'reg.status.step.consent',
   selfie: 'reg.status.step.selfie',
   id_check: 'reg.status.step.idCheck',
   payment: 'reg.status.step.payment',
-  complete: 'reg.status.step.payment',
+  complete: 'reg.status.step.idCheck',
 };
 
 function time(step: Step) {
@@ -91,7 +92,9 @@ export default function RegistrationProgress() {
   ]
     .filter(Boolean)
     .join(' · ');
-  const reachedPayment = [steps.consent, steps.selfie, steps.idCheck].every((step) => step.state === 'done');
+  // Rev 211: Consent → Selfie → Payment → ID check — payment no longer waits for the ID check.
+  const reachedPayment = [steps.consent, steps.selfie].every((step) => step.state === 'done');
+  const paidWaitingForId = s.stage === 'paid_waiting_id';
   const linkLiveUntil = sent?.expiresAt ?? s.registrationLinkExpiresAt;
   const anySent = Boolean(linkLiveUntil) || s.stage !== 'registered';
   const notSent = t('reg.status.notSent');
@@ -139,6 +142,10 @@ export default function RegistrationProgress() {
         <div className="ok" role="status">
           ✓ {t('reg.status.complete', { name: s.name })}
         </div>
+      ) : paidWaitingForId ? (
+        <div className="ok" role="status" data-testid="paid-waiting-id">
+          {t('reg.status.paidWaitingId', { name: s.name })}
+        </div>
       ) : linkLiveUntil ? (
         <div className="ok" role="status">
           ✓ {t('reg.status.linkSent', { phone: s.phone, until: formatDateTimeIST(linkLiveUntil) })}
@@ -179,8 +186,8 @@ export default function RegistrationProgress() {
             }
           />
           <StepRow state={steps.selfie.state} title={`2 · ${t('reg.status.step.selfie')}`} detail={plainDetail(steps.selfie, s.stage === 'active' ? '' : t('reg.status.selfieDone'))} />
-          <StepRow state={steps.idCheck.state} title={`3 · ${t('reg.status.step.idCheck')}`} detail={plainDetail(steps.idCheck, t('reg.status.idDone'))} />
-          <StepRow state={steps.payment.state} title={`4 · ${t('reg.status.step.payment')}`} detail={paymentDetail} />
+          <StepRow state={steps.payment.state} title={`3 · ${t('reg.status.step.payment')}`} detail={paymentDetail} />
+          <StepRow state={steps.idCheck.state} title={`4 · ${t('reg.status.step.idCheck')}`} detail={plainDetail(steps.idCheck, t('reg.status.idDone'))} />
         </ul>
 
         <div className="reg-actions" style={{ marginTop: 14 }}>
@@ -220,10 +227,10 @@ export default function RegistrationProgress() {
             <strong>{t('reg.status.step.selfie')}</strong> — {t('reg.preview.selfie')}
           </li>
           <li>
-            <strong>{t('reg.status.step.idCheck')}</strong> — {t('reg.preview.id')}
+            <strong>{t('reg.status.step.payment')}</strong> — {t('reg.preview.payment')}
           </li>
           <li>
-            <strong>{t('reg.status.step.payment')}</strong> — {t('reg.preview.payment')}
+            <strong>{t('reg.status.step.idCheck')}</strong> — {t('reg.preview.id')}
           </li>
         </ol>
         <p className="muted">{t('reg.preview.note')}</p>
