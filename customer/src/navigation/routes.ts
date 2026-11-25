@@ -24,6 +24,9 @@ export const routes = {
   /** The verification steps in the app's own screens (consent, selfie, ID, ₹499; partner terms/ID/UPI; business agreement). */
   verify: (purpose: 'registration' | 'referral_registration' | 'business_agreement', profileId: string) =>
     `/verify/${purpose}?profileId=${encodeURIComponent(profileId)}`,
+  /** 26 Nov: the owner gives an interview's result (did it happen, selected or not, why). */
+  interviewResult: (profileId: string, interviewId: string) =>
+    `/interview-result?profileId=${encodeURIComponent(profileId)}&interviewId=${encodeURIComponent(interviewId)}`,
   help: '/help',
   privacy: '/privacy',
   deleteAccount: '/delete-account',

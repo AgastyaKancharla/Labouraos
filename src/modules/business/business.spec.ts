@@ -288,7 +288,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
           contactPersonRole: 'manager', contactPersonPhone: branchPhone, otpRequestId: branchOtpRequestId,
         }],
         staffNeededRows: [
-          { trade: 'Cook', headcount: 2, salaryMinPaise: 1800000, salaryMaxPaise: 2500000, shift: 'day', startDate: '2026-12-01' },
+          { trade: 'Cook', headcount: 2, salaryMinPaise: 1800000, salaryMaxPaise: 2500000, shift: 'day', startDate: '2026-12-01', experienceRequiredYears: 2 },
           { trade: `Banner tailor ${timestamp}`, branchName: 'Whitefield outlet', headcount: 1, salaryMinPaise: 1500000, salaryMaxPaise: 1800000, shift: 'day', startDate: '2026-12-02' },
         ],
       }).expect(201);
@@ -297,7 +297,8 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
     expect(response.body.vacancies).toHaveLength(2);
     const cook = response.body.vacancies.find((row: { tradeSkill: string }) => row.tradeSkill === 'Cook');
     const other = response.body.vacancies.find((row: { tradeSkill: string }) => row.tradeSkill.startsWith('Banner tailor'));
-    expect(cook).toMatchObject({ status: 'draft', headcount: 2, branchId: null });
+    expect(cook).toMatchObject({ status: 'draft', headcount: 2, branchId: null, experienceRequiredYears: 2 });
+    expect(other).toMatchObject({ experienceRequiredYears: null });
     const storedBranch = await prisma.businessBranch.findFirst({ where: { businessId: response.body.id } });
     expect(other).toMatchObject({ status: 'draft', branchId: storedBranch?.id });
     expect(await prisma.tradeSuggestionSubject.count({ where: { subjectId: cook.id } })).toBe(0);

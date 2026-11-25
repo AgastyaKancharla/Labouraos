@@ -1,7 +1,7 @@
 import { ApiError } from '@/api/errors';
 import type { MockPersist } from '@/api/mockPersist';
 import type { StepsApi } from './stepsApi';
-import type { LegalDocument, PartnerOpen, RegistrationOpen } from './types';
+import type { LegalDocument, OwnerPhotoState, PartnerOpen, RegistrationOpen } from './types';
 
 /**
  * Pretend link endpoints for EXPO_PUBLIC_API_MODE=mock: every step can be
@@ -24,6 +24,20 @@ export function onMockProfileLookup(lookup: ProfileLookup): void {
   profileLookup = lookup;
 }
 
+/** 26 Nov: the pretend interview a result belongs to (the business Home card), and its answer. */
+export interface MockInterview { id: string; candidateFirstName: string; businessName: string; job: string; startsAt: string; endsAt: string; salaryMinPaise: number | null }
+type InterviewLookup = (interviewId: string) => MockInterview | null;
+type InterviewResultListener = (interviewId: string, result: string, reason: string | null) => void;
+let interviewLookup: InterviewLookup | null = null;
+let interviewResultListener: InterviewResultListener | null = null;
+export function onMockInterview(lookup: InterviewLookup, listener: InterviewResultListener): void {
+  interviewLookup = lookup;
+  interviewResultListener = listener;
+}
+/** The pretend result link names the interview (`mock-iv-<interviewId>`). */
+export const mockInterviewToken = (interviewId: string) => `mock-iv-${interviewId}`;
+const interviewOf = (token: string) => (token.startsWith('mock-iv-') ? token.slice('mock-iv-'.length) : '');
+
 /** The pretend link token names the profile it is for (src/screens/Verify: `mock-link-<profileId>`). */
 export const mockLinkToken = (profileId: string) => `mock-link-${profileId}`;
 const profileOf = (token: string) => (token.startsWith('mock-link-') ? token.slice('mock-link-'.length) : null);
@@ -34,7 +48,7 @@ export function mockStepsApi(delayMs = 300, persist?: MockPersist): StepsApi {
     if (profileId) progressListener?.(profileId, event);
   };
   let ready: Promise<void> = Promise.resolve();
-  const save = () => persist?.save(JSON.stringify({ reg, partner, paidAt, signed, reported }));
+  const save = () => persist?.save(JSON.stringify({ reg, partner, paidAt, signed, reported, ownerPhotos }));
   const wait = <T>(make: () => T): Promise<T> => new Promise((resolve, reject) => void ready.then(() => setTimeout(() => {
     try {
       resolve(make());
@@ -73,6 +87,7 @@ export function mockStepsApi(delayMs = 300, persist?: MockPersist): StepsApi {
   };
   let paidAt: number | null = null;
   let signed: { signedAt: string; signedName: string } | null = null;
+  let ownerPhotos: OwnerPhotoState = { selfie: false, shop: false, shopKind: 'shop_board', shopKinds: ['shop_board', 'fssai_with_owner'] };
   /** The job seeker's link token, so the bank's pretend confirmation can be reported too. */
   let regToken: string | null = null;
   let reported = false;
@@ -81,12 +96,13 @@ export function mockStepsApi(delayMs = 300, persist?: MockPersist): StepsApi {
       .load()
       .then((json) => {
         if (!json) return;
-        const saved = JSON.parse(json) as { reg: RegistrationOpen; partner: PartnerOpen; paidAt: number | null; signed: typeof signed; reported: boolean };
+        const saved = JSON.parse(json) as { reg: RegistrationOpen; partner: PartnerOpen; paidAt: number | null; signed: typeof signed; reported: boolean; ownerPhotos?: OwnerPhotoState };
         Object.assign(reg, saved.reg);
         Object.assign(partner, saved.partner);
         paidAt = saved.paidAt;
         signed = saved.signed;
         reported = saved.reported;
+        if (saved.ownerPhotos) ownerPhotos = saved.ownerPhotos;
       })
       .catch(() => undefined);
   }
@@ -118,7 +134,7 @@ export function mockStepsApi(delayMs = 300, persist?: MockPersist): StepsApi {
     if (paidAt && Date.now() - paidAt > 4000 && reg.payment.state !== 'confirmed') {
       reg.payment = { ...reg.payment, state: 'confirmed', confirmedAt: new Date().toISOString(), guaranteeEndsAt: new Date(Date.now() + 30 * 86_400_000).toISOString() };
       reg.steps.payment = true;
-      reg.currentStep = 'complete';
+      reg.currentStep = reg.steps.idCheck ? 'complete' : 'id_check';
     }
     if (reg.payment.state === 'confirmed' && !reported && regToken) {
       reported = true;
@@ -153,7 +169,8 @@ export function mockStepsApi(delayMs = 300, persist?: MockPersist): StepsApi {
         needCode(requestId);
         report(token, 'selfie');
         reg.steps.selfie = true;
-        reg.currentStep = 'id_check';
+        // Rev 211: Consent → Selfie → Payment → ID check.
+        reg.currentStep = reg.steps.payment ? 'id_check' : 'payment';
         return {};
       }),
     registrationAadhaarQr: (token, requestId) =>
@@ -162,7 +179,7 @@ export function mockStepsApi(delayMs = 300, persist?: MockPersist): StepsApi {
         report(token, 'id_check');
         reg.steps.idCheck = true;
         reg.idCheck = { waitingForTeamLead: false, lastResult: 'verified' };
-        reg.currentStep = 'payment';
+        reg.currentStep = reg.steps.payment ? 'complete' : 'payment';
         return {
           verificationId: 'v-1', method: 'aadhaar_qr' as const, status: 'verified' as const, result: 'verified' as const, verifiedByUidai: true, nameMatches: true, isAdult: true,
           phoneLinked: 'linked' as const, maskedReference: 'XXXX-XXXX-1234', person: { name: 'Pretend name (test app: your card is not read)', dateOfBirth: '1998-08-15', gender: 'M' as const }, failureReason: null, offerOtherId: false,
@@ -272,6 +289,7 @@ export function mockStepsApi(delayMs = 300, persist?: MockPersist): StepsApi {
     agreementDetails: (token) =>
       wait(() => {
         if (signed) throw new ApiError({ status: 400, messages: ['This link has already been used'] });
+        const photosNow = ownerPhotos;
         // The business you registered in the test app, not a made-up one (Agastya, 22 Nov: "Zoom Foods" showed "Sri Sai …").
         const profileId = profileOf(token);
         const who = profileId ? profileLookup?.(profileId) : null;
@@ -285,6 +303,7 @@ export function mockStepsApi(delayMs = 300, persist?: MockPersist): StepsApi {
           ownerName: who?.ownerName ?? null,
           terms: { feePercent: 50, gstPercent: 18, noBypassMonths: 12, noBypassPenaltyPercent: 50 },
           guarantee: { replacementWindowDays: 60, maxFreeReplacements: 2, replacementSearchDays: 15 },
+          ownerPhotos: photosNow,
         };
       }),
     agreementSigned: (token) =>
@@ -293,9 +312,33 @@ export function mockStepsApi(delayMs = 300, persist?: MockPersist): StepsApi {
         const who = profileId ? profileLookup?.(profileId) : null;
         return { signedAt: signed?.signedAt ?? new Date().toISOString(), signedName: signed?.signedName ?? '', businessName: who?.name ?? 'Your business' };
       }),
+    agreementOwnerPhoto: (_token, kind, _photo, place = {}, shopKind) =>
+      wait(() => {
+        ownerPhotos = { ...ownerPhotos, [kind]: true, shopKind: shopKind ?? ownerPhotos.shopKind };
+        void place;
+        return { ownerPhotos };
+      }),
+    interviewResultDetails: (token) =>
+      wait(() => {
+        const iv = interviewLookup?.(interviewOf(token));
+        if (!iv) throw new ApiError({ status: 400, messages: ['Invalid interview link token'] });
+        return {
+          candidateFirstName: iv.candidateFirstName, businessName: iv.businessName, job: iv.job, slotStartsAt: iv.startsAt, slotEndsAt: iv.endsAt,
+          resultDueAt: null, vacancySalaryMinPaise: iv.salaryMinPaise, maskedPhone: '******4321', awaitingResult: true,
+          reasons: ['skills', 'experience', 'communication', 'salary_expectation', 'not_suitable', 'other'],
+        };
+      }),
+    sendInterviewResultOtp: () => wait(() => ({ requestId: `otp-${Math.random().toString(36).slice(2, 8)}`, phone: '******4321' })),
+    submitInterviewResult: (token, _r, code, input) =>
+      wait(() => {
+        if (!/^\d{6}$/.test(code)) throw new ApiError({ status: 400, messages: ['The code is not right'] });
+        interviewResultListener?.(interviewOf(token), input.result, input.resultReason ?? null);
+        return { ok: true };
+      }),
     signAgreement: (token, _r, code, signedName) =>
       wait(() => {
         if (!/^\d{6}$/.test(code)) throw new ApiError({ status: 400, messages: ['The code is not right'] });
+        if (!ownerPhotos.selfie || !ownerPhotos.shop) throw new ApiError({ status: 400, messages: ['Take both photos first'], body: { statusCode: 400, code: 'OWNER_PHOTOS_REQUIRED', message: 'Take both photos first' } });
         report(token, 'agreement_signed');
         signed = { signedAt: new Date().toISOString(), signedName };
         return { signedAt: signed.signedAt };

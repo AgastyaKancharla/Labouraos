@@ -33,6 +33,8 @@ export class BusinessStaffNeedDto {
   startDate!: string;
   branchName?: string;
   salaryPeriod?: string;
+  /** Experience needed in years (0 = fresher OK); saved on the draft vacancy. */
+  experienceRequiredYears?: number;
 }
 
 export class CreateBusinessDto {

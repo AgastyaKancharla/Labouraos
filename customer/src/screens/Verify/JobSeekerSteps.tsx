@@ -44,6 +44,7 @@ export function JobSeekerSteps({ token, openInBrowser, browserBusy, onFinished }
   const [codeRanOut, setCodeRanOut] = useState(false);
   const [resumeSeen, setResumeSeen] = useState(false);
   const [paidTapped, setPaidTapped] = useState(false);
+  const [idNow, setIdNow] = useState(false);
   const key = ['verify', 'registration', token, requestId] as const;
   const status = useQuery({
     queryKey: key,
@@ -104,10 +105,12 @@ export function JobSeekerSteps({ token, openInBrowser, browserBusy, onFinished }
     return <Resume status={data} onContinue={() => setResumeSeen(true)} />;
   }
 
-  if (step === 'complete' || (paidTapped && step === 'payment')) {
-    return <Paid status={data} onBackToPay={() => setPaidTapped(false)} onFinished={onFinished} />;
-  }
   const common = { token, requestId, status: data, onCodeExpired: codeExpired, refresh };
+  // Rev 211: paid while the bank confirms → he can do the ID check straight away.
+  if (idNow && !data.steps.idCheck && step !== 'complete') return <IdStep {...common} openInBrowser={openInBrowser} browserBusy={browserBusy} />;
+  if (step === 'complete' || (paidTapped && step === 'payment')) {
+    return <Paid status={data} onBackToPay={() => setPaidTapped(false)} onIdCheck={() => setIdNow(true)} onFinished={onFinished} />;
+  }
   if (step === 'consent') return <ConsentStep {...common} />;
   if (step === 'selfie') return <SelfieStep {...common} />;
   if (step === 'id_check') return <IdStep {...common} openInBrowser={openInBrowser} browserBusy={browserBusy} />;
@@ -230,7 +233,7 @@ function IdStep({ token, requestId, status, onCodeExpired, refresh, openInBrowse
   if (status.stopped === 'under_18' || qrResult?.isAdult === false) {
     return (
       <View style={styles.gap} testID="reg-id-stopped">
-        <StepHeader current={3} total={4} label={t('id.label')} title={t('id.title')} />
+        <StepHeader current={4} total={4} label={t('id.label')} title={t('id.title')} />
         <Banner tone="warn" title={t('id.under18Title')} message={t(qrResult?.dateOfBirthUnreadable ? 'id.dobUnreadable' : 'id.under18Body')} />
       </View>
     );
@@ -242,7 +245,10 @@ function IdStep({ token, requestId, status, onCodeExpired, refresh, openInBrowse
 
   return (
     <View style={styles.gap} testID="reg-id">
-      <StepHeader current={3} total={4} label={t('id.label')} title={t('id.title')} />
+      <StepHeader current={4} total={4} label={t('id.label')} title={t('id.title')} />
+      {status.steps.payment || status.payment.state === 'confirming' ? (
+        <Banner tone="ok" message={t('id.paidNote', { amount: rupees(status.payment.amountPaise) })} testID="reg-id-paid" />
+      ) : null}
       <IdCheckPanel
         busy={busy}
         qrResult={qrResult}
@@ -301,7 +307,7 @@ function PaymentStep({ token, requestId, status, onCodeExpired, refresh, onPaid 
     if (termsCodeExpired) onCodeExpired();
   }, [termsCodeExpired, onCodeExpired]);
 
-  const header = <StepHeader current={4} total={4} label={t('pay.label')} title={t('pay.title', { amount: rupees(status.payment.amountPaise) })} />;
+  const header = <StepHeader current={3} total={4} label={t('pay.label')} title={t('pay.title', { amount: rupees(status.payment.amountPaise) })} />;
   if (status.waitingForTrade) {
     return (
       <View style={styles.gap} testID="reg-pay">
@@ -422,7 +428,7 @@ function PaymentStep({ token, requestId, status, onCodeExpired, refresh, onPaid 
   );
 }
 
-function Paid({ status, onBackToPay, onFinished }: { status: RegistrationOpen; onBackToPay: () => void; onFinished: () => void }) {
+function Paid({ status, onBackToPay, onIdCheck, onFinished }: { status: RegistrationOpen; onBackToPay: () => void; onIdCheck: () => void; onFinished: () => void }) {
   const { t } = useI18n();
   const api = useStepsApi();
   const [utr, setUtr] = useState('');
@@ -452,6 +458,15 @@ function Paid({ status, onBackToPay, onFinished }: { status: RegistrationOpen; o
   return (
     <View style={styles.gap} testID="reg-confirming">
       <Banner tone="warn" title={t('paid.confirmingTitle')} message={t('paid.confirmingBody')} />
+      {!status.steps.idCheck ? (
+        <Card accent="orange">
+          <View style={styles.gap}>
+            <Text variant="bodyStrong">{t('paid.idNextTitle')}</Text>
+            <Text variant="muted">{t('paid.idNext')}</Text>
+            <Button label={t('paid.idNextButton')} onPress={onIdCheck} testID="reg-paid-id-now" />
+          </View>
+        </Card>
+      ) : null}
       <Text variant="muted">{t('paid.noScreenshot')}</Text>
       {payPageToken && !utrSaved ? (
         <View style={styles.gap}>

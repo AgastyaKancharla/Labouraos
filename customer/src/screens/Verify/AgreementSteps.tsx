@@ -10,9 +10,10 @@ import { stepErrorText } from '@/verify/errors';
 import { LegalBox } from '@/verify/LegalBox';
 import { useStepsApi } from '@/verify/StepsApiProvider';
 import { agreementCopyUrl, isLinkUsed } from '@/verify/stepsApi';
-import type { SignedAgreement } from '@/verify/types';
+import type { OwnerPhotoState, SignedAgreement } from '@/verify/types';
 import type { FlowProps } from './JobSeekerSteps';
 import { OtpCodeCard } from '../shared/OtpCodeCard';
+import { OwnerPhotos } from './OwnerPhotos';
 
 /**
  * The business agreement inside the app (P04 / P04b). The owner signs on
@@ -35,6 +36,8 @@ export function AgreementSteps({ token, onFinished }: FlowProps) {
   const [agreeAuthority, setAgreeAuthority] = useState(false);
   const [agreeRecording, setAgreeRecording] = useState(false);
   const name = typedName ?? details.data?.ownerName ?? '';
+  // Rev 211 (B1): the owner's two live photos come first; signing waits for both.
+  const [photos, setPhotos] = useState<OwnerPhotoState | null>(null);
 
   const done = signed ?? signedQuery.data ?? null;
   if (done) {
@@ -53,7 +56,9 @@ export function AgreementSteps({ token, onFinished }: FlowProps) {
   if (details.isLoading || (used && signedQuery.isLoading)) return <LoadingState />;
   if (details.isError || !details.data) return <ErrorState error={signedQuery.error ?? details.error} onRetry={() => void details.refetch()} />;
   const d = details.data;
-  const ready = name.trim().length >= 2 && agreeTerms && agreeAuthority && agreeRecording;
+  const ownerPhotos = photos ?? d.ownerPhotos ?? null;
+  const photosDone = !ownerPhotos || (ownerPhotos.selfie && ownerPhotos.shop);
+  const ready = photosDone && name.trim().length >= 2 && agreeTerms && agreeAuthority && agreeRecording;
   const items: [string, string][] = [
     [t('agree.fee'), t('agree.feeText', { fee: d.terms.feePercent, gst: d.terms.gstPercent })],
     [t('agree.replacement'), t('agree.replacementText', { days: d.guarantee.replacementWindowDays, count: d.guarantee.maxFreeReplacements })],
@@ -71,11 +76,12 @@ export function AgreementSteps({ token, onFinished }: FlowProps) {
         ))}
       </Card>
       <LegalBox summaryHtml={d.agreementSummaryHtml} bodyHtml={d.agreementBodyHtml ?? d.agreementTermsHtml} version={d.version} testID="agree-legal" />
+      {ownerPhotos ? <OwnerPhotos token={token} state={ownerPhotos} onChange={setPhotos} /> : null}
       <TextField label={t('agree.name')} value={name} onChangeText={setName} autoComplete="name" maxLength={80} testID="agree-name" />
       <Checkbox label={t('agree.agreeTerms')} checked={agreeTerms} onChange={setAgreeTerms} testID="agree-tick-terms" />
       <Checkbox label={t('agree.authority')} checked={agreeAuthority} onChange={setAgreeAuthority} testID="agree-tick-authority" />
       <Checkbox label={t('agree.agreeRecording')} checked={agreeRecording} onChange={setAgreeRecording} testID="agree-tick-recording" />
-      <Text variant="muted">{ready ? t('agree.codeSigns', { phone: d.maskedPhone }) : t('agree.fillFirst')}</Text>
+      <Text variant="muted">{ready ? t('agree.codeSigns', { phone: d.maskedPhone }) : !photosDone ? t('owner.missing') : t('agree.fillFirst')}</Text>
       <OtpCodeCard
         testID="agree-otp"
         send={() => api.sendLinkOtp(token)}

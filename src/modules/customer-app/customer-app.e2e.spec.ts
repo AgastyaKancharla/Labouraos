@@ -448,6 +448,69 @@ describe('Customer app API', () => {
       expect(vacancy).toEqual(expect.objectContaining({ belowLegalMinimum: true, ownerToldMinimumWage: true, confirmationMethod: 'in_app', capturedByStaffId: null }));
     });
 
+    it('26 Nov: Home shows the shortlisted candidate and the interview time; the result opens an hour after the start, on the same P05 link', async () => {
+      const phone = newPhone();
+      const session = await signIn(phone);
+      const otpCode = await freshOtp(session.accessToken, 'register');
+      const res = await auth(http().post(`${API}/me/register/business`), session.accessToken)
+        .send({
+          name: `Interview Bakery ${seq}`, contactPersonName: 'Lakshmi', contactPersonRole: 'owner', businessType: 'bakery',
+          locality: 'Jayanagar', pincode: '560041', latitude: 12.93, longitude: 77.58, noDocuments: true, contactMe: true, otp: otpCode,
+        })
+        .expect(201);
+      const business = await prisma.business.findUniqueOrThrow({ where: { code: res.body.code } });
+      const tag = `IVA${seq}${stamp % 100000}`;
+      const staff = await prisma.staff.create({
+        data: { code: `CA-${tag}`, name: 'Card Agent', email: `ca_${tag.toLowerCase()}@laboura.local`, passwordHash: 'x', role: 'call_agent', status: 'active', city: 'Bengaluru' },
+      });
+      const vacancy = await prisma.vacancy.create({ data: { code: `VC-${tag}`, city: 'Bengaluru', businessId: business.id, tradeSkill: 'Baker', headcount: 1, salaryMinPaise: 1500000, status: 'open' } });
+      const seeker = await prisma.jobSeeker.create({
+        data: {
+          code: `JS-${tag}`, name: 'Ravi Kumar Reddy', phone: newPhone(), status: 'active', minSalary: 1000000, maxSalary: 2000000,
+          preferredCallWindowStart: '09:00', preferredCallWindowEnd: '21:00', dateOfBirth: new Date('1998-08-15'),
+          trades: { create: [{ trade: 'Baker', yearsExperience: 4, isPrimary: true }] },
+          languages: { create: [{ language: 'Kannada', speaks: true }] },
+        },
+      });
+      const book = async (startsInMinutes: number, lengthMinutes: number, n: number) => {
+        const startsAt = new Date(Date.now() + startsInMinutes * 60_000);
+        const endsAt = new Date(startsAt.getTime() + lengthMinutes * 60_000);
+        const slot = await prisma.vacancyInterviewSlot.create({ data: { vacancyId: vacancy.id, startsAt, endsAt, capacity: 1 } });
+        return prisma.interview.create({
+          data: {
+            code: `IV-${tag}-${n}`, vacancyId: vacancy.id, businessId: business.id, jobSeekerId: seeker.id, vacancyInterviewSlotId: slot.id,
+            slotStartsAt: startsAt, slotEndsAt: endsAt, proposedByStaffId: staff.id, suitabilitySnapshot: {}, offerSentAt: new Date(),
+            replyDueAt: new Date(), resultDueAt: new Date(endsAt.getTime() + 3600_000), status: 'confirmed',
+          },
+        });
+      };
+      const done = await book(-90, 480, 1); // a walk-in window that started 90 minutes ago: the result is open
+      const ahead = await book(120, 60, 2); // in two hours: not yet
+
+      const home = await auth(http().get(`${API}/me/profiles/${res.body.profileId}/home`), session.accessToken).expect(200);
+      const cards = home.body.interviews as Array<{ id: string; state: string; candidate: unknown }>;
+      expect(cards.map((c) => [c.id, c.state])).toEqual([[done.id, 'result_due'], [ahead.id, 'upcoming']]);
+      expect(cards[0].candidate).toEqual({ firstName: 'Ravi', age: expect.any(Number), trade: 'Baker', yearsExperience: 4, languages: ['Kannada'], photoUrl: null });
+      // Never the surname or a phone number on the card (no-bypass rule).
+      expect(JSON.stringify(cards)).not.toMatch(/Reddy|Kumar|\+91/);
+
+      const early = await auth(http().post(`${API}/me/profiles/${res.body.profileId}/links`), session.accessToken).send({ purpose: 'interview_result', interviewId: ahead.id }).expect(409);
+      expect(early.body.opensAt).toEqual(expect.any(String));
+      const link = await auth(http().post(`${API}/me/profiles/${res.body.profileId}/links`), session.accessToken).send({ purpose: 'interview_result', interviewId: done.id }).expect(201);
+      expect(link.body.url).toMatch(/\/p\/interview-result\//);
+      const token = link.body.url.split('/').pop();
+      const page = await http().get(`/interviews/result/${token}`).set('Accept', 'application/json').expect(200);
+      expect(JSON.stringify(page.body)).toContain('Ravi');
+
+      // Another account's interview id is not reachable.
+      const other = await signIn(newPhone());
+      await auth(http().post(`${API}/me/profiles/${res.body.profileId}/links`), other.accessToken).send({ purpose: 'interview_result', interviewId: done.id }).expect(404);
+
+      await prisma.interview.deleteMany({ where: { businessId: business.id } });
+      await prisma.vacancyInterviewSlot.deleteMany({ where: { vacancyId: vacancy.id } });
+      await prisma.publicLink.deleteMany({ where: { subjectType: 'interview', subjectId: { in: [done.id, ahead.id] } } });
+    });
+
     it('17 Nov: the owner keeps his business\'s shifts (add, change, remove) and a vacancy draft picks one', async () => {
       const phone = newPhone();
       const session = await signIn(phone);

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { isHouseholdBusiness } from '../business/business-auto-check.service';
 import { REFUND_FORFEITING_HIT_REASONS } from '../job-seeker/job-seeker-refund-guards';
 import { isBusinessSuspended } from '../business/business-candidate-access';
@@ -14,8 +14,12 @@ import { PricingService } from '../pricing/pricing.service';
 import { RegistrationJourneyService } from '../job-seeker/registration-journey.service';
 import { firstName } from '../customer-account/customer-account.service';
 import { loadStandingWithdrawals, REFUND_ENDING_CONSENT_PURPOSES } from '../consent/consent-withdrawal-state';
+import { CANDIDATE_PHOTO_LINK_TTL_SECONDS, CANDIDATE_PHOTO_STORAGE, type CandidatePhotoStorage } from '../job-seeker/photo-storage';
+import { candidateAge, interviewResultOpensAt } from '../vacancy/interview-result-window';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** A recorded interview result stays on the business Home card for 3 days. */
+const RECENT_RESULT_MS = 3 * DAY_MS;
 /** Hits that end the refund (guide, Hits): declining, not replying, not turning up. */
 // S10 (rev 176): the legacy offer_rejected is offer_declined everywhere.
 const REFUND_ENDING_HITS = [...REFUND_FORFEITING_HIT_REASONS];
@@ -28,7 +32,8 @@ const REFUND_ENDING_CONSENTS = REFUND_ENDING_CONSENT_PURPOSES;
  * The three Home screens (docs/customer-app-api.md §7). Read-only, and only
  * about the caller's own profile. What each side may see follows the guide:
  * a job seeker sees no business before an interview is booked; a business
- * sees no candidate here and never a phone number; a partner sees first
+ * sees a candidate only once an interview is booked with him (first name,
+ * age, trade, years, languages and photo — 26 Nov) and never a phone number; a partner sees first
  * names and stages of the people they referred, nothing else.
  */
 @Injectable()
@@ -40,6 +45,7 @@ export class CustomerHomeService {
     private readonly pricing: PricingService,
     private readonly journey: RegistrationJourneyService,
     @Optional() private readonly legal?: LegalDocumentService,
+    @Optional() @Inject(CANDIDATE_PHOTO_STORAGE) private readonly candidatePhotos?: CandidatePhotoStorage,
   ) {}
 
   async home(accountId: string, profileId: string) {
@@ -206,7 +212,7 @@ export class CustomerHomeService {
     const businessId = profile.businessId!;
     const branchId = profile.branchId;
     const now = this.clock.now();
-    const [business, branch, agreement, visit, doneVisit, vacancies, drafts, workersPlaced] = await Promise.all([
+    const [business, branch, agreement, visit, doneVisit, vacancies, drafts, workersPlaced, interviewRows] = await Promise.all([
       this.prisma.business.findUniqueOrThrow({
         where: { id: businessId },
         select: { code: true, name: true, verificationStatus: true, verifiedAt: true, inPersonOnboardedAt: true, suspendedAt: true, suspendedUntil: true, suspensionReason: true, businessType: true },
@@ -238,6 +244,34 @@ export class CustomerHomeService {
       this.prisma.placement.count({
         where: { businessId, status: { in: ['active', 'confirmed'] }, ...(branchId ? { vacancy: { branchId } } : {}) },
       }),
+      // 26 Nov (owner): the interview card on Home — the shortlisted candidate and the time, then the
+      // result. Offered (waiting for him to say yes, slot still ahead), confirmed, or recorded in the last 3 days.
+      this.prisma.interview.findMany({
+        where: {
+          businessId,
+          ...(branchId ? { vacancy: { branchId } } : {}),
+          OR: [
+            { status: 'offered', slotStartsAt: { gt: now } },
+            // A confirmed interview stays until its result (or the close sweep); old rows the sweep has not
+            // reached yet must not push today's and upcoming cards out of the first 20.
+            { status: 'confirmed', slotEndsAt: { gte: new Date(now.getTime() - RECENT_RESULT_MS) } },
+            { resultRecordedAt: { gte: new Date(now.getTime() - RECENT_RESULT_MS) } },
+          ],
+        },
+        orderBy: { slotStartsAt: 'asc' },
+        take: 20,
+        select: {
+          id: true, status: true, slotStartsAt: true, slotEndsAt: true, result: true, resultReason: true, resultRecordedAt: true,
+          vacancy: { select: { code: true, tradeSkill: true } },
+          jobSeeker: {
+            select: {
+              name: true, dateOfBirth: true, photoStoragePath: true,
+              trades: { select: { trade: true, yearsExperience: true, isPrimary: true } },
+              languages: { where: { speaks: true }, select: { language: true } },
+            },
+          },
+        },
+      }),
     ]);
     const verified = business.verificationStatus === 'verified' || Boolean(business.verifiedAt);
     const visitDone = visit?.status === 'done' || Boolean(doneVisit) || Boolean(business.inPersonOnboardedAt);
@@ -249,6 +283,40 @@ export class CustomerHomeService {
       belowLegalMinimum: v.belowLegalMinimum,
       interviewsUpcoming: v.interviews.length,
       placements: v._count.placements,
+    }));
+    const interviews = await Promise.all(interviewRows.map(async (iv) => {
+      const opensAt = interviewResultOpensAt(iv.slotStartsAt, iv.slotEndsAt);
+      const recorded = Boolean(iv.resultRecordedAt);
+      const state = recorded
+        ? 'result_sent'
+        : iv.status === 'offered'
+          ? 'waiting_for_candidate'
+          : now.getTime() >= opensAt.getTime() ? 'result_due' : 'upcoming';
+      const primary = iv.jobSeeker.trades.find((tr) => tr.isPrimary) ?? iv.jobSeeker.trades.find((tr) => tr.trade === iv.vacancy.tradeSkill) ?? iv.jobSeeker.trades[0];
+      // The photo helps the owner recognise who is coming; once the result is given it is not needed.
+      const photoUrl = !recorded && iv.jobSeeker.photoStoragePath && this.candidatePhotos
+        ? await this.candidatePhotos.signedUrl(iv.jobSeeker.photoStoragePath, CANDIDATE_PHOTO_LINK_TTL_SECONDS).catch(() => null)
+        : null;
+      return {
+        id: iv.id,
+        vacancyCode: iv.vacancy.code,
+        trade: iv.vacancy.tradeSkill,
+        startsAt: iv.slotStartsAt,
+        endsAt: iv.slotEndsAt,
+        resultOpensAt: opensAt,
+        state,
+        result: recorded ? iv.result : null,
+        resultReason: recorded ? iv.resultReason : null,
+        // Never a surname, phone number or address before the fee (no-bypass rule).
+        candidate: {
+          firstName: firstName(iv.jobSeeker.name),
+          age: iv.jobSeeker.dateOfBirth ? candidateAge(iv.jobSeeker.dateOfBirth, now) : null,
+          trade: primary?.trade ?? null,
+          yearsExperience: primary?.yearsExperience ?? null,
+          languages: iv.jobSeeker.languages.map((l) => l.language),
+          photoUrl,
+        },
+      };
     }));
     // 25 Nov (rev 211, B5): only households wait for a visit; others are checked automatically after signing.
     const needsVisit = isHouseholdBusiness(business.businessType);
@@ -284,6 +352,7 @@ export class CustomerHomeService {
         ? { state: visit.status === 'done' ? 'done' : visit.assignedStaff ? 'booked' : 'requested', requestedFor: visit.requestedFor, agentFirstName: firstName(visit.assignedStaff?.name) }
         : visitDone ? { state: 'done', requestedFor: null, agentFirstName: null } : null,
       vacancies: vacancyRows,
+      interviews,
       drafts: drafts.map((d) => ({
         id: d.id,
         trade: typeof (d.form as Record<string, unknown> | null)?.tradeSkill === 'string' ? (d.form as Record<string, string>).tradeSkill : null,

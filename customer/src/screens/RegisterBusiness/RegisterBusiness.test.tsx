@@ -75,6 +75,7 @@ describe('Register a business', () => {
     await choose('biz-area', 'JP Nagar');
     await choose('biz-staff-trade-0', 'Cook');
     await fireEvent.changeText(screen.getByTestId('biz-staff-count-0'), '2');
+    await choose('biz-staff-experience-0', '2');
     await fireEvent.changeText(screen.getByTestId('biz-staff-min-0'), '18000');
     await fireEvent.changeText(screen.getByTestId('biz-staff-max-0'), '22000');
     await fireEvent.press(screen.getByTestId('biz-staff-start-0'));
@@ -97,7 +98,7 @@ describe('Register a business', () => {
         area: 'JP Nagar',
         pincode: '560078',
         documents: { gstin: '29ABCDE1234F1Z5' },
-        staffNeeded: [expect.objectContaining({ trade: 'Cook', count: 2, salaryMinPaise: 1_800_000, salaryMaxPaise: 2_200_000, startDate: todayKeyIst() })],
+        staffNeeded: [expect.objectContaining({ trade: 'Cook', count: 2, salaryMinPaise: 1_800_000, salaryMaxPaise: 2_200_000, startDate: todayKeyIst(), experienceYears: 2 })],
         visitPreferredAt: null,
       }),
     );

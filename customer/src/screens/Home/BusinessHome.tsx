@@ -13,6 +13,7 @@ import { routes } from '@/navigation/routes';
 import type { Accent, Tone } from '@/theme';
 import type { HeroInfo } from './hero';
 import { ShiftsCard } from '../shared/Shifts';
+import { BusinessInterviews } from './BusinessInterviews';
 
 /** Hero chip tone for a tracker step: done green, waiting amber, booked cyan, not started grey, paused red. */
 const STEP_TONE: Record<StepState, Tone> = { done: 'green', in_progress: 'amber', not_started: 'neutral' };
@@ -24,6 +25,7 @@ const VACANCY_TONE: Record<VacancyStatus, Tone> = {
   open: 'green',
   filled: 'blue',
   closed: 'neutral',
+  being_checked: 'amber',
 };
 
 /** The vacancy's icon tile, in the palette colour of its state. */
@@ -34,13 +36,15 @@ const VACANCY_ACCENT: Record<VacancyStatus, Accent> = {
   open: 'good',
   filled: 'royal',
   closed: 'navy',
+  being_checked: 'gold',
 };
 
 /**
- * Business Home: the tracker Phone verified → Agreement → Visit → Approval
- * → Verified (guide, "After saving"), vacancies with their state, and
- * interviews and placements as counts. No candidate details at all in this
- * first version — and never a candidate's phone number (no-bypass).
+ * Business Home: the tracker Phone verified → Agreement → (Visit, only when
+ * one is asked for or booked — rev 211 shops get none) → Approval → Verified,
+ * vacancies with their state, the interview cards (26 Nov: first name, age,
+ * trade, years, languages, photo) and counts. Never a candidate's surname or
+ * phone number (no-bypass).
  */
 export function BusinessHomeView({ profileId, home, hero, belowHero }: { profileId: string; home: BusinessHome; hero: HeroInfo; belowHero?: ReactNode }) {
   const { t } = useI18n();
@@ -49,12 +53,13 @@ export function BusinessHomeView({ profileId, home, hero, belowHero }: { profile
   const config = useQuery({ queryKey: queryKeys.config, queryFn: () => api.config(), staleTime: 10 * 60_000 });
   const tr = home.tracker;
   const visitState: StepState = tr.visit === 'done' ? 'done' : tr.visit === 'not_booked' ? 'not_started' : 'in_progress';
-  const approvalState: StepState = tr.approval === 'approved' ? 'done' : tr.visit === 'done' ? 'in_progress' : 'not_started';
-  const verified = tr.agreement === 'signed' && tr.visit === 'done' && tr.approval === 'approved';
+  // Rev 211: a shop is checked automatically after signing; only a household waits for a visit.
+  const approvalState: StepState = tr.approval === 'approved' ? 'done' : tr.agreement === 'signed' ? 'in_progress' : 'not_started';
+  const verified = tr.agreement === 'signed' && tr.approval === 'approved';
   const agreementState: StepState = tr.agreement === 'signed' ? 'done' : 'not_started';
   const heroChips: { key: string; label: string; state: StepState; tone: Tone }[] = [
     { key: 'agreement', label: t('bizHome.stepAgreement'), state: agreementState, tone: agreementState === 'done' ? 'green' : 'amber' },
-    { key: 'visit', label: t('bizHome.stepVisit'), state: visitState, tone: tr.visit === 'booked' ? 'cyan' : STEP_TONE[visitState] },
+    ...(tr.visit === 'not_booked' ? [] : [{ key: 'visit', label: t('bizHome.stepVisit'), state: visitState, tone: (tr.visit === 'booked' ? 'cyan' : STEP_TONE[visitState]) as Tone }]),
     { key: 'approval', label: t('bizHome.stepApproval'), state: approvalState, tone: tr.approval === 'paused' ? 'tomato' : STEP_TONE[approvalState] },
   ];
 
@@ -96,6 +101,8 @@ export function BusinessHomeView({ profileId, home, hero, belowHero }: { profile
         <StatTile label={t('bizHome.placements')} value={home.counts.placements} accent="good" icon="users" testID="biz-stat-placements" />
       </StatGrid>
 
+      <BusinessInterviews profileId={profileId} interviews={home.interviews} />
+
       <Card title={t('bizHome.trackerTitle')} accent="navy">
         <View style={styles.gap}>
           <StepList
@@ -103,7 +110,7 @@ export function BusinessHomeView({ profileId, home, hero, belowHero }: { profile
             steps={[
               { key: 'phone', label: t('bizHome.stepPhone'), state: tr.phoneVerified ? 'done' : 'not_started', icon: 'phone', accent: 'royal' },
               { key: 'agreement', label: t('bizHome.stepAgreement'), state: agreementState, icon: 'doc', accent: 'navy' },
-              { key: 'visit', label: t('bizHome.stepVisit'), state: visitState, icon: 'calendar', accent: 'cyan' },
+              ...(tr.visit === 'not_booked' ? [] : [{ key: 'visit', label: t('bizHome.stepVisit'), state: visitState, icon: 'calendar' as const, accent: 'cyan' as const }]),
               { key: 'approval', label: t('bizHome.stepApproval'), state: approvalState, icon: 'check', accent: 'gold' },
               { key: 'verified', label: t('bizHome.stepVerified'), state: verified ? 'done' : 'not_started', icon: 'shield', accent: 'good' },
             ]}

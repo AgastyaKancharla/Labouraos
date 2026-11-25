@@ -398,6 +398,10 @@ export class BusinessService {
       if (row.salaryPeriod && row.salaryPeriod !== 'monthly' && row.salaryPeriod !== 'daily') {
         throw new BadRequestException('salaryPeriod must be monthly or daily');
       }
+      if (row.experienceRequiredYears !== undefined && row.experienceRequiredYears !== null &&
+          (!Number.isSafeInteger(row.experienceRequiredYears) || row.experienceRequiredYears < 0 || row.experienceRequiredYears > 50)) {
+        throw new BadRequestException('experienceRequiredYears must be a whole number of years from 0 to 50');
+      }
       if (row.branchName?.trim() && !branchNames.has(row.branchName.trim())) {
         throw new BadRequestException('staff-needed branchName must match a branch in this registration');
       }
@@ -647,6 +651,7 @@ export class BusinessService {
           salaryMinPaise: row.salaryMinPaise, salaryMaxPaise: row.salaryMaxPaise,
           salaryPeriod: row.salaryPeriod === 'daily' ? 'daily' : 'monthly',
           shift: row.shift.trim(), startDate: new Date(`${row.startDate}T00:00:00.000Z`),
+          experienceRequiredYears: typeof row.experienceRequiredYears === 'number' ? row.experienceRequiredYears : null,
           locality: namedBranch?.locality?.trim() || locality,
           latitude: branchHasPin ? branchLatitude : latitude,
           longitude: branchHasPin ? branchLongitude : longitude,

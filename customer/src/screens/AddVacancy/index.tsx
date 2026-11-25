@@ -15,6 +15,7 @@ import { colors } from '@/theme';
 import { clearDraft, useDraft } from '@/lib/drafts';
 import { rupees } from '@/lib/money';
 import { routes } from '@/navigation/routes';
+import { experienceChoices } from '../shared/choices';
 import { OtpCodeCard } from '../shared/OtpCodeCard';
 import { AddShiftForm, useShifts } from '../shared/Shifts';
 import { belowLegalMinimum, emptyVacancy, toVacancyDraft, validateVacancy, type VacancyErrors } from './form';
@@ -206,6 +207,7 @@ export default function AddVacancy() {
             <SelectField label={t('vacancy.trade')} value={form.trade} choices={tradeChoices} onChange={(v) => set('trade', v)} required error={err('trade')} testID="vacancy-trade" />
             <TextField label={t('vacancy.roleTitle')} value={form.roleTitle} onChangeText={(v) => set('roleTitle', v)} testID="vacancy-role" />
             <NumberField label={t('vacancy.openings')} value={form.openings} onChange={(v) => set('openings', v)} required max={99} error={err('openings')} testID="vacancy-openings" />
+            <SelectField label={t('experience.label')} value={form.experience ?? ''} choices={experienceChoices(t)} onChange={(v) => set('experience', v)} required error={err('experience')} testID="vacancy-experience" />
             <Segmented
               value={form.salaryPeriod}
               options={[

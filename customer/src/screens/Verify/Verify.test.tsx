@@ -47,8 +47,16 @@ beforeEach(() => {
   jest.clearAllMocks();
 });
 
+/** Rev 211: after the selfie comes the ₹499; while the bank confirms, "Do my ID check now". */
+async function payThenIdCheck() {
+  await fireEvent.press(await screen.findByTestId('reg-pay-agree'));
+  jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
+  await fireEvent.press(await screen.findByTestId('reg-pay-upi'));
+  await fireEvent.press(await screen.findByTestId('reg-paid-id-now'));
+}
+
 describe('Job seeker steps in the app', () => {
-  it('code → consent → live selfie → Aadhaar QR → terms and ₹499 → "Paid — confirming", all through his own link', async () => {
+  it('rev 211 order: code → consent → live selfie → terms and ₹499 → "Paid — confirming" → ID check now, all through his own link', async () => {
     const steps = spiedSteps();
     const { api } = await renderVerify('registration', 'p-js', steps);
     await waitFor(() => expect(api.sheetLink).toHaveBeenCalledWith('p-js', 'registration'));
@@ -78,18 +86,6 @@ describe('Job seeker steps in the app', () => {
       expect(steps.registrationSelfie).toHaveBeenCalledWith(TOKEN, requestId, { uri: 'file:///cache/prepared.jpg', name: 'selfie.jpg', type: 'image/jpeg' }),
     );
 
-    // ID: the Aadhaar QR's text only.
-    await fireEvent.press(await screen.findByTestId('id-scan'));
-    await screen.findByTestId('qr-scanner');
-    await act(async () => {
-      (globalThis as unknown as { __scanQr: (text: string) => void }).__scanQr('<qr text>');
-    });
-    await waitFor(() => expect(steps.registrationAadhaarQr).toHaveBeenCalledWith(TOKEN, requestId, '<qr text>'));
-    const verified = await screen.findByTestId('id-verified');
-    expect(verified).toHaveTextContent(/Aadhaar verified by UIDAI/);
-    expect(verified).toHaveTextContent(/15-08-1998/);
-    await fireEvent.press(screen.getByTestId('id-continue'));
-
     // Terms and ₹499: the QR and the UPI button only after the box is ticked.
     expect(await screen.findByTestId('reg-pay')).toHaveTextContent(/within 5 km of BTM Layout/);
     expect(screen.queryByTestId('reg-pay-upi')).toBeNull();
@@ -102,6 +98,19 @@ describe('Job seeker steps in the app', () => {
 
     // Never "done" on tapping Pay: it waits for the bank.
     expect(await screen.findByTestId('reg-confirming')).toHaveTextContent(/Paid — confirming/);
+    // Rev 211: paid while the bank confirms → his ID check comes now; the 30 days start once it passes.
+    expect(screen.getByTestId('reg-confirming')).toHaveTextContent(/Your 30 days start only after your government ID is verified/);
+    await fireEvent.press(screen.getByTestId('reg-paid-id-now'));
+    // ID: the Aadhaar QR's text only.
+    await fireEvent.press(await screen.findByTestId('id-scan'));
+    await screen.findByTestId('qr-scanner');
+    await act(async () => {
+      (globalThis as unknown as { __scanQr: (text: string) => void }).__scanQr('<qr text>');
+    });
+    await waitFor(() => expect(steps.registrationAadhaarQr).toHaveBeenCalledWith(TOKEN, requestId, '<qr text>'));
+    const verified = await screen.findByTestId('id-verified');
+    expect(verified).toHaveTextContent(/Aadhaar verified by UIDAI/);
+    expect(verified).toHaveTextContent(/15-08-1998/);
     expect(openSecureSheet).not.toHaveBeenCalled();
   });
 
@@ -129,6 +138,7 @@ describe('Job seeker steps in the app', () => {
     await fireEvent.press(screen.getByTestId('reg-consent-agree'));
     await fireEvent.press(await screen.findByTestId('reg-selfie-camera-take'));
     await fireEvent.press(await screen.findByTestId('reg-selfie-camera-use'));
+    await payThenIdCheck();
 
     await fireEvent.press(await screen.findByTestId('id-other'));
     await fireEvent.press(screen.getByTestId('id-type-pan'));
@@ -182,6 +192,7 @@ describe('Job seeker steps in the app', () => {
     await fireEvent.press(screen.getByTestId('reg-consent-agree'));
     await fireEvent.press(await screen.findByTestId('reg-selfie-camera-take'));
     await fireEvent.press(await screen.findByTestId('reg-selfie-camera-use'));
+    await payThenIdCheck();
     await fireEvent.press(await screen.findByTestId('id-pdf'));
     await waitFor(() => expect(openSecureSheet).toHaveBeenCalledWith(`https://app.test/p/register/${TOKEN}`));
   });
@@ -249,12 +260,21 @@ describe('Referral partner steps in the app', () => {
 });
 
 describe('Business agreement in the app', () => {
-  it('the name, three ticks first, then the code signs; the signed view follows', async () => {
+  it('owner selfie and shop photo, the name, three ticks, then the code signs; the signed view follows', async () => {
     const steps = spiedSteps();
     await renderVerify('business_agreement', 'p-biz', steps);
     const page = await screen.findByTestId('agree');
     expect(page).toHaveTextContent(/50% of the first month’s salary \+ 18% GST/);
     expect(screen.getByTestId('agree-otp-send')).toBeDisabled();
+    // Rev 211: both photos before signing — a live selfie, then the shop with its place.
+    await fireEvent.press(await screen.findByTestId('owner-selfie-take'));
+    await fireEvent.press(await screen.findByTestId('owner-selfie-use'));
+    await screen.findByTestId('owner-selfie-done');
+    await fireEvent.press(await screen.findByTestId('owner-shop-take'));
+    await fireEvent.press(await screen.findByTestId('owner-shop-use'));
+    await screen.findByTestId('owner-shop-done');
+    expect(steps.agreementOwnerPhoto).toHaveBeenCalledWith(TOKEN, 'selfie', expect.anything(), {}, undefined); // the selfie carries no place
+    expect(steps.agreementOwnerPhoto).toHaveBeenCalledWith(TOKEN, 'shop', expect.anything(), expect.objectContaining({ latitude: 12.9166 }), expect.anything());
     await fireEvent.changeText(screen.getByTestId('agree-name'), 'Manjunath');
     await fireEvent.press(screen.getByTestId('agree-tick-terms'));
     await fireEvent.press(screen.getByTestId('agree-tick-authority'));

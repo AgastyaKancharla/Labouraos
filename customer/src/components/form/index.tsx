@@ -412,9 +412,32 @@ export function addDays(key: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** "2026-11-24" → "24/11/2026" (what the person types). */
+export function dateKeyToTyped(key: string): string {
+  return /^\d{4}-\d{2}-\d{2}$/.test(key) ? `${key.slice(8, 10)}/${key.slice(5, 7)}/${key.slice(0, 4)}` : '';
+}
+
+/** Typed digits → "DD/MM/YYYY" as they are typed. */
+export function formatTypedDate(raw: string): string {
+  const d = raw.replace(/\D/g, '').slice(0, 8);
+  if (d.length > 4) return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`;
+  if (d.length > 2) return `${d.slice(0, 2)}/${d.slice(2)}`;
+  return d;
+}
+
+/** "24/11/2026" → "2026-11-24" when it is a real calendar date, else null. */
+export function typedToDateKey(text: string): string | null {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(text);
+  if (!m) return null;
+  const key = `${m[3]}-${m[2]}-${m[1]}`;
+  const d = new Date(`${key}T00:00:00.000Z`);
+  return Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === key ? key : null;
+}
+
 /**
- * A calendar picker (never typed). `yearFirst` opens on the year (date of
- * birth); `min`/`max` block dates outside the range (e.g. under 18).
+ * A date: type it as DD/MM/YYYY, or tap the calendar (owner, 24 Nov: both).
+ * `yearFirst` opens the calendar on the year (date of birth); `min`/`max`
+ * block dates outside the range (e.g. under 18) whichever way it is entered.
  */
 export function DateField({
   label, value, onChange, min, max, yearFirst, required, error, hint, testID,
@@ -451,24 +474,71 @@ export function DateField({
     const d = new Date(Date.UTC(y, m - 1 + delta, 1));
     setCursor(d.toISOString().slice(0, 7));
   };
+  // Typing: the box shows DD/MM/YYYY. While he types, his own text shows; otherwise the date itself.
+  const [draft, setDraft] = useState<string | null>(null);
+  const [typedError, setTypedError] = useState<string | null>(null);
+  const typed = draft ?? dateKeyToTyped(value);
+  const onType = (raw: string) => {
+    const text = formatTypedDate(raw);
+    setDraft(text);
+    if (text.length < 10) {
+      setTypedError(null);
+      if (value) onChange('');
+      return;
+    }
+    const key = typedToDateKey(text);
+    if (!key) {
+      setTypedError(t('form.dateInvalid'));
+      if (value) onChange('');
+    } else if (!allowed(key)) {
+      setTypedError(
+        min && max
+          ? t('form.dateBetween', { from: formatDateKey(min), to: formatDateKey(max) })
+          : min
+            ? t('form.dateFrom', { from: formatDateKey(min) })
+            : t('form.dateUntil', { to: formatDateKey(max ?? key) }),
+      );
+      if (value) onChange('');
+    } else {
+      setTypedError(null);
+      onChange(key);
+    }
+  };
   return (
     <View style={styles.field}>
       <FieldLabel label={label} required={required} />
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${label}: ${value ? formatDateKey(value) : t('form.pickDate')}`}
-        onPress={() => {
-          setCursor((value || start).slice(0, 7));
-          setMode(yearFirst && !value ? 'year' : 'day');
-          setOpen(true);
-        }}
-        style={[styles.box, styles.row, error ? styles.boxError : null]}
-        testID={testID}
-      >
-        <Text style={[styles.value, !value && styles.placeholder]}>{value ? formatDateKey(value) : t('form.pickDate')}</Text>
-        <Text style={styles.caret}>📅</Text>
-      </Pressable>
-      <Hint error={error} hint={hint} testID={testID} />
+      <View style={[styles.box, styles.row, styles.dateBox, error || typedError ? styles.boxError : null]}>
+        <TextInput
+          value={typed}
+          onChangeText={onType}
+          placeholder={t('form.datePlaceholder')}
+          placeholderTextColor={colors.faint}
+          keyboardType="number-pad"
+          maxLength={10}
+          accessibilityLabel={`${label}, ${t('form.datePlaceholder')}`}
+          style={styles.dateInput}
+          testID={testID ? `${testID}-type` : undefined}
+        />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${label}: ${value ? formatDateKey(value) : t('form.pickDate')}`}
+          onPress={() => {
+            setCursor((value || start).slice(0, 7));
+            setMode(yearFirst && !value ? 'year' : 'day');
+            setOpen(true);
+          }}
+          style={styles.calButton}
+          testID={testID}
+        >
+          <Text style={styles.caret}>📅</Text>
+        </Pressable>
+      </View>
+      {value ? (
+        <Text variant="small" style={styles.dateNice} testID={testID ? `${testID}-value` : undefined}>
+          {formatDateKey(value)}
+        </Text>
+      ) : null}
+      <Hint error={typedError ?? error} hint={hint} testID={testID} />
       <Sheet open={open} onClose={() => setOpen(false)} title={label}>
         {mode === 'year' ? (
           <View style={styles.yearGrid}>
@@ -518,6 +588,8 @@ export function DateField({
                     disabled={!ok}
                     onPress={() => {
                       onChange(key);
+                      setDraft(null);
+                      setTypedError(null);
                       setOpen(false);
                     }}
                     style={[styles.calCell, styles.calDay, key === value && styles.calDayOn, !ok && styles.disabled]}
@@ -603,6 +675,10 @@ const styles = StyleSheet.create({
   value: { flex: 1, fontFamily: fonts.body400, fontSize: fontSize.input, color: colors.ink },
   placeholder: { color: colors.faint },
   caret: { color: colors.soft, fontSize: 14 },
+  dateBox: { paddingRight: 4 },
+  dateInput: { flex: 1, minHeight: 44, fontFamily: fonts.body400, fontSize: fontSize.input, color: colors.ink, letterSpacing: 1, padding: 0 },
+  calButton: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.blue100 },
+  dateNice: { color: colors.soft, marginTop: -2 },
   backdrop: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: colors.surface,

@@ -16,7 +16,7 @@ import { rupees } from '@/lib/money';
 import { RegisterOtpStep } from '../shared/RegisterOtpStep';
 import { SavedNextSteps } from '../shared/SavedNextSteps';
 import { heardFromChoices, shiftChoices, spokenLanguageChoices } from '../shared/choices';
-import { LOOKING_FOR, MAX_TRADES, OTHER_TRADE, checkAge, emptyJobSeeker, salaryHint, toJobSeekerForm, validateJobSeeker, type JobSeekerErrors } from './form';
+import { MAX_TRADES, OTHER_TRADE, checkAge, emptyJobSeeker, salaryHint, toJobSeekerForm, validateJobSeeker, type JobSeekerErrors } from './form';
 
 /**
  * Job seeker registration, native (proposal 2.1, steps 3 and 4): date of
@@ -191,15 +191,6 @@ export default function RegisterJobSeeker() {
             />
             {errors.gender ? <Text variant="small" style={styles.errorText} testID="js-gender-error">{t(errors.gender)}</Text> : null}
             <Text variant="muted">{t('jobSeeker.genderWhy')}</Text>
-            <SelectField
-              label={t('jobSeeker.bestTime')}
-              value={draft.bestTimeToCall}
-              choices={(['09-12', '12-15', '15-18', '18-21', '09-21'] as const).map((v) => ({ value: v, label: t(`bestTime.${v}`) }))}
-              onChange={(v) => set('bestTimeToCall', v)}
-              required
-              error={err('bestTimeToCall')}
-              testID="js-best-time"
-            />
             <ChipPicker
               label={t('jobSeeker.languagesSpoken')}
               values={draft.languagesSpoken}
@@ -306,15 +297,6 @@ export default function RegisterJobSeeker() {
               required
               error={err('availableFrom')}
               testID="js-available"
-            />
-            <SelectField
-              label={t('jobSeeker.lookingSince')}
-              value={draft.lookingFor}
-              choices={LOOKING_FOR.map((c) => ({ value: c.value, label: t(c.label) }))}
-              onChange={(v) => set('lookingFor', v)}
-              required
-              error={err('lookingFor')}
-              testID="js-looking"
             />
             <SelectField label={t('form.shift')} value={draft.shift} choices={shiftChoices(t)} onChange={(v) => set('shift', v)} required error={err('shift')} testID="js-shift" />
             <SelectField

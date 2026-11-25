@@ -39,15 +39,12 @@ export interface JobSeekerDraft {
   fullName: string;
   gender: '' | JobSeekerForm['gender'];
   messageLanguage: Language;
-  bestTimeToCall: '' | JobSeekerForm['bestTimeToCall'];
   area: string;
   pincode: string;
   pin: Pin | null;
   travelKm: number | null;
   trades: TradeRow[];
   availableFrom: string;
-  /** How long he has been looking (a choice); sent as the date lookingSince. */
-  lookingFor: '' | LookingFor;
   salaryMinPaise: number | null;
   salaryMaxPaise: number | null;
   salaryPeriod: SalaryPeriod;
@@ -63,14 +60,12 @@ export const emptyJobSeeker = (language: Language): JobSeekerDraft => ({
   fullName: '',
   gender: '',
   messageLanguage: language,
-  bestTimeToCall: '',
   area: '',
   pincode: '',
   pin: null,
   travelKm: null,
   trades: [{ trade: '', otherName: '', years: null }],
   availableFrom: '',
-  lookingFor: '',
   salaryMinPaise: null,
   salaryMaxPaise: null,
   salaryPeriod: 'monthly',
@@ -95,7 +90,6 @@ export function validateJobSeeker(d: JobSeekerDraft): JobSeekerErrors {
   const e: JobSeekerErrors = {};
   if (d.fullName.trim().length < 2) e.fullName = 'form.required';
   if (!d.gender) e.gender = 'form.required';
-  if (!d.bestTimeToCall) e.bestTimeToCall = 'form.required';
   if (!d.area) e.area = 'form.required';
   if (!isPincode(d.pincode)) e.pincode = 'form.pincodeInvalid';
   if (d.travelKm === null) e.travelKm = 'form.required';
@@ -106,7 +100,6 @@ export function validateJobSeeker(d: JobSeekerDraft): JobSeekerErrors {
     else if (row.years > 50) e[`years${i}`] = 'jobSeeker.yearsTooMany';
   });
   if (!d.availableFrom) e.availableFrom = 'form.required';
-  if (!d.lookingFor) e.lookingFor = 'form.required';
   if (!d.salaryMinPaise) e.salaryMin = 'form.required';
   if (!d.salaryMaxPaise) e.salaryMax = 'form.required';
   else if (d.salaryMinPaise && d.salaryMaxPaise < d.salaryMinPaise) e.salaryMax = 'jobSeeker.maxBelowMin';
@@ -124,7 +117,8 @@ export function toJobSeekerForm(d: JobSeekerDraft, areas: Area[] = [], todayKey:
     dateOfBirth: d.dateOfBirth,
     gender: d.gender as JobSeekerForm['gender'],
     messageLanguage: d.messageLanguage,
-    bestTimeToCall: d.bestTimeToCall as JobSeekerForm['bestTimeToCall'],
+    // Not asked any more (owner, 24 Nov): the server still needs a window, so "any time, 9 AM to 9 PM".
+    bestTimeToCall: '09-21',
     area: d.area,
     pincode: d.pincode.trim(),
     pin: d.pin ?? (area ? { latitude: area.latitude, longitude: area.longitude } : null),
@@ -133,7 +127,8 @@ export function toJobSeekerForm(d: JobSeekerDraft, areas: Area[] = [], todayKey:
       row.trade === OTHER_TRADE ? { trade: 'other', otherName: row.otherName.trim(), years: row.years ?? 0 } : { trade: row.trade, years: row.years ?? 0 },
     ),
     availableFrom: d.availableFrom,
-    lookingSince: lookingSinceFrom(d.lookingFor || 'now', todayKey),
+    // Not asked any more (owner, 24 Nov): looking from the day he registers.
+    lookingSince: lookingSinceFrom('now', todayKey),
     salaryMinPaise: d.salaryMinPaise ?? 0,
     salaryMaxPaise: d.salaryMaxPaise ?? 0,
     salaryPeriod: d.salaryPeriod,

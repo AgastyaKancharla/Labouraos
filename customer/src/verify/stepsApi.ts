@@ -3,6 +3,11 @@ import { isApiError } from '@/api/errors';
 import type {
   AadhaarQrResult,
   AgreementDetails,
+  InterviewResultDetails,
+  InterviewResultInput,
+  OwnerPhotoState,
+  PhotoPlace,
+  ShopPhotoKind,
   LegalDocument,
   OtherIdResult,
   OtherIdType,
@@ -60,9 +65,18 @@ export interface StepsApi {
   agreementDetails(token: string): Promise<AgreementDetails>;
   agreementSigned(token: string): Promise<{ signedAt: string; signedName: string; businessName: string }>;
   signAgreement(token: string, otpRequestId: string, otpCode: string, signedName: string): Promise<{ signedAt: string }>;
+  /** Rev 211: the owner's live selfie, then the shop photo with the phone's place — before signing. */
+  agreementOwnerPhoto(token: string, kind: 'selfie' | 'shop', photo: PhotoFile, place?: PhotoPlace, shopKind?: ShopPhotoKind): Promise<{ ownerPhotos: OwnerPhotoState }>;
+
+  // Interview result (/interviews/result/:token — the P05 link; 26 Nov: also from the app)
+  interviewResultDetails(token: string): Promise<InterviewResultDetails>;
+  sendInterviewResultOtp(token: string): Promise<OtpSent>;
+  submitInterviewResult(token: string, otpRequestId: string, otpCode: string, input: InterviewResultInput): Promise<unknown>;
 }
 
 const enc = encodeURIComponent;
+/** The server's names for the second owner photo. */
+const SHOP_VARIANT: Record<ShopPhotoKind, 'board' | 'fssai' | 'workspace'> = { shop_board: 'board', fssai_with_owner: 'fssai', workspace: 'workspace' };
 const PUBLIC = { auth: false } as const;
 /** Photo uploads on slow signal get longer than the usual 20 seconds. */
 const UPLOAD_TIMEOUT_MS = 60_000;
@@ -117,6 +131,16 @@ export function liveStepsApi(baseUrl: string, fetchImpl?: typeof fetch): StepsAp
     // v1.1 "Signing by OTP": terms, authority and call recording — three ticks.
     signAgreement: (token, otpRequestId, otpCode, signedName) =>
       api.post('/consent/submit', { token, otpRequestId, otpCode, signedName, purposes: ['agreement_terms', 'agreement_authority', 'call_recording'] }, PUBLIC),
+    agreementOwnerPhoto: (token, kind, photo, place = {}, shopKind) => {
+      const fields: Record<string, string> = { kind };
+      if (shopKind) fields.shopVariant = SHOP_VARIANT[shopKind];
+      for (const [k, v] of Object.entries(place)) if (v !== undefined) fields[k] = String(v);
+      return upload(`/consent/${enc(token)}/owner-photo`, photoForm(fields, photo));
+    },
+
+    interviewResultDetails: (token) => api.get(`/interviews/result/${enc(token)}`, PUBLIC),
+    sendInterviewResultOtp: (token) => api.post(`/interviews/result/${enc(token)}/otp`, {}, PUBLIC),
+    submitInterviewResult: (token, otpRequestId, otpCode, input) => api.post(`/interviews/result/${enc(token)}`, { otpRequestId, otpCode, ...input }, PUBLIC),
   };
 }
 

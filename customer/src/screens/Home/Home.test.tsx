@@ -73,6 +73,20 @@ describe('Job seeker Home', () => {
     expect(screen.queryByTestId('js-home-steps')).toBeNull();
   });
 
+  it('rev 211: paying is confirming and the ID check is not done — the steps and Continue stay on Home', async () => {
+    await renderHome(
+      jsHome({
+        steps: { phone: 'done', profile: 'done', consent: 'done', selfie: 'done', idCheck: 'not_started', payment: 'in_progress' },
+        payment: { status: 'confirming', amountPaise: 49_900 },
+      }),
+    );
+    expect(await screen.findByTestId('js-home-confirming')).toBeTruthy();
+    expect(screen.getByTestId('js-home-steps')).toBeTruthy();
+    expect(screen.getByTestId('js-home-waiting-id-note')).toHaveTextContent(/after your government ID is verified/);
+    await fireEvent.press(screen.getByTestId('js-home-continue'));
+    expect(router.push).toHaveBeenCalledWith('/verify/registration?profileId=p-js');
+  });
+
   it('guarantee running: day X of 30 and hits so far', async () => {
     await renderHome(runningJsHome());
     expect(await screen.findByTestId('js-home-running')).toHaveTextContent(/Day 12 of 30/);
@@ -182,6 +196,40 @@ describe('Business Home', () => {
     expect(screen.getByTestId('biz-stat-vacancies-bar-royal')).toBeTruthy();
     expect(screen.getByTestId('biz-stat-interviews-bar-cyan')).toBeTruthy();
     expect(screen.getByTestId('biz-stat-placements-bar-good')).toBeTruthy();
+  });
+
+  it('26 Nov: interview cards — who and when, "Give the result" once due, the result once sent; never a surname or phone', async () => {
+    const candidate = { firstName: 'Ravi', age: 24, trade: 'Cook', yearsExperience: 3, languages: ['Kannada', 'Hindi'], photoUrl: null };
+    const base = { vacancyCode: 'V-1', trade: 'Cook', endsAt: '2026-11-26T07:30:00Z', result: null, resultReason: null, candidate };
+    await renderHome(
+      bizHome({
+        interviews: [
+          { ...base, id: 'iv-1', startsAt: '2026-11-26T06:30:00Z', resultOpensAt: '2026-11-26T07:30:00Z', state: 'result_due' },
+          { ...base, id: 'iv-2', startsAt: '2026-11-27T05:30:00Z', resultOpensAt: '2026-11-27T06:30:00Z', state: 'upcoming', candidate: { ...candidate, firstName: 'Manjunath' } },
+          { ...base, id: 'iv-3', startsAt: '2026-11-28T05:30:00Z', resultOpensAt: '2026-11-28T06:30:00Z', state: 'waiting_for_candidate', candidate: { ...candidate, firstName: 'Suresh' } },
+          { ...base, id: 'iv-4', startsAt: '2026-11-25T05:30:00Z', resultOpensAt: '2026-11-25T06:30:00Z', state: 'result_sent', result: 'not_selected', resultReason: 'experience', candidate: { ...candidate, firstName: 'Anil' } },
+        ],
+      }),
+      [bizProfile],
+    );
+    const cards = await screen.findByTestId('biz-interviews');
+    expect(cards).toHaveTextContent(/Ravi shortlisted/);
+    expect(cards).toHaveTextContent(/24 yrs · Cook · 3 yrs experience/);
+    expect(cards).toHaveTextContent(/Speaks Kannada, Hindi/);
+    expect(screen.getByTestId('biz-interview-iv-1-when')).toHaveTextContent('Cook interview · Thu 26 Nov, 12:00 PM');
+    expect(screen.getByTestId('biz-interview-upcoming')).toHaveTextContent(/You can give the result from 12:00 PM/);
+    expect(screen.getByTestId('biz-interview-waiting_for_candidate')).toHaveTextContent(/Waiting for Suresh to confirm/);
+    expect(screen.getByTestId('biz-interview-result_sent')).toHaveTextContent(/Not selected \(Experience\)/);
+    expect(allText()).not.toMatch(/\d{10}/);
+    await fireEvent.press(screen.getByTestId('biz-interview-iv-1-result'));
+    expect(router.push).toHaveBeenCalledWith('/interview-result?profileId=p-biz&interviewId=iv-1');
+    expect(screen.queryByTestId('biz-interview-iv-2-result')).toBeNull();
+  });
+
+  it('rev 211: a shop with no visit is verified once the agreement is signed and approved', async () => {
+    await renderHome(bizHome({ tracker: { phoneVerified: true, agreement: 'signed', visit: 'not_booked', visitAt: null, visitAgentFirstName: null, approval: 'approved' } }), [bizProfile]);
+    expect(await screen.findByTestId('biz-step-verified-done')).toBeTruthy();
+    expect(screen.queryByTestId('biz-step-visit-not_started')).toBeNull();
   });
 
   it('booked visit says who comes and when', async () => {

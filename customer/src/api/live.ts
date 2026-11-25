@@ -4,7 +4,7 @@ import { isLanguage } from '@/i18n/translate';
 import type { ApiClient } from './client';
 import type { CustomerApi } from './customerApi';
 import { isApiError } from './errors';
-import type {
+import type { BusinessInterview,
   Trade,
   BusinessShift,
   AppConfig,
@@ -145,7 +145,9 @@ export function toJobSeekerHome(w: any): JobSeekerHome {
       ? 'deactivated'
       : w.status === 'placed'
         ? 'placed'
-        : w.guarantee?.active
+        : w.status === 'paid_waiting_id' || w.guarantee?.paidWaitingForId
+          ? 'waiting_id'
+          : w.guarantee?.active
           ? 'running'
           : paid
             ? 'ended'
@@ -206,6 +208,8 @@ const VACANCY_STATUS: Record<string, VacancyStatus> = {
   cancelled: 'closed',
   paused: 'closed',
   awaiting_confirmation: 'awaiting_otp',
+  // 25 Nov (rev 211): high salary or more than 5 openings — a Team Lead checks it first.
+  pending_tl_check: 'being_checked',
 };
 
 export function toBusinessHome(w: any): BusinessHome {
@@ -246,6 +250,27 @@ export function toBusinessHome(w: any): BusinessHome {
       approval: t.approved ? 'approved' : w.verificationStatus === 'paused' ? 'paused' : 'waiting',
     },
     vacancies: [...drafts, ...vacancies],
+    interviews: (w.interviews ?? []).map(
+      (iv: any): BusinessInterview => ({
+        id: iv.id,
+        vacancyCode: iv.vacancyCode ?? null,
+        trade: iv.trade ?? '',
+        startsAt: iv.startsAt,
+        endsAt: iv.endsAt,
+        resultOpensAt: iv.resultOpensAt ?? iv.endsAt,
+        state: ['waiting_for_candidate', 'upcoming', 'result_due', 'result_sent'].includes(iv.state) ? iv.state : 'upcoming',
+        result: iv.result ?? null,
+        resultReason: iv.resultReason ?? null,
+        candidate: {
+          firstName: iv.candidate?.firstName ?? '',
+          age: iv.candidate?.age ?? null,
+          trade: iv.candidate?.trade ?? null,
+          yearsExperience: iv.candidate?.yearsExperience ?? null,
+          languages: iv.candidate?.languages ?? [],
+          photoUrl: iv.candidate?.photoUrl ?? null,
+        },
+      }),
+    ),
     counts: { interviewsUpcoming: w.counts?.interviewsUpcoming ?? 0, placements: w.counts?.placements ?? 0, workersPlaced: w.counts?.workersPlaced ?? 0 },
   };
 }
@@ -493,7 +518,7 @@ export function liveCustomerApi(api: ApiClient, options: Options = {}): Customer
           ...(f.documents.udyamOrTradeLicence ? { licenceNumber: f.documents.udyamOrTradeLicence } : {}),
           ...(f.documents.pan ? { pan: f.documents.pan } : {}),
           ...(f.billingEmail ? { billingEmail: f.billingEmail } : {}),
-          staffNeededRows: f.staffNeeded.map((r) => ({ trade: r.trade, headcount: r.count, salaryMinPaise: r.salaryMinPaise, salaryMaxPaise: r.salaryMaxPaise, shift: r.shift, startDate: r.startDate })),
+          staffNeededRows: f.staffNeeded.map((r) => ({ trade: r.trade, headcount: r.count, salaryMinPaise: r.salaryMinPaise, salaryMaxPaise: r.salaryMaxPaise, shift: r.shift, startDate: r.startDate, experienceRequiredYears: r.experienceYears })),
           heardFrom: f.heardFrom,
           ...(f.visitPreferredAt ? { visitPreferredAt: f.visitPreferredAt } : {}),
           otp,
@@ -522,6 +547,7 @@ export function liveCustomerApi(api: ApiClient, options: Options = {}): Customer
         f.name,
       ),
     sheetLink: (profileId, purpose, documentId) => api.post<SheetLink>(`${profilePath(profileId)}/links`, { purpose, ...(documentId ? { documentId } : {}) }),
+    interviewResultLink: (profileId, interviewId) => api.post<SheetLink>(`${profilePath(profileId)}/links`, { purpose: 'interview_result', interviewId }),
 
     home: async (profileId) => toHome(await api.get<unknown>(`${profilePath(profileId)}/home`)),
     legalDocument: async (profileId, language) => {
@@ -549,6 +575,7 @@ export function liveCustomerApi(api: ApiClient, options: Options = {}): Customer
           salaryPeriod: d.salaryPeriod,
           businessShiftId: d.businessShiftId,
           startDate: d.startDate,
+          experienceRequiredYears: d.experienceYears,
           ...(d.description ? { description: d.description } : {}),
           ownerToldMinimumWage: d.legalMinimumAcknowledged,
         },

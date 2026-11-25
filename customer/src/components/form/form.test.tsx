@@ -3,7 +3,7 @@ import { StyleSheet } from 'react-native';
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import { I18nProvider } from '@/i18n';
 import { createMemoryStore } from '@/lib/storage';
-import { ChipPicker, SelectField } from './index';
+import { ChipPicker, DateField, SelectField, formatTypedDate, typedToDateKey } from './index';
 
 const AREAS = ['BTM Layout', 'Jayanagar', 'HSR Layout', 'Koramangala', 'Indiranagar', 'Whitefield', 'Marathahalli', 'Yelahanka', 'Hebbal', 'Banashankari', 'Rajajinagar', 'Malleshwaram'].map((a) => ({ value: a, label: a }));
 
@@ -60,5 +60,44 @@ describe('long lists scroll', () => {
     const style = StyleSheet.flatten(list.props.style);
     expect(typeof style.maxHeight).toBe('number');
     expect(style.maxHeight).toBeGreaterThan(0);
+  });
+});
+
+describe('DateField: type it or pick it (24 Nov)', () => {
+  it('formats as it is typed and only accepts real dates', () => {
+    expect(formatTypedDate('2411')).toBe('24/11');
+    expect(formatTypedDate('24112026')).toBe('24/11/2026');
+    expect(typedToDateKey('24/11/2026')).toBe('2026-11-24');
+    expect(typedToDateKey('31/02/2026')).toBeNull();
+  });
+
+  it('a typed date inside the range is passed on; outside it is refused with the range', async () => {
+    const changes: string[] = [];
+    function Harness() {
+      const [v, setV] = useState('');
+      return (
+        <DateField
+          label="Start date"
+          value={v}
+          onChange={(k) => {
+            changes.push(k);
+            setV(k);
+          }}
+          min="2026-11-24"
+          max="2027-05-23"
+          testID="d"
+        />
+      );
+    }
+    await render(
+      <I18nProvider storage={createMemoryStore()} initialLanguage="en">
+        <Harness />
+      </I18nProvider>,
+    );
+    await fireEvent.changeText(screen.getByTestId('d-type'), '01122026');
+    expect(changes).toEqual(['2026-12-01']);
+    expect(screen.getByTestId('d-value')).toHaveTextContent('Tue 1 Dec 2026');
+    await fireEvent.changeText(screen.getByTestId('d-type'), '01012020');
+    expect(screen.getByTestId('d-error')).toHaveTextContent('Choose a date from Tue 24 Nov 2026 to Sun 23 May 2027.');
   });
 });

@@ -65,6 +65,8 @@ export interface CustomerApi {
   registerReferralPartner(form: ReferralForm, otp: OtpProof): Promise<RegisterResult>;
   /** A fresh link page for the signed-in person, opened in the secure sheet. */
   sheetLink(profileId: string, purpose: SheetPurpose, documentId?: string): Promise<SheetLink>;
+  /** 26 Nov: the owner's result link (P05) for one of his interviews, once the result opens. */
+  interviewResultLink(profileId: string, interviewId: string): Promise<SheetLink>;
 
   // Home
   home(profileId: string): Promise<ProfileHome>;

@@ -73,6 +73,7 @@ describe('Add a vacancy', () => {
     expect(screen.getByTestId('vacancy-min-wage')).toHaveTextContent(/legal minimum for this work is about ₹25,700 a month/);
     await waitFor(() => screen.getByTestId('vacancy-shift'));
     await choose('vacancy-shift', 'sh-1');
+    await choose('vacancy-experience', '0');
     await fireEvent.press(screen.getByTestId('vacancy-start'));
     await fireEvent.press(screen.getByTestId(`vacancy-start-day-${todayKeyIst()}`));
     await fireEvent.press(screen.getByTestId('vacancy-save'));
@@ -82,13 +83,13 @@ describe('Add a vacancy', () => {
     await fireEvent.press(screen.getByTestId('vacancy-min-wage-tick'));
     await fireEvent.press(screen.getByTestId('vacancy-save'));
     await waitFor(() =>
-      expect(api.createVacancy).toHaveBeenCalledWith('p-biz', expect.objectContaining({ trade: 'Cook', salaryMinPaise: 2_000_000, legalMinimumAcknowledged: true, businessShiftId: 'sh-1' })),
+      expect(api.createVacancy).toHaveBeenCalledWith('p-biz', expect.objectContaining({ trade: 'Cook', salaryMinPaise: 2_000_000, legalMinimumAcknowledged: true, businessShiftId: 'sh-1', experienceYears: 0 })),
     );
     await fireEvent.press(await screen.findByTestId('vacancy-otp-card-send'));
     expect(api.sendStepUp).toHaveBeenCalledWith('confirm_vacancy', undefined);
     await fireEvent.changeText(await screen.findByTestId('vacancy-otp-card-code'), '123456');
     await waitFor(() => expect(api.confirmVacancy).toHaveBeenCalledWith('p-biz', 'v-9', { otp: { requestId: 'vreq', code: '123456' }, ownerToldMinimumWage: true }));
-    expect(await screen.findByTestId('vacancy-waiting-visit')).toHaveTextContent(/after the verification visit/);
+    expect(await screen.findByTestId('vacancy-waiting-visit')).toHaveTextContent(/our team approves your business/);
     await fireEvent.press(screen.getByTestId('vacancy-home'));
     expect(router.replace).toHaveBeenCalledWith('/home');
   });
