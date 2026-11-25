@@ -2,7 +2,7 @@ import { StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useI18n, type MessageKey } from '@/i18n';
-import { Banner, Button, Card, Emoji, EmptyState, ErrorState, IconTile, ListRow, LoadingState, Screen, StatusChip, Text } from '@/components';
+import { Banner, Button, Card, Emoji, EmptyState, ErrorState, IconTile, ListRow, LoadingState, Screen, StatusChip, Text, SendLinkButtons, type SendChannel } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { errorCode, inShortText, type AgreementStatus } from '@/api/endpoints';
@@ -75,8 +75,9 @@ function Agreement({ status: a, businessId, visitId, linkFailed }: { status: Agr
   const queue = useOfflineQueue();
   const client = useQueryClient();
   const signed = a.state === 'signed';
+  // Rev 211: "Send on WhatsApp" (SMS as backup) or the small "Send by SMS".
   const resend = useMutation({
-    mutationFn: () => queue.live(() => redesign.resendAgreement(businessId)),
+    mutationFn: (channel: SendChannel) => queue.live(() => redesign.resendAgreement(businessId, channel)),
     onSettled: () => void client.invalidateQueries({ queryKey: ['field-work'] }),
   });
   const inShort = useQuery({
@@ -130,12 +131,11 @@ function Agreement({ status: a, businessId, visitId, linkFailed }: { status: Agr
       {linkFailed && !signed && !resend.isSuccess ? <Banner tone="error" message={t('fa07b.firstLinkFailed')} testID="fa07b-first-failed" /> : null}
       {!signed ? (
         <>
-          <Button
+          <SendLinkButtons
             label={resend.isSuccess ? t('fa07b.resent', { last4: resend.data.sentToLast4 }) : t('fa07b.resend')}
-            variant="secondary"
-            loading={resend.isPending}
             disabled={!a.canResend || resend.isPending}
-            onPress={() => resend.mutate()}
+            run={(channel) => resend.mutateAsync(channel)}
+            onError={() => undefined}
             testID="fa07b-resend"
           />
           {!a.canResend && a.resendAvailableAt ? (

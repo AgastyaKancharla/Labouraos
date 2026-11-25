@@ -829,7 +829,9 @@ export class JobSeekerService {
 
           if (amNoPickupCall && pmNoPickupCall && msgAttempt) {
             foundDayKey = dayKey;
-            selectedIds = [amNoPickupCall.id, pmNoPickupCall.id, msgAttempt.id];
+            // Rev 211: "we tried to call you" goes on WhatsApp and SMS together; both legs are the proof.
+            const messageIds = dayAttempts.filter((a) => a.channel === 'whatsapp' || a.channel === 'sms').map((a) => a.id);
+            selectedIds = [amNoPickupCall.id, pmNoPickupCall.id, ...messageIds];
             break;
           }
         }

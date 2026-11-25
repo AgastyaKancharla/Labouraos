@@ -74,13 +74,14 @@ describe('Test-mode links on the routes that send a link by SMS', () => {
       data: { code: `TMLCA-${suffix}`, name: 'TML Agent', email: `tml_ca_${suffix}@laboura.local`, passwordHash: 'hash', role: 'call_agent', city: 'Bengaluru' },
     });
     const ceo = await prisma.staff.create({
-      data: { code: `TMLCEO-${suffix}`, name: 'TML CEO', email: `tml_ceo_${suffix}@laboura.local`, passwordHash: 'hash', role: 'ceo', city: 'Bengaluru' },
+      data: { code: `TMLCEO-${suffix}`, name: 'TML Finance', email: `tml_ceo_${suffix}@laboura.local`, passwordHash: 'hash', role: 'finance', city: 'Bengaluru' },
     });
     ids.agent = agent.id;
     ids.ceo = ceo.id;
     const jwt = app.get(JwtService);
     agentToken = await jwt.signAsync({ sub: agent.id, role: 'call_agent', email: agent.email, code: agent.code });
-    ceoToken = await jwt.signAsync({ sub: ceo.id, role: 'ceo', email: ceo.email, code: ceo.code });
+    // Rev 211: the payout details link is Finance's send button (the CEO has none).
+    ceoToken = await jwt.signAsync({ sub: ceo.id, role: 'finance', email: ceo.email, code: ceo.code });
     const business = await prisma.business.create({
       data: {
         code: `BZ-TML-${suffix}`, name: `TML Shop ${suffix}`, phone: `+9196${suffix}1`.slice(0, 13), phoneVerified: true,
@@ -121,7 +122,7 @@ describe('Test-mode links on the routes that send a link by SMS', () => {
 
     it('the business agreement link and the referral partner terms link come back too', async () => {
       const agreement = await withEnv(TEST_SITE, () =>
-        withIssuedLinkToken(app, () => request(server()).post(`/businesses/${ids.business}/agreement-links`).set(asCeo()).send({ language: 'en' }).expect(201)),
+        withIssuedLinkToken(app, () => request(server()).post(`/businesses/${ids.business}/agreement-links`).set(asAgent()).send({ language: 'en' }).expect(201)),
       );
       expect(agreement.res.body.token).toBeUndefined();
       expect(agreement.res.body.testModeLink).toBe(publicPageLink('businessAgreement', agreement.token));
@@ -169,7 +170,7 @@ describe('Test-mode links on the routes that send a link by SMS', () => {
     it.each(cases)('%s: the agreement and payout-details answers carry no link', async (_name, env) => {
       // Rev 192 S2: every agreement link shares one per-business limit; earlier links in this suite are aged out of it.
       await prisma.publicLink.updateMany({ where: { purpose: 'business_agreement', subjectId: ids.business }, data: { createdAt: new Date(Date.now() - 25 * 3600 * 1000) } });
-      const agreement = await withEnv(env, () => request(server()).post(`/businesses/${ids.business}/agreement-links`).set(asCeo()).send({ language: 'en' }).expect(201));
+      const agreement = await withEnv(env, () => request(server()).post(`/businesses/${ids.business}/agreement-links`).set(asAgent()).send({ language: 'en' }).expect(201));
       expect(agreement.body.token).toBeUndefined();
       expect(agreement.body.testModeLink).toBeUndefined();
       const payout = await withEnv(env, () => request(server()).post('/payout-accounts/links').set(asCeo()).send({ ownerType: 'referral', ownerId: ids.referral }).expect(201));

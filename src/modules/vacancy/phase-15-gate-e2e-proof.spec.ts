@@ -273,7 +273,8 @@ describe('Phase 15 gate end-to-end proof', () => {
     expect(bookedMessages).toHaveLength(1);
     expect(bookedMessages[0].variables.businessName).toBe(business.name);
     expect(bookedMessages[0].variables.address).toBe(business.address);
-    expect(sentSms.filter(({ template, phone }) => template === 'interview_booked' && phone === candidates[0].phone)).toHaveLength(1);
+    // WhatsApp first: the SMS goes only as a backup (rev 211).
+    expect(sentSms.filter(({ template, phone }) => template === 'interview_booked' && phone === candidates[0].phone)).toHaveLength(0);
     const attendance = await prisma.visitAssignment.findFirstOrThrow({
       where: { businessId, purpose: 'interview_attendance', relatedType: 'interview', relatedId: booked[0].id },
     });
@@ -327,7 +328,7 @@ describe('Phase 15 gate end-to-end proof', () => {
     expect(paidPlacement.paidAt).toBeTruthy();
     expect((await prisma.jobSeeker.findUniqueOrThrow({ where: { id: candidates[0].id } })).status).toBe('placed');
     await request(server).post('/payments/mock/simulate-webhook').send(paymentSuccess).expect(201);
-    expect(sentSms.filter(({ template, phone }) => template === 'joining_confirmed' && phone === candidates[0].phone)).toHaveLength(1);
+    expect(sentSms.filter(({ template, phone }) => template === 'joining_confirmed' && phone === candidates[0].phone)).toHaveLength(0);
     expect(sentWhatsApp.filter(({ template, phone }) => template === 'joining_confirmed' && phone === candidates[0].phone)).toHaveLength(1);
 
     const noReplyCall = await prisma.callRecord.create({

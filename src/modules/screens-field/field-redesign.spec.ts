@@ -500,7 +500,10 @@ describe('Laboura Field redesign: Today, Today\'s work, businesses, agreement, j
     // A failed SMS: nothing counts, the error says so.
     const other = await makeBusiness(agent, { name: 'SMS Fail Shop', createdAt: new Date() });
     const messaging = app.get(MessagingService);
-    const spy = jest.spyOn(messaging, 'send').mockResolvedValueOnce({ status: 'failed' } as Awaited<ReturnType<MessagingService['send']>>);
+    // Rev 211: WhatsApp first, then SMS; both fail.
+    const spy = jest.spyOn(messaging, 'send')
+      .mockResolvedValueOnce({ status: 'failed' } as Awaited<ReturnType<MessagingService['send']>>)
+      .mockResolvedValueOnce({ status: 'failed' } as Awaited<ReturnType<MessagingService['send']>>);
     expect((await post(agent, `/field-work/businesses/${other.id}/agreement-link`).expect(502)).body.code).toBe('AGREEMENT_SMS_FAILED');
     spy.mockRestore();
     expect(await prisma.publicLink.count({ where: { subjectId: other.id, revokedAt: null } })).toBe(0);
@@ -524,7 +527,10 @@ describe('Laboura Field redesign: Today, Today\'s work, businesses, agreement, j
     expect((await post(agent, `/businesses/${other.id}/agreement-links`, { language: 'en' }).expect(429)).body.code).toBe('AGREEMENT_RESEND_LIMIT');
     // A failed SMS on the office route is withdrawn too, so it never uses up the limit.
     const third = await makeBusiness(agent, { name: 'Office SMS Fail Shop', createdAt: new Date() });
-    const officeSpy = jest.spyOn(messaging, 'send').mockResolvedValueOnce({ status: 'failed' } as Awaited<ReturnType<MessagingService['send']>>);
+    // Rev 211: WhatsApp first, then SMS; both fail.
+    const officeSpy = jest.spyOn(messaging, 'send')
+      .mockResolvedValueOnce({ status: 'failed' } as Awaited<ReturnType<MessagingService['send']>>)
+      .mockResolvedValueOnce({ status: 'failed' } as Awaited<ReturnType<MessagingService['send']>>);
     expect((await post(agent, `/businesses/${third.id}/agreement-links`, { language: 'en' }).expect(201)).body).toMatchObject({ smsSent: false });
     officeSpy.mockRestore();
     expect(await prisma.publicLink.count({ where: { subjectId: third.id, revokedAt: null } })).toBe(0);

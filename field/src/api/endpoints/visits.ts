@@ -66,9 +66,10 @@ export const visitsApi = (api: ApiClient) => ({
       becameAccountAgent?: boolean;
     }>(`/field-visits/${encodeURIComponent(id)}/verify`, body),
   /** FA06: sends the owner's presence code (live). */
-  sendOwnerOtp: (businessId: string, assignmentId: string) =>
+  sendOwnerOtp: (businessId: string, assignmentId: string, channel?: 'sms') =>
     api.post<{ success: boolean; requestId: string; phone: string }>(
       `/businesses/${encodeURIComponent(businessId)}/visit-assignments/${encodeURIComponent(assignmentId)}/owner-otp`,
+      channel ? { channel } : undefined,
     ),
   /** The business form's first agreement link; `smsSent: false` when the SMS did not go (show Resend). */
   /** The agreement link, in English (rev 193). */

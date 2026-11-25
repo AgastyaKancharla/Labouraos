@@ -123,7 +123,7 @@ export class ScreensFieldController {
   /** "Resend agreement link" on the agent's own business (rate-limited; a failed SMS is an error). */
   @Post('businesses/:ref/agreement-link')
   @RequireRoles('field_agent')
-  resendAgreement(@Req() req: Authed, @Param('ref') ref: string, @Body() body: { language?: string }) {
+  resendAgreement(@Req() req: Authed, @Param('ref') ref: string, @Body() body: { language?: string; channel?: string }) {
     return this.redesign.resendAgreement(req.user, ref, body ?? {});
   }
 

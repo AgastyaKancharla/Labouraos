@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useI18n, type MessageKey } from '@/i18n';
-import { Banner, Button, Card, CodeInput, Emoji, LoadingState, PinFinder, PlaceLine, Screen, StatusChip, Text, TextField, TileMap } from '@/components';
+import { Banner, Button, Card, CodeInput, Emoji, LoadingState, PinFinder, PlaceLine, Screen, SendBySms, StatusChip, Text, TextField, TileMap } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
 import { readOtpSend, duplicateMessage } from '@/lib/otp-send';
 import { queryKeys } from '@/api/queryClient';
@@ -193,13 +193,13 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
     return isNeedsSignalError(e) ? t('common.needsSignal') : isApiError(e) ? e.message : t('common.error');
   }
 
-  async function sendOtp(current: MobileState, update: (m: MobileState) => void, key: string) {
+  async function sendOtp(current: MobileState, update: (m: MobileState) => void, key: string, channel?: 'sms') {
     const field = key.replace(/-send$/, '');
     if (!/^[6-9]\d{9}$/.test(current.number)) return setFieldProblem(field, t('fa07.mobileInvalid'));
     setFieldProblem(field, null);
     setBusy(key);
     try {
-      const outcome = readOtpSend(await queue.live(() => registration.sendOtp(current.number, current.requestId ?? undefined)));
+      const outcome = readOtpSend(await queue.live(() => registration.sendOtp(current.number, current.requestId ?? undefined, channel)));
       if (outcome.kind === 'duplicate') {
         setFieldProblem(field, duplicateMessage(outcome, t));
       } else if (outcome.kind === 'sent') {
@@ -397,6 +397,8 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
               <Button label={t('fa07.verify')} loading={busy === `${key}-verify`} disabled={m.code.length !== 6} onPress={() => void verifyOtp(m, update, `${key}-verify`)} style={styles.flex1} testID={`fa07-${key}-verify`} />
               <Button label={t('fa07.resend')} variant="secondary" disabled={!canResend} onPress={() => void sendOtp(m, update, `${key}-send`)} style={styles.flex1} />
             </View>
+            {/* Rev 211: the code goes on WhatsApp first; "Send by SMS" after 30 seconds. */}
+            <SendBySms sentAt={m.sentAt ?? null} disabled={busy !== null} onPress={() => void sendOtp(m, update, `${key}-send`, 'sms')} testID={`fa07-${key}-sms`} />
           </View>
         ) : (
           <Button label={t('fa07.sendOtp')} variant="secondary" loading={busy === `${key}-send`} onPress={() => void sendOtp(m, update, `${key}-send`)} testID={`fa07-${key}-send`} />

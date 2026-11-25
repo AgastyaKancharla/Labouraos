@@ -162,11 +162,12 @@ export class MessagingService {
     if (phone && (await isNoWhatsApp(this.prisma, phone))) {
       return this.smsOnly(withPhone, null);
     }
-    const wa = await this.deliver({ ...withPhone, channel: 'whatsapp' });
-    if (wa.row.status === 'sent') {
-      if (phone) {
+    // Every message goes through send() (one row per channel), so callers and tests see each send.
+    const waRow = await this.send({ ...withPhone, channel: 'whatsapp' });
+    if (waRow?.status === 'sent') {
+      if (phone && waRow.id) {
         await this.prisma.messageLog.update({
-          where: { id: wa.row.id },
+          where: { id: waRow.id },
           data: {
             smsBackup: SMS_BACKUP.pending,
             smsBackupDueAt: addWorkingTime(now, SMS_BACKUP_AFTER_MS),
@@ -174,12 +175,13 @@ export class MessagingService {
           },
         });
       }
-      return { channel: 'whatsapp', status: 'sent', whatsappMessageId: wa.row.id, smsMessageId: null, id: wa.row.id };
+      return { channel: 'whatsapp', status: 'sent', whatsappMessageId: waRow.id, smsMessageId: null, id: waRow.id };
     }
-    if (phone && isNoWhatsAppError(wa.errorCode)) {
-      await markNoWhatsApp(this.prisma, phone, { source: 'meta', errorCode: wa.errorCode });
+    const errorCode = await this.errorCodeOf(waRow);
+    if (phone && isNoWhatsAppError(errorCode)) {
+      await markNoWhatsApp(this.prisma, phone, { source: 'meta', errorCode });
     }
-    return this.smsOnly(withPhone, wa.row.id);
+    return this.smsOnly(withPhone, waRow?.id ?? null);
   }
 
   /**
@@ -206,25 +208,33 @@ export class MessagingService {
   async sendBoth(input: Omit<SendMessageInput, 'channel'>): Promise<{ sms: ReturnType<MessagingService['toPublic']>; whatsapp: ReturnType<MessagingService['toPublic']> }> {
     const phone = input.recipientPhone ?? undefined;
     const [sms, whatsapp] = await Promise.all([
-      this.deliver({ ...input, channel: 'sms' }),
-      this.deliver({ ...input, channel: 'whatsapp' }),
+      this.send({ ...input, channel: 'sms' }),
+      this.send({ ...input, channel: 'whatsapp' }),
     ]);
-    if (isNoWhatsAppError(whatsapp.errorCode)) {
+    const errorCode = await this.errorCodeOf(whatsapp);
+    if (isNoWhatsAppError(errorCode)) {
       const target = normaliseIndianMobile(phone ?? (await this.phoneFor(input.subjectType, input.subjectId)));
-      if (target) await markNoWhatsApp(this.prisma, target, { source: 'meta', errorCode: whatsapp.errorCode });
+      if (target) await markNoWhatsApp(this.prisma, target, { source: 'meta', errorCode });
     }
-    return { sms: sms.row, whatsapp: whatsapp.row };
+    return { sms, whatsapp };
+  }
+
+  /** Meta's error code on a failed WhatsApp row (null for anything else). */
+  private async errorCodeOf(row: { id?: string | null; status?: string } | null | undefined): Promise<string | null> {
+    if (!row?.id || row.status !== 'failed') return null;
+    const stored = await this.prisma.messageLog.findUnique({ where: { id: row.id }, select: { errorCode: true } });
+    return stored?.errorCode ?? null;
   }
 
   private async smsOnly(input: Omit<SendMessageInput, 'channel'>, whatsappMessageId: string | null): Promise<PreferWhatsAppResult> {
-    const sms = await this.deliver({ ...input, channel: 'sms' });
-    const status = sms.row.status === 'sent' ? 'sent' : sms.row.status === 'blocked' ? 'blocked' : 'failed';
+    const sms = await this.send({ ...input, channel: 'sms' });
+    const status = sms?.status === 'sent' ? 'sent' : sms?.status === 'blocked' ? 'blocked' : 'failed';
     return {
       channel: status === 'sent' ? 'sms' : null,
       status,
       whatsappMessageId,
-      smsMessageId: sms.row.id,
-      id: sms.row.id,
+      smsMessageId: sms?.id ?? null,
+      id: sms?.id ?? null,
     };
   }
 
