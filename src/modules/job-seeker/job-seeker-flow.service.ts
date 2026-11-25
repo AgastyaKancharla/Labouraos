@@ -225,8 +225,8 @@ export class JobSeekerFlowService implements OnModuleInit {
   async afterOtherIdApproved(event: OtherIdApproved): Promise<OtherIdFollowUp> {
     const started = await this.afterIdPassed(event.subjectId, event.actor, event.now, 'other_id_approved');
     if (!started) {
-      const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: event.subjectId }, select: { paymentReceivedAt: true } });
-      return { status: 'none', reason: seeker?.paymentReceivedAt ? 'already_started' : 'not_paid_yet' };
+      const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: event.subjectId }, select: { paymentReceivedAt: true, guaranteeStartsAt: true } });
+      return { status: 'none', reason: !seeker?.paymentReceivedAt ? 'not_paid_yet' : seeker.guaranteeStartsAt ? 'already_started' : 'no_passed_id' };
     }
     await this.tellAgent(event);
     return { status: 'sent', reason: 'guarantee_started' };

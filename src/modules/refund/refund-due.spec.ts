@@ -79,6 +79,7 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
         {
           code: 'JS-00001',
           paymentReceivedAt: paymentDate,
+          guaranteeStartsAt: paymentDate,
           status: 'active',
           hasOfferRejectedHit: false,
           hasExistingRefund: false,
@@ -98,6 +99,7 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
         {
           code: 'JS-00001',
           paymentReceivedAt: paymentDate,
+          guaranteeStartsAt: paymentDate,
           status: 'active',
           hasOfferRejectedHit: false,
           hasExistingRefund: false,
@@ -117,6 +119,7 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
         {
           code: 'JS-00001',
           paymentReceivedAt: paymentDate,
+          guaranteeStartsAt: paymentDate,
           status: 'active',
           hasOfferRejectedHit: false,
           hasExistingRefund: false,
@@ -138,6 +141,7 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
         {
           code: 'JS-00001',
           paymentReceivedAt: paymentDate,
+          guaranteeStartsAt: paymentDate,
           status: 'active',
           hasOfferRejectedHit: false,
           hasExistingRefund: true, // Already refunded
@@ -156,6 +160,7 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
         {
           code: 'JS-00001',
           paymentReceivedAt: paymentDate,
+          guaranteeStartsAt: paymentDate,
           status: 'active',
           hasOfferRejectedHit: true, // Offer rejected hit exists
           hasExistingRefund: false,
@@ -175,6 +180,7 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
         {
           code: 'JS-00001',
           paymentReceivedAt: paymentDate,
+          guaranteeStartsAt: paymentDate,
           status: 'placed',
           hasOfferRejectedHit: false,
           hasExistingRefund: false,
@@ -189,6 +195,7 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
         {
           code: 'JS-00001',
           paymentReceivedAt: paymentDate,
+          guaranteeStartsAt: paymentDate,
           status: 'deactivated',
           hasOfferRejectedHit: false,
           hasExistingRefund: false,
@@ -367,6 +374,7 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
           phone: '9876543210',
           tradeSkill: 'cook',
           paymentReceivedAt: js1Payment,
+          guaranteeStartsAt: js1Payment,
           status: 'active',
         },
         {
@@ -377,6 +385,7 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
           phone: '9876543211',
           tradeSkill: 'driver',
           paymentReceivedAt: js2Payment,
+          guaranteeStartsAt: js2Payment,
           status: 'active',
         },
       ]);
@@ -464,6 +473,7 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
           phone: '9876543210',
           tradeSkill: 'cook',
           paymentReceivedAt: jsPayment,
+          guaranteeStartsAt: jsPayment,
           status: 'active',
         },
       ]);
@@ -601,6 +611,7 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
           phone: '9876543210',
           tradeSkill: 'cook',
           paymentReceivedAt: paidAt,
+          guaranteeStartsAt: paidAt,
           status: 'active',
         },
         {
@@ -611,6 +622,7 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
           phone: '9876543211',
           tradeSkill: 'cook',
           paymentReceivedAt: paidAt,
+          guaranteeStartsAt: paidAt,
           status: 'active',
         },
       ]);

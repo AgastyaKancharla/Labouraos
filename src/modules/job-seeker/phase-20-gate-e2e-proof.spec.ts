@@ -266,8 +266,9 @@ describe('Phase 20 gate end-to-end proof', () => {
       .attach('photo', LIVE_CARD_JPEG, { filename: 'pan.jpg', contentType: 'image/jpeg' })
       .expect(201);
     expect(pan.body).toMatchObject({ method: 'pan', status: 'pending', idNumberLast4: '234F' });
-    const notYet = await request(server()).post(`/registration/${token}/terms-and-payment`).send({ requestId, acceptTerms: true }).expect(400);
-    expect(JSON.stringify(notYet.body)).toContain('Team Lead');
+    // Rev 211: the ID waiting for the Team Lead no longer holds back the payment (it comes first now).
+    const notYet = await request(server()).get(`/registration/${token}/terms`).query({ requestId });
+    expect(JSON.stringify(notYet.body)).not.toContain('Team Lead');
     // The Team Lead's "Looks right" in T-Verify (that endpoint is covered in aadhaar-qr.e2e.spec.ts).
     await prisma.identityVerification.update({ where: { id: pan.body.verificationId }, data: { status: 'verified', nameMatches: true, isAdult: true, verifiedAt: new Date() } });
 

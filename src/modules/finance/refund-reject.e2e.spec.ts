@@ -63,7 +63,7 @@ describe('Rejecting a refund: limits, approved refunds, rule-based rejections', 
         preferredCallWindowStart: '09:00',
         preferredCallWindowEnd: '21:00',
         status,
-        paymentReceivedAt: paidAt,
+        paymentReceivedAt: paidAt, guaranteeStartsAt: paidAt,
       },
     });
     seekerIds.push(seeker.id);
@@ -154,7 +154,7 @@ describe('Rejecting a refund: limits, approved refunds, rule-based rejections', 
 
     // He pays again (a new guarantee) and its 30 days run out too: a new refund falls due.
     await prisma.payment.updateMany({ where: { id: overridden.body.id }, data: { status: 'rejected' } });
-    await prisma.jobSeeker.update({ where: { id: seeker.id }, data: { paymentReceivedAt: new Date(Date.now() - 35 * DAY), status: 'active' } });
+    await prisma.jobSeeker.update({ where: { id: seeker.id }, data: { paymentReceivedAt: new Date(Date.now() - 35 * DAY), guaranteeStartsAt: new Date(Date.now() - 35 * DAY), status: 'active' } });
     const later = await request(server()).get('/finance/refunds').set(as('finance')).expect(200);
     expect(later.body.rows.map((r: { ref: string }) => r.ref)).toContain(ref);
   });
@@ -173,7 +173,7 @@ describe('Rejecting a refund: limits, approved refunds, rule-based rejections', 
       data: { code: `PAY-RRJ-${tail}-REPAY`, type: 'activation', status: 'succeeded', amount: 49900, subjectType: 'job_seeker', subjectId: seeker.id, jobSeekerId: seeker.id, confirmedAt: repaidAt, paidAt: repaidAt, createdAt: repaidAt },
     });
     paymentIds.push(second.id);
-    await prisma.jobSeeker.update({ where: { id: seeker.id }, data: { paymentReceivedAt: repaidAt, status: 'active' } });
+    await prisma.jobSeeker.update({ where: { id: seeker.id }, data: { paymentReceivedAt: repaidAt, guaranteeStartsAt: repaidAt, status: 'active' } });
     const ref = `js-${seeker.id}`;
     const due = await request(server()).get('/finance/refunds').set(as('finance')).expect(200);
     expect(due.body.rows.map((r: { ref: string }) => r.ref)).toContain(ref);

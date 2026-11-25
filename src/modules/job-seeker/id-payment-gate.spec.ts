@@ -1,4 +1,4 @@
-import { assertIdReadyForPayment, ID_CHECK_FIRST, ID_WAITING_FOR_TEAM_LEAD } from './id-payment-gate';
+import { assertIdReadyForPayment } from './id-payment-gate';
 import { UNDER_18_STOP_MESSAGE } from '../aadhaar-qr/under18-stop.service';
 
 type Row = { status: string; nameMatches: boolean | null; isAdult: boolean | null; method: string; vendor: string; under18LiftedAt: Date | null };
@@ -25,7 +25,7 @@ const minorQr: Row = { status: 'failed', nameMatches: true, isAdult: false, meth
 const pendingPan: Row = { status: 'pending', nameMatches: null, isAdult: null, method: 'pan', vendor: 'team_lead_check', under18LiftedAt: null };
 const seeker = { id: 's1', dateOfBirth: null };
 
-describe('One ID gate before any ₹499 (Fable final re-check, L-5)', () => {
+describe('One gate before any ₹499 (Fable final re-check, L-5; rev 211: payment before the ID check)', () => {
   it('lets him pay with any verified check, even when a later one failed on the name or waits', async () => {
     await expect(assertIdReadyForPayment(prismaWith([verifiedQr, mismatchQr]), seeker, 18, NOW)).resolves.toBeUndefined();
     await expect(assertIdReadyForPayment(prismaWith([approvedPan, pendingPan]), seeker, 18, NOW)).resolves.toBeUndefined();
@@ -40,9 +40,13 @@ describe('One ID gate before any ₹499 (Fable final re-check, L-5)', () => {
     await expect(assertIdReadyForPayment(prismaWith([verifiedQr]), { id: 's1', dateOfBirth: new Date('2010-01-01') }, 18, NOW)).rejects.toThrow(/under 18/);
   });
 
-  it('waits for the Team Lead, or asks for the ID check, when nothing is verified', async () => {
-    await expect(assertIdReadyForPayment(prismaWith([mismatchQr, pendingPan]), seeker, 18, NOW)).rejects.toThrow(ID_WAITING_FOR_TEAM_LEAD);
-    await expect(assertIdReadyForPayment(prismaWith([mismatchQr]), seeker, 18, NOW)).rejects.toThrow(ID_CHECK_FIRST);
-    await expect(assertIdReadyForPayment(prismaWith([]), seeker, 18, NOW)).rejects.toThrow(ID_CHECK_FIRST);
+  it('rev 211: no longer waits for the ID check — no check, a failed one or one waiting for the Team Lead all let him pay', async () => {
+    await expect(assertIdReadyForPayment(prismaWith([mismatchQr, pendingPan]), seeker, 18, NOW)).resolves.toBeUndefined();
+    await expect(assertIdReadyForPayment(prismaWith([mismatchQr]), seeker, 18, NOW)).resolves.toBeUndefined();
+    await expect(assertIdReadyForPayment(prismaWith([]), seeker, 18, NOW)).resolves.toBeUndefined();
+  });
+
+  it('A10: under 18 by the typed date of birth still stops before any payment, with no ID check at all', async () => {
+    await expect(assertIdReadyForPayment(prismaWith([]), { id: 's1', dateOfBirth: new Date('2010-01-01') }, 18, NOW)).rejects.toThrow(/under 18/);
   });
 });

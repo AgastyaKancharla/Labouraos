@@ -1,4 +1,5 @@
 import { INestApplication, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { idPassedMock } from '../../test-support/id-passed-mock';
 import { Test } from '@nestjs/testing';
 import * as crypto from 'crypto';
 import * as request from 'supertest';
@@ -323,6 +324,7 @@ describe('Security Fix: Fail-Closed Incoming Webhooks & Secret Enforcement', () 
             return Promise.resolve({});
           }),
         },
+        identityVerification: idPassedMock(),
         jobSeeker: {
           update: jest.fn().mockImplementation(({ data }) => {
             if (data.status) candidateStatus = data.status;

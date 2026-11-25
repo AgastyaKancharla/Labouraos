@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import { idPassedMock } from '../../test-support/id-passed-mock';
 import { Reflector } from '@nestjs/core';
 import * as crypto from 'crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -14,6 +15,7 @@ import { PaymentService } from './payment.service';
 import { PaymentController } from './payment.controller';
 
 type MockPrisma = {
+  identityVerification?: ReturnType<typeof idPassedMock>;
   bankCredit: Record<string, jest.Mock>;
   payoutAccount: Record<string, jest.Mock>;
   bankDayClose: Record<string, jest.Mock>;
@@ -66,6 +68,7 @@ describe('Phase 16 Task 3: Bank Feed & Finance Confirmation', () => {
         findMany: jest.fn(),
         updateMany: jest.fn(),
       },
+      identityVerification: idPassedMock(),
       jobSeeker: {
         update: jest.fn(),
       },

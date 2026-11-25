@@ -16,9 +16,7 @@ import { UIDAI_SAMPLE_SECURE_QR } from './testing/uidai-sample-qr';
 import { AnonymisationService } from '../../common/anonymisation/anonymisation.service';
 import { CANDIDATE_PHOTO_STORAGE, CandidatePhotoStorage } from '../job-seeker/photo-storage';
 import { encode as encodeJpeg } from 'jpeg-js';
-import { inQuietHours } from '../message/quiet-hours';
-import { contactPhoneHash } from '../message/messaging.service';
-import { IdApprovedPaymentLinkService } from '../job-seeker/id-approved-payment-link.service';
+import { JobSeekerFlowService } from '../job-seeker/job-seeker-flow.service';
 
 jest.setTimeout(180000);
 
@@ -267,10 +265,9 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
 
     const journey = await request(app.getHttpServer()).get(`/registration/${linkToken}/status`).query({ requestId }).expect(200);
     expect(journey.body).toMatchObject({ steps: { idCheck: false }, idCheck: { waitingForTeamLead: true, lastResult: 'pending' } });
+    // Rev 211: an ID waiting for the Team Lead no longer holds back the payment step (it comes first now).
     const terms = await request(app.getHttpServer()).get(`/registration/${linkToken}/terms`).query({ requestId });
-    expect(terms.status).toBe(400);
-    expect(terms.body.message).toMatch(/Team Lead/);
-    expect((await post(caller, `/job-seekers/${s.id}/activation-payment`)).status).toBe(400);
+    expect(String(terms.body.message ?? '')).not.toMatch(/Team Lead/);
 
     // T-Verify: the card photo next to the selfie, the type and the last 4, pending first.
     const list = await get(lead, '/team-lead/registrations').expect(200);
@@ -292,54 +289,41 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
     const after = await request(app.getHttpServer()).get(`/registration/${linkToken}/status`).query({ requestId }).expect(200);
     expect(after.body.steps.idCheck).toBe(true);
 
-    // 22 Nov: the ₹499 payment link went to him by itself (the same service as Resend), unless it is
-    // between 9 PM and 9 AM; it is in his history and the agent who registered him is told.
-    const quiet = inQuietHours(new Date());
-    expect(approved.body.paymentLink).toEqual(quiet ? { status: 'skipped', reason: 'quiet_hours' } : { status: 'sent', reason: null });
-    const history = await prisma.statusHistory.findFirst({ where: { subjectType: 'job_seeker', subjectId: s.id, reason: { startsWith: 'payment_link_after_id_approval:' } } });
-    expect(history?.reason).toBe(quiet ? 'payment_link_after_id_approval:skipped:quiet_hours' : 'payment_link_after_id_approval:sent');
-    expect(await prisma.auditLog.count({ where: { action: 'job_seeker.payment_link_after_id_approval', entityCode: s.code, actorId: lead.id } })).toBe(1);
-    const bell = await prisma.notification.findFirst({ where: { kind: 'payment_link_after_id', recipientStaffId: fielder.id, subjectId: s.id } });
-    expect(bell?.title).toContain(quiet ? 'was not sent' : 'was sent');
-    expect(bell?.title).not.toContain('₹');
-    if (!quiet) {
-      const payment = await prisma.payment.findFirst({ where: { jobSeekerId: s.id, type: 'activation', status: 'pending' } });
-      expect(payment).not.toBeNull();
-      const sentMessages = await prisma.messageLog.findMany({ where: { subjectType: 'job_seeker', subjectId: s.id, template: 'payment_request' } });
-      expect(sentMessages.map((m) => m.channel).sort()).toEqual(['sms', 'whatsapp']);
-    }
+    // Rev 211 (replaces the 22 Nov automatic payment link): he has not paid, so nothing is sent and no
+    // ₹499 request is made by itself — his link already leads with the payment.
+    expect(approved.body.followUp).toEqual({ status: 'none', reason: 'not_paid_yet' });
+    expect(approved.body.paymentLink).toBeUndefined();
+    expect(await prisma.payment.count({ where: { jobSeekerId: s.id, type: 'activation' } })).toBe(0);
+    expect(await prisma.statusHistory.count({ where: { subjectType: 'job_seeker', subjectId: s.id, reason: { startsWith: 'payment_link_after_id_approval:' } } })).toBe(0);
+    expect(await prisma.notification.count({ where: { kind: 'payment_link_after_id', subjectId: s.id } })).toBe(0);
   });
 
-  it('22 Nov: the automatic payment link keeps the message rules (consent, wrong number / do not call, 9 PM to 9 AM) and never goes to someone who paid', async () => {
-    const links = app.get(IdApprovedPaymentLinkService);
-    const day = new Date('2026-11-24T06:30:00.000Z'); // 12:00 IST
-    const night = new Date('2026-11-24T16:30:00.000Z'); // 22:00 IST
+  it('rev 211: another ID approved for a paid job seeker starts his 30 days at the approval, tells him and the agent', async () => {
+    const flow = app.get(JobSeekerFlowService);
+    const paidAt = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    const approvedAt = new Date();
     const actor = { id: lead.id, role: 'team_lead' };
-    // No full consent yet (only the ID-check consent): not sent.
-    const s = await seeker(40, 'Ravi Shankar');
-    expect(await links.afterApproval({ subjectType: 'job_seeker', subjectId: s.id, actor, now: day })).toEqual({ status: 'skipped', reason: 'no_consent' });
-    for (const purpose of JOB_SEEKER_REQUIRED_CONSENT_PURPOSES) {
-      await app.get(ConsentService).grant({ subjectType: 'job_seeker', subjectId: s.id, purpose, noticeVersion: DEFAULT_NOTICE_VERSION, language: 'en', method: 'sms_link' });
-    }
-    // Quiet hours: not sent by itself; the agent uses Resend in the morning.
-    expect(await links.afterApproval({ subjectType: 'job_seeker', subjectId: s.id, actor, now: night })).toEqual({ status: 'skipped', reason: 'quiet_hours' });
-    const bell = await prisma.notification.findFirst({ where: { kind: 'payment_link_after_id', recipientStaffId: fielder.id, subjectId: s.id } });
-    expect(bell?.body).toContain('outside messaging hours');
-    // Without a verified ID the request itself is refused (payment before the check stays refused).
-    expect(await links.afterApproval({ subjectType: 'job_seeker', subjectId: s.id, actor, now: day })).toEqual({ status: 'skipped', reason: 'not_sent' });
-    expect(await prisma.payment.count({ where: { jobSeekerId: s.id } })).toBe(0);
-    // "Do not call" recorded on him: nothing goes out.
-    await prisma.contactBlock.create({
-      data: { subjectType: 'job_seeker', subjectId: s.id, kind: 'do_not_call', phoneHash: contactPhoneHash(s.phone), byStaffId: caller.id, liveKey: `job_seeker|${s.id}|do_not_call` },
+    const s = await seeker(41, 'Ravi Shankar');
+    await prisma.jobSeeker.update({ where: { id: s.id }, data: { status: 'paid_waiting_id', paymentReceivedAt: paidAt } });
+    // Before any passed ID: nothing starts.
+    expect(await flow.afterOtherIdApproved({ subjectType: 'job_seeker', subjectId: s.id, actor, now: approvedAt })).toEqual({ status: 'none', reason: 'no_passed_id' });
+    expect(await prisma.jobSeeker.findUniqueOrThrow({ where: { id: s.id } })).toMatchObject({ status: 'paid_waiting_id', guaranteeStartsAt: null });
+    await prisma.identityVerification.create({
+      data: { jobSeekerId: s.id, method: 'pan', vendor: 'team_lead_check', status: 'verified', last4: '234F', nameMatches: true, isAdult: true, verifiedAt: approvedAt },
     });
-    expect(await links.afterApproval({ subjectType: 'job_seeker', subjectId: s.id, actor, now: day })).toEqual({ status: 'skipped', reason: 'contact_blocked' });
-    // Already paid: nothing to send.
-    const paid = await seeker(41, 'Ravi Shankar');
-    await prisma.jobSeeker.update({ where: { id: paid.id }, data: { status: 'active', paymentReceivedAt: day } });
-    expect(await links.afterApproval({ subjectType: 'job_seeker', subjectId: paid.id, actor, now: day })).toEqual({ status: 'skipped', reason: 'already_paid' });
-    // Every outcome is in his history.
-    const rows = await prisma.statusHistory.findMany({ where: { subjectId: s.id, reason: { startsWith: 'payment_link_after_id_approval:' } } });
-    expect(rows.map((r) => r.reason)).toEqual(expect.arrayContaining(['payment_link_after_id_approval:skipped:no_consent', 'payment_link_after_id_approval:skipped:quiet_hours']));
+    expect(await flow.afterOtherIdApproved({ subjectType: 'job_seeker', subjectId: s.id, actor, now: approvedAt })).toEqual({ status: 'sent', reason: 'guarantee_started' });
+    const after = await prisma.jobSeeker.findUniqueOrThrow({ where: { id: s.id } });
+    expect(after.status).toBe('active');
+    // The later of the payment and the ID pass: the approval.
+    expect(after.guaranteeStartsAt?.toISOString()).toBe(approvedAt.toISOString());
+    expect(await prisma.statusHistory.count({ where: { subjectId: s.id, fromStatus: 'paid_waiting_id', toStatus: 'active', reason: 'guarantee_started_id_passed' } })).toBe(1);
+    expect(await prisma.auditLog.count({ where: { action: 'job_seeker.guarantee_started', entityCode: s.code } })).toBe(1);
+    expect(await prisma.messageLog.count({ where: { subjectId: s.id, template: 'guarantee_started' } })).toBeGreaterThan(0);
+    const bell = await prisma.notification.findFirst({ where: { kind: 'guarantee_started', recipientStaffId: fielder.id, subjectId: s.id } });
+    expect(bell?.title).toContain('30 days have started');
+    // A second approval does nothing more.
+    expect(await flow.afterOtherIdApproved({ subjectType: 'job_seeker', subjectId: s.id, actor, now: new Date() })).toEqual({ status: 'none', reason: 'already_started' });
+    expect(await prisma.messageLog.count({ where: { subjectId: s.id, template: 'guarantee_started', status: { not: 'failed' } } })).toBe(1);
   });
 
   it('"Fake · flag it" rejects a pending other ID and deletes the card photo', async () => {
@@ -679,7 +663,7 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
       await openPhotos(lead, f.id);
       expect((await post(lead, `/identity/job-seekers/${f.id}/other-id/decision`, { verdict: 'fake' })).status).toBe(400);
       const fake = await post(lead, `/identity/job-seekers/${f.id}/other-id/decision`, { verdict: 'fake', note: 'Not the face on the selfie' }).expect(200);
-      expect(fake.body).toMatchObject({ verdict: 'fake', flagId: expect.any(String), otherIdDecided: 'failed', paymentLink: { status: 'none', reason: null } });
+      expect(fake.body).toMatchObject({ verdict: 'fake', flagId: expect.any(String), otherIdDecided: 'failed', followUp: { status: 'none', reason: null } });
       expect((await prisma.identityVerification.findFirstOrThrow({ where: { jobSeekerId: f.id, method: 'pan' } })).status).toBe('failed');
 
       // T-Verify (the same Team Lead, the same rule) still works for a third one.

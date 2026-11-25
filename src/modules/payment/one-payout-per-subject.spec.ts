@@ -104,7 +104,7 @@ describe('H2: one refund, referral payout and joining reward per subject, even u
         maxSalary: 2500000,
         preferredCallWindowStart: '09:00',
         preferredCallWindowEnd: '21:00',
-        paymentReceivedAt: paidAt,
+        paymentReceivedAt: paidAt, guaranteeStartsAt: paidAt,
       },
     });
     jobSeekerIds.push(seeker.id);

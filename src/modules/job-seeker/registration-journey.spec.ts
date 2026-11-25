@@ -19,6 +19,9 @@ function input(overrides: Partial<JourneyInput> = {}, seeker: Partial<JourneyInp
   };
 }
 
+const PAID_AT = new Date('2026-11-09T05:50:00.000Z');
+const SUCCEEDED = { id: 'pay-1', status: 'succeeded', upiReference: 'PAY-1-ab', expectedAmountPaise: 49900, payerUtrHint: null, confirmedAt: PAID_AT };
+
 describe('Registration link journey (P00 → P02b)', () => {
   it('starts at consent, and the optional purpose is not enough', () => {
     const status = buildJourneyStatus(input({ grantedPurposes: ['promotions', 'job_matching'] }));
@@ -29,13 +32,31 @@ describe('Registration link journey (P00 → P02b)', () => {
     expect(status.language).toBe('en'); // English only (rev 193), whatever was stored
   });
 
-  it('resumes at the first unfinished step, never asking a done step again', () => {
+  it('rev 211: Consent → Selfie → Payment → ID check, resuming at the first unfinished step', () => {
     expect(buildJourneyStatus(input({ grantedPurposes: REQUIRED })).currentStep).toBe('selfie');
-    expect(buildJourneyStatus(input({ grantedPurposes: REQUIRED }, { photoStoragePath: 'p' })).currentStep).toBe('id_check');
-    const verified = { status: 'verified', nameMatches: true, isAdult: true, failureReason: null };
-    const atPayment = buildJourneyStatus(input({ grantedPurposes: REQUIRED, latestVerification: verified }, { photoStoragePath: 'p' }));
+    // Payment comes right after the selfie: no ID check needed first.
+    const atPayment = buildJourneyStatus(input({ grantedPurposes: REQUIRED }, { photoStoragePath: 'p' }));
     expect(atPayment.currentStep).toBe('payment');
-    expect(atPayment.steps).toEqual({ consent: true, selfie: true, idCheck: true, payment: false });
+    expect(atPayment.steps).toEqual({ consent: true, selfie: true, idCheck: false, payment: false });
+    expect(atPayment.paidWaitingForId).toBe(false);
+    // Paid: the ID check is left, "paid, waiting for ID", and the 30 days have not started.
+    const atId = buildJourneyStatus(input({ grantedPurposes: REQUIRED, latestPayment: SUCCEEDED }, { photoStoragePath: 'p', paymentReceivedAt: PAID_AT }));
+    expect(atId.currentStep).toBe('id_check');
+    expect(atId.steps).toEqual({ consent: true, selfie: true, idCheck: false, payment: true });
+    expect(atId.paidWaitingForId).toBe(true);
+    expect(atId.payment).toMatchObject({ state: 'confirmed', confirmedAt: PAID_AT, guaranteeStartsAt: null, guaranteeEndsAt: null });
+  });
+
+  it('an ID check done before payment (a field agent in person) still counts: payment next, then complete', () => {
+    const verified = { status: 'verified', nameMatches: true, isAdult: true, failureReason: null };
+    const before = buildJourneyStatus(input({ grantedPurposes: REQUIRED, latestVerification: verified }, { photoStoragePath: 'p' }));
+    expect(before.currentStep).toBe('payment');
+    expect(before.steps.idCheck).toBe(true);
+    const paid = buildJourneyStatus(
+      input({ grantedPurposes: REQUIRED, latestVerification: verified, latestPayment: SUCCEEDED }, { photoStoragePath: 'p', paymentReceivedAt: PAID_AT, guaranteeStartsAt: PAID_AT }),
+    );
+    expect(paid.currentStep).toBe('complete');
+    expect(paid.paidWaitingForId).toBe(false);
   });
 
   it('lists each consent item already given once, so the consent page does not ask it again (17 Nov)', () => {
@@ -50,11 +71,12 @@ describe('Registration link journey (P00 → P02b)', () => {
     expect(status.consentGiven).toEqual(['profile_sharing']);
   });
 
-  it('keeps him at the ID step on a name mismatch and stops before payment when he is under 18', () => {
+  it('keeps a paid job seeker at the ID step on a name mismatch, and flags under 18 (by date of birth: before payment)', () => {
     const mismatch = buildJourneyStatus(input({
       grantedPurposes: REQUIRED,
+      latestPayment: SUCCEEDED,
       latestVerification: { status: 'failed', nameMatches: false, isAdult: true, failureReason: 'Name mismatch' },
-    }, { photoStoragePath: 'p' }));
+    }, { photoStoragePath: 'p', paymentReceivedAt: PAID_AT }));
     expect(mismatch.currentStep).toBe('id_check');
     expect(mismatch.idCheck.lastResult).toBe('name_mismatch');
     expect(mismatch.stopped).toBeNull();
@@ -62,19 +84,27 @@ describe('Registration link journey (P00 → P02b)', () => {
     const minor = buildJourneyStatus(input({
       grantedPurposes: REQUIRED,
       under18Stop: true,
+      latestPayment: SUCCEEDED,
       latestVerification: { status: 'verified', nameMatches: true, isAdult: false, failureReason: null },
-    }, { photoStoragePath: 'p' }));
+    }, { photoStoragePath: 'p', paymentReceivedAt: PAID_AT }));
     expect(minor.currentStep).toBe('id_check');
     expect(minor.stopped).toBe('under_18');
     expect(minor.idCheck.lastResult).toBe('under_18');
-    expect(buildJourneyStatus(input({}, { isUnder18ByDateOfBirth: true })).stopped).toBe('under_18');
+    // A10: under 18 by the typed date of birth is flagged from the first step (the pages stop at consent).
+    const byDob = buildJourneyStatus(input({}, { isUnder18ByDateOfBirth: true }));
+    expect(byDob.stopped).toBe('under_18');
+    expect(byDob.currentStep).toBe('consent');
+    expect(byDob.steps.payment).toBe(false);
   });
 
-  it('another ID waits for the Team Lead: pending keeps him at the ID step, never at payment', () => {
+  it('another ID waiting for the Team Lead no longer holds back the payment; once paid he waits at the ID step', () => {
+    const pending = { status: 'pending', nameMatches: null, isAdult: null, failureReason: null };
+    expect(buildJourneyStatus(input({ grantedPurposes: REQUIRED, latestVerification: pending }, { photoStoragePath: 'p' })).currentStep).toBe('payment');
     const status = buildJourneyStatus(input({
       grantedPurposes: REQUIRED,
-      latestVerification: { status: 'pending', nameMatches: null, isAdult: null, failureReason: null },
-    }, { photoStoragePath: 'p' }));
+      latestPayment: SUCCEEDED,
+      latestVerification: pending,
+    }, { photoStoragePath: 'p', paymentReceivedAt: PAID_AT }));
     expect(status.currentStep).toBe('id_check');
     expect(status.steps.idCheck).toBe(false);
     expect(status.idCheck).toEqual({ waitingForTeamLead: true, lastResult: 'pending' });
@@ -87,7 +117,7 @@ describe('Registration link journey (P00 → P02b)', () => {
       latestVerification: { status: 'failed', nameMatches: false, isAdult: true, failureReason: 'Name on the Aadhaar does not match the registered name' },
     }, { photoStoragePath: 'p' }));
     expect(status.steps.idCheck).toBe(true);
-    expect(status.currentStep).toBe('payment');
+    expect(status.currentStep).toBe('payment'); // not paid yet
     // ...but not past a standing under-18 stop.
     const stopped = buildJourneyStatus(input({ grantedPurposes: REQUIRED, anyVerifiedCheck: true, under18Stop: true }, { photoStoragePath: 'p' }));
     expect(stopped.steps.idCheck).toBe(false);
@@ -98,8 +128,9 @@ describe('Registration link journey (P00 → P02b)', () => {
     const status = buildJourneyStatus(input({
       grantedPurposes: REQUIRED,
       under18Stop: true,
+      latestPayment: SUCCEEDED,
       latestVerification: { status: 'verified', nameMatches: true, isAdult: true, failureReason: null },
-    }, { photoStoragePath: 'p' }));
+    }, { photoStoragePath: 'p', paymentReceivedAt: PAID_AT }));
     expect(status.currentStep).toBe('id_check');
     expect(status.stopped).toBe('under_18');
     expect(status.idCheck.lastResult).toBe('under_18');
@@ -108,8 +139,9 @@ describe('Registration link journey (P00 → P02b)', () => {
   it('a lifted under-18 stop asks for a new ID check (not stopped, not verified)', () => {
     const status = buildJourneyStatus(input({
       grantedPurposes: REQUIRED,
+      latestPayment: SUCCEEDED,
       latestVerification: { status: 'verified', nameMatches: true, isAdult: false, failureReason: null },
-    }, { photoStoragePath: 'p' }));
+    }, { photoStoragePath: 'p', paymentReceivedAt: PAID_AT }));
     expect(status.stopped).toBeNull();
     expect(status.currentStep).toBe('id_check');
     expect(status.idCheck.lastResult).toBe('failed');
@@ -125,17 +157,18 @@ describe('Registration link journey (P00 → P02b)', () => {
       .toBe('failed');
   });
 
-  it('starts the 30 days when the money is confirmed and finishes the journey', () => {
-    const confirmedAt = new Date('2026-11-09T05:50:00.000Z');
+  it('rev 211: the 30 days run from guaranteeStartsAt (paid AND ID passed), not from the payment', () => {
+    const confirmedAt = PAID_AT;
+    const idPassedAt = new Date('2026-11-11T08:00:00.000Z');
     const status = buildJourneyStatus(input({
       grantedPurposes: REQUIRED,
       latestVerification: { status: 'verified', nameMatches: true, isAdult: true, failureReason: null },
-      latestPayment: { id: 'pay-1', status: 'succeeded', upiReference: 'PAY-1-ab', expectedAmountPaise: 49900, payerUtrHint: null, confirmedAt },
-    }, { photoStoragePath: 'p', paymentReceivedAt: confirmedAt }));
+      latestPayment: SUCCEEDED,
+    }, { photoStoragePath: 'p', paymentReceivedAt: confirmedAt, guaranteeStartsAt: idPassedAt }));
     expect(status.currentStep).toBe('complete');
     expect(status.payment).toEqual({
       state: 'confirmed', amountPaise: 49900, upiReference: null, confirmedAt,
-      guaranteeEndsAt: new Date('2026-12-09T05:50:00.000Z'), paymentId: 'pay-1',
+      guaranteeStartsAt: idPassedAt, guaranteeEndsAt: new Date('2026-12-11T08:00:00.000Z'), paymentId: 'pay-1',
     });
   });
 

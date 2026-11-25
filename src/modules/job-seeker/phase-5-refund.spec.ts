@@ -186,7 +186,7 @@ describe('Phase 5 Task 8: Job seeker 30-day refund approval', () => {
           preferredCallWindowStart: '10:00',
           preferredCallWindowEnd: '18:00',
           status: 'active',
-          paymentReceivedAt: new Date(Date.now() - 35 * 24 * 60 * 60 * 1000), // 35 days ago
+          paymentReceivedAt: new Date(Date.now() - 35 * 24 * 60 * 60 * 1000), guaranteeStartsAt: new Date(Date.now() - 35 * 24 * 60 * 60 * 1000), // 35 days ago
         },
       });
 
@@ -226,7 +226,7 @@ describe('Phase 5 Task 8: Job seeker 30-day refund approval', () => {
           preferredCallWindowStart: '10:00',
           preferredCallWindowEnd: '18:00',
           status: 'placed',
-          paymentReceivedAt: paymentDate,
+          paymentReceivedAt: paymentDate, guaranteeStartsAt: paymentDate,
         },
       });
 
@@ -254,7 +254,7 @@ describe('Phase 5 Task 8: Job seeker 30-day refund approval', () => {
           preferredCallWindowStart: '10:00',
           preferredCallWindowEnd: '18:00',
           status: 'deactivated',
-          paymentReceivedAt: paymentDate,
+          paymentReceivedAt: paymentDate, guaranteeStartsAt: paymentDate,
         },
       });
 
@@ -282,7 +282,7 @@ describe('Phase 5 Task 8: Job seeker 30-day refund approval', () => {
           preferredCallWindowEnd: '18:00',
           status: 'active',
           hitCount: 1,
-          paymentReceivedAt: paymentDate,
+          paymentReceivedAt: paymentDate, guaranteeStartsAt: paymentDate,
           hits: {
             create: {
               reason: 'offer_rejected',
