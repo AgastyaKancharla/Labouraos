@@ -205,6 +205,10 @@ describe('Same-visit selling, Team Lead pause and business edit rights', () => {
         contactPersonName: 'Owner',
         contactPersonRole: 'owner', heardFrom: 'field_visit',
         gstNumber: `29SV${suffix}`,
+        // 25 Nov (rev 211): 2 proofs (FSSAI + Maps link), so the standard path; the owner's shop photo has
+        // no location, so the automatic check fails and the in-person onboarding rule applies.
+        fssaiNumber: '11521999000123',
+        mapsLink: 'https://www.google.com/maps/place/Bakery/@12.9716,77.5946,17z',
         businessLatitude: 12.9716,
         businessLongitude: 77.5946,
         visit: {
@@ -287,7 +291,7 @@ describe('Same-visit selling, Team Lead pause and business edit rights', () => {
     await request(app.getHttpServer()).get(`/vacancies/${vacancyId}/shortlist`).set(auth(tokens.fieldAgent)).expect(403);
   }, 120000);
 
-  it('keeps a business that was not onboarded in person hidden until the Team Lead verifies it', async () => {
+  it('keeps a business that was not onboarded in person hidden until the Team Lead verifies it (rev 211: the automatic check sends it to the Team Lead)', async () => {
     const business = await prisma.business.create({
       data: {
         code: `BZ-SV-PH-${suffix}`,
@@ -308,7 +312,8 @@ describe('Same-visit selling, Team Lead pause and business edit rights', () => {
     const vacancyId = await openVacancy(business.id);
     await signAgreement(business.id, callAgentId);
     const after = await prisma.business.findUniqueOrThrow({ where: { id: business.id } });
-    expect(after.verificationStatus).toBe('lead');
+    expect(after.verificationStatus).toBe('pending_tl_check');
+    expect(after.autoCheckStatus).toBe('failed');
     expect(after.inPersonOnboardedAt).toBeNull();
     await request(app.getHttpServer()).get(`/vacancies/${vacancyId}/shortlist`).set(auth(tokens.fieldAgent)).expect(403);
   }, 60000);

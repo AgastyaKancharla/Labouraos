@@ -1,4 +1,5 @@
 import { OwnTeam, businessesOwnedBy } from '../../common/rbac/own-team';
+import { isVacancyWaitingForTeamLead, VACANCY_WAITS_FOR_TEAM_LEAD_MESSAGE } from './vacancy-confirmation.service';
 import {
   BadRequestException,
   ConflictException,
@@ -672,6 +673,8 @@ export class VacancyService {
     if (vacancy.status === 'draft' || vacancy.status === 'awaiting_confirmation') {
       throw new BadRequestException('Candidates are shown only after the contact person confirms this vacancy by OTP');
     }
+    // 25 Nov (rev 211, B4): an unusual vacancy waits for the Team Lead's check first.
+    if (isVacancyWaitingForTeamLead(vacancy.status)) throw new BadRequestException(VACANCY_WAITS_FOR_TEAM_LEAD_MESSAGE);
 
     const businessAccess = businessCandidateAccess(vacancy.business);
     if (!businessAccess.allowed) {

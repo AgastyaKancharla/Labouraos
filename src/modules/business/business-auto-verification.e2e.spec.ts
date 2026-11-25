@@ -196,10 +196,10 @@ describe('Business automatic verification (rev 211–212)', () => {
     await seedOwnerPhotos(prisma, business.id, { at: { latitude: 12.9716, longitude: 77.5946 } });
     await sign(business.id);
     expect((await prisma.business.findUniqueOrThrow({ where: { id: business.id } })).verificationStatus).toBe('pending_tl_check');
-    // An agent of another team cannot add it; the lead creator can.
+    // An agent of another team cannot add it; the business's Team Lead can.
     await request(app.getHttpServer()).post(`/businesses/${business.id}/proofs`).set(auth(otherAgent.token)).send({ mapsLink: 'https://www.google.com/maps/place/X/@12.9716,77.5946,17z' }).expect(403);
-    await request(app.getHttpServer()).post(`/businesses/${business.id}/proofs`).set(auth(callAgent.token)).send({ fssaiNumber: '123' }).expect(400);
-    await request(app.getHttpServer()).post(`/businesses/${business.id}/proofs`).set(auth(callAgent.token))
+    await request(app.getHttpServer()).post(`/businesses/${business.id}/proofs`).set(auth(teamLead.token)).send({ fssaiNumber: '123' }).expect(400);
+    await request(app.getHttpServer()).post(`/businesses/${business.id}/proofs`).set(auth(teamLead.token))
       .send({ mapsLink: 'https://www.google.com/maps/place/X/@12.9716,77.5946,17z' }).expect(201);
     const after = await prisma.business.findUniqueOrThrow({ where: { id: business.id } });
     expect(after).toMatchObject({ verificationStatus: 'verified', autoCheckStatus: 'passed', mapsLatitude: 12.9716 });

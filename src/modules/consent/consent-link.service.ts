@@ -962,6 +962,8 @@ export class ConsentLinkService {
     }
     const signedName = dto.signedName?.trim();
     if (!signedName) throw new BadRequestException('signedName is required');
+    // 25 Nov (rev 211, B1): both owner photos first — before the code is used up.
+    await this.assertOwnerPhotosTaken(record.businessId);
     const otpValid = dto.otpCode
       ? await this.otpService.verifyOtp(dto.otpRequestId, dto.otpCode)
       : false;
@@ -974,7 +976,6 @@ export class ConsentLinkService {
     }
     const business = await this.prisma.business.findUnique({ where: { id: record.businessId } });
     if (!business) throw new NotFoundException('Business not found');
-    await this.assertOwnerPhotosTaken(business.id);
 
     const documentStoragePath = `business-agreements/${record.businessId}/${this.publicLinks.hashToken(record.token)}.html`;
     // The terms on the link are exactly the ones shown (hash frozen when the link was sent).
