@@ -33,6 +33,7 @@ import {
 } from './business-verification.service';
 import { CandidateIntroductionService } from '../vacancy/candidate-introduction.service';
 import { STAFF_PHOTO_MAX_BYTES } from '../../common/upload-limits';
+import { BusinessOwnerPhotoService, parseOwnerPhotoLocation, parseOwnerPhotoSlot } from './business-owner-photo.service';
 
 @Controller('businesses')
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -44,6 +45,7 @@ export class BusinessController {
     private readonly consentLinkService: ConsentLinkService,
     private readonly verificationService: BusinessVerificationService,
     private readonly candidateIntroductionService: CandidateIntroductionService,
+    private readonly ownerPhotos: BusinessOwnerPhotoService,
   ) {}
 
   @Post()
@@ -285,6 +287,48 @@ export class BusinessController {
       photo.mimetype,
       req.user.sub,
     );
+  }
+
+  /**
+   * 25 Nov (rev 211, B2): add a missing proof (GST, FSSAI / trade licence / Shop and
+   * Establishment / Udyam number, or the Google Maps link); the automatic check runs again.
+   * Scope: the business write permission (an agent's own account or lead, a Team Lead's team).
+   */
+  @Post(':id/proofs')
+  @RequireRoles('field_agent', 'call_agent', 'team_lead', 'manager', 'ceo')
+  @RequirePermission('business', 'write')
+  addProofs(@Param('id') businessId: string, @Body() body: Record<string, unknown>, @Req() req: Request & { user: JwtPayload }) {
+    return this.businessService.addProofs(businessId, body ?? {}, req.user.sub);
+  }
+
+  /**
+   * 25 Nov (rev 211, B1): in Laboura Field (FA07b) the field agent takes the owner's live selfie
+   * (kind=selfie) and the shop photo (kind=shop: the name board, or for a home business the owner
+   * holding the FSSAI licence) before the owner signs, with the phone's GPS on the shop photo.
+   * Camera only. Scope: the field agent's own account (business write permission).
+   */
+  @Post(':id/owner-photos')
+  @RequireRoles('field_agent')
+  @RequirePermission('business', 'write')
+  @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: STAFF_PHOTO_MAX_BYTES, files: 1 } }))
+  async ownerPhoto(
+    @Param('id') businessId: string,
+    @UploadedFile() photo: { buffer: Buffer; mimetype: string } | undefined,
+    @Body() body: Record<string, unknown>,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    const saved = await this.ownerPhotos.save(businessId, {
+      slot: parseOwnerPhotoSlot(body?.kind),
+      photo: photo?.buffer ?? Buffer.alloc(0),
+      captureSource: typeof body?.captureSource === 'string' ? body.captureSource : undefined,
+      location: parseOwnerPhotoLocation(body ?? {}),
+      takenVia: 'field_app',
+      takenByStaffId: req.user.sub,
+      auditActorId: req.user.sub,
+    });
+    // A photo added after the owner signed may complete the automatic check.
+    await this.verificationService.advanceToPendingTlCheckIfReady(businessId, req.user.sub);
+    return { ...saved, ownerPhotos: await this.ownerPhotos.state(businessId) };
   }
 
   @Post(':id/erase')

@@ -513,6 +513,27 @@ model Business {
   suspendedUntil           DateTime?
   suspendedByStaffId       String?
   suspensionReason         String?
+  /// 25 Nov (rev 211, B1): the business runs from the owner's home (a home kitchen, tiffin or
+  /// tailoring business): the second owner photo is the owner holding the FSSAI licence with
+  /// his face visible, instead of the shop's name board. Households hiring help are the
+  /// business type "household" instead, and keep the visit and the Team Lead check.
+  runsFromHome             Boolean   @default(false)
+  /// B2: a Google Maps link as a proof, resolved to its pin by src/modules/maps-link.
+  mapsLink                 String?
+  mapsLatitude             Float?
+  mapsLongitude            Float?
+  mapsPlaceName            String?
+  /// B3: the automatic verification check (who: "automatic"): passed or failed, when, and
+  /// every condition with its result (BusinessAutoCheckReason[] as JSON). Re-run when a
+  /// missing proof or photo is added; a failed check waits in pending_tl_check.
+  autoCheckStatus          String?
+  autoCheckedAt            DateTime?
+  autoCheckReasons         Json?
+  /// Metres between the shop photo's location and the Maps pin, when both exist.
+  autoCheckDistanceMeters  Int?
+  /// Set when the automatic check verified the business (no Team Lead).
+  autoVerifiedAt           DateTime?
+  ownerPhotos   BusinessOwnerPhoto[]
   branches      BusinessBranch[]
   vacancies     Vacancy[]
   /// The business's own shifts (17 Nov): a vacancy picks one of them.
@@ -536,6 +557,35 @@ model Business {
   @@index([city])
   @@index([accountAgentId])
   @@index([verificationStatus])
+}
+
+/// 25 Nov (rev 211, B1): the owner's live photos before he signs the agreement — a selfie and
+/// the shop's name board (for a home business: holding the FSSAI licence, face visible). Taken
+/// with the camera only (no gallery) on the agreement link (P04) or in Laboura Field (FA07b).
+/// The phone's location is recorded with the shop photo (refused location: still taken, the
+/// location check then fails and the Team Lead looks). Private storage, signed links only;
+/// kept like the business profile (23 months after the last activity, then removed).
+model BusinessOwnerPhoto {
+  id              String    @id @default(uuid())
+  businessId      String
+  business        Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  /// owner_selfie, shop_board or fssai_with_owner
+  kind            String
+  storagePath     String
+  photoHash       String
+  latitude        Float?
+  longitude       Float?
+  accuracyMeters  Float?
+  /// recorded, refused or unavailable (only the shop photo asks for a location)
+  locationStatus  String?
+  /// agreement_link or field_app
+  takenVia        String
+  takenByStaffId  String?
+  takenAt         DateTime
+  createdAt       DateTime  @default(now())
+
+  @@index([businessId, kind])
+  @@index([photoHash])
 }
 
 model BusinessBranch {
@@ -658,6 +708,13 @@ model Vacancy {
   belowLegalMinimum           Boolean     @default(false)
   ownerToldMinimumWage        Boolean     @default(false)
   legalMinimumPaise           Int?
+  /// 25 Nov (rev 211, B4): an unusual vacancy (salary far above its trade's usual range, or
+  /// more than 5 openings) waits in status pending_tl_check after the owner's confirmation:
+  /// why (JSON list), and the Team Lead's decision.
+  tlCheckReasons              Json?
+  tlCheckedAt                 DateTime?
+  tlCheckedByStaffId          String?
+  tlCheckDecision             String?
   createdAt                   DateTime    @default(now())
   updatedAt                   DateTime    @updatedAt
 
@@ -728,6 +785,16 @@ model Interview {
   selectedJoiningDate      DateTime?
   candidateCheckAnswer     String?
   candidateCheckAt         DateTime?
+  /// 25 Nov (rev 211, B6): "Was the shop real, at this address, and was the job as described?"
+  /// asked with "Did they offer you?" until a candidate has said yes for this business.
+  shopCheckAsked           Boolean   @default(false)
+  /// yes or no
+  shopCheckAnswer          String?
+  shopCheckAt              DateTime?
+  /// link (P06), call (the agent recorded it) or whatsapp (his reply, recorded by the agent)
+  shopCheckChannel         String?
+  shopCheckByStaffId       String?
+  shopCheckNote            String?
   cancelReason             String?
   /// How the interview happens (guide, "Confirming in the shop", decided 9 Nov):
   /// in_shop_call (the phone talk in the shop is the first interview), at_shop,

@@ -8,8 +8,13 @@ import {
   Query,
   Req,
   Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { CheckLinkBeforeUpload } from '../../common/public-link-upload.guard';
+import { parseOwnerPhotoLocation, parseOwnerPhotoSlot } from '../business/business-owner-photo.service';
 import { Response } from 'express';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
@@ -145,6 +150,30 @@ export class ConsentController {
   @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async submitConsent(@Body() body: SubmitConsentDto) {
     return this.consentLinkService.submitConsent(body);
+  }
+
+  /**
+   * 25 Nov (rev 211, B1): before signing, the owner takes a live selfie (kind=selfie) and a live
+   * photo of the shop's name board — for a home business himself holding the FSSAI licence —
+   * (kind=shop) on the agreement page. Camera only (captureSource=live_camera); the phone's
+   * location goes with the shop photo (latitude, longitude, accuracyMeters, or
+   * locationStatus=refused). The link token is checked before the file is read.
+   */
+  @Post(':token/owner-photo')
+  @Public('token page: the business owner proves who he is with the agreement link token')
+  @CheckLinkBeforeUpload('business_agreement', 'business', 'A valid business agreement link is required')
+  @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  async ownerPhoto(
+    @Param('token') token: string,
+    @UploadedFile() photo: { buffer: Buffer; mimetype: string } | undefined,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.consentLinkService.saveAgreementOwnerPhoto(token, {
+      slot: parseOwnerPhotoSlot(body?.kind),
+      photo: photo?.buffer ?? Buffer.alloc(0),
+      captureSource: typeof body?.captureSource === 'string' ? body.captureSource : undefined,
+      location: parseOwnerPhotoLocation(body ?? {}),
+    });
   }
 
   /** "We've updated our terms": accept the current version on the job seeker's or partner's link (rev 176). */

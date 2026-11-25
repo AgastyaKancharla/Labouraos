@@ -23,6 +23,7 @@ import { CustomerAccountService } from '../customer-account/customer-account.ser
 import { CustomerLinkingService } from '../customer-account/customer-linking.service';
 import { CustomerSignInService, RequestContext } from '../customer-account/customer-sign-in.service';
 import { hashOf } from '../customer-account/customer-otp-limiter.service';
+import { isHouseholdBusiness } from '../business/business-auto-check.service';
 
 type Body = Record<string, unknown>;
 
@@ -43,6 +44,8 @@ const BUSINESS_FIELDS = [
   'shopNumber', 'street', 'landmark', 'pincode', 'licenceNumber', 'shopEstablishmentNumber', 'udyamNumber', 'pan',
   'fssaiNumber', 'noDocuments', 'billingName', 'billingAddress', 'billingEmail', 'latitude', 'longitude',
   'staffNeededRows', 'staffNeeded',
+  // 25 Nov (rev 211): a home business and the Google Maps link proof (optional; docs/customer-app-api.md).
+  'runsFromHome', 'mapsLink',
 ] as const;
 
 const REFERRAL_FIELDS = [
@@ -363,19 +366,22 @@ export class CustomerRegistrationService {
     if (referralCode) {
       await this.prisma.signupTracker.update({ where: { id: trackerId }, data: { referralCode: referralCode.trim().toUpperCase() } });
     }
-    // The verification visit is required anyway (proposal 4.2): the request is
-    // made now, with the time the owner picked. The back office suggests and
-    // assigns the field agent.
-    await this.prisma.visitAssignment.create({
-      data: {
-        businessId: created.id,
-        purpose: VISIT_PURPOSE_BUSINESS_SIGNUP,
-        status: 'pending',
-        requestedFor: visitPreferredAt,
-        signupTrackerId: trackerId,
-      },
-    });
-    await this.prisma.signupTrackerEvent.create({ data: { trackerId, kind: 'visit_request', note: 'business sign-up visit requested' } });
+    // 25 Nov (rev 211, B5): only a household hiring help still needs the verification visit; the
+    // request is made now, with the time the owner picked, and the back office assigns the field
+    // agent. Every other business is checked automatically after it signs the agreement (owner
+    // photos, proofs): no visit request unless that check fails and a Team Lead asks for one.
+    if (isHouseholdBusiness(typeof body.businessType === 'string' ? body.businessType : null)) {
+      await this.prisma.visitAssignment.create({
+        data: {
+          businessId: created.id,
+          purpose: VISIT_PURPOSE_BUSINESS_SIGNUP,
+          status: 'pending',
+          requestedFor: visitPreferredAt,
+          signupTrackerId: trackerId,
+        },
+      });
+      await this.prisma.signupTrackerEvent.create({ data: { trackerId, kind: 'visit_request', note: 'business sign-up visit requested' } });
+    }
     return { profileId, kind: 'business', code: created.code, verificationStatus: created.verificationStatus ?? 'lead', next: 'agreement' };
   }
 

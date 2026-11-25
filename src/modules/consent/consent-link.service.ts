@@ -6,6 +6,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { codedError } from '../../common/http/coded-error';
 import { createHash } from 'crypto';
@@ -31,6 +32,7 @@ import { formatIstDateTime } from '../legal/legal-dates';
 import { AGREEMENT_DOCUMENT_STORAGE, AgreementDocumentStorage } from './agreement-document.storage';
 import { AuditService } from '../../common/audit/audit.service';
 import { BusinessVerificationService } from '../business/business-verification.service';
+import { BusinessOwnerPhotoService, OwnerPhotoState } from '../business/business-owner-photo.service';
 import { publicPageLink, PublicPage } from '../../common/public-pages';
 import { PublicOtpLimiter } from '../../common/public-otp-limiter.service';
 import { testModeFields } from '../../common/otp/otp-test-mode';
@@ -155,6 +157,8 @@ export type ConsentLinkDetails =
       /** The numbers frozen when the link was sent, for the summary cards (P04). */
       terms: { feePercent: number; gstPercent: number; noBypassMonths: number; noBypassPenaltyPercent: number };
       guarantee: { replacementWindowDays: number; maxFreeReplacements: number; replacementSearchDays: number };
+      /** 25 Nov (rev 211, B1): the owner's live photos taken so far; signing waits for both. */
+      ownerPhotos: OwnerPhotoState;
     }
   | {
       valid: true;
@@ -240,6 +244,7 @@ export class ConsentLinkService {
     @Inject(AGREEMENT_DOCUMENT_STORAGE) private readonly agreementStorage: AgreementDocumentStorage,
     private readonly otpLimiter: PublicOtpLimiter,
     private readonly legal: LegalDocumentService,
+    @Optional() private readonly ownerPhotos?: BusinessOwnerPhotoService,
   ) {}
 
   setTtlMs(ttlMs: number) {
@@ -681,6 +686,9 @@ export class ConsentLinkService {
           maxFreeReplacements: policy.maxFreeReplacements,
           replacementSearchDays: policy.replacementSearchDays,
         },
+        ownerPhotos: this.ownerPhotos
+          ? await this.ownerPhotos.state(business.id)
+          : { selfie: true, shop: true, shopKind: business.runsFromHome ? 'fssai_with_owner' : 'shop_board' },
       };
     }
 
@@ -964,6 +972,7 @@ export class ConsentLinkService {
     }
     const business = await this.prisma.business.findUnique({ where: { id: record.businessId } });
     if (!business) throw new NotFoundException('Business not found');
+    await this.assertOwnerPhotosTaken(business.id);
 
     const documentStoragePath = `business-agreements/${record.businessId}/${this.publicLinks.hashToken(record.token)}.html`;
     // The terms on the link are exactly the ones shown (hash frozen when the link was sent).
@@ -1059,6 +1068,41 @@ export class ConsentLinkService {
       signedAt,
       grantedPurposes: requiredPurposes,
     };
+  }
+
+  /**
+   * 25 Nov (rev 211, B1): signing is refused until the owner's live selfie and the shop photo
+   * (name board; for a home business the owner holding the FSSAI licence) exist — taken on
+   * this page or by the field agent in Laboura Field (FA07b). Checked before the code is used up.
+   */
+  private async assertOwnerPhotosTaken(businessId: string): Promise<void> {
+    if (!this.ownerPhotos) return;
+    const state = await this.ownerPhotos.state(businessId);
+    if (state.selfie && state.shop) return;
+    const missing = [
+      state.selfie ? null : 'your live selfie',
+      state.shop ? null : state.shopKind === 'fssai_with_owner' ? 'a live photo of you holding the FSSAI licence' : "a live photo of the shop's name board",
+    ].filter(Boolean).join(' and ');
+    throw new BadRequestException({ statusCode: 400, error: 'Bad Request', code: 'OWNER_PHOTOS_REQUIRED', message: `Take ${missing} before signing`, ownerPhotos: state });
+  }
+
+  /** 25 Nov (rev 211, B1): a live photo on the agreement link, before signing (the token proves the owner). */
+  async saveAgreementOwnerPhoto(token: string, input: { slot: 'selfie' | 'shop'; photo: Buffer; captureSource: string | undefined; location: { latitude?: number | null; longitude?: number | null; accuracyMeters?: number | null; status?: string | null } }) {
+    const record = await this.validateToken(token);
+    if (record.subjectType !== 'business') throw new BadRequestException('A valid business agreement link is required');
+    if (!this.ownerPhotos) throw new BadRequestException('Owner photos are not available');
+    const saved = await this.ownerPhotos.save(record.businessId, {
+      slot: input.slot,
+      photo: input.photo,
+      captureSource: input.captureSource,
+      location: input.location,
+      takenVia: 'agreement_link',
+      takenByStaffId: null,
+      auditActorId: record.createdByStaffId || 'system',
+    });
+    // A photo added after signing (an older agreement) may complete the automatic check.
+    await this.businessVerificationService.advanceToPendingTlCheckIfReady(record.businessId);
+    return { ...saved, ownerPhotos: await this.ownerPhotos.state(record.businessId) };
   }
 
   private async submitReferralTerms(

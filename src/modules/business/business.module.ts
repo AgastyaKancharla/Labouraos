@@ -19,6 +19,7 @@ import { ConsentModule } from '../consent/consent.module';
 import { BusinessVerificationModule } from './business-verification.module';
 import { FieldVisitModule } from '../field-visit/field-visit.module';
 import { MessageModule } from '../message/message.module';
+import { MapsLinkModule } from '../maps-link/maps-link.module';
 
 import { BusinessShiftController } from './business-shift.controller';
 import { BusinessShiftService } from './business-shift.service';
@@ -38,6 +39,8 @@ import { BusinessShiftService } from './business-shift.service';
     FieldVisitModule,
     // M3: the old number is told when the owner's number changes.
     MessageModule,
+    // 25 Nov (rev 211, B2): the Google Maps link proof is read to its pin.
+    MapsLinkModule,
   ],
   controllers: [BusinessController, BusinessShiftController],
   providers: [
