@@ -30,6 +30,8 @@ describe('Vacancies saved together, confirmed by the owner with one code', () =>
   const server = () => app.getHttpServer();
   const post = (path: string, body: Record<string, unknown>) =>
     request(server()).post(path).set('Authorization', `Bearer ${agentToken}`).send(body);
+  // The test app has no global error filter: the code is at the top here (under `details` in production).
+  const detailsOf = (res: request.Response) => (res.body?.details ?? res.body) as Record<string, unknown>;
   const row = (extra: Record<string, unknown> = {}) => ({
     tradeSkill: 'Electrician', salaryMinPaise: 2900000, headcount: 1, salaryPeriod: 'monthly', interviewType: 'walk_in', ...extra,
   });
@@ -103,9 +105,6 @@ describe('Vacancies saved together, confirmed by the owner with one code', () =>
     await post('/vacancies/batch/confirm', { businessId, vacancyIds: ids, otpRequestId: requestId, code: wrong }).expect(400);
     expect(await prisma.vacancy.count({ where: { id: { in: ids }, status: 'awaiting_confirmation' } })).toBe(3);
 
-    // The one code does not confirm a smaller set (it is bound to exactly these vacancies).
-    await post('/vacancies/batch/confirm', { businessId, vacancyIds: ids.slice(0, 2), otpRequestId: requestId, code: code(requestId) }).expect(400);
-
     const confirmed = await post('/vacancies/batch/confirm', { businessId, vacancyIds: ids, otpRequestId: requestId, code: code(requestId), method: 'code_on_visit' }).expect(201);
     expect(confirmed.body.confirmed).toBe(3);
     expect(await prisma.vacancy.count({ where: { id: { in: ids }, confirmationMethod: 'code_on_visit', confirmedByName: 'Reddy' } })).toBe(3);
@@ -114,11 +113,11 @@ describe('Vacancies saved together, confirmed by the owner with one code', () =>
   it('a problem in one row names the row and saves nothing', async () => {
     const before = await prisma.vacancy.count({ where: { businessId } });
     const tick = await post('/vacancies/batch', { businessId, vacancies: [row(), row({ salaryMinPaise: 500000 })] }).expect(400);
-    expect(tick.body.details).toMatchObject({ code: 'MINIMUM_WAGE_TICK_REQUIRED', vacancyIndex: 1 });
+    expect(detailsOf(tick)).toMatchObject({ code: 'MINIMUM_WAGE_TICK_REQUIRED', vacancyIndex: 1 });
     const extra = await post('/vacancies/batch', { businessId, vacancies: [row({ status: 'open' })] }).expect(400);
-    expect(extra.body.details).toMatchObject({ code: 'BATCH_ROW_INVALID', vacancyIndex: 0 });
+    expect(detailsOf(extra)).toMatchObject({ code: 'BATCH_ROW_INVALID', vacancyIndex: 0 });
     const longNote = await post('/vacancies/batch', { businessId, vacancies: [row({ description: 'x'.repeat(501) })] }).expect(400);
-    expect(longNote.body.details).toMatchObject({ code: 'BATCH_ROW_INVALID', vacancyIndex: 0 });
+    expect(detailsOf(longNote)).toMatchObject({ code: 'BATCH_ROW_INVALID', vacancyIndex: 0 });
     await post('/vacancies/batch', { businessId, vacancies: [] }).expect(400);
     expect(await prisma.vacancy.count({ where: { businessId } })).toBe(before);
   });
@@ -135,6 +134,11 @@ describe('Vacancies saved together, confirmed by the owner with one code', () =>
       .send({ headcount: 3, reason: 'Owner wants three' }).expect(200);
     const rid = a.body.confirmation.otpRequestId as string;
     await post('/vacancies/batch/confirm', { businessId, vacancyIds: aIds, otpRequestId: rid, code: code(rid) }).expect(400);
+    // A code for the set never confirms a smaller set (it is bound to exactly these vacancies); a refused
+    // code is used up, so the agent sends a fresh one.
+    const set = await post('/vacancies/batch/send-code', { businessId, vacancyIds: aIds }).expect(201);
+    await post('/vacancies/batch/confirm', { businessId, vacancyIds: aIds.slice(0, 1), otpRequestId: set.body.otpRequestId, code: code(set.body.otpRequestId) }).expect(400);
+    expect(await prisma.vacancy.count({ where: { id: { in: aIds }, status: 'awaiting_confirmation' } })).toBe(2);
     // A fresh code for the set works.
     const again = await post('/vacancies/batch/send-code', { businessId, vacancyIds: aIds }).expect(201);
     const ok = await post('/vacancies/batch/confirm', { businessId, vacancyIds: aIds, otpRequestId: again.body.otpRequestId, code: code(again.body.otpRequestId) }).expect(201);
