@@ -156,9 +156,11 @@ describe('FA08 the one business page', () => {
     await waitFor(() => screen.getByTestId('shift-sh-1'));
     expect(screen.getByTestId('fa08-shifts')).toHaveTextContent(/Shifts.*Morning 07:00–15:00/);
     await fireEvent.press(screen.getByTestId('shift-add'));
-    await fireEvent.changeText(screen.getByTestId('add-shift-name'), 'Night');
-    await fireEvent.changeText(screen.getByTestId('add-shift-start'), '10 pm');
-    await fireEvent.changeText(screen.getByTestId('add-shift-end'), '6 AM');
+    // 26 Nov: no name typed — it is named from the start time; times from the clock picker.
+    await fireEvent.press(screen.getByTestId('add-shift-start'));
+    await fireEvent.press(screen.getByTestId('add-shift-start-option-22:00'));
+    await fireEvent.press(screen.getByTestId('add-shift-end'));
+    await fireEvent.press(screen.getByTestId('add-shift-end-option-06:00'));
     await fireEvent.press(screen.getByTestId('add-shift-save'));
     await waitFor(() => screen.getByTestId('shift-sh-2'));
     expect(calls).toContainEqual({ method: 'POST', path: '/businesses/b-1/shifts', body: { name: 'Night', startTime: '22:00', endTime: '06:00' } });

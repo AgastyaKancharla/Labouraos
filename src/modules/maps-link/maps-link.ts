@@ -188,6 +188,30 @@ export function addressFromNominatim(body: unknown): ReverseAddress | null {
   };
 }
 
+/** The fields "Use where I am" fills that a reverse lookup left empty (26 Nov); false when nothing is missing. */
+export function addressGaps(address: ReverseAddress | null): boolean {
+  return !address || !address.pincode || !address.area || !address.city || !address.street;
+}
+
+/**
+ * Fills only what `base` is missing from `extra` (a wider or second lookup of the same spot). The shop number is
+ * never borrowed: at a coarser zoom or from Google it is a neighbour's.
+ */
+export function fillAddressGaps(base: ReverseAddress | null, extra: ReverseAddress | null): ReverseAddress | null {
+  if (!extra) return base;
+  if (!base) return { ...extra, shopNumber: null };
+  return {
+    shopNumber: base.shopNumber,
+    street: base.street ?? extra.street,
+    area: base.area ?? extra.area,
+    city: base.city ?? extra.city,
+    state: base.state ?? extra.state,
+    pincode: base.pincode ?? extra.pincode,
+    displayName: base.displayName ?? extra.displayName,
+    locality: base.locality ?? extra.locality ?? null,
+  };
+}
+
 /** "Kothnur, JP Nagar 8th Phase": the area in words for a GPS fix (22 Nov), never the same word twice. */
 function localityOf(parts: Array<string | null>): string | null {
   const out: string[] = [];

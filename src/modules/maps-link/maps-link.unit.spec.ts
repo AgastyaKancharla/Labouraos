@@ -415,6 +415,52 @@ describe('Business address from the field test (22 Nov)', () => {
     await expect(maps.where('fa-2', 12.8901, 77.5902)).resolves.toBeTruthy();
   });
 
+  it('26 Nov: "where am I" fills the gaps from a wider lookup, then Google nearby; never a neighbour\'s shop number', async () => {
+    const seen: string[] = [];
+    const answer = (json: unknown) => ({ status: 200, headers: { get: () => null }, json: async () => json, body: null });
+    const reply = (zoom16: unknown, google?: unknown): MapsFetch => async (url) => {
+      seen.push(url);
+      if (url.startsWith(NOM) && url.includes('zoom=18')) return answer({ display_name: '12, 24th Main', address: { house_number: '12', road: '24th Main', city: 'Bengaluru' } });
+      if (url.startsWith(NOM) && url.includes('zoom=16')) return answer(zoom16);
+      if (url.startsWith('https://places.googleapis.com/v1/places:searchNearby')) return answer(google ?? { places: [] });
+      throw new Error(`unexpected fetch ${url}`);
+    };
+    // The exact spot has no area or PIN code; the wider lookup has both.
+    delete process.env.GOOGLE_PLACES_API_KEY;
+    let maps = new TestMaps(reply({ address: { house_number: '99', suburb: 'JP Nagar 8th Phase', city: 'Bengaluru', postcode: '560076' } }), publicDns);
+    let out = await maps.where('fa-1', 12.8901, 77.5902);
+    expect(out.address).toMatchObject({ shopNumber: '12', street: '24th Main', area: 'JP Nagar 8th Phase', pincode: '560076', city: 'Bengaluru' });
+    expect(out).toMatchObject({ latitude: 12.8901, longitude: 77.5902 });
+    expect(seen.some((u) => u.includes('places.googleapis.com'))).toBe(false);
+
+    // Still no PIN code: Google nearby (only with the key) fills it; the pin stays the GPS fix.
+    process.env.GOOGLE_PLACES_API_KEY = 'test-key-not-real';
+    seen.length = 0;
+    maps = new TestMaps(reply({ address: { suburb: 'JP Nagar 8th Phase' } }, {
+      places: [{ location: { latitude: 12.8905, longitude: 77.5907 }, formattedAddress: '7, 24th Main, Kothnur, Bengaluru 560076', addressComponents: [
+        { longText: '7', types: ['street_number'] }, { longText: '560076', types: ['postal_code'] }, { longText: 'Bengaluru', types: ['locality'] },
+      ] }],
+    }), publicDns);
+    out = await maps.where('fa-1', 12.8901, 77.5902);
+    expect(out.address).toMatchObject({ shopNumber: '12', area: 'JP Nagar 8th Phase', pincode: '560076' });
+    expect(out).toMatchObject({ latitude: 12.8901, longitude: 77.5902 });
+    expect(seen.filter((u) => u.includes('places:searchNearby'))).toHaveLength(1);
+
+    // OpenStreetMap down entirely: Google alone still fills the form, without its shop number.
+    seen.length = 0;
+    const down: MapsFetch = async (url) => {
+      seen.push(url);
+      if (url.startsWith(NOM)) return { status: 503, headers: { get: () => null }, json: async () => ({}), body: null };
+      return answer({ places: [{ location: { latitude: 12.95, longitude: 77.6 }, addressComponents: [
+        { longText: '7', types: ['street_number'] }, { longText: '100 Feet Road', types: ['route'] }, { longText: 'Indiranagar', types: ['sublocality_level_1'] },
+        { longText: '560038', types: ['postal_code'] }, { longText: 'Bengaluru', types: ['locality'] },
+      ] }] });
+    };
+    out = await new TestMaps(down, publicDns).where('fa-1', 12.95, 77.6);
+    expect(out.address).toMatchObject({ shopNumber: null, street: '100 Feet Road', area: 'Indiranagar', pincode: '560038', city: 'Bengaluru' });
+    delete process.env.GOOGLE_PLACES_API_KEY;
+  });
+
   it('with GOOGLE_PLACES_API_KEY, a typed address uses Google Places server-side (key in a header only)', async () => {
     process.env.GOOGLE_PLACES_API_KEY = 'test-key-not-real';
     const calls: Array<{ url: string; init: Parameters<MapsFetch>[1] }> = [];

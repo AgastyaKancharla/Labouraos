@@ -243,21 +243,27 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
     const listedArea = lookupArea
       ? areaList.find((x) => x.name.toLowerCase() === lookupArea) ?? areaList.find((x) => x.name.toLowerCase().includes(lookupArea) || lookupArea.includes(x.name.toLowerCase()))
       : undefined;
+    // 26 Nov: when the lookup has no area (or one not on our list) or no PIN code, the nearest area on the
+    // list to the new pin fills them, instead of leaving the boxes empty.
+    const near = nearestArea(areaList, { latitude: found.latitude, longitude: found.longitude }, areaMaxMeters);
+    const area = listedArea ?? near ?? undefined;
+    const pincode = a?.pincode || area?.pincode || '';
     const filled: string[] = [];
     if (a?.shopNumber && withShopNumber) filled.push(t('fa07.mapsField.shopNumber'));
     if (a?.street) filled.push(t('fa07.mapsField.street'));
-    if (listedArea) filled.push(t('fa07.mapsField.area'));
-    if (a?.pincode) filled.push(t('fa07.mapsField.pincode'));
+    if (area) filled.push(t('fa07.mapsField.area'));
+    if (pincode) filled.push(t('fa07.mapsField.pincode'));
     if (a?.city) filled.push(t('fa07.mapsField.city'));
     // An area from the list that matches the lookup; else the area follows the new pin (as before).
-    setAutoArea(null);
+    // An area from the lookup is the agent's to keep; one only from the nearest-area list still follows the pin.
+    setAutoArea(listedArea ? null : near?.name ?? null);
     setForm((f) => ({
       ...f,
       pin: { latitude: found.latitude, longitude: found.longitude },
       shopNumber: withShopNumber ? a?.shopNumber ?? f.shopNumber : f.shopNumber,
       street: a?.street ?? f.street,
-      area: listedArea ? listedArea.name : '',
-      pincode: a?.pincode ?? (listedArea?.pincode || ''),
+      area: area?.name ?? '',
+      pincode,
       city: a?.city ?? f.city,
     }));
     setMapsNote({

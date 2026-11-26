@@ -95,14 +95,16 @@ function Sheet({ open, onClose, title, children }: { open: boolean; onClose: () 
   const { t } = useI18n();
   return (
     <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel={t('common.close')}>
-        <Pressable style={styles.sheet} onPress={() => undefined}>
+      {/* The backdrop is a layer behind the sheet (26 Nov), so a tap inside the sheet never closes it. */}
+      <View style={styles.backdrop}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel={t('common.close')} />
+        <View style={styles.sheet}>
           <Text variant="label" style={styles.sheetTitle}>
             {title}
           </Text>
-          <ScrollView style={styles.sheetList}>{children}</ScrollView>
-        </Pressable>
-      </Pressable>
+          <ScrollView style={styles.sheetList} keyboardShouldPersistTaps="handled">{children}</ScrollView>
+        </View>
+      </View>
     </Modal>
   );
 }

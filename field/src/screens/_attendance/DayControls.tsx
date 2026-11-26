@@ -409,12 +409,14 @@ function OpenDay({ day, testID, compact = false }: { day: AttendanceToday; testI
 export function Sheet({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode }) {
   return (
     <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={() => undefined}>
+      {/* The backdrop is a layer behind the sheet (26 Nov), so a tap in a text box inside never closes it. */}
+      <View style={styles.backdrop}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" />
+        <View style={styles.sheet}>
           <Text variant="h2">{title}</Text>
           {children}
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }

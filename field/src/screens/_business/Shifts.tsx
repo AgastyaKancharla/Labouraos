@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Banner, Button, Card, EmptyState, IconTile, ListRow, LoadingState, Text, TextField } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { errorCode, type BusinessShift } from '@/api/endpoints';
+import { formatClock, TimeField } from '@/components/form';
 import { useI18n } from '@/i18n';
-import { colors } from '@/theme';
+import { colors, radius, touch } from '@/theme';
 
 /**
  * A time as typed → "HH:MM" (24-hour), or null: "7", "07:00", "7:30",
@@ -23,6 +24,24 @@ export function hhmm(value: string): string | null {
     h = (h % 12) + (m[3] === 'pm' ? 12 : 0);
   }
   return h <= 23 ? `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}` : null;
+}
+
+/** 26 Nov (owner): one tap fills a usual shift; the times can still be changed on the clocks. */
+export const SHIFT_PRESETS = [
+  { key: 'morning', name: 'Morning', startTime: '07:00', endTime: '15:00' },
+  { key: 'general', name: 'General', startTime: '09:00', endTime: '18:00' },
+  { key: 'day', name: 'Day', startTime: '09:00', endTime: '21:00' },
+  { key: 'evening', name: 'Evening', startTime: '15:00', endTime: '23:00' },
+  { key: 'night', name: 'Night', startTime: '23:00', endTime: '07:00' },
+] as const;
+
+/** A name for a shift left unnamed, from its start time (26 Nov: the "Morning" hint looked filled in). */
+export function shiftNameFor(startTime: string): string {
+  const h = Number(startTime.slice(0, 2));
+  if (h >= 4 && h < 11) return 'Morning';
+  if (h >= 11 && h < 15) return 'Day';
+  if (h >= 15 && h < 20) return 'Evening';
+  return 'Night';
 }
 
 export function useBusinessShifts(businessId: string | null | undefined) {
@@ -48,11 +67,13 @@ export function AddShiftForm({ businessId, onAdded, onCancel, testID = 'add-shif
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [tried, setTried] = useState(false);
+  // 26 Nov: times come from a clock picker (never typed); `hhmm` still reads older typed values.
   const startTime = hhmm(start);
   const endTime = hhmm(end);
-  const valid = Boolean(name.trim() && startTime && endTime && startTime !== endTime);
+  const shiftName = name.trim() || (startTime ? shiftNameFor(startTime) : '');
+  const valid = Boolean(shiftName && startTime && endTime && startTime !== endTime);
   const add = useMutation({
-    mutationFn: () => redesign.addShift(businessId, { name: name.trim(), startTime: startTime!, endTime: endTime! }),
+    mutationFn: () => redesign.addShift(businessId, { name: shiftName, startTime: startTime!, endTime: endTime! }),
     onSuccess: (shift) => {
       client.setQueryData<BusinessShift[]>(queryKeys.businessShifts(businessId), (list) =>
         [...(list ?? []), shift].sort((a, b) => a.startTime.localeCompare(b.startTime)),
@@ -67,13 +88,35 @@ export function AddShiftForm({ businessId, onAdded, onCancel, testID = 'add-shif
   const code = add.error ? errorCode(add.error) : null;
   return (
     <View style={styles.form} testID={testID}>
-      <TextField label={t('shifts.name')} value={name} onChangeText={setName} placeholder={t('shifts.namePlaceholder')} maxLength={40} testID={`${testID}-name`} />
+      <Text variant="small" color={colors.soft}>{t('shifts.quickPick')}</Text>
+      <View style={styles.chips}>
+        {SHIFT_PRESETS.map((p) => {
+          const on = name === p.name && start === p.startTime && end === p.endTime;
+          return (
+            <Pressable
+              key={p.key}
+              accessibilityRole="button"
+              accessibilityState={{ selected: on }}
+              onPress={() => {
+                setName(p.name);
+                setStart(p.startTime);
+                setEnd(p.endTime);
+              }}
+              style={[styles.chip, on && styles.chipOn]}
+              testID={`${testID}-preset-${p.key}`}
+            >
+              <Text variant="small" color={on ? colors.white : colors.ink}>{`${p.name} ${formatClock(p.startTime)}–${formatClock(p.endTime)}`}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <TextField label={t('shifts.name')} value={name} onChangeText={setName} placeholder={t('shifts.namePlaceholder')} hint={t('shifts.nameHint')} maxLength={40} testID={`${testID}-name`} />
       <View style={styles.row}>
         <View style={styles.cell}>
-          <TextField label={t('shifts.start')} value={start} onChangeText={setStart} placeholder="07:00" maxLength={8} testID={`${testID}-start`} />
+          <TimeField label={t('shifts.start')} value={startTime ?? ''} onChange={setStart} from="00:00" to="23:30" step={30} testID={`${testID}-start`} />
         </View>
         <View style={styles.cell}>
-          <TextField label={t('shifts.end')} value={end} onChangeText={setEnd} placeholder="15:00" maxLength={8} testID={`${testID}-end`} />
+          <TimeField label={t('shifts.end')} value={endTime ?? ''} onChange={setEnd} from="00:00" to="23:30" step={30} testID={`${testID}-end`} />
         </View>
       </View>
       {tried && !valid ? <Text variant="small" color={colors.tomato} testID={`${testID}-invalid`}>{t('shifts.err.invalid')}</Text> : null}
@@ -153,4 +196,15 @@ const styles = StyleSheet.create({
   form: { gap: 10 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   cell: { flexBasis: '45%', flexGrow: 1 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: {
+    minHeight: touch.min,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  chipOn: { backgroundColor: colors.blue, borderColor: colors.blue },
 });

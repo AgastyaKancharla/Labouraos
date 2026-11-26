@@ -29,8 +29,11 @@ describe('FA17 Add a vacancy', () => {
     await fireEvent.press(screen.getByTestId('vacancy-add-shift-save'));
     expect(screen.getByTestId('vacancy-add-shift-invalid')).toBeTruthy();
     await fireEvent.changeText(screen.getByTestId('vacancy-add-shift-name'), 'Night');
-    await fireEvent.changeText(screen.getByTestId('vacancy-add-shift-start'), '22');
-    await fireEvent.changeText(screen.getByTestId('vacancy-add-shift-end'), '6:00');
+    // 26 Nov: times from the clock picker, never typed.
+    await fireEvent.press(screen.getByTestId('vacancy-add-shift-start'));
+    await fireEvent.press(screen.getByTestId('vacancy-add-shift-start-option-22:00'));
+    await fireEvent.press(screen.getByTestId('vacancy-add-shift-end'));
+    await fireEvent.press(screen.getByTestId('vacancy-add-shift-end-option-06:00'));
     await fireEvent.press(screen.getByTestId('vacancy-add-shift-save'));
     await waitFor(() => expect(screen.getByTestId('shift')).toHaveTextContent(/Night 22:00–06:00/));
     expect(calls).toContainEqual({ method: 'POST', path: '/businesses/biz-1/shifts', body: { name: 'Night', startTime: '22:00', endTime: '06:00' } });
