@@ -21,12 +21,10 @@ export const YEARS = [
 ] as const;
 
 export const GENDERS = ['female', 'male', 'other'] as const;
-export const BEST_TIME = ['09-12', '12-15', '15-18', '18-21', '09-21'] as const;
 export const HEARD_FROM = ['toll_free_missed_call', 'ad', 'referral_partner', 'field_visit', 'social_media', 'whatsapp', 'walk_in', 'other'] as const;
 export const TRAVEL_KM = ['3', '5', '8', '10', '15', '20'] as const;
 export const SHIFT_PREFERENCES = ['day', 'night', 'rotational', 'any'] as const;
 export const JOB_TYPES = ['full_time', 'part_time', 'live_in'] as const;
-export const QUALIFICATIONS = ['up_to_8th', '10th', '12th', 'iti', 'diploma', 'graduate', 'post_graduate'] as const;
 export const LICENCES = ['none', 'two_wheeler', 'lmv', 'commercial'] as const;
 /** Spoken languages (speaking only — guide, decided 9 Nov). Stored by English name. */
 export const SPOKEN_LANGUAGES = [
@@ -52,7 +50,6 @@ export interface JobSeekerForm {
   whatsapp: string;
   dateOfBirth: string;
   gender: string;
-  bestTime: string;
   heardFrom: string;
   place: PlaceState;
   travelKm: string;
@@ -64,7 +61,6 @@ export interface JobSeekerForm {
   lastEmployer: string;
   lastRole: string;
   lastSalaryPaise: number | null;
-  lookingSince: string;
   minSalaryPaise: number | null;
   maxSalaryPaise: number | null;
   period: 'monthly' | 'daily';
@@ -72,8 +68,6 @@ export interface JobSeekerForm {
   shift: string;
   jobType: string;
   spoken: string[];
-  qualification: string;
-  noQualification: boolean;
   licence: string;
   ownVehicle: boolean;
   police: boolean;
@@ -90,7 +84,6 @@ export const EMPTY_FORM: JobSeekerForm = {
   whatsapp: '',
   dateOfBirth: '',
   gender: '',
-  bestTime: '',
   heardFrom: 'field_visit',
   place: { area: '', pincode: '', latitude: null, longitude: null },
   travelKm: '',
@@ -102,7 +95,6 @@ export const EMPTY_FORM: JobSeekerForm = {
   lastEmployer: '',
   lastRole: '',
   lastSalaryPaise: null,
-  lookingSince: '',
   minSalaryPaise: null,
   maxSalaryPaise: null,
   period: 'monthly',
@@ -110,8 +102,6 @@ export const EMPTY_FORM: JobSeekerForm = {
   shift: '',
   jobType: '',
   spoken: [],
-  qualification: '',
-  noQualification: false,
   licence: '',
   ownVehicle: false,
   police: false,
@@ -134,8 +124,8 @@ export function hasDriverTrade(form: Pick<JobSeekerForm, 'trades'>): boolean {
 }
 
 export type FieldError =
-  | 'name' | 'dateOfBirth' | 'gender' | 'bestTime' | 'heardFrom' | 'area' | 'pincode' | 'pin'
-  | 'travelKm' | 'trade' | 'years' | 'lookingSince' | 'minSalary' | 'maxSalary' | 'salaryOrder' | 'availableFrom'
+  | 'name' | 'dateOfBirth' | 'gender' | 'heardFrom' | 'area' | 'pincode' | 'pin'
+  | 'travelKm' | 'trade' | 'years' | 'minSalary' | 'maxSalary' | 'salaryOrder' | 'availableFrom'
   | 'shift' | 'jobType' | 'spoken' | 'duplicateTrade' | 'whatsapp';
 
 /** Required on the first call (guide: What is recorded). Returns the fields still missing or wrong. */
@@ -144,7 +134,6 @@ export function validate(form: JobSeekerForm): FieldError[] {
   if (!form.name.trim()) errors.push('name');
   if (!form.dateOfBirth) errors.push('dateOfBirth');
   if (!form.gender) errors.push('gender');
-  if (!form.bestTime) errors.push('bestTime');
   if (!form.heardFrom) errors.push('heardFrom');
   if (!form.place.area) errors.push('area');
   if (!/^\d{6}$/.test(form.place.pincode)) errors.push('pincode');
@@ -156,7 +145,6 @@ export function validate(form: JobSeekerForm): FieldError[] {
   if (form.trades.some((row) => tradeName(row) && !row.years)) errors.push('years');
   const names = form.trades.map(tradeName).filter(Boolean).map((n) => n.toLowerCase());
   if (new Set(names).size !== names.length) errors.push('duplicateTrade');
-  if (!form.lookingSince) errors.push('lookingSince');
   if (!form.minSalaryPaise) errors.push('minSalary');
   if (!form.maxSalaryPaise) errors.push('maxSalary');
   if (form.minSalaryPaise && form.maxSalaryPaise && form.minSalaryPaise > form.maxSalaryPaise) errors.push('salaryOrder');
@@ -173,7 +161,8 @@ export function createBody(form: JobSeekerForm, otpRequestId: string) {
     name: form.name.trim(),
     phone: form.mobile,
     otpRequestId,
-    bestTimeToCall: form.bestTime,
+    // 26 Nov: no longer asked; he can be called any time 9 am to 9 pm.
+    bestTimeToCall: '09-21',
     dateOfBirth: form.dateOfBirth,
     gender: form.gender,
     heardFrom: form.referredBy ? 'referral_partner' : form.heardFrom,
@@ -186,7 +175,6 @@ export function createBody(form: JobSeekerForm, otpRequestId: string) {
       .filter((row) => tradeName(row))
       .map((row) => ({ trade: tradeName(row), yearsExperience: YEARS.find((y) => y.value === row.years)?.years ?? 0 })),
     availableFrom: form.availableFrom,
-    lookingSince: form.lookingSince,
     minSalary: form.minSalaryPaise,
     maxSalary: form.maxSalaryPaise,
     salaryPeriod: form.period,
@@ -210,8 +198,6 @@ export function profileBody(form: JobSeekerForm): Record<string, unknown> | null
   if (form.lastEmployer.trim()) body.lastEmployer = form.lastEmployer.trim();
   if (form.lastRole) body.lastRole = form.lastRole;
   if (form.lastSalaryPaise) body[form.workingNow === 'yes' ? 'currentSalaryPaise' : 'lastSalaryPaise'] = form.lastSalaryPaise;
-  if (form.noQualification) body.educationLevel = 'none';
-  else if (form.qualification) body.educationLevel = form.qualification;
   // 22 Nov: the licence only for a driver; the "Has" ticks (own vehicle, police verification,
   // smartphone) are no longer asked, so nothing is sent for them (the columns stay, nullable).
   if (form.licence && hasDriverTrade(form)) body.drivingLicenceType = form.licence;

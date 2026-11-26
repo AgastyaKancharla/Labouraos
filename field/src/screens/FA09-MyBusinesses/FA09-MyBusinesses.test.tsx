@@ -13,29 +13,29 @@ const DAY = 86_400_000;
 
 const rows: MyBusinessRow[] = [
   {
-    id: 'b-1', code: 'BZ-00012', name: 'Sri Sai Bakery', locality: 'JP Nagar', verificationStatus: 'lead', agreementSigned: false, openVacancies: 0,
+    id: 'b-1', createdAt: '2026-11-20T05:00:00.000Z', code: 'BZ-00012', name: 'Sri Sai Bakery', locality: 'JP Nagar', verificationStatus: 'lead', agreementSigned: false, openVacancies: 0,
     nextStep: { kind: 'agreement_waiting', agreementState: 'link_expired' }, businessType: 'bakery', candidatesShown: 0, interviewsToday: 0,
     lastVisitAt: new Date(NOW - 2 * DAY).toISOString(), revisitOverdue: true, canAct: true,
     row: state({ status: 'agreement_expired', action: 'agreement_link', group: 'needs_action' }),
   },
   {
-    id: 'b-2', code: 'BZ-00013', name: 'Green Leaf Café', locality: 'Koramangala', verificationStatus: 'verified', agreementSigned: true, openVacancies: 2,
+    id: 'b-2', createdAt: '2026-11-24T05:00:00.000Z', code: 'BZ-00013', name: 'Green Leaf Café', locality: 'Koramangala', verificationStatus: 'verified', agreementSigned: true, openVacancies: 2,
     nextStep: { kind: 'ready_show_candidates', vacancyId: 'vac-9' }, businessType: 'restaurant_hotel', candidatesShown: 5, interviewsToday: 1,
     lastVisitAt: new Date(NOW).toISOString(), revisitOverdue: false, canAct: true,
     row: state({ status: 'ready', action: 'show_candidates', vacancyId: 'vac-9', group: 'needs_action' }),
   },
   {
-    id: 'b-3', code: 'BZ-00014', name: 'Nandini Sweets', locality: 'Bellandur', verificationStatus: 'pending_tl_check', agreementSigned: true, openVacancies: 0,
+    id: 'b-3', createdAt: '2026-11-18T05:00:00.000Z', code: 'BZ-00014', name: 'Nandini Sweets', locality: 'Bellandur', verificationStatus: 'pending_tl_check', agreementSigned: true, openVacancies: 0,
     nextStep: { kind: 'waiting_tl_check' }, businessType: 'bakery', candidatesShown: 0, interviewsToday: 0, lastVisitAt: null, revisitOverdue: false, canAct: true,
     row: state({ status: 'waiting_tl', waiting: true, group: 'waiting_tl' }),
   },
   {
-    id: 'b-4', code: 'BZ-00015', name: 'Mourya Inn', locality: 'Electronic City', verificationStatus: 'verified', agreementSigned: true, openVacancies: 0,
+    id: 'b-4', createdAt: '2026-11-25T05:00:00.000Z', code: 'BZ-00015', name: 'Mourya Inn', locality: 'Electronic City', verificationStatus: 'verified', agreementSigned: true, openVacancies: 0,
     nextStep: { kind: 'add_vacancy' }, businessType: 'restaurant_hotel', candidatesShown: 0, interviewsToday: 0, lastVisitAt: null, revisitOverdue: false, canAct: true,
     row: state({ status: 'no_shifts', action: 'add_shifts', group: 'needs_action' }),
   },
   {
-    id: 'b-5', code: 'BZ-00016', name: 'Andhra Ruchulu', locality: 'Kumaraswamy Layout', verificationStatus: 'verified', agreementSigned: true, openVacancies: 0,
+    id: 'b-5', createdAt: '2026-11-10T05:00:00.000Z', code: 'BZ-00016', name: 'Andhra Ruchulu', locality: 'Kumaraswamy Layout', verificationStatus: 'verified', agreementSigned: true, openVacancies: 0,
     nextStep: { kind: 'none' }, businessType: 'restaurant_hotel', candidatesShown: 3, interviewsToday: 0, lastVisitAt: null, revisitOverdue: false, canAct: true,
     row: state({ status: 'all_good', done: true, group: 'done' }),
   },
@@ -83,8 +83,21 @@ describe('FA09 My businesses (Laboura Field lists, 22 Nov evening)', () => {
     expect(asked).toContain('green');
     await fireEvent.press(screen.getByTestId('fa09-business-b-2'));
     expect(router.push).toHaveBeenCalledWith('/businesses/b-2');
-    await fireEvent.press(screen.getByTestId('search-bar'));
-    expect(router.push).toHaveBeenCalledWith('/businesses/search');
+    // 26 Nov: one search box only (the second "search everyone" bar is gone).
+    expect(screen.queryByTestId('search-bar')).toBeNull();
+  });
+
+  it('26 Nov: sorts by Newest, Oldest and A–Z', async () => {
+    const { route } = api();
+    await renderWithApp(<MyBusinessesScreen />, { signedInAs: kiran, route });
+    await waitFor(() => screen.getByTestId('fa09-business-b-1'));
+    const order = () => screen.getAllByTestId(/^fa09-business-b-\d+$/).map((el) => String(el.props.testID).replace('fa09-business-', ''));
+    await fireEvent.press(screen.getByTestId('fa09-sort-az'));
+    expect(order()).toEqual(['b-5', 'b-2', 'b-4', 'b-3', 'b-1']);
+    await fireEvent.press(screen.getByTestId('fa09-sort-newest'));
+    expect(order()).toEqual(['b-4', 'b-2', 'b-1', 'b-3', 'b-5']);
+    await fireEvent.press(screen.getByTestId('fa09-sort-oldest'));
+    expect(order()).toEqual(['b-5', 'b-3', 'b-1', 'b-2', 'b-4']);
   });
 
   it('on the right: ONE button, "Waiting" for the Team Lead (no button), or a green Done', async () => {

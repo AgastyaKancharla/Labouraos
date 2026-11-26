@@ -16,6 +16,7 @@ import { colors, radius, touch } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { BusinessHeader, BusinessTypeAhead, ErrorBanner, formatRupees, Note, QueryView, useParam } from '../_selling';
 import { OtpStep } from '../_selling/OtpStep';
+import { SelectField as SearchSelect } from '../_visits/SelectField';
 import { SHIFT_PRESETS, shiftNameFor, useBusinessShifts } from '../_business/Shifts';
 import {
   anotherShift, EMPTY_VACANCY, EXPERIENCE_CHOICES, findTrade, HEADCOUNTS, isBelowLegalMinimum, legalMinimumFor, MAX_VACANCIES, NOTE_MAX,
@@ -225,7 +226,18 @@ function VacancyCard({ index, count, form, onChange, onRemove, tradeChoices, tra
             {onRemove ? <Button label={t('fa17.remove')} variant="secondary" onPress={onRemove} testID={`remove-vacancy-${index}`} /> : null}
           </View>
         ) : null}
-        <SelectField label={t('fa17.role')} required value={form.trade} choices={tradeChoices} onChange={(v) => set('trade', v)} error={err('trade')} testID={id('role')} />
+        {/* 26 Nov (owner): a search box over the roles; "Other (type it)" stays at the bottom whatever is typed. */}
+        <SearchSelect
+          label={`${t('fa17.role')} *`}
+          value={form.trade}
+          choices={tradeChoices}
+          onChange={(v) => set('trade', v)}
+          error={Boolean(err('trade'))}
+          searchable
+          keepWhenSearching={[OTHER_TRADE]}
+          testID={id('role')}
+        />
+        {err('trade') ? <Text variant="small" color={colors.tomato}>{err('trade')}</Text> : null}
         {form.trade === OTHER_TRADE ? (
           <TextField label={t('fa17.typeTrade')} value={form.otherTrade} onChangeText={(v) => set('otherTrade', v)} hint={t('fa17.newTrade')} testID={id('other-trade')} />
         ) : null}

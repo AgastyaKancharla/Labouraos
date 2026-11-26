@@ -21,8 +21,8 @@ import { OtpStep } from '../_selling/OtpStep';
 import { JOB_SEEKER_CONSENT_SCRIPT } from '../_selling/scripts';
 import { inShortText } from '@/api/endpoints/legal';
 import {
-  BEST_TIME, createBody, EMPTY_FORM, GENDERS, hasDriverTrade, HEARD_FROM, JOB_TYPES, LICENCES, OTHER_TRADE, profileBody,
-  QUALIFICATIONS, SHIFT_PREFERENCES, SPOKEN_LANGUAGES, tradeName, TRAVEL_KM, validate, YEARS, type FieldError, type JobSeekerForm,
+  createBody, EMPTY_FORM, GENDERS, hasDriverTrade, HEARD_FROM, JOB_TYPES, LICENCES, OTHER_TRADE, profileBody,
+  SHIFT_PREFERENCES, SPOKEN_LANGUAGES, tradeName, TRAVEL_KM, validate, YEARS, type FieldError, type JobSeekerForm,
 } from './payload';
 
 const MAX_TRADES = 3;
@@ -30,7 +30,6 @@ const ERROR_KEYS: Record<FieldError, MessageKey> = {
   name: 'fa10.err.required',
   dateOfBirth: 'fa10.err.dob',
   gender: 'fa10.err.required',
-  bestTime: 'fa10.err.required',
   heardFrom: 'fa10.err.required',
   area: 'fa10.err.required',
   pincode: 'fa10.err.pincode',
@@ -39,7 +38,6 @@ const ERROR_KEYS: Record<FieldError, MessageKey> = {
   trade: 'fa10.err.required',
   years: 'fa10.err.required',
   duplicateTrade: 'fa10.err.duplicateTrade',
-  lookingSince: 'fa10.err.required',
   minSalary: 'fa10.err.required',
   maxSalary: 'fa10.err.required',
   salaryOrder: 'fa10.err.salaryOrder',
@@ -49,6 +47,34 @@ const ERROR_KEYS: Record<FieldError, MessageKey> = {
   spoken: 'fa10.err.required',
   whatsapp: 'fa10.err.mobile',
 };
+
+/** What each missing field is called in the "Still needed" line above Save. */
+const FIELD_NAMES: Record<FieldError, MessageKey> = {
+  name: 'fa10.name',
+  dateOfBirth: 'fa10.dob',
+  gender: 'fa10.gender',
+  heardFrom: 'fa10.heardFrom',
+  area: 'fa10.area',
+  pincode: 'fa10.pincode',
+  pin: 'fa10.missing.pin',
+  travelKm: 'fa10.travel',
+  trade: 'fa10.trade',
+  years: 'fa10.years',
+  duplicateTrade: 'fa10.err.duplicateTrade',
+  minSalary: 'fa10.minSalary',
+  maxSalary: 'fa10.maxSalary',
+  salaryOrder: 'fa10.err.salaryOrder',
+  availableFrom: 'fa10.availableFrom',
+  shift: 'fa10.shift',
+  jobType: 'fa10.jobType',
+  spoken: 'fa10.speaks',
+  whatsapp: 'fa10.whatsapp',
+};
+
+/** The server's answer when the checked code has run out (5 minutes) or was already used. */
+function isOtpRefusal(error: unknown): boolean {
+  return /OTP verification/i.test(error instanceof Error ? error.message : String(error ?? ''));
+}
 
 /**
  * The draft lives in memory while the app is open (a dropped call loses
@@ -80,6 +106,7 @@ export default function CaptureSeekerScreen() {
   const [verified, setVerified] = useState<{ requestId: string; at: number; mobile: string } | null>(null);
   const [duplicate, setDuplicate] = useState<{ code?: string; type?: 'job_seeker' | 'business' | 'referral' | null } | null>(null);
   const [tried, setTried] = useState(false);
+  const [codeRanOut, setCodeRanOut] = useState(false);
   const inShort = useQuery({
     queryKey: ['legal-document', 'job_seeker_terms', 'en'],
     queryFn: () => legal.document('job_seeker_terms', 'en'),
@@ -104,6 +131,13 @@ export default function CaptureSeekerScreen() {
       const extras = profileBody(form);
       if (extras) await queue.live(() => selling.updateProfile(created.id, extras)).catch(() => undefined);
       return created;
+    },
+    onError: (error) => {
+      // The code is good for 5 minutes: when it ran out, ask for a fresh one (the form stays).
+      if (isOtpRefusal(error)) {
+        setVerified(null);
+        setCodeRanOut(true);
+      }
     },
     onSuccess: (created) => {
       clearSeekerDraft();
@@ -153,55 +187,13 @@ export default function CaptureSeekerScreen() {
             testID="mobile"
             hint={isVerified ? t('fa10.verifiedAt', { time: formatTimeIst(verified!.at) }) : undefined}
           />
-          {isVerified ? (
-            <Pressable accessibilityRole="button" onPress={() => setVerified(null)} testID="change-number">
-              <Text style={styles.link}>{t('fa10.changeNumber')}</Text>
-            </Pressable>
-          ) : duplicate ? (
-            <Banner
-              tone="warn"
-              title={t('fa10.alreadyTitle')}
-              message={
-                duplicate.code && duplicate.type && duplicate.type !== 'job_seeker'
-                  ? duplicateMessage({ type: duplicate.type, code: duplicate.code }, t)
-                  : duplicate.code
-                    ? t('fa10.alreadyBody', { code: duplicate.code })
-                    : t('fa10.alreadyHidden')
-              }
-              // "Open it" opens a job seeker's progress; a business or partner number has no such page here.
-              action={duplicate.code && (!duplicate.type || duplicate.type === 'job_seeker') ? <Button label={t('fa10.openIt')} variant="secondary" onPress={() => router.push(pageRoutes.seekerProfile(duplicate.code!))} /> : undefined}
-              testID="already-registered"
-            />
-          ) : mobileOk ? (
-            <OtpStep
-              key={form.mobile}
-              testID="mobile-otp"
-              sendLabel={t('fa10.sendOtp')}
-              verifyLabel={t('fa10.verify')}
-              intro={() => t('fa10.otpSent', { last4: form.mobile.slice(-4) })}
-              send={async (prev, channel) => {
-                const outcome = readOtpSend(await selling.sendOtp(form.mobile, prev, channel));
-                if (outcome.kind === 'duplicate') {
-                  setDuplicate({ code: outcome.code ?? undefined, type: outcome.type });
-                  throw new UserFacingError(t('fa10.alreadyTitle'));
-                }
-                // Neither a request nor "already registered": a clear error, never nothing.
-                if (outcome.kind === 'empty') throw new UserFacingError(t('otp.noAnswer'));
-                return { otpRequestId: outcome.requestId, sentToLast4: form.mobile.slice(-4), contactName: null };
-              }}
-              verify={async (requestId, code) => {
-                await selling.verifyOtp(requestId, code);
-                setVerified({ requestId, at: Date.now(), mobile: form.mobile });
-              }}
-            />
-          ) : null}
+          {!isVerified && mobileOk ? <Text variant="tiny">{t('fa10.mobileCheckedBelow')}</Text> : null}
           <Checkbox label={t('fa10.whatsappSame')} checked={form.whatsappSame} onChange={(v) => set('whatsappSame', v)} testID="whatsapp-same" />
           {!form.whatsappSame ? (
             <MobileField label={t('fa10.whatsapp')} value={form.whatsapp} onChange={(v) => set('whatsapp', v)} error={err('whatsapp')} testID="whatsapp" />
           ) : null}
           <DateField label={t('fa10.dob')} required yearFirst typed value={form.dateOfBirth} onChange={(v) => set('dateOfBirth', v)} max={adultMax} min="1940-01-01" error={err('dateOfBirth')} hint={t('fa10.dobTypedHint')} testID="dob" />
           <SelectField label={t('fa10.gender')} required value={form.gender} choices={choice(GENDERS, 'fa10.gender')} onChange={(v) => set('gender', v)} error={err('gender')} testID="gender" />
-          <SelectField label={t('fa10.bestTime')} required value={form.bestTime} choices={choice(BEST_TIME, 'fa10.time')} onChange={(v) => set('bestTime', v)} error={err('bestTime')} testID="best-time" />
           <SelectField label={t('fa10.heardFrom')} required value={form.heardFrom} choices={choice(HEARD_FROM, 'fa10.heard')} onChange={(v) => set('heardFrom', v)} error={err('heardFrom')} testID="heard-from" />
         </Section>
 
@@ -310,7 +302,6 @@ export default function CaptureSeekerScreen() {
           <TextField label={t('fa10.lastEmployer')} value={form.lastEmployer} onChangeText={(v) => set('lastEmployer', v)} />
           <SelectField label={t('fa10.lastRole')} value={form.lastRole} choices={tradeChoices.filter((c) => c.value !== OTHER_TRADE)} onChange={(v) => set('lastRole', v)} />
           <MoneyField label={form.workingNow === 'yes' ? t('fa10.currentSalary') : t('fa10.lastSalary')} valuePaise={form.lastSalaryPaise} onChange={(v) => set('lastSalaryPaise', v)} />
-          <DateField label={t('fa10.lookingSince')} required value={form.lookingSince} onChange={(v) => set('lookingSince', v)} max={today} error={err('lookingSince')} testID="looking-since" />
         </Section>
 
         <Section n={4} title={t('fa10.s4')}>
@@ -346,8 +337,6 @@ export default function CaptureSeekerScreen() {
         </Section>
 
         <Section n={6} title={t('fa10.s6')}>
-          <SelectField label={t('fa10.qualification')} value={form.qualification} choices={choice(QUALIFICATIONS, 'fa10.qual')} onChange={(v) => set('qualification', v)} />
-          <Checkbox label={t('fa10.noQualification')} checked={form.noQualification} onChange={(v) => set('noQualification', v)} />
           {/* 22 Nov: the licence only when a chosen trade is Driver; the "Has" ticks are no longer asked. */}
           {hasDriverTrade(form) ? (
             <SelectField label={t('fa10.licence')} value={form.licence} choices={choice(LICENCES, 'fa10.licence')} onChange={(v) => set('licence', v)} />
@@ -361,10 +350,68 @@ export default function CaptureSeekerScreen() {
           <Text variant="muted">{t('fa10.ownOtp')}</Text>
         </Section>
 
-        {tried && errors.length > 0 ? <Banner tone="error" message={t('fa10.fixFields', { count: errors.length })} testID="form-errors" /> : null}
-        {!isVerified ? <Text variant="muted" align="center">{t('fa10.verifyFirst')}</Text> : null}
-        <ErrorBanner error={save.error} />
-        <Button label={t('fa10.save')} disabled={!isVerified} loading={save.isPending} onPress={submit} testID="save-seeker" />
+        {/* 26 Nov (owner testing): the mobile is checked last, just before Save, because a
+            checked code is only good for 5 minutes and the form takes longer than that. */}
+        <Section n={8} title={t('fa10.checkMobile')}>
+          <Text variant="muted">{t('fa10.checkMobileHint')}</Text>
+          {codeRanOut && !isVerified ? <Banner tone="warn" message={t('fa10.codeRanOut')} testID="code-ran-out" /> : null}
+          {!mobileOk && !isVerified ? <Text variant="small" color={colors.tomato}>{t('fa10.needMobile')}</Text> : null}
+          {isVerified ? (
+            <Pressable accessibilityRole="button" onPress={() => setVerified(null)} testID="change-number">
+              <Text style={styles.link}>{t('fa10.changeNumber')}</Text>
+            </Pressable>
+          ) : duplicate ? (
+            <Banner
+              tone="warn"
+              title={t('fa10.alreadyTitle')}
+              message={
+                duplicate.code && duplicate.type && duplicate.type !== 'job_seeker'
+                  ? duplicateMessage({ type: duplicate.type, code: duplicate.code }, t)
+                  : duplicate.code
+                    ? t('fa10.alreadyBody', { code: duplicate.code })
+                    : t('fa10.alreadyHidden')
+              }
+              // "Open it" opens a job seeker's progress; a business or partner number has no such page here.
+              action={duplicate.code && (!duplicate.type || duplicate.type === 'job_seeker') ? <Button label={t('fa10.openIt')} variant="secondary" onPress={() => router.push(pageRoutes.seekerProfile(duplicate.code!))} /> : undefined}
+              testID="already-registered"
+            />
+          ) : mobileOk ? (
+            <OtpStep
+              key={form.mobile}
+              testID="mobile-otp"
+              sendLabel={t('fa10.sendOtp')}
+              verifyLabel={t('fa10.verify')}
+              intro={() => t('fa10.otpSent', { last4: form.mobile.slice(-4) })}
+              send={async (prev, channel) => {
+                const outcome = readOtpSend(await selling.sendOtp(form.mobile, prev, channel));
+                if (outcome.kind === 'duplicate') {
+                  setDuplicate({ code: outcome.code ?? undefined, type: outcome.type });
+                  throw new UserFacingError(t('fa10.alreadyTitle'));
+                }
+                // Neither a request nor "already registered": a clear error, never nothing.
+                if (outcome.kind === 'empty') throw new UserFacingError(t('otp.noAnswer'));
+                return { otpRequestId: outcome.requestId, sentToLast4: form.mobile.slice(-4), contactName: null };
+              }}
+              verify={async (requestId, code) => {
+                await selling.verifyOtp(requestId, code);
+                setVerified({ requestId, at: Date.now(), mobile: form.mobile });
+                setCodeRanOut(false);
+              }}
+            />
+          ) : null}
+        </Section>
+
+        {tried && errors.length > 0 ? (
+          <Banner
+            tone="error"
+            title={t('fa10.fixFields', { count: errors.length })}
+            message={t('fa10.missing', { fields: errors.map((e) => t(FIELD_NAMES[e])).join(', ') })}
+            testID="form-errors"
+          />
+        ) : null}
+        {tried && errors.length === 0 && !isVerified ? <Banner tone="warn" message={t('fa10.verifyBelow')} testID="verify-below" /> : null}
+        {save.error && !isOtpRefusal(save.error) ? <ErrorBanner error={save.error} /> : null}
+        <Button label={t('fa10.save')} loading={save.isPending} onPress={submit} testID="save-seeker" />
         <Text variant="tiny" align="center">{t('fa10.draftNote')}</Text>
       </Screen>
     </View>

@@ -44,4 +44,18 @@ describe('SelectField with a search box (26 Nov: the list closed when the search
     expect(onChange).toHaveBeenCalledWith('dairy');
     expect(screen.queryByTestId('type-search')).toBeNull();
   });
+
+  it('26 Nov: a choice kept when searching (Other) stays whatever is typed', async () => {
+    await render(
+      <I18nProvider>
+        <SelectField label="Role" value="" choices={[{ value: 'Cook', label: 'Cook' }, { value: 'Helper', label: 'Helper' }, { value: '__other__', label: 'Other (type it)' }]} onChange={jest.fn()} searchable keepWhenSearching={['__other__']} testID="role" />
+      </I18nProvider>,
+    );
+    await fireEvent.press(screen.getByTestId('role'));
+    await fireEvent.changeText(screen.getByTestId('role-search'), 'driver');
+    expect(screen.queryByTestId('role-Cook')).toBeNull();
+    expect(screen.getByTestId('role-__other__')).toBeTruthy();
+    await fireEvent.changeText(screen.getByTestId('role-search'), 'coo');
+    expect(screen.getByTestId('role-Cook')).toBeTruthy();
+  });
 });

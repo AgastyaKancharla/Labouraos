@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useI18n, type MessageKey } from '@/i18n';
-import { Button, Card, EmptyState, ErrorState, Icon, LoadingState, Screen, SearchBar, Text, TextField, SendBySms, type SendChannel } from '@/components';
+import { Button, Card, EmptyState, ErrorState, Icon, LoadingState, Screen, Text, TextField, SendBySms, type SendChannel } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { useAfterSave } from '@/api/refresh';
@@ -14,7 +14,7 @@ import { useDebounced } from '@/lib/useDebounced';
 import { pageRoutes, routes, sellingRoutes } from '@/navigation/routes';
 import { colors } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
-import { Avatar, countGroups, DoneMark, filterRows, FilterChips, PersonRow, RowButton, useListFilter, WaitingMark } from '../_lists';
+import { Avatar, countGroups, DoneMark, filterRows, FilterChips, PersonRow, RowButton, SortChips, sortList, useListFilter, useListSort, WaitingMark } from '../_lists';
 
 type T = ReturnType<typeof useI18n>['t'];
 
@@ -69,7 +69,8 @@ export default function MyJobSeekersScreen() {
   const q = useDebounced(text.trim());
   const list = useQuery({ queryKey: queryKeys.myJobSeekers(q), queryFn: () => redesign.myJobSeekers(q) });
   const rows = list.data?.results ?? [];
-  const shown = filterRows(rows, filter);
+  const [sort, setSort] = useListSort();
+  const shown = sortList(filterRows(rows, filter), sort, (s) => s.registeredAt);
   return (
     <View style={styles.flex} testID="screen-FA10d">
       <AppHeader title={t('fa10d.title')} root />
@@ -79,8 +80,8 @@ export default function MyJobSeekersScreen() {
           <Button label={t('today.addReferral')} variant="secondary" icon={<Icon name="users" color={colors.greenText} />} style={styles.flex1} onPress={() => router.push(routes.referralNew)} testID="fa10d-referral" />
         </View>
         <TextField label={t('fa10d.filter')} value={text} onChangeText={setText} placeholder={t('fa10d.filterPlaceholder')} autoCorrect={false} testID="fa10d-filter" />
-        <SearchBar onPress={() => router.push(routes.jobSeekersSearch)} placeholder={t('common.searchEveryone')} />
         <FilterChips value={filter} onChange={setFilter} counts={countGroups(rows)} testID="fa10d-chips" />
+        <SortChips value={sort} onChange={setSort} testID="fa10d-sort" />
         <Card title={t('fa10d.mine')} icon="users" accent="cyan" testID="fa10d-list">
           {list.isPending ? (
             <LoadingState compact />

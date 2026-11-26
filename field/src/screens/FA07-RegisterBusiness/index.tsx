@@ -33,13 +33,7 @@ const HEARD = ['toll_free_missed_call', 'ad', 'referral_partner', 'field_visit',
 /** 22 Nov (rev 207): the full grouped list, the same as the consoles and the server. */
 const BTYPE_CHOICES = BUSINESS_TYPE_GROUPS.flatMap((g) => g.types.map((ty) => ({ value: ty.value, label: ty.label, group: g.label })));
 const EMPLOYEES = ['1-5', '6-20', '21-50', '51-200', '200+'] as const;
-const RUNNING = ['under_1', '1_3', '3_10', '10_plus'] as const;
-const HIRING = ['rarely', 'every_few_months', 'every_month', 'every_week'] as const;
 const SHIFTS = ['day', 'night', 'rotational'] as const;
-const TIMES = Array.from({ length: 38 }, (_, i) => {
-  const minutes = 5 * 60 + i * 30;
-  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
-});
 const OTHER_TRADE = '__other__';
 
 const emptyMobile = (): MobileState => ({ number: '', requestId: null, code: '', verifiedAt: null, sentAt: null });
@@ -254,6 +248,9 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
     if (area) filled.push(t('fa07.mapsField.area'));
     if (pincode) filled.push(t('fa07.mapsField.pincode'));
     if (a?.city) filled.push(t('fa07.mapsField.city'));
+    // 26 Nov: the nearest named place goes in Landmark when the box is still empty.
+    const landmark = a?.landmark?.trim() || '';
+    if (landmark && !form.landmark.trim()) filled.push(t('fa07.mapsField.landmark'));
     // An area from the list that matches the lookup; else the area follows the new pin (as before).
     // An area from the lookup is the agent's to keep; one only from the nearest-area list still follows the pin.
     setAutoArea(listedArea ? null : near?.name ?? null);
@@ -262,6 +259,7 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
       pin: { latitude: found.latitude, longitude: found.longitude },
       shopNumber: withShopNumber ? a?.shopNumber ?? f.shopNumber : f.shopNumber,
       street: a?.street ?? f.street,
+      landmark: f.landmark.trim() ? f.landmark : landmark || f.landmark,
       area: area?.name ?? '',
       pincode,
       city: a?.city ?? f.city,
@@ -486,16 +484,7 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
             />
           ) : null}
           <SelectField label={t('fa07.employees')} value={form.employees} choices={EMPLOYEES.map((v) => ({ value: v, label: v.replace('-', '–') }))} onChange={(v) => set({ employees: v })} error={err('employees')} testID="fa07-employees" />
-          <SelectField label={t('fa07.running')} value={form.running} choices={choice(RUNNING, 'running')} onChange={(v) => set({ running: v })} />
-          <SelectField label={t('fa07.hiring')} value={form.hiring} choices={choice(HIRING, 'hiring')} onChange={(v) => set({ hiring: v })} />
-          <View style={styles.inline}>
-            <View style={styles.flex1}>
-              <SelectField label={t('fa07.opensAt')} value={form.opensAt} choices={TIMES.map((v) => ({ value: v, label: v }))} onChange={(v) => set({ opensAt: v })} />
-            </View>
-            <View style={styles.flex1}>
-              <SelectField label={t('fa07.closesAt')} value={form.closesAt} choices={TIMES.map((v) => ({ value: v, label: v }))} onChange={(v) => set({ closesAt: v })} />
-            </View>
-          </View>
+          {/* 26 Nov (owner): no "running for", "how often you hire" or opening hours — each vacancy has its own shift. */}
           <Text variant="muted">{t('fa07.householdHint')}</Text>
         </Card>
 
@@ -607,7 +596,7 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
             const update = (patch: Partial<StaffRow>) => set({ staff: form.staff.map((r, j) => (j === i ? { ...r, ...patch } : r)) });
             return (
               <View key={i} style={styles.branch} testID={`fa07-staff-${i}`}>
-                <SelectField label={t('fa07.role')} value={row.trade} choices={tradeChoices} onChange={(v) => update({ trade: v })} error={err(`staff${i}`) && !row.trade} testID={`fa07-staff-${i}-trade`} />
+                <SelectField label={t('fa07.role')} value={row.trade} choices={tradeChoices} onChange={(v) => update({ trade: v })} error={err(`staff${i}`) && !row.trade} searchable keepWhenSearching={[OTHER_TRADE]} testID={`fa07-staff-${i}-trade`} />
                 {row.trade === OTHER_TRADE ? <TextField label={t('fa07.otherTrade')} value={row.other} onChangeText={(v) => update({ other: v })} /> : null}
                 <SelectField label={t('fa07.howMany')} value={row.headcount} choices={Array.from({ length: 10 }, (_, k) => ({ value: String(k + 1), label: String(k + 1) }))} onChange={(v) => update({ headcount: v })} />
                 <View style={styles.inline}>

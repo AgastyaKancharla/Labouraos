@@ -112,4 +112,15 @@ describe('FA10d My job seekers (Laboura Field lists, 22 Nov evening)', () => {
     expect(screen.getByTestId('fa10d-seeker-4')).toBeTruthy();
     expect(screen.queryByTestId('fa10d-seeker-5')).toBeNull();
   });
+
+  it('26 Nov: one search box, and sorts by Newest, Oldest and A–Z', async () => {
+    const { route } = api();
+    await renderWithApp(<MyJobSeekersScreen />, { signedInAs: kiran, route });
+    await waitFor(() => screen.getByTestId('fa10d-seeker-4'));
+    expect(screen.queryByTestId('search-bar')).toBeNull();
+    const order = () => screen.getAllByTestId(/^fa10d-seeker-\d+$/).map((el) => String(el.props.testID).replace('fa10d-seeker-', ''));
+    await fireEvent.press(screen.getByTestId('fa10d-sort-az'));
+    // Anil, Kavya, Lakshmi, Manju, Raju, Ramesh, Suresh.
+    expect(order()).toEqual(['10', '7', '9', '6', '8', '4', '5']);
+  });
 });
