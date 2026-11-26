@@ -49,15 +49,15 @@ export function FilterChips({ value, onChange, counts, testID }: {
 }
 
 /**
- * 26 Nov (owner testing): how the list is ordered. "Needs action first" is the
- * server's order (as before); Newest / Oldest go by when it was registered;
- * A–Z by name.
+ * 26 Nov (owner testing): how the list is ordered. Off by default (the usual
+ * order, needs action first); Newest / Oldest go by when it was registered,
+ * A–Z by name. Tapping the chosen one again turns the sort off.
  */
-export type ListSort = 'action' | 'newest' | 'oldest' | 'az';
-export const LIST_SORTS: ListSort[] = ['action', 'newest', 'oldest', 'az'];
+export type ListSort = 'off' | 'newest' | 'oldest' | 'az';
+export const LIST_SORTS: Exclude<ListSort, 'off'>[] = ['newest', 'oldest', 'az'];
 
 export function sortList<T extends { name: string }>(rows: T[], sort: ListSort, createdAt: (row: T) => string | null | undefined): T[] {
-  if (sort === 'action') return rows;
+  if (sort === 'off') return rows;
   const copy = [...rows];
   if (sort === 'az') return copy.sort((a, b) => a.name.localeCompare(b.name, 'en-IN', { sensitivity: 'base' }));
   const time = (row: T) => {
@@ -68,7 +68,7 @@ export function sortList<T extends { name: string }>(rows: T[], sort: ListSort, 
 }
 
 export function useListSort() {
-  return useState<ListSort>('action');
+  return useState<ListSort>('off');
 }
 
 /** "Sort: Needs action first · Newest · Oldest · A–Z", as small chips that wrap. */
@@ -84,7 +84,7 @@ export function SortChips({ value, onChange, testID }: { value: ListSort; onChan
             key={s}
             accessibilityRole="radio"
             accessibilityState={{ selected: on }}
-            onPress={() => onChange(s)}
+            onPress={() => onChange(on ? 'off' : s)}
             style={[styles.chip, on && styles.chipOn]}
             testID={`${testID}-${s}`}
           >

@@ -105,7 +105,6 @@ export const fixes17En = {
   'fa10.codeRanOut': 'The code ran out (it is good for 5 minutes). Send a new code, check it, then save.',
   'fa10.missing.pin': 'Map pin',
   'lists.sort': 'Sort:',
-  'lists.sort.action': 'Needs action first',
   'lists.sort.newest': 'Newest',
   'lists.sort.oldest': 'Oldest',
   'lists.sort.az': 'A–Z',
