@@ -3,6 +3,7 @@ import { lookup as dnsLookup } from 'dns/promises';
 import { codedError } from '../../common/http/coded-error';
 import {
   addressFromNominatim,
+  addressFromPhoton,
   addressGaps,
   fillAddressGaps,
   addressQueries,
@@ -44,7 +45,8 @@ export const MAX_REDIRECTS = 5;
 export const TIMEOUT_MS = 5000;
 /** Nominatim usage policy: at most one request a second (we keep a little more), with a User-Agent naming the app. */
 export const NOMINATIM_GAP_MS = 1100;
-export const USER_AGENT = 'Laboura/1.0 (Laboura Field staffing app; business address from a map pin)';
+// Nominatim's usage policy asks for an app name with a way to reach its owner.
+export const USER_AGENT = 'Laboura/1.0 (+https://laboura.com; hello@laboura.com) Laboura Field: business address from a map pin';
 /** Per field agent: links read a minute and a day (in memory, per process). */
 export const LINKS_PER_MINUTE = 10;
 export const LINKS_PER_DAY = 100;
@@ -311,8 +313,37 @@ export class MapsLinkService {
     // first failed), then Google Places nearby when GOOGLE_PLACES_API_KEY is set. The pin stays the GPS fix and the
     // shop number is never taken from a neighbour.
     if (addressGaps(address)) address = fillAddressGaps(address, await this.reverse(lat, lng, 16));
+    // 26 Nov: Photon (same OpenStreetMap data, another free server) when Nominatim leaves gaps or does not answer.
+    if (addressGaps(address)) address = fillAddressGaps(address, await this.photon(lat, lng));
     if (addressGaps(address)) address = fillAddressGaps(address, await this.googleNearby(lat, lng));
     return { latitude: lat, longitude: lng, area: address?.locality ?? address?.area ?? null, address };
+  }
+
+  /** Photon reverse lookup (free, no key); null when it does not answer in time. Cached like Nominatim. */
+  private async photon(latitude: number, longitude: number): Promise<ReverseAddress | null> {
+    const key = `${latitude.toFixed(5)},${longitude.toFixed(5)}@photon`;
+    const cached = this.addressCache.get(key);
+    if (cached && this.now() - cached.at < CACHE_TTL_MS) return cached.value;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    try {
+      const base = (process.env.PHOTON_URL ?? 'https://photon.komoot.io').replace(/\/+$/, '');
+      const url = `${base}/reverse?lat=${encodeURIComponent(latitude.toFixed(6))}&lon=${encodeURIComponent(longitude.toFixed(6))}&lang=en&limit=1`;
+      const res = await this.fetcher()(url, { method: 'GET', redirect: 'manual', signal: controller.signal, headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' } });
+      if (res.status !== 200) {
+        await res.body?.cancel?.().catch(() => undefined);
+        this.logger.warn(`Photon answered ${res.status}`);
+        return null;
+      }
+      const value = addressFromPhoton(await res.json());
+      this.remember(this.addressCache, key, value);
+      return value;
+    } catch (error) {
+      this.logger.warn(`Photon not reached: ${(error as Error)?.name ?? 'error'}`);
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /** Google Places (New) Nearby Search: the closest place's address around a GPS fix; null when Google cannot be used. */

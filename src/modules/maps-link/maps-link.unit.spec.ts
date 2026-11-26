@@ -1,4 +1,4 @@
-import { addressFromNominatim, addressQueries, googlePlaceIdOf, placeFromGoogle, splitShareText, withoutHouseNumber, extractPin, isAllowedMapsUrl, isPrivateAddress, looksLikeLink, parseCoordinates, parseMapsUrl, placeNameOf, withScheme } from './maps-link';
+import { addressFromNominatim, addressFromPhoton, addressQueries, googlePlaceIdOf, placeFromGoogle, splitShareText, withoutHouseNumber, extractPin, isAllowedMapsUrl, isPrivateAddress, looksLikeLink, parseCoordinates, parseMapsUrl, placeNameOf, withScheme } from './maps-link';
 import { BENGALURU_VIEWBOX, GOOGLE_PLACES_SEARCH_URL, MapsFetch, MapsLinkService, MAX_REDIRECTS, NOMINATIM_GAP_MS, TIMEOUT_MS, USER_AGENT, WHERE_PER_MINUTE } from './maps-link.service';
 
 const u = (s: string) => new URL(s);
@@ -72,8 +72,26 @@ describe('Google Maps link (17 Nov): allowlist and the pin', () => {
       shopNumber: '12', street: '9th Cross Road, JP Nagar 6th Phase', area: 'JP Nagar', city: 'Bengaluru', state: 'Karnataka', pincode: '560078',
       displayName: '12, 9th Cross Road, JP Nagar 6th Phase, Bengaluru, Karnataka, 560078, India',
       locality: 'JP Nagar 6th Phase, JP Nagar',
+      landmark: null,
     });
     expect(addressFromNominatim({ error: 'Unable to geocode' })).toBeNull();
+    // 26 Nov: a lane that is only a "residential" way still gives the street; the named place is the landmark.
+    expect(addressFromNominatim({
+      name: 'Reddy Mess', display_name: 'x',
+      address: { amenity: 'Reddy Mess', residential: '2nd Cross, Kothnur', suburb: 'JP Nagar 8th Phase', city: 'Bengaluru', postcode: '560076' },
+    })).toMatchObject({ street: '2nd Cross, Kothnur', area: 'JP Nagar 8th Phase', landmark: 'Reddy Mess', pincode: '560076' });
+  });
+
+  it('26 Nov: maps Photon\'s answer onto the business form', () => {
+    expect(addressFromPhoton({ features: [{ properties: {
+      name: 'Kothnur Lake', type: 'house', street: '24th Main Road', housenumber: '7', district: 'JP Nagar 8th Phase', locality: 'Kothnur',
+      city: 'Bengaluru', state: 'Karnataka', postcode: '560 076',
+    } }] })).toMatchObject({
+      shopNumber: '7', street: '24th Main Road', area: 'JP Nagar 8th Phase', city: 'Bengaluru', pincode: '560076', landmark: 'Kothnur Lake',
+    });
+    expect(addressFromPhoton({ features: [{ properties: { name: '24th Main Road', type: 'street', district: 'Kothnur' } }] }))
+      .toMatchObject({ street: '24th Main Road', landmark: null, area: 'Kothnur' });
+    expect(addressFromPhoton({ features: [] })).toBeNull();
   });
 });
 

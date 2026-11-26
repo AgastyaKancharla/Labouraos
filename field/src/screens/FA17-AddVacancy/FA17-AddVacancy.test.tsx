@@ -23,7 +23,8 @@ describe('FA17 Add vacancies', () => {
   };
   const pick = async (id: string, value: string) => {
     await fireEvent.press(screen.getByTestId(id));
-    await fireEvent.press(screen.getByTestId(`${id}-option-${value}`));
+    // The role picker is the searchable list (option ids without "-option").
+    await fireEvent.press(screen.getByTestId(/^role/.test(id) ? `${id}-${value}` : `${id}-option-${value}`));
   };
 
   it('one vacancy: tap a business shift, the legal-minimum tick, a note; ONE code confirms it', async () => {

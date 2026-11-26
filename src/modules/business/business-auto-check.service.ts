@@ -87,6 +87,7 @@ export class BusinessAutoCheckService {
       licenceNumber: business.licenceNumber,
       shopEstablishmentNumber: business.shopEstablishmentNumber,
       udyamNumber: business.udyamNumber,
+      otherLicences: business.otherLicences,
       mapsLink: business.mapsLink,
       mapsLatitude: business.mapsLatitude,
       mapsLongitude: business.mapsLongitude,

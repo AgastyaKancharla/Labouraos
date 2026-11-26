@@ -25,21 +25,15 @@ import { DatePicker } from '../_visits/DatePicker';
 import { useVisit } from '../_visits/useVisit';
 import { updateDraft, type VisitDraft } from '../_visits/visitDraft';
 import { StepHeader } from '../_visits/StepHeader';
-import { businessBody, DEFAULT_CITY, formErrors, proofCount, type FormState, type MobileState, type StaffRow } from './form';
+import { businessBody, DEFAULT_CITY, docError, docPatch, docValue, formErrors, proofCount, type FormState, type MobileState, type StaffRow } from './form';
+import { ALL_DOCS, suggestedDocs, type DocKey } from '@/lib/businessDocuments';
 
 const ROLES = ['owner', 'manager', 'hr', 'supervisor', 'other'] as const;
 const HEARD = ['toll_free_missed_call', 'ad', 'referral_partner', 'field_visit', 'social_media', 'whatsapp', 'walk_in', 'other'] as const;
 /** 22 Nov (rev 207): the full grouped list, the same as the consoles and the server. */
 const BTYPE_CHOICES = BUSINESS_TYPE_GROUPS.flatMap((g) => g.types.map((ty) => ({ value: ty.value, label: ty.label, group: g.label })));
 const EMPLOYEES = ['1-5', '6-20', '21-50', '51-200', '200+'] as const;
-const RUNNING = ['under_1', '1_3', '3_10', '10_plus'] as const;
-const HIRING = ['rarely', 'every_few_months', 'every_month', 'every_week'] as const;
 const SHIFTS = ['day', 'night', 'rotational'] as const;
-const LICENCE_KINDS = ['shopEstablishmentNumber', 'udyamNumber', 'licenceNumber'] as const;
-const TIMES = Array.from({ length: 38 }, (_, i) => {
-  const minutes = 5 * 60 + i * 30;
-  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
-});
 const OTHER_TRADE = '__other__';
 
 const emptyMobile = (): MobileState => ({ number: '', requestId: null, code: '', verifiedAt: null, sentAt: null });
@@ -254,6 +248,9 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
     if (area) filled.push(t('fa07.mapsField.area'));
     if (pincode) filled.push(t('fa07.mapsField.pincode'));
     if (a?.city) filled.push(t('fa07.mapsField.city'));
+    // 26 Nov: the nearest named place goes in Landmark when the box is still empty.
+    const landmark = a?.landmark?.trim() || '';
+    if (landmark && !form.landmark.trim()) filled.push(t('fa07.mapsField.landmark'));
     // An area from the list that matches the lookup; else the area follows the new pin (as before).
     // An area from the lookup is the agent's to keep; one only from the nearest-area list still follows the pin.
     setAutoArea(listedArea ? null : near?.name ?? null);
@@ -262,6 +259,7 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
       pin: { latitude: found.latitude, longitude: found.longitude },
       shopNumber: withShopNumber ? a?.shopNumber ?? f.shopNumber : f.shopNumber,
       street: a?.street ?? f.street,
+      landmark: f.landmark.trim() ? f.landmark : landmark || f.landmark,
       area: area?.name ?? '',
       pincode,
       city: a?.city ?? f.city,
@@ -486,16 +484,7 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
             />
           ) : null}
           <SelectField label={t('fa07.employees')} value={form.employees} choices={EMPLOYEES.map((v) => ({ value: v, label: v.replace('-', '–') }))} onChange={(v) => set({ employees: v })} error={err('employees')} testID="fa07-employees" />
-          <SelectField label={t('fa07.running')} value={form.running} choices={choice(RUNNING, 'running')} onChange={(v) => set({ running: v })} />
-          <SelectField label={t('fa07.hiring')} value={form.hiring} choices={choice(HIRING, 'hiring')} onChange={(v) => set({ hiring: v })} />
-          <View style={styles.inline}>
-            <View style={styles.flex1}>
-              <SelectField label={t('fa07.opensAt')} value={form.opensAt} choices={TIMES.map((v) => ({ value: v, label: v }))} onChange={(v) => set({ opensAt: v })} />
-            </View>
-            <View style={styles.flex1}>
-              <SelectField label={t('fa07.closesAt')} value={form.closesAt} choices={TIMES.map((v) => ({ value: v, label: v }))} onChange={(v) => set({ closesAt: v })} />
-            </View>
-          </View>
+          {/* 26 Nov (owner): no "running for", "how often you hire" or opening hours — each vacancy has its own shift. */}
           <Text variant="muted">{t('fa07.householdHint')}</Text>
         </Card>
 
@@ -586,15 +575,7 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
         {!household ? (
           <Card style={styles.gapCard} stripe accent={SECTION_ACCENTS[3]}>
             <Section n={4} title={t('fa07.s4')} />
-            {!form.noDocuments ? (
-              <>
-                <TextField label={t('fa07.gstin')} value={form.gstin} autoCapitalize="characters" maxLength={15} onChangeText={(v) => set({ gstin: v.toUpperCase() })} error={err('gstin') ? t('fa07.gstinInvalid') : null} />
-                <TextField label={t('fa07.fssai')} value={form.fssai} keyboardType="number-pad" maxLength={14} onChangeText={(v) => set({ fssai: v.replace(/\D/g, '') })} />
-                <SelectField label={t('fa07.licenceKind')} value={form.licenceKind} choices={choice(LICENCE_KINDS, 'licence')} onChange={(v) => set({ licenceKind: v })} />
-                <TextField label={t('fa07.licenceNumber')} placeholder={t('fa07.ifTheyHave')} value={form.licenceNumber} onChangeText={(v) => set({ licenceNumber: v })} />
-                <TextField label={t('fa07.pan')} placeholder={t('fa07.ifTheyHave')} value={form.pan} autoCapitalize="characters" maxLength={10} onChangeText={(v) => set({ pan: v.toUpperCase() })} error={err('pan') ? t('fa07.panInvalid') : null} />
-              </>
-            ) : null}
+            {!form.noDocuments ? <DocumentsFields form={form} set={set} err={err} /> : null}
             <Toggle label={t('fa07.noDocuments')} value={form.noDocuments} onChange={(v) => set({ noDocuments: v })} />
             {/* 25 Nov (rev 211–212): the Maps link proof, a business run from home, and the proof count. */}
             <TextField label={t('fa07.mapsLink')} placeholder="https://maps.app.goo.gl/…" value={form.mapsLink ?? ''} autoCapitalize="none" onChangeText={(v) => set({ mapsLink: v })} testID="fa07-maps-link" />
@@ -615,7 +596,7 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
             const update = (patch: Partial<StaffRow>) => set({ staff: form.staff.map((r, j) => (j === i ? { ...r, ...patch } : r)) });
             return (
               <View key={i} style={styles.branch} testID={`fa07-staff-${i}`}>
-                <SelectField label={t('fa07.role')} value={row.trade} choices={tradeChoices} onChange={(v) => update({ trade: v })} error={err(`staff${i}`) && !row.trade} testID={`fa07-staff-${i}-trade`} />
+                <SelectField label={t('fa07.role')} value={row.trade} choices={tradeChoices} onChange={(v) => update({ trade: v })} error={err(`staff${i}`) && !row.trade} searchable keepWhenSearching={[OTHER_TRADE]} testID={`fa07-staff-${i}-trade`} />
                 {row.trade === OTHER_TRADE ? <TextField label={t('fa07.otherTrade')} value={row.other} onChangeText={(v) => update({ other: v })} /> : null}
                 <SelectField label={t('fa07.howMany')} value={row.headcount} choices={Array.from({ length: 10 }, (_, k) => ({ value: String(k + 1), label: String(k + 1) }))} onChange={(v) => update({ headcount: v })} />
                 <View style={styles.inline}>
@@ -733,7 +714,69 @@ function MoneyField({ label, value, onChange, error, testID }: { label: string; 
   );
 }
 
+/**
+ * 26 Nov (owner): the documents that fit the business type first (2–3), the rest under
+ * "+ Add another document". Every one is optional; a number typed must have its shape.
+ */
+function DocumentsFields({ form, set, err }: { form: FormState; set: (patch: Partial<FormState>) => void; err: (key: string) => boolean }) {
+  const { t } = useI18n();
+  const [adding, setAdding] = useState(false);
+  const suggested = suggestedDocs(form.businessType);
+  const shown = ALL_DOCS.filter((k) => suggested.includes(k) || (form.extraDocs ?? []).includes(k) || docValue(form, k).trim());
+  // Keep the suggested ones first, in their own order.
+  const ordered = [...suggested, ...shown.filter((k) => !suggested.includes(k))];
+  const more = ALL_DOCS.filter((k) => !ordered.includes(k));
+  const errorFor = (k: DocKey) =>
+    k === 'gst' ? (err('gstin') ? t('fa07.gstinInvalid') : null)
+      : k === 'pan' ? (err('pan') ? t('fa07.panInvalid') : null)
+        : err(`doc-${k}`) || (docError(form, k) && docValue(form, k).trim().length > 3) ? t(`fa07.doc.${k}.bad` as const) : null;
+  return (
+    <View style={styles.docs} testID="fa07-docs">
+      <Text variant="muted">{t('fa07.docsHint')}</Text>
+      {ordered.map((k) => (
+        <TextField
+          key={k}
+          label={t(`fa07.doc.${k}` as const)}
+          placeholder={t('fa07.ifTheyHave')}
+          value={docValue(form, k)}
+          autoCapitalize="characters"
+          keyboardType={k === 'fssai' ? 'number-pad' : 'default'}
+          maxLength={k === 'gst' ? 15 : k === 'pan' ? 10 : k === 'fssai' ? 14 : 40}
+          onChangeText={(v) => set(docPatch(form, k, v))}
+          error={errorFor(k)}
+          testID={`fa07-doc-${k}`}
+        />
+      ))}
+      {more.length ? (
+        adding ? (
+          <View style={styles.docChips} testID="fa07-doc-more">
+            {more.map((k) => (
+              <Pressable
+                key={k}
+                accessibilityRole="button"
+                onPress={() => {
+                  set({ extraDocs: [...(form.extraDocs ?? []), k] });
+                  setAdding(false);
+                }}
+                style={styles.docChip}
+                testID={`fa07-doc-add-${k}`}
+              >
+                <Text variant="small">{t(`fa07.doc.${k}` as const)}</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : (
+          <Button label={t('fa07.addDocument')} variant="secondary" onPress={() => setAdding(true)} testID="fa07-add-document" />
+        )
+      ) : null}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  docs: { gap: 12 },
+  docChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  docChip: { minHeight: touch.min, justifyContent: 'center', paddingHorizontal: 12, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
   dupButtons: { gap: 8, marginTop: 8 },
   flex: { flex: 1, backgroundColor: colors.bg },
   flex1: { flex: 1 },

@@ -24,6 +24,7 @@ export const AGENT_HIDDEN_BUSINESS_FIELDS = [
   'shopEstablishmentNumber',
   'udyamNumber',
   'fssaiNumber',
+  'otherLicences',
   'legalName',
   'ownerName',
   'familyName',

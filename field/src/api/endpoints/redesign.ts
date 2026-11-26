@@ -162,7 +162,8 @@ export interface WhereAmI {
   latitude: number;
   longitude: number;
   area: string | null;
-  address: (ResolvedMapsLink['address'] & { locality?: string | null }) | null;
+  /** 26 Nov: `landmark` is the nearest named place (a shop, temple, school…), when the lookup has one. */
+  address: (ResolvedMapsLink['address'] & { locality?: string | null; landmark?: string | null }) | null;
 }
 
 /** POST /maps-link/resolve (17 Nov): the pin from a Google Maps link and its address from OpenStreetMap. */
@@ -178,6 +179,8 @@ export interface ResolvedMapsLink {
     state: string | null;
     pincode: string | null;
     displayName: string | null;
+    /** 26 Nov: the nearest named place, when the lookup has one (where am I only). */
+    landmark?: string | null;
   } | null;
   shortLink: boolean;
 }
@@ -271,6 +274,8 @@ export interface MyBusinessRow {
   revisitOverdue?: boolean;
   canAct?: boolean;
   row?: BusinessRowState;
+  /** 26 Nov: when it was registered (for the Newest / Oldest sort). */
+  createdAt?: string | null;
 }
 
 export type VacancyNextStep =

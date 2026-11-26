@@ -48,6 +48,54 @@ export function FilterChips({ value, onChange, counts, testID }: {
   );
 }
 
+/**
+ * 26 Nov (owner testing): how the list is ordered. "Needs action first" is the
+ * server's order (as before); Newest / Oldest go by when it was registered;
+ * A–Z by name.
+ */
+export type ListSort = 'action' | 'newest' | 'oldest' | 'az';
+export const LIST_SORTS: ListSort[] = ['action', 'newest', 'oldest', 'az'];
+
+export function sortList<T extends { name: string }>(rows: T[], sort: ListSort, createdAt: (row: T) => string | null | undefined): T[] {
+  if (sort === 'action') return rows;
+  const copy = [...rows];
+  if (sort === 'az') return copy.sort((a, b) => a.name.localeCompare(b.name, 'en-IN', { sensitivity: 'base' }));
+  const time = (row: T) => {
+    const at = createdAt(row);
+    return at ? Date.parse(at) : 0;
+  };
+  return copy.sort((a, b) => (sort === 'newest' ? time(b) - time(a) : time(a) - time(b)));
+}
+
+export function useListSort() {
+  return useState<ListSort>('action');
+}
+
+/** "Sort: Needs action first · Newest · Oldest · A–Z", as small chips that wrap. */
+export function SortChips({ value, onChange, testID }: { value: ListSort; onChange: (s: ListSort) => void; testID: string }) {
+  const { t } = useI18n();
+  return (
+    <View style={styles.chips} accessibilityRole="radiogroup" testID={testID}>
+      <Text style={styles.sortLabel}>{t('lists.sort')}</Text>
+      {LIST_SORTS.map((s) => {
+        const on = s === value;
+        return (
+          <Pressable
+            key={s}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: on }}
+            onPress={() => onChange(s)}
+            style={[styles.chip, on && styles.chipOn]}
+            testID={`${testID}-${s}`}
+          >
+            <Text style={[styles.chipText, on && styles.chipTextOn]}>{t(`lists.sort.${s}` as MessageKey)}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 /** How many rows each chip holds. */
 export function countGroups(rows: { row?: { group: ListGroup } }[]): Record<ListFilter, number> {
   const counts: Record<ListFilter, number> = { all: rows.length, needs_action: 0, waiting_tl: 0, active: 0, done: 0 };
@@ -177,6 +225,7 @@ export function PersonRow({ leading, name, status, statusTone = 'ink', lines, sm
 
 const styles = StyleSheet.create({
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  sortLabel: { fontFamily: fonts.body700, fontSize: 12.5, color: colors.ink, alignSelf: 'center', marginRight: 2 },
   chip: {
     minHeight: touch.min,
     justifyContent: 'center',

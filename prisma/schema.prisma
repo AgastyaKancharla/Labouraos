@@ -487,6 +487,9 @@ model Business {
   billingEmail             String?
   heardFrom                String?
   fssaiNumber              String?
+  /// 26 Nov: other licences [{ kind, number }] — drug licence, KPME, excise, PSARA, contract labour,
+  /// factory, PESO (src/modules/business/other-licences.ts). Optional; a valid one counts as proof 2.
+  otherLicences            Json?
   storefrontPhotoPath      String?
   storefrontPhotoHash      String?
   storefrontPhotoLive      Boolean?

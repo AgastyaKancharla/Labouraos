@@ -40,7 +40,7 @@ export type ValidatedJobSeekerRegistration = {
   preferredCallWindowEnd: string;
   dateOfBirth: Date;
   availableFrom: Date;
-  lookingSince: Date;
+  lookingSince: Date | null;
   trades: Array<{ trade: string; yearsExperience: number }>;
   spokenLanguages: string[];
 };
@@ -60,7 +60,9 @@ export function validateJobSeekerRegistration(
     }
   }
   const phone = requireIndianMobile(dto.phone);
-  const window = REGISTRATION_WINDOWS[dto.bestTimeToCall];
+  // The field app no longer asks for a call time (26 Nov): when it is left out,
+  // he can be called any time in the working day (09:00 to 21:00).
+  const window = REGISTRATION_WINDOWS[dto.bestTimeToCall ?? '09-21'];
   if (!window) throw new BadRequestException('bestTimeToCall is invalid');
   if (!HEARD_FROM_VALUES.includes(dto.heardFrom)) {
     throw new BadRequestException('heardFrom is invalid');
@@ -90,7 +92,10 @@ export function validateJobSeekerRegistration(
     throw new BadRequestException(`Job seeker must be at least ${adultMinimumAge} years old`);
   }
   const availableFrom = parseRegistrationDate(dto.availableFrom, 'availableFrom');
-  const lookingSince = parseRegistrationDate(dto.lookingSince, 'lookingSince');
+  // Optional since 26 Nov: the field app no longer asks it.
+  const lookingSince = dto.lookingSince === undefined || dto.lookingSince === null || dto.lookingSince === ''
+    ? null
+    : parseRegistrationDate(dto.lookingSince, 'lookingSince');
   validateSalaryRange(dto.minSalary, dto.maxSalary);
 
   if (!Array.isArray(dto.trades) || dto.trades.length < 1 || dto.trades.length > 3) {

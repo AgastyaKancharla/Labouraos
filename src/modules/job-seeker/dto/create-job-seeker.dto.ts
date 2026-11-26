@@ -4,7 +4,7 @@ export interface CreateJobSeekerDto {
   otpRequestId: string;
   /** Ignored: English only (rev 193). Older clients may still send it. */
   messageLanguage?: string;
-  bestTimeToCall: '09-12' | '12-15' | '15-18' | '18-21' | '09-21';
+  bestTimeToCall?: '09-12' | '12-15' | '15-18' | '18-21' | '09-21';
   dateOfBirth: string;
   gender: string;
   heardFrom: 'toll_free_missed_call' | 'ad' | 'referral_partner' | 'field_visit' | 'social_media' | 'walk_in' | 'other' | 'laboura_app' | 'whatsapp';
@@ -15,7 +15,7 @@ export interface CreateJobSeekerDto {
   travelDistanceKm: number;
   trades: Array<{ trade: string; yearsExperience: number }>;
   availableFrom: string;
-  lookingSince: string;
+  lookingSince?: string | null;
   minSalary: number;
   maxSalary: number;
   salaryPeriod: 'monthly' | 'daily';

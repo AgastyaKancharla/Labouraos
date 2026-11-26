@@ -30,6 +30,17 @@ const validRegistration: CreateJobSeekerDto = {
 describe('validateJobSeekerRegistration', () => {
   const now = new Date('2026-11-09T00:00:00.000Z');
 
+  it('26 Nov: call time and "looking since" may be left out (call any time 9 to 9; no date)', () => {
+    const rest: CreateJobSeekerDto = { ...validRegistration };
+    delete rest.bestTimeToCall;
+    delete rest.lookingSince;
+    const form = validateJobSeekerRegistration(rest, 18, now);
+    expect(form.preferredCallWindowStart).toBe('09:00');
+    expect(form.preferredCallWindowEnd).toBe('21:00');
+    expect(form.lookingSince).toBeNull();
+    expect(() => validateJobSeekerRegistration({ ...rest, lookingSince: '2026-13-01' }, 18, now)).toThrow(BadRequestException);
+  });
+
   it('normalizes the fixed call window and accepts a complete adult profile', () => {
     expect(validateJobSeekerRegistration(validRegistration, 18, now)).toMatchObject({
       name: 'Asha Rao',

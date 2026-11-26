@@ -24,8 +24,12 @@ describe('FA10 Register a job seeker', () => {
       'POST /otp/verify': { verified: true },
     });
     await renderWithApp(<CaptureSeekerScreen />, { signedInAs: kiran, route });
-    expect(screen.getByTestId('save-seeker')).toBeDisabled();
-    expect(screen.getByText('Check the mobile number by OTP first.')).toBeTruthy();
+    // 26 Nov: Save is never greyed out; tapping it says what is still needed.
+    expect(screen.getByTestId('save-seeker')).not.toBeDisabled();
+    await fireEvent.press(screen.getByTestId('save-seeker'));
+    await waitFor(() => screen.getByTestId('form-errors'));
+    expect(screen.getByTestId('form-errors')).toHaveTextContent(/Still needed: Full name/);
+    expect(screen.getByText('Type a 10-digit mobile number at the top first.')).toBeTruthy();
     await fireEvent.changeText(screen.getByTestId('mobile'), '9845012345');
     await fireEvent.press(screen.getByTestId('mobile-otp-send'));
     await waitFor(() => screen.getByTestId('mobile-otp-code'));
@@ -82,6 +86,27 @@ describe('FA10 Register a job seeker', () => {
     await fireEvent.press(screen.getByTestId('pin-finder-use'));
     await waitFor(() => expect(screen.getByTestId('pin')).toHaveTextContent(/Pin set/));
     expect(screen.getByTestId('pincode').props.value).toBe('560078');
+  });
+
+  it('26 Nov: no best time to call, looking for work since or qualification', async () => {
+    const { route } = routeTable(base);
+    await renderWithApp(<CaptureSeekerScreen />, { signedInAs: kiran, route });
+    expect(screen.queryByTestId('best-time')).toBeNull();
+    expect(screen.queryByTestId('looking-since')).toBeNull();
+    expect(screen.queryByText('Qualification')).toBeNull();
+    const body = createBody({ ...EMPTY_FORM, name: 'Kavya', mobile: '9845012345' }, 'req-1');
+    expect(body).not.toHaveProperty('lookingSince');
+    expect(body.bestTimeToCall).toBe('09-21');
+  });
+
+  it('26 Nov: a filled form needs nothing that was removed', async () => {
+    const filled = {
+      ...EMPTY_FORM, name: 'Kavya Reddy', mobile: '9845012345', dateOfBirth: '1996-04-12', gender: 'female',
+      place: { area: 'BTM Layout 2nd Stage', pincode: '560076', latitude: 12.91, longitude: 77.61 }, travelKm: '5',
+      trades: [{ trade: 'Housekeeping', other: '', years: '2' }], minSalaryPaise: 1600000, maxSalaryPaise: 2000000,
+      availableFrom: '2099-01-01', shift: 'day', jobType: 'full_time', spoken: ['Kannada'],
+    } as JobSeekerForm;
+    expect(validate(filled)).toEqual([]);
   });
 
   it('22 Nov: no "Has" ticks; the driving licence is asked only for a Driver trade', async () => {

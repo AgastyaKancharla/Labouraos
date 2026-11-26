@@ -81,6 +81,8 @@ export class CreateBusinessDto {
   udyamNumber?: string;
   pan?: string;
   fssaiNumber?: string;
+  /** 26 Nov: other licences ({ kind, number }), see other-licences.ts. */
+  otherLicences?: Array<{ kind: string; number: string }>;
   /** 25 Nov (rev 211, B1): runs from the owner's home (home kitchen, tiffin, tailoring): the second owner photo is the FSSAI licence held by the owner. */
   runsFromHome?: boolean;
   /** 25 Nov (rev 211, B2): a Google Maps link to the shop, one of the proofs (the server reads its pin). */

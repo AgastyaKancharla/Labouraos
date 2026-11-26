@@ -14,6 +14,7 @@ export function SelectField<V extends string>({
   placeholder,
   error,
   searchable = false,
+  keepWhenSearching,
   testID,
 }: {
   label: string;
@@ -24,6 +25,8 @@ export function SelectField<V extends string>({
   error?: boolean;
   /** A search box over the list (22 Nov: the long grouped list of business types). */
   searchable?: boolean;
+  /** 26 Nov: choices shown whatever is typed (e.g. "Other (type it)" under the role search). */
+  keepWhenSearching?: readonly V[];
   testID?: string;
 }) {
   const { t } = useI18n();
@@ -37,7 +40,9 @@ export function SelectField<V extends string>({
   };
   // Group headings (choices with `group`), filtered by the search words.
   const q = query.trim().toLowerCase();
-  const shown = q ? choices.filter((c) => c.label.toLowerCase().includes(q) || (c.group ?? '').toLowerCase().includes(q)) : choices;
+  const shown = q
+    ? choices.filter((c) => c.label.toLowerCase().includes(q) || (c.group ?? '').toLowerCase().includes(q) || (keepWhenSearching ?? []).includes(c.value))
+    : choices;
   type Row = { kind: 'heading'; key: string; label: string } | { kind: 'choice'; key: string; choice: Choice<V> };
   const rows: Row[] = [];
   let lastGroup: string | undefined;

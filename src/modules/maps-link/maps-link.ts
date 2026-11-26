@@ -164,6 +164,8 @@ export interface ReverseAddress {
   displayName: string | null;
   /** 22 Nov: the area in words for a GPS fix ("Kothnur, JP Nagar 8th Phase"). */
   locality?: string | null;
+  /** 26 Nov: the nearest named place (a shop, temple, school…), for the form's Landmark box. */
+  landmark?: string | null;
 }
 
 export function addressFromNominatim(body: unknown): ReverseAddress | null {
@@ -172,8 +174,15 @@ export function addressFromNominatim(body: unknown): ReverseAddress | null {
   if (b.error || !b.address || typeof b.address !== 'object') return null;
   const s = (k: string) => (typeof b.address![k] === 'string' && (b.address![k] as string).trim() ? (b.address![k] as string).trim() : null);
   const postcode = s('postcode')?.replace(/\s/g, '') ?? null;
-  const street = [s('road') ?? s('pedestrian') ?? s('street'), s('neighbourhood') ?? s('quarter')].filter(Boolean).join(', ') || null;
+  // 26 Nov: lanes in Indian cities are often only "residential", "service" or "footway" ways in OpenStreetMap.
+  const street =
+    [s('road') ?? s('pedestrian') ?? s('street') ?? s('residential') ?? s('footway') ?? s('path'), s('neighbourhood') ?? s('quarter')]
+      .filter(Boolean)
+      .join(', ') || null;
+  const name = typeof (body as { name?: unknown }).name === 'string' ? ((body as { name: string }).name.trim() || null) : null;
+  const named = name ?? s('amenity') ?? s('shop') ?? s('building') ?? s('tourism') ?? s('leisure') ?? s('office');
   return {
+    landmark: named && named.length <= 80 && named !== s('road') ? named : null,
     shopNumber: s('house_number'),
     street,
     area: s('suburb') ?? s('neighbourhood') ?? s('city_district') ?? s('village') ?? null,
@@ -209,6 +218,34 @@ export function fillAddressGaps(base: ReverseAddress | null, extra: ReverseAddre
     pincode: base.pincode ?? extra.pincode,
     displayName: base.displayName ?? extra.displayName,
     locality: base.locality ?? extra.locality ?? null,
+    landmark: base.landmark ?? extra.landmark ?? null,
+  };
+}
+
+/**
+ * 26 Nov: Photon (photon.komoot.io), a free reverse lookup on the same OpenStreetMap data, used when
+ * Nominatim does not answer or leaves the form's boxes empty. Its answer → the form's fields.
+ */
+export function addressFromPhoton(body: unknown): ReverseAddress | null {
+  const features = (body as { features?: unknown } | null)?.features;
+  if (!Array.isArray(features) || !features.length) return null;
+  const p = (features[0] as { properties?: Record<string, unknown> } | null)?.properties;
+  if (!p || typeof p !== 'object') return null;
+  const s = (k: string) => (typeof p[k] === 'string' && (p[k] as string).trim() ? (p[k] as string).trim() : null);
+  const postcode = s('postcode')?.replace(/\s/g, '') ?? null;
+  const name = s('name');
+  const street = s('street') ?? (s('type') === 'street' ? name : null);
+  const area = s('district') ?? s('locality') ?? null;
+  return {
+    shopNumber: s('housenumber'),
+    street,
+    area,
+    city: s('city') ?? s('county'),
+    state: s('state'),
+    pincode: postcode && /^\d{6}$/.test(postcode) ? postcode : null,
+    displayName: [name, street, area, s('city')].filter(Boolean).join(', ').slice(0, 300) || null,
+    locality: localityOf([s('locality'), s('district')]),
+    landmark: name && name !== street && s('type') !== 'street' && name.length <= 80 ? name : null,
   };
 }
 

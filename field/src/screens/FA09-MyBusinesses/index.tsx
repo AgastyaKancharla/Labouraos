@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useI18n, type MessageKey } from '@/i18n';
-import { Card, EmptyState, ErrorState, IconTile, LoadingState, Screen, SearchBar, Text, TextField, SendBySms, type SendChannel } from '@/components';
+import { Card, EmptyState, ErrorState, IconTile, LoadingState, Screen, Text, TextField, SendBySms, type SendChannel } from '@/components';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { useAfterSave } from '@/api/refresh';
@@ -18,7 +18,7 @@ import { AppHeader } from '../_shared/AppHeader';
 import { Sheet } from '../_attendance/DayControls';
 import { AddShiftForm } from '../_business/Shifts';
 import { istDateKey } from '../_visits/format';
-import { countGroups, DoneMark, filterRows, FilterChips, PersonRow, RowButton, useListFilter, WaitingMark } from '../_lists';
+import { countGroups, DoneMark, filterRows, FilterChips, PersonRow, RowButton, SortChips, sortList, useListFilter, useListSort, WaitingMark } from '../_lists';
 
 type T = ReturnType<typeof useI18n>['t'];
 
@@ -100,14 +100,15 @@ export default function MyBusinessesScreen() {
   const q = useDebounced(text.trim());
   const list = useQuery({ queryKey: queryKeys.myBusinesses(q), queryFn: () => redesign.myBusinesses(q) });
   const rows = list.data?.results ?? [];
-  const shown = filterRows(rows, filter);
+  const [sort, setSort] = useListSort();
+  const shown = sortList(filterRows(rows, filter), sort, (b) => b.createdAt);
   return (
     <View style={styles.flex} testID="screen-FA09">
       <AppHeader title={t('fa09.title')} root />
       <Screen onRefresh={() => void list.refetch()} refreshing={list.isRefetching}>
         <TextField label={t('fa09.filter')} value={text} onChangeText={setText} placeholder={t('fa09.filterPlaceholder')} autoCorrect={false} testID="fa09-filter" />
-        <SearchBar onPress={() => router.push(routes.businessesSearch)} placeholder={t('common.searchEveryone')} />
         <FilterChips value={filter} onChange={setFilter} counts={countGroups(rows)} testID="fa09-chips" />
+        <SortChips value={sort} onChange={setSort} testID="fa09-sort" />
         <Card title={t('fa09.mine')} icon="store" accent="royal" testID="fa09-list">
           {list.isPending ? (
             <LoadingState compact />

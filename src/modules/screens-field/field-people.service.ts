@@ -308,6 +308,7 @@ export class FieldPeopleService {
         where: { id: { in: ids } },
         select: {
           id: true, businessType: true, businessTypeOther: true, accountAgentId: true, leadCreatedByStaffId: true, verificationStatus: true,
+          createdAt: true,
           vacancies: { where: { status: 'open' }, select: { id: true } },
         },
       }),
@@ -345,6 +346,8 @@ export class FieldPeopleService {
         ...b,
         businessType: d?.businessType ?? null,
         businessTypeOther: d?.businessTypeOther ?? null,
+        // 26 Nov: for the list's Newest / Oldest sort.
+        createdAt: d?.createdAt.toISOString() ?? null,
         candidatesShown: shownByBusiness.get(b.id) ?? 0,
         lastVisitAt: visit?.visitedAt.toISOString() ?? null,
         revisitOverdue: Boolean(
