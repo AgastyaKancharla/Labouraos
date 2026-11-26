@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import type { BusinessDetail, CreatedVacancy } from '@/api/endpoints';
+import { isApiError } from '@/api/errors';
 import { Banner, Button, Card, Emoji, Screen, Text, TextField } from '@/components';
 import { Checkbox, DateField, MoneyField, SelectField, todayKeyIst } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
@@ -17,7 +18,7 @@ import { AppHeader } from '../_shared/AppHeader';
 import { BusinessHeader, BusinessTypeAhead, ErrorBanner, formatRupees, QueryView, useParam } from '../_selling';
 import { AddShiftForm, useBusinessShifts } from '../_business/Shifts';
 import {
-  EMPTY_VACANCY, findTrade, HEADCOUNTS, isBelowLegalMinimum, OTHER_TRADE, QUICK_EXTRAS, tradeNameOf,
+  EMPTY_VACANCY, findTrade, HEADCOUNTS, isBelowLegalMinimum, legalMinimumFor, OTHER_TRADE, QUICK_EXTRAS, tradeNameOf,
   vacancyBody, vacancyErrors, type QuickVacancy, type VacancyError,
 } from './payload';
 
@@ -81,10 +82,13 @@ function Form({ business }: { business: BusinessDetail }) {
   const [tried, setTried] = useState(false);
   const [queued, setQueued] = useState(false);
   const set = <K extends keyof QuickVacancy>(key: K, value: QuickVacancy[K]) => setForm((f) => ({ ...f, [key]: value }));
+  // 26 Nov: the server's own answer for this trade (it checks a typed trade as unskilled, for the business's zone).
+  const [serverMinimum, setServerMinimum] = useState<{ trade: string; legalMinimumPaise: number } | null>(null);
   const trade = findTrade(trades.data, tradeNameOf(form));
-  const errors = vacancyErrors(form, trade);
+  const legalMinimum = legalMinimumFor(trades.data, tradeNameOf(form), serverMinimum);
+  const errors = vacancyErrors(form, legalMinimum);
   const err = (key: VacancyError) => (tried && errors.includes(key) ? t(ERROR_KEYS[key]) : null);
-  const below = isBelowLegalMinimum(trade, form.salaryMinPaise);
+  const below = isBelowLegalMinimum(legalMinimum, form.salaryMinPaise);
 
   const save = useMutation({
     mutationFn: () =>
@@ -93,6 +97,14 @@ function Form({ business }: { business: BusinessDetail }) {
         path: '/vacancies',
         json: vacancyBody(business.id, form),
       }),
+    onError: (error) => {
+      const body = isApiError(error) ? (error.body as { code?: string; legalMinimumPaise?: number } | null) : null;
+      if (body?.code === 'MINIMUM_WAGE_TICK_REQUIRED' && typeof body.legalMinimumPaise === 'number') {
+        // Show the warning and the "Owner told" tick instead of the server's raw message.
+        setServerMinimum({ trade: tradeNameOf(form), legalMinimumPaise: body.legalMinimumPaise });
+        set('ownerTold', false);
+      }
+    },
     onSuccess: (result) => {
       clearForm();
       void client.invalidateQueries({ queryKey: ['selling'] });
@@ -157,9 +169,9 @@ function Form({ business }: { business: BusinessDetail }) {
           ) : null}
           <MoneyField label={t('fa17.salaryFrom')} required valuePaise={form.salaryMinPaise} onChange={(v) => set('salaryMinPaise', v)} error={err('salaryMin')} testID="salary-min" />
           <MoneyField label={t('fa17.salaryTo')} valuePaise={form.salaryMaxPaise} onChange={(v) => set('salaryMaxPaise', v)} error={err('salaryOrder')} testID="salary-max" />
-          {below && trade ? (
+          {below && legalMinimum ? (
             <>
-              <Banner tone="warn" title={t('fa17.belowTitle')} message={t('fa17.belowBody', { amount: formatRupees(trade.legalMinimumPaise) })} testID="below-minimum" />
+              <Banner tone="warn" title={t('fa17.belowTitle')} message={t('fa17.belowBody', { amount: formatRupees(legalMinimum) })} testID="below-minimum" />
               <Checkbox label={t('fa17.ownerTold')} checked={form.ownerTold} onChange={(v) => set('ownerTold', v)} testID="owner-told" />
               {err('ownerTold') ? <Text variant="small" color={colors.tomato}>{err('ownerTold')}</Text> : null}
             </>
@@ -181,10 +193,14 @@ function Form({ business }: { business: BusinessDetail }) {
           </View>
         </View>
       </Card>
-      <ErrorBanner error={save.error} />
+      <ErrorBanner error={isMinimumWageError(save.error) && below ? null : save.error} />
       <Button label={t('fa17.save')} loading={save.isPending} onPress={submit} testID="save-vacancy" />
     </>
   );
+}
+
+function isMinimumWageError(error: unknown): boolean {
+  return isApiError(error) && (error.body as { code?: string } | null)?.code === 'MINIMUM_WAGE_TICK_REQUIRED';
 }
 
 const ADD_SHIFT = '__add__';

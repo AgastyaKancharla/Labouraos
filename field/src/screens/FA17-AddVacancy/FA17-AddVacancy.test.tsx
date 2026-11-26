@@ -4,7 +4,7 @@ import { todayKeyIst } from '@/components/form';
 import { kiran, renderWithApp } from '@/test/render';
 import { business, recordingQueue, routeTable } from '@/test/selling-fixtures';
 import AddVacancyScreen from '.';
-import { vacancyBody, vacancyErrors, EMPTY_VACANCY } from './payload';
+import { legalMinimumFor, vacancyBody, vacancyErrors, EMPTY_VACANCY } from './payload';
 
 jest.mock('expo-router', () => require('@/test/expo-router-mock'));
 beforeEach(() => {
@@ -79,5 +79,15 @@ describe('FA17 Add a vacancy', () => {
     expect(vacancyBody('b', form)).not.toHaveProperty('shift');
     expect(vacancyErrors({ ...form, salaryMaxPaise: 100 }, undefined)).toEqual(['salaryOrder']);
     expect(vacancyBody('b', form)).not.toHaveProperty('salaryMaxPaise');
+  });
+  it('26 Nov: a typed trade is checked against the unskilled figure; the server\'s answer wins', () => {
+    const cook = { ...waiter, id: 't-2', name: 'Cook', minimumWageLevel: 'skilled', legalMinimumPaise: 2900000 };
+    expect(legalMinimumFor([waiter, cook], 'Field Agent')).toBe(2340000);
+    expect(legalMinimumFor([waiter, cook], 'cook')).toBe(2900000);
+    expect(legalMinimumFor([waiter], 'Field Agent', { trade: 'field agent', legalMinimumPaise: 2828547 })).toBe(2828547);
+    expect(legalMinimumFor([waiter], 'Cook', { trade: 'Field Agent', legalMinimumPaise: 2828547 })).toBe(2340000);
+    const form = { ...EMPTY_VACANCY, trade: '__other__', otherTrade: 'Field Agent', salaryMinPaise: 2000000, businessShiftId: 'sh-1', startDate: '2026-11-30' };
+    expect(vacancyErrors(form, legalMinimumFor([waiter], 'Field Agent'))).toEqual(['ownerTold']);
+    expect(vacancyErrors({ ...form, ownerTold: true }, legalMinimumFor([waiter], 'Field Agent'))).toEqual([]);
   });
 });

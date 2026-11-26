@@ -118,7 +118,7 @@ export class VacancyConfirmationService {
         statusCode: 400,
         error: 'Bad Request',
         code: 'MINIMUM_WAGE_TICK_REQUIRED',
-        message: 'The salary is below the legal minimum wage. Tell the owner and tick ownerToldMinimumWage to save.',
+        message: 'The salary is below the legal minimum wage. Tell the owner and tick “Owner told about the legal minimum wage” to save.',
         legalMinimumPaise: check.legalMinimumPaise,
         monthlySalaryFromPaise: check.monthlySalaryFromPaise,
         level: check.level,

@@ -19,6 +19,7 @@ import { outcomeKey, verificationKey } from '../_visits/labels';
 import { VacancyStep } from '../_business/VacancyStep';
 import { ShiftsCard } from '../_business/Shifts';
 import { BusinessRowEnd, businessStatusText } from '../FA09-MyBusinesses';
+import { roleKey } from '../FA18-CallOwner';
 
 const HIDDEN_KEYS: Record<string, MessageKey> = {
   suspended: 'biz.hidden.suspended',
@@ -93,8 +94,17 @@ function Page({ b }: { b: BusinessPage }) {
         leading={<IconTile icon="user" accent="navy" size={34} />}
         subtitle={b.canAct ? nextStepText(b.nextStep, t) : undefined}
         testID="fa08-agent"
-        last
+        last={!b.contact?.phoneLast4}
       />
+      {b.contact?.phoneLast4 ? (
+        <ListRow
+          title={t('biz.contact')}
+          subtitle={[b.contact.name, b.contact.role ? t(roleKey(b.contact.role)) : null, `******${b.contact.phoneLast4}`].filter(Boolean).join(' · ')}
+          leading={<IconTile icon="phone" accent="green" size={34} />}
+          testID="fa08-contact"
+          last
+        />
+      ) : null}
       {!b.canAct ? <Banner tone="info" title={t('biz.viewOnly')} message={t('biz.viewOnlyBody')} testID="fa08-view-only" /> : null}
       {b.canAct && b.row ? <StuckBox b={b} /> : null}
 
