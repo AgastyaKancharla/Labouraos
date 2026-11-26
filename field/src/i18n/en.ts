@@ -13,6 +13,7 @@ import { visit22En } from './visit22.en';
 import { lists22En } from './lists22.en';
 import { waFirst25En } from './waFirst25.en';
 import { bizAutoEn } from './bizAuto.en';
+import { profile27En } from './profile27.en';
 /**
  * English — the only language of Laboura Field (Master Guide rev 193). Keys are grouped by the
  * screen that owns them: `fa03.*` belongs to FA03-Home, and so on. Shared
@@ -37,6 +38,7 @@ export const en = {
   ...visit22En,
   ...lists22En,
   ...waFirst25En,
+  ...profile27En,
   'common.appName': 'Laboura Field',
   'common.brand': 'Laboura',
   'common.logoHome': 'Laboura — go to Home',

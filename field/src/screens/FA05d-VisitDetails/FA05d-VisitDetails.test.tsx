@@ -6,7 +6,7 @@ import { routeTable } from '@/test/selling-fixtures';
 import { OfflineQueue } from '@/device/offline-queue/queue';
 import { createMemoryQueueStore } from '@/device/offline-queue/types';
 import type { QueuedRequest } from '@/device/offline-queue/types';
-import { visitDetails } from '@/test/redesign-fixtures';
+import { businessPage, visitDetails } from '@/test/redesign-fixtures';
 import VisitDetailsScreen from '.';
 
 jest.mock('expo-router', () => require('@/test/expo-router-mock'));
@@ -117,5 +117,25 @@ describe('FA05d Visit details', () => {
     await fireEvent.press(screen.getByTestId('fa05d-next-mark_onboarded'));
     await waitFor(() => expect(router.push).toHaveBeenCalledWith({ pathname: '/visit/agreement', params: { businessId: 'b-1', visitId: 'v-1' } }));
     expect(sent).toMatchObject([{ method: 'POST', path: '/field-visits/v-1/outcome', json: { outcome: 'onboarded' } }]);
+  });
+
+  it('27 Nov: a visit of a registered business opens the same business profile, with "This visit" as the first tab', async () => {
+    const { route } = routeTable({
+      '/field-visits/v-1': visitDetails({ business: { id: 'b-1', code: 'BZ-00012', name: 'Sri Sai Bakery' }, outcome: 'onboarded', canChangeResult: false, nextStep: 'done', revisitOn: null }),
+      '/field-work/businesses/b-1/page': businessPage(),
+    });
+    await renderWithApp(<VisitDetailsScreen />, { signedInAs: kiran, route });
+    await waitFor(() => screen.getByTestId('fa08-hero'));
+    // The business profile's top, exactly as from the Businesses tab.
+    expect(screen.getByTestId('fa08-hero')).toHaveTextContent(/Sri Sai Bakery.*BZ-00012/);
+    expect(screen.getByTestId('fa08-checklist')).toBeTruthy();
+    expect(screen.getByTestId('fa08-call')).toBeTruthy();
+    // This visit first, then the same tabs.
+    expect(screen.getByTestId('fa08-tab-visit').props.accessibilityState).toEqual({ selected: true });
+    expect(screen.getByTestId('fa05d-result')).toHaveTextContent(/Onboarded/);
+    expect(screen.getByTestId('fa05d-board')).toBeTruthy();
+    await fireEvent.press(screen.getByTestId('fa08-tab-work'));
+    expect(screen.getByTestId('fa08-vacancies')).toBeTruthy();
+    expect(screen.queryByTestId('fa05d-summary')).toBeNull();
   });
 });

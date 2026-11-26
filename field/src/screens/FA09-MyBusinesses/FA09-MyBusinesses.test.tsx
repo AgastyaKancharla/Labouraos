@@ -91,6 +91,8 @@ describe('FA09 My businesses (Laboura Field lists, 22 Nov evening)', () => {
     const { route } = api();
     await renderWithApp(<MyBusinessesScreen />, { signedInAs: kiran, route });
     await waitFor(() => screen.getByTestId('fa09-business-b-1'));
+    // Off at first: no sort chip is selected.
+    for (const id of ['newest', 'oldest', 'az']) expect(screen.getByTestId(`fa09-sort-${id}`).props.accessibilityState).toEqual({ selected: false });
     const order = () => screen.getAllByTestId(/^fa09-business-b-\d+$/).map((el) => String(el.props.testID).replace('fa09-business-', ''));
     await fireEvent.press(screen.getByTestId('fa09-sort-az'));
     expect(order()).toEqual(['b-5', 'b-2', 'b-4', 'b-3', 'b-1']);
@@ -98,6 +100,9 @@ describe('FA09 My businesses (Laboura Field lists, 22 Nov evening)', () => {
     expect(order()).toEqual(['b-4', 'b-2', 'b-1', 'b-3', 'b-5']);
     await fireEvent.press(screen.getByTestId('fa09-sort-oldest'));
     expect(order()).toEqual(['b-5', 'b-3', 'b-1', 'b-2', 'b-4']);
+    // Tapping it again turns the sort off: the usual order is back and nothing is selected.
+    await fireEvent.press(screen.getByTestId('fa09-sort-oldest'));
+    expect(screen.getByTestId('fa09-sort-oldest').props.accessibilityState).toEqual({ selected: false });
   });
 
   it('on the right: ONE button, "Waiting" for the Team Lead (no button), or a green Done', async () => {

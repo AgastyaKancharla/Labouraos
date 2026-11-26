@@ -379,6 +379,39 @@ export interface BusinessPage {
   actions: { recordVisit: boolean; callOwner: boolean; addVacancy: boolean; resendAgreement: boolean; showCandidates: boolean };
   /** "Where they're stuck" (22 Nov evening): the same status and one button as the business's row. */
   row?: BusinessRowState;
+  /** 27 Nov: everything for the profile's Details tab (absent on older servers). Phones as last 4 only. */
+  details?: BusinessPageDetails;
+}
+
+export interface BusinessPageDetails {
+  address: { shopNumber: string | null; street: string | null; landmark: string | null; locality: string | null; city: string; pincode: string | null; full: string | null; runsFromHome: boolean };
+  map: { latitude: number | null; longitude: number | null; mapsLink: string | null; placeName: string | null };
+  businessTypeOther: string | null;
+  people: {
+    ownerName: string | null;
+    legalName: string | null;
+    contactName: string | null;
+    contactRole: string | null;
+    phoneLast4: string | null;
+    phoneVerified: boolean;
+    whatsappLast4: string | null;
+    otherContactLast4: string | null;
+  };
+  staff: { employeeCount: number | null; employeeCountBand: string | null; staffNeeded: string[] };
+  /** Another agent's business: names and document numbers are not sent. */
+  documentsHidden: boolean;
+  documents: {
+    gst: { number: string; verified: boolean | null; status: string | null; legalName: string | null } | null;
+    fssai: string | null;
+    tradeLicence: string | null;
+    shopEstablishment: string | null;
+    udyam: string | null;
+    panLast4: string | null;
+    others: { kind: string; label: string; number: string }[];
+    noDocuments: boolean;
+  };
+  onboarding: { registeredAt: string; registeredBy: string | null; channel: string | null; heardFrom: string | null; inPersonAt: string | null; verifiedAt: string | null };
+  branches: { id: string; name: string; locality: string | null; contactName: string; contactLast4: string | null }[];
 }
 
 /** GET /field-work/businesses/:ref/agreement (polled every ~10 s on the agreement step). */

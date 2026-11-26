@@ -9,7 +9,8 @@ import { peopleOwnedBy } from '../../common/rbac/own-team';
 import { codedError } from '../../common/http/coded-error';
 import { phoneLast4 } from '../../common/phone/indian-mobile';
 import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
-import { AgentViewer, agentViewerFor, fieldAgentCanAct } from '../business/business-agent-view';
+import { AgentViewer, agentSeesFullBusiness, agentViewerFor, fieldAgentCanAct } from '../business/business-agent-view';
+import { businessPageDetails } from './business-page-details';
 import { businessCandidateAccess, isBusinessSuspended } from '../business/business-candidate-access';
 import { isVerificationVisitPurpose } from '../business/business.constants';
 import { AttendanceService } from '../attendance/attendance.service';
@@ -914,7 +915,7 @@ export class FieldRedesignService {
     const dayEnd = new Date(dayStart.getTime() + DAY_MS);
     const vacancyIds = business.vacancies.map((v) => v.id);
     const [agreements, accountAgent, shownTotal, shownByMe, shown, interviewTotal, interviewToday, interviewUpcoming,
-      recentInterviews, placements, inGuarantee, visits, outside, confirmLinks, vacancyEvents] = await Promise.all([
+      recentInterviews, placements, inGuarantee, visits, outside, confirmLinks, vacancyEvents, registeredBy, branches] = await Promise.all([
       this.agreementInfos([business.id], now),
       business.accountAgentId
         ? this.prisma.staff.findUnique({ where: { id: business.accountAgentId }, select: { id: true, name: true, code: true } })
@@ -948,6 +949,15 @@ export class FieldRedesignService {
           })
         : Promise.resolve([]),
       this.vacancyEvents(business.id),
+      // 27 Nov (owner): the profile's Details tab.
+      business.leadCreatedByStaffId
+        ? this.prisma.staff.findUnique({ where: { id: business.leadCreatedByStaffId }, select: { name: true } })
+        : Promise.resolve(null),
+      this.prisma.businessBranch.findMany({
+        where: { businessId: business.id },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true, name: true, locality: true, contactPersonName: true, contactPersonPhone: true },
+      }),
     ]);
     const agreement = agreements.get(business.id)!;
     const outsideArea = outside.has(business.id);
@@ -1034,6 +1044,12 @@ export class FieldRedesignService {
       businessType: business.businessType,
       latitude: business.latitude,
       longitude: business.longitude,
+      details: businessPageDetails(business, {
+        canAct,
+        full: agentSeesFullBusiness(business, viewer),
+        registeredBy: registeredBy?.name ?? null,
+        branches,
+      }),
       accountAgent: accountAgent ? { ...accountAgent, isMe: accountAgent.id === actor.sub } : null,
       isMine: business.accountAgentId === actor.sub || (!business.accountAgentId && business.leadCreatedByStaffId === actor.sub),
       canAct,

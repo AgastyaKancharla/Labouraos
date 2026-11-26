@@ -23,7 +23,9 @@ describe('FA08 the one business page', () => {
     await renderWithApp(<BusinessScreen />, { signedInAs: kiran, route });
     await waitFor(() => screen.getByTestId('fa08-hero'));
     expect(screen.getByTestId('fa08-hero')).toHaveTextContent(/Sri Sai Bakery.*JP Nagar · BZ-00012/);
-    expect(screen.getByTestId('fa08-agent')).toHaveTextContent(/Your business.*A vacancy to check and send to the owner/);
+    expect(screen.getByTestId('fa08-agent')).toHaveTextContent('Your business');
+    // 27 Nov: the main things are on top; Work is the first tab.
+    expect(screen.getByTestId('fa08-tab-work').props.accessibilityState).toEqual({ selected: true });
     expect(screen.queryByTestId('fa08-view-only')).toBeNull();
     // Checklist: registered, phone confirmed, agreement waiting with Resend, Team Lead check.
     expect(screen.getByTestId('fa08-check-agreement')).toHaveTextContent(/Agreement.*Link sent to \*\*\*\*\*\*4321.*Waiting/);
@@ -47,6 +49,7 @@ describe('FA08 the one business page', () => {
     expect(router.push).toHaveBeenCalledWith('/businesses/vacancy/new?businessId=b-1');
     // Candidates and interviews; visit history opens my own visits only.
     expect(screen.getByTestId('fa08-candidates')).toHaveTextContent(/6 · 4 by you.*3 · 1 today · 1 coming.*1 · 1 in guarantee/);
+    await fireEvent.press(screen.getByTestId('fa08-tab-history'));
     await fireEvent.press(screen.getByTestId('fa08-visit-v-1'));
     expect(router.push).toHaveBeenCalledWith('/businesses/visit/v-1');
     (router.push as jest.Mock).mockClear();
@@ -123,6 +126,8 @@ describe('FA08 the one business page', () => {
     page.visits = [{ ...page.visits[0], id: 'v-5', outcome: 'already_onboarded' }, ...page.visits];
     const { route } = routeTable({ '/field-work/businesses/b-1/page': page });
     await renderWithApp(<BusinessScreen />, { signedInAs: kiran, route });
+    await waitFor(() => screen.getByTestId('fa08-tab-history'));
+    await fireEvent.press(screen.getByTestId('fa08-tab-history'));
     await waitFor(() => screen.getByTestId('fa08-visit-v-5'));
     expect(screen.getByTestId('fa08-visit-v-5')).toHaveTextContent(/Already onboarded/);
     expect(screen.getByTestId('fa08-visit-v-1')).toHaveTextContent(/Onboarded/);
@@ -136,6 +141,8 @@ describe('FA08 the one business page', () => {
     ];
     const { route } = routeTable({ '/field-work/businesses/b-1/page': page });
     await renderWithApp(<BusinessScreen />, { signedInAs: kiran, route });
+    await waitFor(() => screen.getByTestId('fa08-tab-history'));
+    await fireEvent.press(screen.getByTestId('fa08-tab-history'));
     await waitFor(() => screen.getByTestId('fa08-history-vac-1-added'));
     expect(screen.getByTestId('fa08-visits')).toHaveTextContent(/History/);
     expect(screen.getByTestId('fa08-history-vac-1-added')).toHaveTextContent(/Vacancy added · Cook × 2.*Kiran Kumar/);
@@ -181,5 +188,53 @@ describe('FA08 the one business page', () => {
     await waitFor(() => screen.getByTestId(`vacancy-${page.vacancies[0].id}`));
     expect(screen.getByTestId(`vacancy-${page.vacancies[0].id}`)).toHaveTextContent(/Morning 07:00–15:00/);
     expect(screen.getByTestId(`vacancy-${page.vacancies[1].id}`)).toHaveTextContent(/Morning 6 to 2/);
+  });
+
+  it('27 Nov: Details tab shows the address, people, business, documents and how it joined; Map opens the pin', async () => {
+    const page = businessPage();
+    page.details = {
+      address: { shopNumber: '12', street: '9th Main', landmark: 'Near Ganesha temple', locality: 'JP Nagar', city: 'Bengaluru', pincode: '560078', full: null, runsFromHome: false },
+      map: { latitude: 12.9, longitude: 77.58, mapsLink: null, placeName: null },
+      businessTypeOther: null,
+      people: { ownerName: 'Manjunath Gowda', legalName: 'Sri Sai Bakers', contactName: 'Manjunath', contactRole: 'owner', phoneLast4: '4321', phoneVerified: true, whatsappLast4: '4321', otherContactLast4: null },
+      staff: { employeeCount: null, employeeCountBand: '6-20', staffNeeded: ['Cook', 'Helper'] },
+      documentsHidden: false,
+      documents: { gst: { number: '29ABCDE1234F1Z5', verified: true, status: 'Active', legalName: null }, fssai: '12345678901234', tradeLicence: null, shopEstablishment: null, udyam: null, panLast4: null, others: [{ kind: 'psara', label: 'PSARA licence', number: 'PSARA/22/09' }], noDocuments: false },
+      onboarding: { registeredAt: '2026-11-16T05:00:00Z', registeredBy: 'Kiran Kumar', channel: 'field_visit', heardFrom: 'field_visit', inPersonAt: '2026-11-16T05:00:00Z', verifiedAt: null },
+      branches: [],
+    };
+    const { route } = routeTable({ '/field-work/businesses/b-1/page': page });
+    await renderWithApp(<BusinessScreen />, { signedInAs: kiran, route });
+    await waitFor(() => screen.getByTestId('fa08-tab-details'));
+    expect(screen.getByTestId('fa08-numbers')).toBeTruthy();
+    await fireEvent.press(screen.getByTestId('fa08-tab-details'));
+    expect(screen.getByTestId('fa08-address')).toHaveTextContent(/12, 9th Main.*Near Ganesha temple.*JP Nagar, Bengaluru, 560078/);
+    expect(screen.getByTestId('fa08-people')).toHaveTextContent(/Manjunath · owner.*\*\*\*\*\*\*4321 · confirmed by OTP.*Manjunath Gowda.*Sri Sai Bakers/);
+    expect(screen.getByTestId('fa08-business')).toHaveTextContent(/6–20.*Cook, Helper/);
+    expect(screen.getByTestId('fa08-doc-gst')).toHaveTextContent(/29ABCDE1234F1Z5 · checked/);
+    expect(screen.getByTestId('fa08-doc-psara')).toHaveTextContent(/PSARA licence.*PSARA\/22\/09/);
+    expect(screen.getByTestId('fa08-joined')).toHaveTextContent(/Kiran Kumar.*Field visit/);
+    // Nothing else of the page shows under Details.
+    expect(screen.queryByTestId('fa08-vacancies')).toBeNull();
+  });
+
+  it('27 Nov: another agent’s business hides the documents and owner details', async () => {
+    const page = viewOnlyPage();
+    page.details = {
+      address: { shopNumber: null, street: '9th Main', landmark: null, locality: 'JP Nagar', city: 'Bengaluru', pincode: '560078', full: null, runsFromHome: false },
+      map: { latitude: null, longitude: null, mapsLink: null, placeName: null },
+      businessTypeOther: null,
+      people: { ownerName: null, legalName: null, contactName: null, contactRole: 'owner', phoneLast4: null, phoneVerified: true, whatsappLast4: null, otherContactLast4: null },
+      staff: { employeeCount: null, employeeCountBand: null, staffNeeded: [] },
+      documentsHidden: true,
+      documents: { gst: null, fssai: null, tradeLicence: null, shopEstablishment: null, udyam: null, panLast4: null, others: [], noDocuments: false },
+      onboarding: { registeredAt: '2026-11-16T05:00:00Z', registeredBy: null, channel: null, heardFrom: null, inPersonAt: null, verifiedAt: null },
+      branches: [],
+    };
+    const { route } = routeTable({ '/field-work/businesses/b-1/page': page });
+    await renderWithApp(<BusinessScreen />, { signedInAs: kiran, route });
+    await waitFor(() => screen.getByTestId('fa08-tab-details'));
+    await fireEvent.press(screen.getByTestId('fa08-tab-details'));
+    expect(screen.getByTestId('fa08-documents')).toHaveTextContent(/shown only to the agent who onboarded/);
   });
 });
