@@ -30,6 +30,11 @@ export function SelectField<V extends string>({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const current = choices.find((c) => c.value === value);
+  // Closing clears the search, so the list opens whole next time.
+  const close = () => {
+    setOpen(false);
+    setQuery('');
+  };
   // Group headings (choices with `group`), filtered by the search words.
   const q = query.trim().toLowerCase();
   const shown = q ? choices.filter((c) => c.label.toLowerCase().includes(q) || (c.group ?? '').toLowerCase().includes(q)) : choices;
@@ -56,8 +61,19 @@ export function SelectField<V extends string>({
         <Text color={current ? colors.ink : colors.faint}>{current?.label ?? placeholder ?? t('form.choose')}</Text>
         <Text color={colors.soft}>▾</Text>
       </Pressable>
-      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-        <Pressable style={styles.overlay} onPress={() => setOpen(false)}>
+      <Modal visible={open} transparent animationType="fade" onRequestClose={close}>
+        {/*
+          26 Nov fix: the backdrop is a layer BEHIND the sheet, not its parent. As the parent, a tap in the
+          search box (web app) reached the backdrop and closed the list before anything could be typed.
+        */}
+        <View style={styles.overlay}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={close}
+            accessibilityRole="button"
+            accessibilityLabel={t('common.close')}
+            testID={testID ? `${testID}-backdrop` : undefined}
+          />
           <View style={styles.sheet}>
             <Text variant="h2" style={styles.sheetTitle}>
               {label}
@@ -67,6 +83,7 @@ export function SelectField<V extends string>({
             ) : null}
             <FlatList
               data={rows}
+              keyboardShouldPersistTaps="handled"
               keyExtractor={(r) => r.key}
               ListEmptyComponent={<Text variant="muted">{t('form.noMatch')}</Text>}
               renderItem={({ item: row }) => {
@@ -85,7 +102,7 @@ export function SelectField<V extends string>({
                   disabled={item.disabled}
                   onPress={() => {
                     onChange(item.value);
-                    setOpen(false);
+                    close();
                   }}
                   style={[styles.option, item.value === value && styles.optionOn, item.disabled && styles.optionOff]}
                   testID={testID ? `${testID}-${item.value}` : undefined}
@@ -95,9 +112,9 @@ export function SelectField<V extends string>({
                 );
               }}
             />
-            <Button label={t('common.close')} variant="secondary" onPress={() => setOpen(false)} />
+            <Button label={t('common.close')} variant="secondary" onPress={close} />
           </View>
-        </Pressable>
+        </View>
       </Modal>
     </View>
   );

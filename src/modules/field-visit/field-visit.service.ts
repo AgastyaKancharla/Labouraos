@@ -17,7 +17,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { calculateHaversineDistanceMeters, DEFAULT_GEOFENCE_RADIUS_METERS } from '../../common/geo/geo.util';
-import { optionalIndianMobile } from '../../common/phone/indian-mobile';
+import { optionalIndianMobile, phoneLast4 } from '../../common/phone/indian-mobile';
 import { PricingService } from '../pricing/pricing.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { ReviewFlagKind } from '../review-flag/review-flag.constants';
@@ -113,7 +113,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
 
 type VisitWithBusiness = BusinessVisit & {
-  business: { id: string; code: string; name: string; latitude: number | null; longitude: number | null; additionalContactName?: string | null; contactRole?: string | null } | null;
+  business: { id: string; code: string; name: string; latitude: number | null; longitude: number | null; additionalContactName?: string | null; contactRole?: string | null; phone?: string | null } | null;
 };
 
 /**
@@ -980,7 +980,7 @@ export class FieldVisitService {
   private load(id: string): Promise<VisitWithBusiness> {
     return this.prisma.businessVisit.findUniqueOrThrow({
       where: { id },
-      include: { business: { select: { id: true, code: true, name: true, latitude: true, longitude: true, additionalContactName: true, contactRole: true } } },
+      include: { business: { select: { id: true, code: true, name: true, latitude: true, longitude: true, additionalContactName: true, contactRole: true, phone: true } } },
     });
   }
 
@@ -1007,7 +1007,12 @@ export class FieldVisitService {
       contactPhone: visit.contactPhone,
       // 22 Nov (rev 207): an onboarded visit asks no "whom did you speak to"; the registered contact stands in.
       registeredContact: !visit.spokeTo && visit.business
-        ? { name: visit.business.additionalContactName ?? null, role: visit.business.contactRole ?? null }
+        ? {
+          name: visit.business.additionalContactName ?? null,
+          role: visit.business.contactRole ?? null,
+          // 26 Nov: the registered mobile, last 4 digits only (AGENTS.md §7) — never the full number.
+          phoneLast4: visit.business.phone ? phoneLast4(visit.business.phone) || null : null,
+        }
         : null,
       outcome: visit.outcome,
       outcomeReason: visit.outcomeReason,

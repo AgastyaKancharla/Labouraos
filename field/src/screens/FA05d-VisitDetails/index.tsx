@@ -102,6 +102,7 @@ function Details({ visit: v }: { visit: VisitDetails }) {
         {v.outcomeReason ? (
           <ListRow title={t('fa06c.why')} leading={<IconTile icon="x-circle" accent="orange" size={34} />} subtitle={t(`reason.${v.outcomeReason}` as MessageKey)} />
         ) : null}
+        <ContactRow visit={v} />
         <ListRow title={t('fa05d.note')} leading={<IconTile icon="chat" accent="navy" size={34} />} subtitle={v.note || t('fa05d.noNote')} last testID="fa05d-note" />
       </Card>
 
@@ -143,6 +144,25 @@ function Details({ visit: v }: { visit: VisitDetails }) {
         <Text variant="muted" testID="fa05d-locked">{t('fa05d.lockedNote')}</Text>
       ) : null}
     </>
+  );
+}
+
+/** Whom the agent spoke to (or the registered contact) and the mobile — last 4 digits only (AGENTS.md §7). */
+export function contactMobile(v: Pick<VisitDetails, 'spokeTo' | 'contactPhone' | 'registeredContact'>): { name: string | null; mobile: string | null } {
+  const last4 = (v.contactPhone ?? '').replace(/\D/g, '').slice(-4) || v.registeredContact?.phoneLast4 || '';
+  return { name: v.spokeTo ?? v.registeredContact?.name ?? null, mobile: last4 ? `******${last4}` : null };
+}
+
+function ContactRow({ visit }: { visit: VisitDetails }) {
+  const { t } = useI18n();
+  const c = contactMobile(visit);
+  return (
+    <ListRow
+      title={t('fa05d.contact')}
+      leading={<IconTile icon="phone" accent="green" size={34} />}
+      subtitle={c.mobile ? [c.name, c.mobile].filter(Boolean).join(' · ') : t('fa05d.noContact')}
+      testID="fa05d-contact"
+    />
   );
 }
 

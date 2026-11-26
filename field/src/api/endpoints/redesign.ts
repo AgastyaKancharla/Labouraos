@@ -464,7 +464,8 @@ export const redesignApi = (api: ApiClient) => ({
   removeShift: (businessId: string, shiftId: string) => api.delete<{ removed: true }>(`/businesses/${enc(businessId)}/shifts/${enc(shiftId)}`),
   resolveMapsLink: (url: string) => api.post<ResolvedMapsLink>('/maps-link/resolve', { url }),
   locatePin: (text: string) => api.post<LocatedPin>('/maps-link/locate', { text }),
-  whereIs: (latitude: number, longitude: number) => api.post<WhereAmI>('/maps-link/where', { latitude, longitude }),
+  // 26 Nov: the server may try OpenStreetMap twice and Google before answering; give it time on a slow signal.
+  whereIs: (latitude: number, longitude: number) => api.post<WhereAmI>('/maps-link/where', { latitude, longitude }, { timeoutMs: 35_000 }),
   changeResult: (id: string, body: ChangeResultBody) => api.post<VisitDetails>(`/field-visits/${enc(id)}/change-result`, body),
   myBusinesses: (q?: string) => api.get<{ query: string; results: MyBusinessRow[] }>('/field-work/businesses', { query: { q: q || undefined } }),
   businessPage: (ref: string) => api.get<BusinessPage>(`/field-work/businesses/${enc(ref)}/page`),

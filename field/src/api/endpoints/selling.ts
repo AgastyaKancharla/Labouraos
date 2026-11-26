@@ -374,6 +374,14 @@ export const sellingApi = (api: ApiClient) => ({
   vacancy: (id: string) =>
     api.get<{ id: string; code: string; businessId: string; status: string; confirmedAt: string | null; confirmedByName: string | null }>(`/vacancies/${enc(id)}`),
   createVacancy: (body: Record<string, unknown>) => api.post<CreatedVacancy>('/vacancies', body),
+  /** 26 Nov: several vacancies of one business saved together; ONE code goes to the owner for all of them. */
+  createVacancies: (businessId: string, vacancies: Record<string, unknown>[]) =>
+    api.post<CreatedVacancies>('/vacancies/batch', { businessId, vacancies }),
+  sendVacanciesCode: (businessId: string, vacancyIds: string[], otpRequestId?: string, channel?: 'sms') =>
+    api.post<OtpSent>('/vacancies/batch/send-code', { businessId, vacancyIds, otpRequestId, ...(channel ? { channel } : {}) }),
+  confirmVacancies: (businessId: string, vacancyIds: string[], otpRequestId: string, code: string) =>
+    api.post<{ confirmed: number; vacancies: { id: string; code: string; confirmed: boolean; status: string; error?: string }[] }>(
+      '/vacancies/batch/confirm', { businessId, vacancyIds, otpRequestId, code, method: 'code_on_visit' }),
   // Job seeker registration — the same endpoints as the call agent's form (CA08).
   formOptions: () => api.get<{ city: string; areas: Area[] }>('/screens/call-registration/options'),
   sendOtp: (phone: string, previousRequestId?: string, channel?: 'sms') =>
@@ -474,6 +482,11 @@ export interface OtherIdOutcome {
   method: OtherIdType;
   status: 'pending';
   idNumberLast4: string;
+}
+
+export interface CreatedVacancies {
+  vacancies: { id: string; code: string; status: string; tradeSkill: string; headcount: number }[];
+  confirmation: OtpSent | { error?: string } | null;
 }
 
 export interface CreatedVacancy {

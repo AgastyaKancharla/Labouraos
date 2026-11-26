@@ -50,6 +50,43 @@ export class VacancyController {
     return this.vacancyService.create(body.businessId, body, req.user.sub);
   }
 
+  /**
+   * 26 Nov: several vacancies of one business saved together; the owner confirms them all with one
+   * code. Declared before the `:id` routes so `batch` is never read as a vacancy id.
+   */
+  @Post('batch')
+  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'team_lead')
+  @RequirePermission('vacancy', 'write', { kind: 'business', from: 'body:businessId' })
+  async createVacancies(
+    @Body() body: { businessId?: string; vacancies?: unknown },
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    if (!body?.businessId) throw new BadRequestException('businessId is required');
+    return this.vacancyService.createBatch(body.businessId, body.vacancies, req.user.sub);
+  }
+
+  @Post('batch/send-code')
+  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'team_lead')
+  @RequirePermission('vacancy', 'write', { kind: 'business', from: 'body:businessId' })
+  async sendBatchCode(
+    @Body() body: { businessId?: string; vacancyIds?: unknown; otpRequestId?: string; channel?: string },
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    if (!body?.businessId) throw new BadRequestException('businessId is required');
+    return this.confirmationService.sendBatchCode(body.businessId, body.vacancyIds, { id: req.user.sub, role: req.user.role }, body.otpRequestId, otpChannel(body.channel));
+  }
+
+  @Post('batch/confirm')
+  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'team_lead')
+  @RequirePermission('vacancy', 'write', { kind: 'business', from: 'body:businessId' })
+  async confirmBatch(
+    @Body() body: { businessId?: string; vacancyIds?: unknown; otpRequestId?: string; code?: string; method?: string },
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    if (!body?.businessId) throw new BadRequestException('businessId is required');
+    return this.confirmationService.confirmBatchWithCode(body.businessId, body, { id: req.user.sub, role: req.user.role });
+  }
+
   @Get()
   @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'finance', 'team_lead')
   @RequirePermission('vacancy', 'read')

@@ -6,6 +6,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  HttpException,
   HttpStatus,
 } from '@nestjs/common';
 import { codedError } from '../../common/http/coded-error';
@@ -20,7 +21,7 @@ import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { VACANCY_EXTRAS } from './vacancy.constants';
 import { EditPolicyService, EditActor, pickEditableFields } from '../../common/edit-policy/edit-policy.service';
 import { normalizeTradeName, TradeService } from '../trade/trade.service';
-import { VacancyConfirmationService } from './vacancy-confirmation.service';
+import { MAX_VACANCY_BATCH, VacancyConfirmationService } from './vacancy-confirmation.service';
 import { shiftLabel } from '../business/business-shift';
 import { BUSINESS_SUSPENDED_MESSAGE, businessAccessMessage, businessCandidateAccess, isBusinessSuspended } from '../business/business-candidate-access';
 
@@ -386,7 +387,48 @@ export class VacancyService {
     return headcount;
   }
 
-  async create(businessId: string, dto: CreateVacancyDto, actorId: string, options: { selfRegisteredByAccountId?: string } = {}) {
+  /**
+   * 26 Nov (owner): Laboura Field saves several vacancies of one business in one go (another role, or
+   * the same role on another shift) and the owner confirms them all with ONE code. Every row is
+   * checked first (an error names its `vacancyIndex`), then each is created like a single vacancy
+   * but without its own code, then one code goes for all of them.
+   */
+  async createBatch(businessId: string, rows: unknown, actorId: string) {
+    if (!Array.isArray(rows) || rows.length < 1 || rows.length > MAX_VACANCY_BATCH || rows.some((r) => !r || typeof r !== 'object' || Array.isArray(r))) {
+      throw codedError(HttpStatus.BAD_REQUEST, 'BATCH_INVALID', `Send 1 to ${MAX_VACANCY_BATCH} vacancies`);
+    }
+    const staff = await this.prisma.staff.findUnique({ where: { id: actorId }, select: { id: true, role: true } });
+    if (!staff) throw new NotFoundException(`Staff '${actorId}' not found`);
+    const dtos = (rows as Record<string, unknown>[]).map((row, i) => batchRow(row, i));
+    for (let i = 0; i < dtos.length; i += 1) {
+      await withVacancyIndex(i, async () => {
+        this.validateCreateInput(dtos[i]);
+        await this.pickedShift(businessId, dtos[i].businessShiftId);
+        await this.confirmationService.legalMinimumFields(
+          normalizeTradeName(dtos[i].tradeSkill),
+          dtos[i].salaryMinPaise,
+          dtos[i].salaryPeriod,
+          dtos[i].ownerToldMinimumWage,
+          { businessId },
+        );
+      });
+    }
+    const created: Array<{ id: string; code: string; status: string; tradeSkill: string; headcount: number }> = [];
+    for (let i = 0; i < dtos.length; i += 1) {
+      const v = await withVacancyIndex(i, () => this.create(businessId, dtos[i], actorId, { sendCode: false }));
+      created.push({ id: v.id, code: v.code, status: v.status, tradeSkill: v.tradeSkill, headcount: v.headcount });
+    }
+    let confirmation: Awaited<ReturnType<VacancyConfirmationService['sendBatchCode']>> | { error: string } | null;
+    try {
+      confirmation = await this.confirmationService.sendBatchCode(businessId, created.map((v) => v.id), { id: staff.id, role: staff.role });
+    } catch (error: unknown) {
+      // Sending the code must never lose the saved vacancies: the agent can send it again.
+      confirmation = { error: error instanceof Error ? error.message : 'The confirmation code could not be sent' };
+    }
+    return { vacancies: created, confirmation };
+  }
+
+  async create(businessId: string, dto: CreateVacancyDto, actorId: string, options: { selfRegisteredByAccountId?: string; sendCode?: boolean } = {}) {
     const headcount = this.validateCreateInput(dto);
 
     const business = await this.prisma.business.findUnique({
@@ -524,7 +566,7 @@ export class VacancyService {
     }
 
     // In the app the contact person confirms on the spot (VacancyConfirmationService.confirmInApp): no code is sent.
-    const confirmation = staff ? await this.trySendConfirmationCode(vacancy.id, staff) : null;
+    const confirmation = staff && options.sendCode !== false ? await this.trySendConfirmationCode(vacancy.id, staff) : null;
     return { ...vacancy, confirmation };
   }
 
@@ -761,3 +803,54 @@ export class VacancyService {
   }
 }
 
+/** Runs one row's step of a batch; an HTTP error says which row (`vacancyIndex`, from 0). */
+async function withVacancyIndex<T>(index: number, run: () => Promise<T> | T): Promise<T> {
+  try {
+    return await run();
+  } catch (error: unknown) {
+    if (error instanceof HttpException) {
+      const response = error.getResponse();
+      throw new HttpException(
+        typeof response === 'object' && response !== null ? { ...(response as Record<string, unknown>), vacancyIndex: index } : { message: response, vacancyIndex: index },
+        error.getStatus(),
+      );
+    }
+    throw error;
+  }
+}
+
+/** The fields a batch row may carry, each of its own type (a batch never writes anything else). */
+const BATCH_TEXT = ['tradeSkill', 'salaryPeriod', 'description', 'businessShiftId', 'startDate', 'interviewType', 'capturedChannel'] as const;
+const BATCH_INT = ['salaryMinPaise', 'salaryMaxPaise', 'headcount', 'experienceRequiredYears'] as const;
+export const VACANCY_NOTE_MAX = 500;
+
+function batchRow(row: Record<string, unknown>, index: number): CreateVacancyDto {
+  const bad = (message: string) => codedError(HttpStatus.BAD_REQUEST, 'BATCH_ROW_INVALID', message, { vacancyIndex: index });
+  const allowed = new Set<string>([...BATCH_TEXT, ...BATCH_INT, 'extras', 'ownerToldMinimumWage']);
+  const unknown = Object.keys(row).filter((k) => !allowed.has(k));
+  if (unknown.length) throw bad(`Not allowed in a vacancy: ${unknown.join(', ')}`);
+  const out: Record<string, unknown> = {};
+  for (const k of BATCH_TEXT) {
+    const v = row[k];
+    if (v === undefined || v === null || v === '') continue;
+    if (typeof v !== 'string') throw bad(`${k} must be text`);
+    out[k] = v;
+  }
+  for (const k of BATCH_INT) {
+    const v = row[k];
+    if (v === undefined || v === null) continue;
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < 0) throw bad(`${k} must be a whole number`);
+    out[k] = v;
+  }
+  if (typeof out.description === 'string' && out.description.trim().length > VACANCY_NOTE_MAX) throw bad(`The note can be at most ${VACANCY_NOTE_MAX} characters`);
+  if (typeof out.experienceRequiredYears === 'number' && out.experienceRequiredYears > 40) throw bad('experienceRequiredYears must be 0 to 40');
+  if (row.extras !== undefined) {
+    if (!Array.isArray(row.extras) || row.extras.some((x) => typeof x !== 'string')) throw bad('extras must be a list');
+    out.extras = row.extras;
+  }
+  if (row.ownerToldMinimumWage !== undefined) {
+    if (typeof row.ownerToldMinimumWage !== 'boolean') throw bad('ownerToldMinimumWage must be true or false');
+    out.ownerToldMinimumWage = row.ownerToldMinimumWage;
+  }
+  return out as unknown as CreateVacancyDto;
+}

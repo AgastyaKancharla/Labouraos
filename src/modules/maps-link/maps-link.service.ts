@@ -3,6 +3,8 @@ import { lookup as dnsLookup } from 'dns/promises';
 import { codedError } from '../../common/http/coded-error';
 import {
   addressFromNominatim,
+  addressGaps,
+  fillAddressGaps,
   addressQueries,
   extractPin,
   googlePlaceIdOf,
@@ -61,6 +63,7 @@ export const SEARCH_BUDGET_MS = 12_000;
 /** Google Places (New), used only when GOOGLE_PLACES_API_KEY is set (server side; the key never reaches a browser). */
 export const GOOGLE_PLACES_SEARCH_URL = 'https://places.googleapis.com/v1/places:searchText';
 export const GOOGLE_PLACES_DETAILS_URL = 'https://places.googleapis.com/v1/places/';
+export const GOOGLE_PLACES_NEARBY_URL = 'https://places.googleapis.com/v1/places:searchNearby';
 const GOOGLE_FIELDS = 'id,displayName,formattedAddress,location,addressComponents';
 
 /** A link that opens a search or a place page without coordinates: the page is never read, so ask for a pin. */
@@ -302,8 +305,33 @@ export class MapsLinkService {
       throw codedError(HttpStatus.BAD_REQUEST, 'MAPS_POINT_INVALID', 'Send the GPS latitude and longitude');
     }
     this.claim(staffId, this.perAgentWhere, WHERE_PER_MINUTE, WHERE_PER_DAY);
-    const address = await this.reverse(lat, lng);
+    let address = await this.reverse(lat, lng);
+    // 26 Nov (owner: "Use where I am sometimes fills nothing"): OpenStreetMap often has no PIN code or area at the
+    // exact spot, or does not answer. Fill only the gaps: a wider OpenStreetMap lookup (also a second try when the
+    // first failed), then Google Places nearby when GOOGLE_PLACES_API_KEY is set. The pin stays the GPS fix and the
+    // shop number is never taken from a neighbour.
+    if (addressGaps(address)) address = fillAddressGaps(address, await this.reverse(lat, lng, 16));
+    if (addressGaps(address)) address = fillAddressGaps(address, await this.googleNearby(lat, lng));
     return { latitude: lat, longitude: lng, area: address?.locality ?? address?.area ?? null, address };
+  }
+
+  /** Google Places (New) Nearby Search: the closest place's address around a GPS fix; null when Google cannot be used. */
+  private async googleNearby(latitude: number, longitude: number): Promise<ReverseAddress | null> {
+    if (!this.googleKey()) return null;
+    const body = await this.google(GOOGLE_PLACES_NEARBY_URL, 'POST', `places.${GOOGLE_FIELDS.split(',').join(',places.')}`, JSON.stringify({
+      maxResultCount: 1,
+      rankPreference: 'DISTANCE',
+      languageCode: 'en',
+      regionCode: 'IN',
+      locationRestriction: { circle: { center: { latitude, longitude }, radius: 150 } },
+    }));
+    const places = (body as { places?: unknown[] } | undefined)?.places;
+    if (!Array.isArray(places)) return null;
+    for (const p of places) {
+      const found = placeFromGoogle(p);
+      if (found) return found.address;
+    }
+    return null;
   }
 
   /**
@@ -495,8 +523,8 @@ export class MapsLinkService {
   }
 
   /** OpenStreetMap Nominatim reverse lookup; cached; one request a second; null when it has nothing or fails. */
-  async reverse(latitude: number, longitude: number): Promise<ReverseAddress | null> {
-    const key = `${latitude.toFixed(5)},${longitude.toFixed(5)}`;
+  async reverse(latitude: number, longitude: number, zoom: 18 | 16 = 18): Promise<ReverseAddress | null> {
+    const key = zoom === 18 ? `${latitude.toFixed(5)},${longitude.toFixed(5)}` : `${latitude.toFixed(5)},${longitude.toFixed(5)}@${zoom}`;
     const cached = this.addressCache.get(key);
     if (cached && this.now() - cached.at < CACHE_TTL_MS) return cached.value;
     const run = async (): Promise<ReverseAddress | null> => {
@@ -508,7 +536,7 @@ export class MapsLinkService {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
       try {
-        const url = `${this.nominatimBase()}/reverse?format=jsonv2&lat=${encodeURIComponent(latitude.toFixed(6))}&lon=${encodeURIComponent(longitude.toFixed(6))}&zoom=18&addressdetails=1&accept-language=en`;
+        const url = `${this.nominatimBase()}/reverse?format=jsonv2&lat=${encodeURIComponent(latitude.toFixed(6))}&lon=${encodeURIComponent(longitude.toFixed(6))}&zoom=${zoom}&addressdetails=1&accept-language=en`;
         const res = await this.fetcher()(url, {
           method: 'GET',
           redirect: 'manual',

@@ -91,6 +91,9 @@ export const redesignEn = {
   'fa05d.comeBack': 'Come back on',
   'fa05d.note': 'Note',
   'fa05d.noNote': 'No note',
+  /** 26 Nov: the person spoken to (or the registered contact) and their mobile, last 4 digits. */
+  'fa05d.contact': 'Contact mobile',
+  'fa05d.noContact': 'No mobile on this visit',
   'fa05d.photos': 'Photos',
   'fa05d.boardPhoto': 'Board photo',
   'fa05d.selfie': 'Selfie with the board',
@@ -199,6 +202,8 @@ export const redesignEn = {
   'biz.accountAgent': 'Account agent: {name}',
   'biz.yourBusiness': 'Your business · you are its account agent',
   'biz.noAccountAgent': 'No account agent yet',
+  /** 26 Nov: the contact person and mobile (last 4) on the business page. */
+  'biz.contact': 'Contact mobile',
   'biz.suspended': 'Suspended',
   'biz.viewOnly': 'View only',
   'biz.viewOnlyShort': 'View only',

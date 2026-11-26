@@ -19,7 +19,10 @@ export interface Visit {
   proofDistanceMeters: number | null;
   geofenceFlag: boolean;
   spokeTo: string | null;
+  /** Masked by the server for agents: `******1234`. */
   contactPhone: string | null;
+  /** An onboarded visit asks no "whom did you speak to": the business's registered contact (26 Nov: with its last 4 digits). */
+  registeredContact?: { name: string | null; role: string | null; phoneLast4?: string | null } | null;
   outcome: string | null;
   outcomeReason: string | null;
   revisitOn: string | null;
