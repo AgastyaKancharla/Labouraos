@@ -127,7 +127,7 @@ describe('FA17 Add vacancies', () => {
       { name: 'Evening', startTime: '18:00', endTime: '23:00' },
       { name: 'Evening 2', startTime: '15:00', endTime: '23:00' },
     ]);
-    const body = calls.find((c) => c.path === '/vacancies/batch')?.body as { vacancies: Array<Record<string, unknown>> };
+    const body = calls.find((c) => c.path === '/vacancies/batch')?.body as { vacancies: Record<string, unknown>[] };
     expect(body.vacancies.map((v) => [v.tradeSkill, v.businessShiftId, v.experienceRequiredYears, v.extras])).toEqual([
       ['Waiter', 'sh-1', 1, ['food']],
       ['Waiter', 'sh-new', 1, ['food']],

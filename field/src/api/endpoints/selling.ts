@@ -380,7 +380,7 @@ export const sellingApi = (api: ApiClient) => ({
   sendVacanciesCode: (businessId: string, vacancyIds: string[], otpRequestId?: string, channel?: 'sms') =>
     api.post<OtpSent>('/vacancies/batch/send-code', { businessId, vacancyIds, otpRequestId, ...(channel ? { channel } : {}) }),
   confirmVacancies: (businessId: string, vacancyIds: string[], otpRequestId: string, code: string) =>
-    api.post<{ confirmed: number; vacancies: Array<{ id: string; code: string; confirmed: boolean; status: string; error?: string }> }>(
+    api.post<{ confirmed: number; vacancies: { id: string; code: string; confirmed: boolean; status: string; error?: string }[] }>(
       '/vacancies/batch/confirm', { businessId, vacancyIds, otpRequestId, code, method: 'code_on_visit' }),
   // Job seeker registration — the same endpoints as the call agent's form (CA08).
   formOptions: () => api.get<{ city: string; areas: Area[] }>('/screens/call-registration/options'),
@@ -485,7 +485,7 @@ export interface OtherIdOutcome {
 }
 
 export interface CreatedVacancies {
-  vacancies: Array<{ id: string; code: string; status: string; tradeSkill: string; headcount: number }>;
+  vacancies: { id: string; code: string; status: string; tradeSkill: string; headcount: number }[];
   confirmation: OtpSent | { error?: string } | null;
 }
 

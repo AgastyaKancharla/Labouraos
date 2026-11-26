@@ -347,7 +347,7 @@ function ConfirmAll({ business, saved }: { business: BusinessDetail; saved: Crea
   const ids = saved.vacancies.map((v) => v.id);
   const n = ids.length;
   const sent = saved.confirmation && 'otpRequestId' in saved.confirmation ? (saved.confirmation as OtpSent) : null;
-  const [result, setResult] = useState<{ confirmed: number; vacancies: Array<{ code: string; confirmed: boolean }> } | null>(null);
+  const [result, setResult] = useState<{ confirmed: number; vacancies: { code: string; confirmed: boolean }[] } | null>(null);
   const links = useMutation({
     mutationFn: async (channel: SendChannel) => {
       let last: { sentToLast4: string } | null = null;
