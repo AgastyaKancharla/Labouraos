@@ -14,6 +14,7 @@ import { useFormDraft } from '@/lib/formDraft';
 import { routes } from '@/navigation/routes';
 import { colors, radius } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
+import { BusinessProfile } from '../_business/BusinessProfile';
 import { ChoiceList } from '../_visits/ChoiceList';
 import { DatePicker } from '../_visits/DatePicker';
 import { formatDateKey, minutesOf } from '../_visits/format';
@@ -46,24 +47,42 @@ const CHANGE_ERRORS: Record<string, MessageKey> = {
  * shop, result, note, come-back date and the history of changes, with
  * "Change result" (needs a reason, kept in history; never once Onboarded).
  * An unfinished visit offers its next step. Own visits only.
- * Data: GET /field-visits/:id, POST /field-visits/:id/change-result.
+ * 27 Nov (owner): a visit of a registered business opens the same business
+ * profile as the Businesses tab, with this visit as its first tab ("This visit").
+ * A shop that is not registered keeps the visit page alone.
+ * Data: GET /field-visits/:id, POST /field-visits/:id/change-result,
+ * GET /field-work/businesses/:id/page.
  */
 export default function VisitDetailsScreen() {
   const { t } = useI18n();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const { redesign } = useEndpoints();
   const q = useQuery({ queryKey: queryKeys.visit(id ?? ''), queryFn: () => redesign.visit(id!), enabled: Boolean(id), staleTime: 0 });
+  const businessId = q.data?.business?.id ?? null;
+  const page = useQuery({ queryKey: queryKeys.businessPage(businessId ?? ''), queryFn: () => redesign.businessPage(businessId!), enabled: Boolean(businessId) });
+  const refresh = () => {
+    void q.refetch();
+    if (businessId) void page.refetch();
+  };
   return (
     <View style={styles.flex} testID="screen-FA05d">
-      <AppHeader title={t('fa05d.title')} subtitle={q.data ? (q.data.business?.name ?? q.data.shopName ?? undefined) : undefined} />
-      <Screen onRefresh={() => void q.refetch()} refreshing={q.isRefetching}>
+      <AppHeader
+        title={businessId ? t('fa08.title') : t('fa05d.title')}
+        subtitle={q.data ? (businessId ? (page.data?.code ?? q.data.business?.code ?? undefined) : (q.data.shopName ?? undefined)) : undefined}
+      />
+      <Screen onRefresh={refresh} refreshing={q.isRefetching || page.isRefetching}>
         {!id ? (
           <EmptyState message={t('common.error')} />
         ) : q.isPending ? (
           <LoadingState />
         ) : q.isError ? (
           <ErrorState error={q.error} onRetry={() => void q.refetch()} />
+        ) : businessId && page.data ? (
+          <BusinessProfile b={page.data} visitCard={<Details visit={q.data} compact />} />
+        ) : businessId && page.isPending ? (
+          <LoadingState />
         ) : (
+          // No business yet, or its page could not load: the visit on its own.
           <Details visit={q.data} />
         )}
       </Screen>
@@ -71,7 +90,7 @@ export default function VisitDetailsScreen() {
   );
 }
 
-function Details({ visit: v }: { visit: VisitDetails }) {
+function Details({ visit: v, compact }: { visit: VisitDetails; compact?: boolean }) {
   const { t } = useI18n();
   const [changing, setChanging] = useState(false);
   const minutes = minutesOf(v.durationSeconds);
@@ -81,8 +100,14 @@ function Details({ visit: v }: { visit: VisitDetails }) {
   return (
     <>
       <Card testID="fa05d-summary">
-        <Text variant="h2">{name}</Text>
-        <Text variant="muted">{[v.business?.code, formatDayIst(v.startedAt), formatTimeIst(v.startedAt)].filter(Boolean).join(' · ')}</Text>
+        {compact ? (
+          <Text variant="bodyStrong">{[t('history.visit'), formatDayIst(v.startedAt), formatTimeIst(v.startedAt)].join(' · ')}</Text>
+        ) : (
+          <>
+            <Text variant="h2">{name}</Text>
+            <Text variant="muted">{[v.business?.code, formatDayIst(v.startedAt), formatTimeIst(v.startedAt)].filter(Boolean).join(' · ')}</Text>
+          </>
+        )}
         <View style={styles.gap} />
         <ListRow
           title={t('fa05d.result')}
@@ -108,11 +133,12 @@ function Details({ visit: v }: { visit: VisitDetails }) {
 
       <Card title={t('fa05d.photos')} icon="camera" accent="royal">
         <View style={styles.photos}>
-          <Photo label={t('fa05d.boardPhoto')} photo={v.boardPhoto ?? null} has={v.hasBoardPhoto} testID="fa05d-board" />
+          <Photo label={t('fa05d.boardPhoto')} photo={v.boardPhoto ?? null} has={v.hasBoardPhoto} square={compact} testID="fa05d-board" />
           <Photo
             label={v.selfie?.distanceMeters != null ? t('fa05d.selfieAt', { meters: Math.round(v.selfie.distanceMeters) }) : t('fa05d.selfie')}
             photo={v.selfie ?? null}
             has={v.hasSelfie}
+            square={compact}
             testID="fa05d-selfie"
           />
         </View>
@@ -170,14 +196,14 @@ function snapshotText(s: ResultSnapshot, t: (key: MessageKey) => string): string
   return [t(outcomeKey(s.outcome)), s.revisitOn ? formatDateKey(s.revisitOn) : null].filter(Boolean).join(' · ');
 }
 
-function Photo({ label, photo, has, testID }: { label: string; photo: { url: string; takenAt: string } | null; has: boolean; testID: string }) {
+function Photo({ label, photo, has, square, testID }: { label: string; photo: { url: string; takenAt: string } | null; has: boolean; square?: boolean; testID: string }) {
   const { t } = useI18n();
   return (
     <View style={styles.photo} testID={testID}>
       {photo ? (
-        <Image source={{ uri: photo.url }} style={styles.image} accessibilityLabel={label} resizeMode="cover" />
+        <Image source={{ uri: photo.url }} style={[styles.image, square && styles.square]} accessibilityLabel={label} resizeMode="cover" />
       ) : (
-        <View style={[styles.image, styles.noImage]}>
+        <View style={[styles.image, square && styles.square, styles.noImage]}>
           <Text variant="small" align="center">{has ? t('fa05d.photoGone') : t('fa05d.noPhoto')}</Text>
         </View>
       )}
@@ -324,5 +350,6 @@ const styles = StyleSheet.create({
   photos: { flexDirection: 'row', gap: 10 },
   photo: { flex: 1, gap: 4 },
   image: { width: '100%', aspectRatio: 3 / 4, borderRadius: radius.md, backgroundColor: colors.neutral100 },
+  square: { aspectRatio: 1 },
   noImage: { alignItems: 'center', justifyContent: 'center', padding: 8 },
 });
