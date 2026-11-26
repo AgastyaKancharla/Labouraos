@@ -1,6 +1,7 @@
 import { AutoCheckReason } from './business-auto-check';
 import { isHouseholdBusiness } from './business-auto-check.service';
 import { evaluateProofs } from './business-proofs';
+import { OTHER_LICENCE_LABELS, readOtherLicences } from './other-licences';
 
 /**
  * 25 Nov (rev 211): what the CEO, Manager and Team Lead see about a business's automatic
@@ -16,6 +17,7 @@ export interface VerificationViewSource {
   licenceNumber: string | null;
   shopEstablishmentNumber: string | null;
   udyamNumber: string | null;
+  otherLicences?: unknown;
   mapsLink: string | null;
   mapsLatitude: number | null;
   mapsLongitude: number | null;
@@ -28,7 +30,7 @@ export interface VerificationViewSource {
   ownerPhotos?: Array<{ kind: string; takenAt: Date; takenVia: string; locationStatus: string | null }>;
 }
 
-const PROOF_LABELS: Record<string, string> = { gst: 'GST number', licence: 'FSSAI / trade licence / Udyam', maps: 'Google Maps link' };
+const PROOF_LABELS: Record<string, string> = { gst: 'GST number', licence: 'FSSAI / trade licence / Udyam / other licence', maps: 'Google Maps link' };
 
 export function verificationView(b: VerificationViewSource) {
   const photo = (kind: string) => {
@@ -51,6 +53,8 @@ export function verificationView(b: VerificationViewSource) {
       : null,
     proofs: evaluateProofs(b).map((p) => ({ key: p.key, label: PROOF_LABELS[p.key], given: p.given, valid: p.valid, detail: p.detail })),
     mapsPlaceName: b.mapsPlaceName,
+    /** 26 Nov: which other licences were given (names only, never the numbers here). */
+    otherLicences: readOtherLicences(b.otherLicences).map((l) => ({ kind: l.kind, label: OTHER_LICENCE_LABELS[l.kind] })),
     ownerPhotos: { selfie: photo('owner_selfie'), shop: photo('shop_board') ?? photo('fssai_with_owner') ?? photo('workspace') },
   };
 }

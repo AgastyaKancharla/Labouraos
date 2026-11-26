@@ -6,7 +6,8 @@ import { OfflineQueue } from '@/device/offline-queue/queue';
 import { createMemoryQueueStore } from '@/device/offline-queue/types';
 import { networkError } from '@/api/errors';
 import { getDraft, saveDraft } from '../_visits/visitDraft';
-import { businessBody, formErrors, type FormState } from './form';
+import { businessBody, docError, formErrors, proofCount, type FormState } from './form';
+import { suggestedDocs } from '@/lib/businessDocuments';
 import RegisterBusinessScreen from '.';
 import { nearestArea } from '@/lib/nearestArea';
 
@@ -388,6 +389,72 @@ describe('FA07 Register a business', () => {
       await fireEvent.press(screen.getByTestId('fa07-area-Jayanagar'));
       expect(screen.getByTestId('fa07-area')).toHaveTextContent(/Jayanagar/);
       expect(screen.queryByTestId('fa07-area-none-near')).toBeNull();
+    });
+  });
+
+  it('26 Nov: documents fit the business type; the rest come with "+ Add another document"; all optional', async () => {
+    searchParams.current = {};
+    await renderWithApp(<RegisterBusinessScreen />, {
+      signedInAs: kiran,
+      route: (url) => {
+        if (url.endsWith('/screens/call-registration/options')) return { status: 200, body: { city: 'Bengaluru', areas: [] } };
+        if (url.endsWith('/trades')) return { status: 200, body: trades };
+        return undefined;
+      },
+    });
+    await waitFor(() => screen.getByTestId('fa07-type'));
+    // A salon: GST, trade licence and Shop & Establishment — no FSSAI.
+    await fireEvent.press(screen.getByTestId('fa07-type'));
+    await fireEvent.changeText(screen.getByTestId('fa07-type-search'), 'salon');
+    await fireEvent.press(screen.getByTestId('fa07-type-salon'));
+    expect(screen.getByTestId('fa07-doc-gst')).toBeTruthy();
+    expect(screen.getByTestId('fa07-doc-trade')).toBeTruthy();
+    expect(screen.getByTestId('fa07-doc-shopEst')).toBeTruthy();
+    expect(screen.queryByTestId('fa07-doc-fssai')).toBeNull();
+    // The rest are one tap away.
+    await fireEvent.press(screen.getByTestId('fa07-add-document'));
+    expect(screen.getByTestId('fa07-doc-add-fssai')).toBeTruthy();
+    expect(screen.getByTestId('fa07-doc-add-drug_licence')).toBeTruthy();
+    await fireEvent.press(screen.getByTestId('fa07-doc-add-udyam'));
+    expect(screen.getByTestId('fa07-doc-udyam')).toBeTruthy();
+    await fireEvent.changeText(screen.getByTestId('fa07-doc-udyam'), 'udyam-ka-03-001');
+    expect(screen.getByText('Udyam number looks like UDYAM-KA-03-0012345.')).toBeTruthy();
+    // A pharmacy: the drug licence comes first; what was typed stays.
+    await fireEvent.press(screen.getByTestId('fa07-type'));
+    await fireEvent.changeText(screen.getByTestId('fa07-type-search'), 'pharmacy');
+    await fireEvent.press(screen.getByTestId('fa07-type-pharmacy'));
+    expect(screen.getByTestId('fa07-doc-drug_licence')).toBeTruthy();
+    expect(screen.getByTestId('fa07-doc-udyam').props.value).toBe('UDYAM-KA-03-001');
+    // "No documents" still hides them all.
+    expect(screen.getByTestId('fa07-docs')).toBeTruthy();
+  });
+
+  it('26 Nov: suggested documents, checks, proof count and the body', () => {
+    expect(suggestedDocs('restaurant')).toEqual(['fssai', 'gst']);
+    expect(suggestedDocs('bar_pub')).toEqual(['excise', 'fssai', 'gst']);
+    expect(suggestedDocs('security_agency')).toContain('psara');
+    expect(suggestedDocs('petrol_pump')).toContain('peso');
+    expect(suggestedDocs('clinic')).toContain('kpme');
+    expect(suggestedDocs('salon')).toEqual(['gst', 'trade', 'shopEst']);
+    expect(suggestedDocs('something_new')).toEqual(['gst', 'trade', 'shopEst']);
+    const docs = { gstin: '', fssai: '', licenceNumber: '', pan: '', mapsLink: '' };
+    expect(docError({ ...docs, licences: { drug_licence: 'KA/20/1234' } }, 'drug_licence')).toBe(false);
+    expect(docError({ ...docs, licences: { drug_licence: 'none' } }, 'drug_licence')).toBe(true);
+    expect(docError({ ...docs, fssai: '12345' }, 'fssai')).toBe(true);
+    expect(docError({ ...docs, licences: {} }, 'kpme')).toBe(false);
+    // A drug licence counts as proof 2, like FSSAI (owner, 26 Nov).
+    expect(proofCount({ ...docs, gstin: '29ABCDE1234F1Z5', licences: { drug_licence: 'KA/20/1234' } })).toBe(2);
+    expect(proofCount({ ...docs, licences: { shopEst: 'S&E-12345' } })).toBe(1);
+    const body = businessBody({
+      ...({} as FormState), staff: [], branches: [], mobile: { number: '9', requestId: 'r', code: '', verifiedAt: 'x', sentAt: null },
+      boardName: 'Apollo', legalName: '', businessType: 'pharmacy', shopNumber: '', street: '', landmark: '', area: '', pincode: '', familyName: '',
+      contactName: '', contactRole: '', whatsappSame: true, whatsapp: '', billingEmail: '', heardFrom: 'field_visit', employees: '1-5', running: '', hiring: '',
+      opensAt: '', closesAt: '', pin: null, gstin: '29ABCDE1234F1Z5', fssai: '', licenceKind: 'licenceNumber', licenceNumber: 'BBMP/TL/123', pan: '', noDocuments: false,
+      licences: { shopEst: ' SE-998877 ', udyam: 'udyam-ka-03-0012345', drug_licence: ' KA-B51-20/123456 ', kpme: '' },
+    }, null);
+    expect(body).toMatchObject({
+      gstNumber: '29ABCDE1234F1Z5', licenceNumber: 'BBMP/TL/123', shopEstablishmentNumber: 'SE-998877', udyamNumber: 'UDYAM-KA-03-0012345',
+      otherLicences: [{ kind: 'drug_licence', number: 'KA-B51-20/123456' }],
     });
   });
 

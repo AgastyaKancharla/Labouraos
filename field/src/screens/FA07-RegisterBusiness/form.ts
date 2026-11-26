@@ -1,4 +1,5 @@
 import type { Trade } from '@/api/endpoints';
+import { isOtherLicence, isValidOtherLicenceNumber, OTHER_LICENCE_KINDS, type DocKey } from '@/lib/businessDocuments';
 
 /** The business form (FA07 = CA13) and its mapping onto CreateBusinessDto (src/modules/business). */
 export interface MobileState {
@@ -61,9 +62,15 @@ export interface FormState {
   branches: BranchRow[];
   gstin: string;
   fssai: string;
+  /** Older drafts picked one of three kinds for `licenceNumber`; new forms always use it for the trade licence. */
   licenceKind: 'shopEstablishmentNumber' | 'udyamNumber' | 'licenceNumber';
+  /** The trade licence (BBMP / municipal). */
   licenceNumber: string;
   pan: string;
+  /** 26 Nov: Shop & Establishment, Udyam and the other licences (drug licence, KPME, excise…), by key. Older drafts have none. */
+  licences?: Partial<Record<DocKey, string>>;
+  /** 26 Nov: documents the agent added with "+ Add another document". Older drafts have none. */
+  extraDocs?: DocKey[];
   noDocuments: boolean;
   /** 25 Nov (rev 211, B2): a Google Maps link to the shop, one of the proofs. Older drafts have none. */
   mapsLink?: string;
@@ -78,10 +85,49 @@ const OTHER_TRADE = '__other__';
 const GSTIN = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 const PAN = /^[A-Z]{5}\d{4}[A-Z]$/;
 
+/** The value typed for a document (each kind lives where the server reads it). */
+export function docValue(form: Pick<FormState, 'gstin' | 'fssai' | 'licenceNumber' | 'pan' | 'licences'>, key: DocKey): string {
+  if (key === 'gst') return form.gstin;
+  if (key === 'fssai') return form.fssai;
+  if (key === 'trade') return form.licenceNumber;
+  if (key === 'pan') return form.pan;
+  return form.licences?.[key] ?? '';
+}
+
+/** The fields to set when a document's box changes. */
+export function docPatch(form: Pick<FormState, 'licences'>, key: DocKey, value: string): Partial<FormState> {
+  if (key === 'gst') return { gstin: value.toUpperCase() };
+  if (key === 'fssai') return { fssai: value.replace(/\D/g, '') };
+  if (key === 'trade') return { licenceNumber: value, licenceKind: 'licenceNumber' };
+  if (key === 'pan') return { pan: value.toUpperCase() };
+  return { licences: { ...(form.licences ?? {}), [key]: key === 'udyam' ? value.toUpperCase() : value } };
+}
+
+/** A document whose typed number has the wrong shape (empty is fine: every document is optional). */
+export function docError(form: Pick<FormState, 'gstin' | 'fssai' | 'licenceNumber' | 'pan' | 'licences'>, key: DocKey): boolean {
+  const v = docValue(form, key).trim();
+  if (!v) return false;
+  if (key === 'gst') return !GSTIN.test(v.toUpperCase());
+  if (key === 'pan') return !PAN.test(v.toUpperCase());
+  if (key === 'fssai') return !/^[12]\d{13}$/.test(v);
+  if (key === 'udyam') return !/^UDYAM-[A-Z]{2}-\d{2}-\d{7}$/.test(v.toUpperCase().replace(/\s+/g, ''));
+  if (isOtherLicence(key)) return !isValidOtherLicenceNumber(v);
+  return false;
+}
+
 /** 25 Nov (rev 211, B2): how many of the 3 proofs the form has; fewer than 2 → the small-business checks. */
-export function proofCount(form: Pick<FormState, 'gstin' | 'fssai' | 'licenceNumber' | 'mapsLink'>): number {
+export function proofCount(form: Pick<FormState, 'gstin' | 'fssai' | 'licenceNumber' | 'mapsLink' | 'licences'>): number {
   const gst = GSTIN.test(form.gstin.trim().toUpperCase()) ? 1 : 0;
-  const licence = form.fssai.trim().length === 14 || form.licenceNumber.trim().length >= 5 ? 1 : 0;
+  // 26 Nov: Shop & Establishment, Udyam and the other licences count here too (as on the server).
+  const others = form.licences ?? {};
+  const licence =
+    /^[12]\d{13}$/.test(form.fssai.trim()) ||
+    form.licenceNumber.trim().length >= 5 ||
+    (others.shopEst ?? '').trim().length >= 5 ||
+    /^UDYAM-[A-Z]{2}-\d{2}-\d{7}$/.test((others.udyam ?? '').trim().toUpperCase()) ||
+    OTHER_LICENCE_KINDS.some((k) => isValidOtherLicenceNumber(others[k] ?? ''))
+      ? 1
+      : 0;
   const maps = /^https?:\/\/(www\.)?(google\.(com|co\.in)\/maps|maps\.google\.(com|co\.in)|maps\.app\.goo\.gl|goo\.gl\/maps)/i.test((form.mapsLink ?? '').trim()) ? 1 : 0;
   return gst + licence + maps;
 }
@@ -119,6 +165,8 @@ export function formErrors(form: FormState, findTrade: (row: StaffRow) => Trade 
   if (!household && !form.noDocuments) {
     if (form.gstin && !GSTIN.test(form.gstin)) e.push('gstin');
     if (form.pan && !PAN.test(form.pan)) e.push('pan');
+    // 26 Nov: every document is optional, but a number typed must have its shape.
+    for (const key of ['fssai', 'udyam', ...OTHER_LICENCE_KINDS] as const) if (docError(form, key)) e.push(`doc-${key}`);
   }
   form.branches.forEach((b, i) => {
     if (!b.name.trim() || !b.contactName.trim() || !b.contactRole || !b.mobile.verifiedAt) e.push(`branch${i}`);
@@ -175,8 +223,11 @@ export function businessBody(form: FormState, visitId: string | null): Record<st
       : {
           ...(form.gstin.trim() ? { gstNumber: form.gstin.trim() } : {}),
           ...(form.fssai.trim() ? { fssaiNumber: form.fssai.trim() } : {}),
-          ...(form.licenceNumber.trim() ? { [form.licenceKind]: form.licenceNumber.trim() } : {}),
+          ...(form.licenceNumber.trim() ? { [form.licenceKind ?? 'licenceNumber']: form.licenceNumber.trim() } : {}),
           ...(form.pan.trim() ? { pan: form.pan.trim() } : {}),
+          ...((form.licences?.shopEst ?? '').trim() ? { shopEstablishmentNumber: (form.licences?.shopEst ?? '').trim() } : {}),
+          ...((form.licences?.udyam ?? '').trim() ? { udyamNumber: (form.licences?.udyam ?? '').trim().toUpperCase().replace(/\s+/g, '') } : {}),
+          ...(otherLicencesOf(form).length ? { otherLicences: otherLicencesOf(form) } : {}),
         }),
     ...(!household && (form.mapsLink ?? '').trim() ? { mapsLink: (form.mapsLink ?? '').trim() } : {}),
     ...(!household && form.runsFromHome ? { runsFromHome: true } : {}),
@@ -210,4 +261,12 @@ export function businessBody(form: FormState, visitId: string | null): Record<st
         }
       : {}),
   };
+}
+
+/** The drug licence, KPME, excise… numbers typed, as POST /businesses takes them. */
+export function otherLicencesOf(form: Pick<FormState, 'licences'>): { kind: string; number: string }[] {
+  return OTHER_LICENCE_KINDS.flatMap((kind) => {
+    const number = (form.licences?.[kind] ?? '').trim();
+    return number ? [{ kind, number }] : [];
+  });
 }

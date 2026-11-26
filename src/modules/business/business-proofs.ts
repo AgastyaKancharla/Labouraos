@@ -4,10 +4,13 @@
  *   2. an FSSAI / trade licence / Udyam number (format check), and
  *   3. a Google Maps link (resolved to its pin by src/modules/maps-link).
  * Shop and Establishment registration counts in group 2: it is the state's trade licence for
- * shops. The GST number is checked for its format and check digit only; a real online GST
+ * shops. So do the licences of other-licences.ts (drug licence, KPME, excise, PSARA, contract
+ * labour, factory, PESO; owner, 26 Nov). The GST number is checked for its format and check digit only; a real online GST
  * check comes later with a paid service (the mock GST lookup stays as it is).
  * Pure functions, no network.
  */
+
+import { isValidOtherLicenceNumber, readOtherLicences } from './other-licences';
 
 const GSTIN_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 /** 2-digit state code, the PAN (5 letters, 4 digits, 1 letter), entity number, Z, check character. */
@@ -66,6 +69,8 @@ export interface ProofInput {
   licenceNumber?: string | null;
   shopEstablishmentNumber?: string | null;
   udyamNumber?: string | null;
+  /** 26 Nov: drug licence, KPME, excise, PSARA, contract labour, factory, PESO (other-licences.ts); count in group 2. */
+  otherLicences?: unknown;
   mapsLink?: string | null;
   mapsLatitude?: number | null;
   mapsLongitude?: number | null;
@@ -89,6 +94,9 @@ export function evaluateProofs(b: ProofInput): ProofResult[] {
     ['udyam', b.udyamNumber, isValidUdyam],
     ['licence', b.licenceNumber, isValidTradeLicence],
     ['shop_establishment', b.shopEstablishmentNumber, isValidTradeLicence],
+    ...readOtherLicences(b.otherLicences).map(
+      (l): [string, string | null | undefined, (v: string | null | undefined) => boolean] => [l.kind, l.number, isValidOtherLicenceNumber],
+    ),
   ];
   const licenceGiven = licenceCandidates.filter(([, v]) => Boolean(normaliseRegistrationNumber(v)));
   const licenceValid = licenceGiven.find(([, v, check]) => check(v));

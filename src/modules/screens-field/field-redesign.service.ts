@@ -1148,7 +1148,7 @@ export class FieldRedesignService {
       where: { id: businessId },
       select: {
         businessType: true, runsFromHome: true, gstNumber: true, fssaiNumber: true, licenceNumber: true, shopEstablishmentNumber: true,
-        udyamNumber: true, mapsLink: true, mapsLatitude: true, mapsLongitude: true, ownerPhotos: { select: { kind: true } },
+        udyamNumber: true, otherLicences: true, mapsLink: true, mapsLatitude: true, mapsLongitude: true, ownerPhotos: { select: { kind: true } },
       },
     });
     const path = verificationPathOf(b);

@@ -56,6 +56,7 @@ import { ownerVisitOtpPurpose } from '../../common/otp/bound-otp-purposes';
 import { MapsLinkService } from '../maps-link/maps-link.service';
 import { isHouseholdBusiness } from './business-auto-check.service';
 import { proofFormatError } from './business-proofs';
+import { parseOtherLicences } from './other-licences';
 
 /**
  * The only columns PATCH /businesses/:id writes (security AC-1). Not here, on
@@ -355,8 +356,11 @@ export class BusinessService {
     this.assertOptionalEmail(dto.billingEmail);
     this.assertWorkingDays(dto.workingDays);
 
+    // 26 Nov: drug licence, KPME, excise, PSARA, contract labour, factory, PESO (all optional).
+    const otherLicences = parseOtherLicences(dto.otherLicences);
     const suppliedDocuments = [
       dto.gstNumber, dto.licenceNumber, dto.shopEstablishmentNumber, dto.udyamNumber, dto.pan, dto.fssaiNumber,
+      ...otherLicences.map((l) => l.number),
     ];
     if ((isHousehold || dto.noDocuments === true) && suppliedDocuments.some((value) => value?.trim())) {
       throw new BadRequestException(isHousehold
@@ -416,6 +420,7 @@ export class BusinessService {
     const gstNumber = hideDocuments ? null : (dto.gstNumber?.trim() || null);
     const registrationNumbers = hideDocuments ? [] : [
       gstNumber, dto.licenceNumber, dto.shopEstablishmentNumber, dto.udyamNumber, dto.pan, dto.fssaiNumber,
+      ...otherLicences.map((l) => l.number),
     ].map((value) => value?.trim()).filter((value): value is string => Boolean(value));
     const documentsStatus = registrationNumbers.length > 0 ? 'documented' : 'no_documents';
 
@@ -582,6 +587,7 @@ export class BusinessService {
           udyamNumber: hideDocuments ? null : (dto.udyamNumber?.trim() || null),
           pan: hideDocuments ? null : (dto.pan?.trim() || null),
           fssaiNumber: hideDocuments ? null : (dto.fssaiNumber?.trim() || null),
+          otherLicences: hideDocuments || !otherLicences.length ? Prisma.DbNull : (otherLicences as unknown as Prisma.InputJsonValue),
           gstNumber,
           ...(gstLookupData ?? { gstVerified: null, gstLegalName: null, gstStatus: null, gstCheckedAt: null }),
           yearsInOperation: dto.yearsInOperation ?? null,
