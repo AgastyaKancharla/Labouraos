@@ -44,19 +44,41 @@ export function findTrade(trades: readonly Trade[] | undefined, name: string): T
   return trades?.find((t) => t.name.trim().toLowerCase() === key);
 }
 
-/** Below the trade's legal minimum: allowed but warned; the owner-told tick is required. */
-export function isBelowLegalMinimum(trade: Trade | undefined, minPaise: number | null): boolean {
-  return !!trade && minPaise !== null && minPaise < trade.legalMinimumPaise;
+/**
+ * The legal minimum (paise / month) this vacancy is checked against. A listed
+ * trade uses its own figure; a typed ("Other") trade is checked by the server
+ * against the unskilled figure of the business's zone (rev 193), so the form
+ * uses the lowest unskilled figure in the list. `server` is what the server
+ * answered for this trade name (MINIMUM_WAGE_TICK_REQUIRED, 26 Nov fix) and
+ * always wins, so the warning and the tick show whenever the server wants them.
+ */
+export function legalMinimumFor(
+  trades: readonly Trade[] | undefined,
+  name: string,
+  server?: { trade: string; legalMinimumPaise: number } | null,
+): number | null {
+  const key = name.trim().toLowerCase();
+  if (!key) return null;
+  if (server && server.trade.trim().toLowerCase() === key) return server.legalMinimumPaise;
+  const trade = findTrade(trades, name);
+  if (trade) return trade.legalMinimumPaise;
+  const unskilled = (trades ?? []).filter((t) => t.minimumWageLevel === 'unskilled').map((t) => t.legalMinimumPaise);
+  return unskilled.length > 0 ? Math.min(...unskilled) : null;
+}
+
+/** Below the legal minimum: allowed but warned; the owner-told tick is required. */
+export function isBelowLegalMinimum(legalMinimumPaise: number | null | undefined, minPaise: number | null): boolean {
+  return !!legalMinimumPaise && minPaise !== null && minPaise < legalMinimumPaise;
 }
 
 export type VacancyError = 'trade' | 'salaryMin' | 'salaryOrder' | 'ownerTold' | 'shift' | 'startDate';
 
-export function vacancyErrors(form: QuickVacancy, trade: Trade | undefined): VacancyError[] {
+export function vacancyErrors(form: QuickVacancy, legalMinimumPaise: number | null | undefined): VacancyError[] {
   const e: VacancyError[] = [];
   if (!tradeNameOf(form)) e.push('trade');
   if (!form.salaryMinPaise) e.push('salaryMin');
   if (form.salaryMinPaise && form.salaryMaxPaise && form.salaryMaxPaise < form.salaryMinPaise) e.push('salaryOrder');
-  if (isBelowLegalMinimum(trade, form.salaryMinPaise) && !form.ownerTold) e.push('ownerTold');
+  if (isBelowLegalMinimum(legalMinimumPaise, form.salaryMinPaise) && !form.ownerTold) e.push('ownerTold');
   if (!form.businessShiftId) e.push('shift');
   if (!form.startDate) e.push('startDate');
   return e;
