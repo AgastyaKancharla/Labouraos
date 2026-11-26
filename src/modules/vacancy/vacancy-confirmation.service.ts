@@ -1,6 +1,8 @@
 import { PRODUCT_LANGUAGE } from '../../common/language/english-only';
 import { OwnTeam, businessesOwnedBy } from '../../common/rbac/own-team';
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, HttpStatus, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { createHash } from 'crypto';
+import { codedError } from '../../common/http/coded-error';
 import { CustomerNotificationHooks } from '../customer-notification/customer-notification-hooks.service';
 import { Prisma, Vacancy } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -27,6 +29,9 @@ export const VACANCY_CONFIRMATION_METHODS = ['code_on_call', 'code_on_visit', 's
 export type VacancyConfirmationMethod = (typeof VACANCY_CONFIRMATION_METHODS)[number];
 
 const LINK_VALID_HOURS = 48;
+
+/** 26 Nov: at most this many vacancies are saved and confirmed together (one owner code). */
+export const MAX_VACANCY_BATCH = 10;
 
 export interface ConfirmationActor {
   id: string;
@@ -261,6 +266,106 @@ export class VacancyConfirmationService {
       throw new BadRequestException("This code was not sent to the vacancy's contact person for these details. Send a new code.");
     }
     return this.markConfirmed(vacancy, contact, method, actor.id, undefined, round);
+  }
+
+  /**
+   * 26 Nov (owner): several vacancies saved together on Laboura Field are confirmed by the owner
+   * with ONE code. The vacancies must all be this business's, all waiting for the owner, and all
+   * for the same contact person. The code is bound to exactly these vacancies in their current
+   * confirmation rounds (M2), so it confirms nothing else, and any edit to one of them since the
+   * code was sent refuses it.
+   */
+  private async loadBatch(businessId: string, vacancyIds: unknown) {
+    if (
+      !Array.isArray(vacancyIds) || vacancyIds.length < 1 || vacancyIds.length > MAX_VACANCY_BATCH ||
+      vacancyIds.some((v) => typeof v !== 'string' || !v || v.length > 64)
+    ) {
+      throw codedError(HttpStatus.BAD_REQUEST, 'BATCH_INVALID', `Send 1 to ${MAX_VACANCY_BATCH} vacancy ids`);
+    }
+    const ids = [...new Set(vacancyIds as string[])];
+    const rows = await this.prisma.vacancy.findMany({ where: { id: { in: ids } }, include: { business: true, branch: true }, orderBy: { code: 'asc' } });
+    if (rows.length !== ids.length || rows.some((r) => r.businessId !== businessId)) {
+      throw new NotFoundException('Every vacancy must be one of this business\'s vacancies');
+    }
+    const notWaiting = rows.filter((r) => r.status !== 'awaiting_confirmation');
+    if (notWaiting.length) {
+      throw codedError(HttpStatus.BAD_REQUEST, 'BATCH_NOT_WAITING', 'Only vacancies waiting for the owner can be confirmed together', {
+        notWaiting: notWaiting.map((r) => ({ id: r.id, code: r.code, status: r.status })),
+      });
+    }
+    const contact = this.contactOf(rows[0]);
+    const phone = contact.phone.replace(/\D/g, '').slice(-10);
+    if (rows.some((r) => this.contactOf(r).phone.replace(/\D/g, '').slice(-10) !== phone)) {
+      throw codedError(HttpStatus.BAD_REQUEST, 'BATCH_DIFFERENT_CONTACTS', 'These vacancies go to different contact people; confirm them one by one');
+    }
+    return { rows, contact };
+  }
+
+  /** The current round of each vacancy and the OTP purpose bound to exactly this set of rounds. */
+  private async batchRounds(rows: Array<{ id: string }>) {
+    const rounds = new Map<string, string>();
+    for (const r of rows) rounds.set(r.id, await this.currentRound(r.id));
+    const key = [...rounds.entries()].map(([id, round]) => `${id}:${round}`).sort().join('|');
+    return { rounds, purpose: `vacancy_confirm_batch:${createHash('sha256').update(key).digest('hex').slice(0, 32)}` };
+  }
+
+  /** Sends (or resends) one code for several vacancies, with each vacancy's details (first send only). */
+  async sendBatchCode(businessId: string, vacancyIds: unknown, actor: ConfirmationActor, otpRequestId?: string, channel?: 'whatsapp' | 'sms') {
+    const { rows, contact } = await this.loadBatch(businessId, vacancyIds);
+    const { purpose } = await this.batchRounds(rows);
+    const result = await this.otpService.sendBoundOtp(contact.phone, purpose, actor.id, otpRequestId, channel);
+    if (!otpRequestId) {
+      for (const vacancy of rows) {
+        await this.messagingService.sendPreferWhatsApp({
+          template: 'vacancy_confirm_details',
+          subjectType: 'business',
+          subjectId: vacancy.businessId,
+          relatedType: 'vacancy',
+          relatedId: vacancy.id,
+          recipientPhone: contact.phone,
+          variables: this.messageDetailsFor(vacancy),
+        });
+      }
+    }
+    return {
+      otpRequestId: result.requestId,
+      sentToLast4: last4(contact.phone),
+      contactName: contact.name,
+      vacancyIds: rows.map((r) => r.id),
+      resendAvailableAt: result.resendAvailableAt,
+      resendsLeft: result.resendsLeft,
+      ...testModeFields(result),
+    };
+  }
+
+  /** The owner read out the one code: every vacancy of the set is confirmed (each in its own round). */
+  async confirmBatchWithCode(
+    businessId: string,
+    body: { vacancyIds?: unknown; otpRequestId?: string; code?: string; method?: string },
+    actor: ConfirmationActor,
+  ) {
+    const method = body.method ?? 'code_on_visit';
+    if (method !== 'code_on_call' && method !== 'code_on_visit') {
+      throw new BadRequestException('method must be code_on_call or code_on_visit');
+    }
+    if (!body.otpRequestId || !body.code) throw new BadRequestException('otpRequestId and code are required');
+    const { rows, contact } = await this.loadBatch(businessId, body.vacancyIds);
+    const { rounds, purpose } = await this.batchRounds(rows);
+    const valid = await this.otpService.verifyOtp(body.otpRequestId, body.code, actor.id);
+    if (!valid) throw new BadRequestException('Wrong or expired code');
+    if (!(await this.otpService.consumeVerified(body.otpRequestId, contact.phone, purpose))) {
+      throw new BadRequestException('This code was not sent to the contact person for these vacancies and details. Send a new code.');
+    }
+    const vacancies: Array<{ id: string; code: string; confirmed: boolean; status: string; error?: string }> = [];
+    for (const row of rows) {
+      try {
+        const done = await this.markConfirmed(row, this.contactOf(row), method, actor.id, undefined, rounds.get(row.id)!);
+        vacancies.push({ id: row.id, code: row.code, confirmed: true, status: done.status });
+      } catch (error: unknown) {
+        vacancies.push({ id: row.id, code: row.code, confirmed: false, status: row.status, error: error instanceof Error ? error.message : 'Not confirmed' });
+      }
+    }
+    return { confirmed: vacancies.filter((v) => v.confirmed).length, vacancies };
   }
 
   /**
