@@ -8,19 +8,22 @@
  *   EXPO_PUBLIC_API_MODE            "live" (default) or "mock" (pretend data, no server needed).
  *                                   "mock" works only in local development (`npx expo start`): a
  *                                   release build (APK, Play Store, App Store) is always live (28 Nov).
- *
- * Sign-in is by mobile number only (24 Nov): no Google or Apple sign-in.
- * Over-the-air updates (expo-updates): a fix that changes only the app's
- * screens and logic can reach installed phones without a store review; a
- * change to native parts (new permission, new native module, SDK upgrade)
- * needs a new store build and raises the version (runtime = app version).
-
  *   EXPO_PUBLIC_LINK_PAGES_URL      where the link pages (/p/...) are; defaults to the API URL
  *   GOOGLE_SERVICES_JSON            path to Firebase's google-services.json (Android push). On EAS: a
  *                                   "file" environment variable. Locally: ./google-services.json if present.
  *                                   Never committed; when missing, the app still builds (no Android push).
  *   EAS_PROJECT_ID                  overrides the Expo project id (default: Agastya's project
  *                                   @agastyaks-team/laboura, created 21 Nov; push tokens and EAS builds need it)
+ *
+ * Sign-in is by mobile number only (24 Nov): no Google or Apple sign-in.
+ *
+ * Over-the-air updates (expo-updates): a fix that changes only the app's
+ * screens and logic reaches installed phones without a store review. The
+ * runtime is a fingerprint of the native parts, so an update can only reach
+ * phones whose installed build has the same native parts; a native change
+ * (new permission, native module, SDK upgrade) needs a new store build.
+ * Publish with the profile's environment, never a local shell's:
+ *   eas update --channel production --environment production
  *
  * The Android package and iOS bundle identifier are FINAL: com.laboura.app
  * (confirmed by Agastya, 21 Nov). They can never change after the first Play
@@ -53,7 +56,7 @@ module.exports = () => ({
   scheme: 'laboura',
   // The version people see in the stores. Raise it with every store release that changes native parts.
   version: '1.0.0',
-  runtimeVersion: { policy: 'appVersion' },
+  runtimeVersion: { policy: 'fingerprint' },
   updates: { url: `https://u.expo.dev/${EAS_PROJECT_ID}`, checkAutomatically: 'ON_LOAD', fallbackToCacheTimeout: 0 },
   orientation: 'portrait',
   icon: './assets/icon.png',
