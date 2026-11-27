@@ -6,7 +6,6 @@ import { sessionStore as appSessionStore } from '@/api/index';
 import type { AuthResult, CustomerAccount, ProfileSummary } from '@/api/types';
 import { clearAllDrafts } from '@/lib/drafts';
 import { secureStorage, type KeyValueStore } from '@/lib/storage';
-import { googleSignOut } from './google';
 import type { SessionStore, SignedOutReason } from './session';
 
 export const ACTIVE_PROFILE_KEY = 'laboura_active_profile';
@@ -122,7 +121,6 @@ export function AuthProvider({ children, store = appSessionStore, storage = secu
   const signOut = useCallback(
     async (reason: SignedOutReason = 'signed_out') => {
       if (reason === 'signed_out') await api.signOut().catch(() => undefined);
-      await googleSignOut();
       await clearAllDrafts(storage);
       await storage.removeItem(ACTIVE_PROFILE_KEY);
       setActiveId(null);

@@ -1,12 +1,19 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import { apiBaseUrl, apiMode } from '@/api/config';
-import { fileMockPersist } from '@/api/mockPersist';
-import { mockStepsApi } from './mockSteps';
 import { liveStepsApi, type StepsApi } from './stepsApi';
 
 let defaultApi: StepsApi | null = null;
 function defaultStepsApi(): StepsApi {
-  defaultApi ??= apiMode() === 'mock' ? mockStepsApi(300, fileMockPersist('laboura-mock-steps.json')) : liveStepsApi(apiBaseUrl());
+  // Pretend link endpoints only in local development; the release bundler drops them.
+  defaultApi ??=
+    __DEV__ && apiMode() === 'mock'
+      ? // eslint-disable-next-line @typescript-eslint/no-require-imports
+        (require('./mockSteps') as typeof import('./mockSteps')).mockStepsApi(
+          300,
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          (require('@/api/mockPersist') as typeof import('@/api/mockPersist')).fileMockPersist('laboura-mock-steps.json'),
+        )
+      : liveStepsApi(apiBaseUrl());
   return defaultApi;
 }
 

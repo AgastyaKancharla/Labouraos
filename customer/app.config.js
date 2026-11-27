@@ -5,11 +5,17 @@
  * in eas.json (or in your shell for `npx expo start`):
  *
  *   EXPO_PUBLIC_API_URL             where the Nest API is. Test setup: https://app.laboura.com
- *   EXPO_PUBLIC_API_MODE            "live" (default) or "mock" (pretend data, no server needed)
+ *   EXPO_PUBLIC_API_MODE            "live" (default) or "mock" (pretend data, no server needed).
+ *                                   "mock" works only in local development (`npx expo start`): a
+ *                                   release build (APK, Play Store, App Store) is always live (28 Nov).
+ *
+ * Sign-in is by mobile number only (24 Nov): no Google or Apple sign-in.
+ * Over-the-air updates (expo-updates): a fix that changes only the app's
+ * screens and logic can reach installed phones without a store review; a
+ * change to native parts (new permission, new native module, SDK upgrade)
+ * needs a new store build and raises the version (runtime = app version).
+
  *   EXPO_PUBLIC_LINK_PAGES_URL      where the link pages (/p/...) are; defaults to the API URL
- *   EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID      Google OAuth "Web application" client id (the server checks the id token against it)
- *   EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID      Google OAuth "iOS" client id
- *   GOOGLE_IOS_URL_SCHEME                 the iOS client id reversed (com.googleusercontent.apps.…), used at build time
  *   GOOGLE_SERVICES_JSON            path to Firebase's google-services.json (Android push). On EAS: a
  *                                   "file" environment variable. Locally: ./google-services.json if present.
  *                                   Never committed; when missing, the app still builds (no Android push).
@@ -23,8 +29,6 @@
 const ANDROID_PACKAGE = 'com.laboura.app';
 const IOS_BUNDLE_ID = 'com.laboura.app';
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://app.laboura.com';
-// Placeholder scheme so `expo prebuild` works before the real iOS client exists.
-const GOOGLE_IOS_URL_SCHEME = process.env.GOOGLE_IOS_URL_SCHEME || 'com.googleusercontent.apps.replace-with-ios-client-id';
 
 const fs = require('fs');
 const path = require('path');
@@ -47,7 +51,10 @@ module.exports = () => ({
   slug: 'laboura',
   owner: EAS_OWNER,
   scheme: 'laboura',
-  version: '0.1.0',
+  // The version people see in the stores. Raise it with every store release that changes native parts.
+  version: '1.0.0',
+  runtimeVersion: { policy: 'appVersion' },
+  updates: { url: `https://u.expo.dev/${EAS_PROJECT_ID}`, checkAutomatically: 'ON_LOAD', fallbackToCacheTimeout: 0 },
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'light',
@@ -56,7 +63,6 @@ module.exports = () => ({
   ios: {
     bundleIdentifier: IOS_BUNDLE_ID,
     supportsTablet: false,
-    usesAppleSignIn: true,
     infoPlist: {
       NSCameraUsageDescription: CAMERA_REASON,
       NSLocationWhenInUseUsageDescription: LOCATION_REASON,
@@ -65,7 +71,7 @@ module.exports = () => ({
   },
   android: {
     package: ANDROID_PACKAGE,
-    versionCode: 1,
+    // versionCode is counted by EAS for store builds (eas.json: appVersionSource remote, autoIncrement).
     ...(GOOGLE_SERVICES_FILE ? { googleServicesFile: GOOGLE_SERVICES_FILE } : {}),
     adaptiveIcon: {
       foregroundImage: './assets/adaptive-icon.png',
@@ -89,8 +95,6 @@ module.exports = () => ({
     'expo-secure-store',
     'expo-font',
     'expo-web-browser',
-    'expo-apple-authentication',
-    ['@react-native-google-signin/google-signin', { iosUrlScheme: GOOGLE_IOS_URL_SCHEME }],
     ['expo-location', { locationWhenInUsePermission: LOCATION_REASON }],
     // Native verification steps (21 Nov): live camera only, never the gallery or the microphone.
     ['expo-camera', { cameraPermission: CAMERA_REASON, microphonePermission: false, recordAudioAndroid: false }],
@@ -101,8 +105,6 @@ module.exports = () => ({
     apiUrl: API_URL,
     apiMode: process.env.EXPO_PUBLIC_API_MODE || 'live',
     linkPagesUrl: process.env.EXPO_PUBLIC_LINK_PAGES_URL || API_URL,
-    googleWebClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '',
-    googleIosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '',
     // EAS builds and getExpoPushTokenAsync need the project id.
     eas: { projectId: EAS_PROJECT_ID },
   },

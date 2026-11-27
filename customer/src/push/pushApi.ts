@@ -116,6 +116,6 @@ let defaultApi: PushApi | null = null;
 
 /** The app's push API (live, or pretend data in mock mode). Tests pass their own. */
 export function defaultPushApi(): PushApi {
-  defaultApi ??= apiMode() === 'mock' ? mockPushApi() : livePushApi(httpClient);
+  defaultApi ??= __DEV__ && apiMode() === 'mock' ? mockPushApi() : livePushApi(httpClient);
   return defaultApi;
 }

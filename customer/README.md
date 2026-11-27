@@ -110,7 +110,7 @@ The HTTP client sends `X-Laboura-Installation` (a random id per install) on ever
 
 ## Building the Android test app (APK)
 
-`eas.json` profiles: `preview` (installable **APK**, live API on the test setup), `preview-mock` (APK with pretend data), `development` (dev client), `production` (Play Store bundle).
+`eas.json` profiles: `preview` (installable **APK**, live API on the test setup), `development` (dev client), `production` (Play Store bundle).
 
 ```
 npm install -g eas-cli      # once

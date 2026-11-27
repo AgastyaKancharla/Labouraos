@@ -3,6 +3,9 @@ import type { MockPersist } from '@/api/mockPersist';
 import type { StepsApi } from './stepsApi';
 import type { LegalDocument, OwnerPhotoState, PartnerOpen, RegistrationOpen } from './types';
 
+/** The pretend link token names the profile it is for (src/screens/Verify: `mock-link-<profileId>`). */
+import { mockLinkToken } from '@/api/mockLinks';
+
 /**
  * Pretend link endpoints for EXPO_PUBLIC_API_MODE=mock: every step can be
  * clicked through with no server. Any 6-digit code works; the Aadhaar QR is
@@ -38,8 +41,7 @@ export function onMockInterview(lookup: InterviewLookup, listener: InterviewResu
 export const mockInterviewToken = (interviewId: string) => `mock-iv-${interviewId}`;
 const interviewOf = (token: string) => (token.startsWith('mock-iv-') ? token.slice('mock-iv-'.length) : '');
 
-/** The pretend link token names the profile it is for (src/screens/Verify: `mock-link-<profileId>`). */
-export const mockLinkToken = (profileId: string) => `mock-link-${profileId}`;
+export { mockLinkToken };
 const profileOf = (token: string) => (token.startsWith('mock-link-') ? token.slice('mock-link-'.length) : null);
 
 export function mockStepsApi(delayMs = 300, persist?: MockPersist): StepsApi {
