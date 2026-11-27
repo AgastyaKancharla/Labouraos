@@ -1,7 +1,7 @@
 {
   "cli": {
     "version": ">= 16.0.0",
-    "appVersionSource": "local"
+    "appVersionSource": "remote"
   },
   "build": {
     "base": {
@@ -24,7 +24,8 @@
       "android": {
         "buildType": "apk"
       },
-      "environment": "development"
+      "environment": "development",
+      "channel": "development"
     },
     "preview": {
       "extends": "base",
@@ -35,20 +36,17 @@
       "ios": {
         "simulator": false
       },
-      "environment": "preview"
-    },
-    "preview-mock": {
-      "extends": "preview",
-      "env": {
-        "EXPO_PUBLIC_API_MODE": "mock"
-      }
+      "environment": "preview",
+      "channel": "preview"
     },
     "production": {
       "extends": "base",
       "android": {
         "buildType": "app-bundle"
       },
-      "environment": "production"
+      "environment": "production",
+      "channel": "production",
+      "autoIncrement": true
     }
   },
   "submit": {

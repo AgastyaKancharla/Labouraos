@@ -17,6 +17,7 @@ import type {
   ProfileSummary,
   ReferralHome,
   VacancySummary, PlacedWorker, WorkerLeftReport, WorkersAnswer, ReferralLead } from './types';
+import { MOCK_SHEET_URL } from './mockLinks';
 
 /**
  * Pretend data (EXPO_PUBLIC_API_MODE=mock): every screen works with no
@@ -33,7 +34,8 @@ import type {
  * All names and numbers are made up.
  */
 export const MOCK_OTP = '123456';
-export const MOCK_SHEET_URL = 'laboura-mock://sheet';
+
+export { MOCK_SHEET_URL };
 
 interface State {
   account: CustomerAccount | null;

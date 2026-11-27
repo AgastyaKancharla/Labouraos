@@ -14,7 +14,7 @@ customer/
     api/                   typed client: customerApi.ts (the interface), live.ts (the contract),
                            mock.ts (pretend data), client.ts (HTTP, refresh, installation header),
                            errorText.ts (contract error codes → the app's own words)
-    auth/                  session (tokens only, 90 days), Google, Apple, installation id
+    auth/                  session (tokens only, 90 days), installation id
     verify/                the verification steps' building blocks: link-endpoint client (stepsApi.ts),
                            pretend steps (mockSteps.ts), live camera, Aadhaar QR scanner, ID panel, photo prep
     sheet/openSheet.ts     the secure browser sheet (documents and the e-Aadhaar PDF only; see below)
@@ -33,9 +33,9 @@ Building blocks, API client pattern and theme are **copies** of Laboura Field's,
 | Route | Screen | What it does |
 | --- | --- | --- |
 | `/welcome` | Welcome | One large “Get started” button (English only, rev 193) |
-| `/sign-in` | SignIn | Continue with Google · Continue with mobile number · Sign in with Apple (iPhone, once the server supports it). Google is hidden when `GET /config` says it is off |
+| `/sign-in` | SignIn | Mobile number and OTP on one screen (24 Nov: no Google or Apple sign-in) |
 | `/sign-in-phone` | SignInPhone | +91 mobile, OTP (resend after 30 s, at most 3), the "Laboura may call me to help me finish" tick |
-| `/verify-phone` | VerifyPhone | After Google/Apple: the mobile + OTP **before any profile**; says "We found your registration JS-…" when an agent already registered that number |
+| `/verify-phone` | VerifyPhone | The mobile + OTP **before any profile** (kept for older sessions); says "We found your registration JS-…" when an agent already registered that number |
 | `/role` | RolePicker | "I want a job" / "I need staff" / "I refer people and earn"; starts the sign-up on the server (tracker stage A) |
 | `/profiles` | MyProfiles | Every profile of this account, switch, "+ Add another" |
 | `/register/job-seeker` | RegisterJobSeeker | Date of birth first (under 18 stops, nothing kept), then the agent form's fields, saved on the phone as typed; a fresh OTP confirms; then consent → selfie → ID → ₹499 in the app's own screens (`/verify/registration`) |
@@ -96,7 +96,7 @@ The HTTP client sends `X-Laboura-Installation` (a random id per install) on ever
 ### Server items the app relies on (checked 21 Nov)
 
 1. `GET /me/form-options` — done: areas, trades, market salary ranges and the legal minimum by zone and skill level (all 12 figures).
-2. `POST /auth/apple` and `appleSignIn` in `GET /config` — done on the server; off until an Apple client id is set. The Apple button stays hidden until then.
+2. (Removed 28 Nov: Google and Apple sign-in are not in the app.)
 3. Referral partner documents (`GET /me/profiles/:id/documents`) — done; Home shows them.
 4. The landing page for the partner link `/r/<RF- code>` (the QR points there) — **not built yet**; asked of the office session (it lives in `web/`).
 
@@ -105,12 +105,12 @@ The HTTP client sends `X-Laboura-Installation` (a random id per install) on ever
 | Command | What it does |
 | --- | --- |
 | `npx npm@11 ci` | Install (use npm 11; pin exact versions at least two weeks old when adding: `npx npm@11 install --save-exact --before=<date>`) |
-| `npm run start:mock` | Start with pretend data (open in a development build; Expo Go works except Google sign-in) |
+| `npm run start:mock` | Start with pretend data — local development only; an APK or store build is always live (28 Nov) |
 | `npm run lint` · `npm run typecheck` · `npm test` | What CI runs (job "Customer app" in `.github/workflows/test.yml`) |
 
 ## Building the Android test app (APK)
 
-`eas.json` profiles: `preview` (installable **APK**, live API on the test setup), `preview-mock` (APK with pretend data), `development` (dev client), `production` (Play Store bundle).
+`eas.json` profiles: `preview` (installable **APK**, live API on the test setup), `development` (dev client), `production` (Play Store bundle).
 
 ```
 npm install -g eas-cli      # once
@@ -125,14 +125,10 @@ EAS builds in the cloud (free plan: 15 Android builds a month) and gives a downl
 
 1. **Expo account**: done 21 Nov — project **@agastyaks-team/laboura**, GitHub repo linked (base directory `customer`).
 2. **App ids (final, confirmed 21 Nov):** Android package `com.laboura.app`, iPhone bundle id `com.laboura.app`. They can never change after the first store upload.
-3. **Google project** (free) at console.firebase.google.com (or console.cloud.google.com), with a Google account made for Laboura. In "APIs & Services → Credentials" create OAuth client ids:
-   - **Web application** — its id goes on the server as `GOOGLE_CLIENT_ID_WEB` (the app reads it from `GET /config`).
-   - **Android** — package `com.laboura.app` plus the **SHA-1 fingerprint**: after the first `eas build`, run `eas credentials -p android` → the build profile → copy "SHA1 Fingerprint", paste it into the Android client. Put this id on the server as `GOOGLE_CLIENT_ID_ANDROID`. (Later, the Play Store's own "App signing" SHA-1 must be added too.)
-   - **iOS** (later, with the Apple account) — bundle id `com.laboura.app`; id → `GOOGLE_CLIENT_ID_IOS`, and its reversed form → `GOOGLE_IOS_URL_SCHEME` for iPhone builds.
-   - The OAuth consent screen needs the app name, a support email and the privacy policy link.
+3. **Google / Firebase project** (free) at console.firebase.google.com, with a Google account made for Laboura (no OAuth sign-in clients needed since 28 Nov).
 4. **Firebase for notifications**: in the same Firebase project add an Android app with package `com.laboura.app`, download `google-services.json`, and upload it to the Expo project as a **file** environment variable named `GOOGLE_SERVICES_JSON` (expo.dev → project → Environment variables). Never commit it (it is in `.gitignore`). Then give Expo the FCM key: `eas credentials -p android` → Push Notifications → upload the Firebase service-account key.
 5. **EAS project id**: done — in `app.config.js` (`4bd5337d-…`).
-6. **Apple** (after testing, in the company's name): developer account → Sign in with Apple, iPhone push, TestFlight.
+6. **Apple** (after testing, in the company's name): developer account → iPhone push, TestFlight.
 
 ## Notifications (`src/push/`)
 
@@ -141,3 +137,9 @@ EAS builds in the cloud (free plan: 15 Android builds a month) and gives a downl
 - Sign-out calls `POST /auth/sign-out`, which removes this phone's push token on the server.
 - Quiet hours (9 PM–9 AM, except sign-in codes and receipts) and the limit of 3 non-urgent a day are kept by the server. A push is never counted as a contact attempt.
 - Android push needs Firebase's `google-services.json` and the EAS project id (see "What the owner sets up"). Without them the app still builds, just without Android push.
+
+## Releasing (28 Nov)
+
+- **Store build:** `production` profile (Play: app bundle). EAS counts the versionCode / build number. Raise `version` in app.config.js for each store release people should see as new.
+- **Over-the-air fix** (screens and logic only): `eas update --channel production --environment production`. Phones get it the next time they open the app. Anything native (permission, native module, SDK) needs a store build instead; the fingerprint runtime keeps an update away from builds it doesn't fit.
+- **Test APK on the real server:** `preview` profile. There is no pretend-data build any more.

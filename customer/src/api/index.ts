@@ -5,8 +5,6 @@ import { createApiClient } from './client';
 import { apiBaseUrl, apiMode } from './config';
 import type { CustomerApi } from './customerApi';
 import { CUSTOMER_API_PATH, liveCustomerApi, refreshSession } from './live';
-import { mockCustomerApi } from './mock';
-import { fileMockPersist } from './mockPersist';
 
 /** The app's one session store, HTTP client and customer API. */
 export const sessionStore = new SessionStore(secureStorage);
@@ -29,7 +27,18 @@ export const httpClient = createApiClient({
   },
 });
 
-export const defaultCustomerApi: CustomerApi = apiMode() === 'mock' ? mockCustomerApi({ persist: fileMockPersist('laboura-mock-server.json') }) : liveCustomerApi(httpClient);
+/**
+ * The real API, or — only in local development — the pretend server. The
+ * `__DEV__ &&` lets the release bundler drop the pretend server entirely.
+ */
+export const defaultCustomerApi: CustomerApi =
+  __DEV__ && apiMode() === 'mock'
+    ? // eslint-disable-next-line @typescript-eslint/no-require-imports
+      (require('./mock') as typeof import('./mock')).mockCustomerApi({
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        persist: (require('./mockPersist') as typeof import('./mockPersist')).fileMockPersist('laboura-mock-server.json'),
+      })
+    : liveCustomerApi(httpClient);
 
 export { ApiError, isApiError } from './errors';
 export type { ApiClient, RequestOptions } from './client';
