@@ -10,7 +10,7 @@ import { router } from 'expo-router';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppHeader, Button, Card, EmptyState, ErrorState, IconTile, LoadingState, Screen, StatusChip, Text } from '@/components';
 import { useAuth } from '@/auth/AuthProvider';
-import { useI18n, type Language } from '@/i18n';
+import { languageOption, useI18n, type Language } from '@/i18n';
 import { accents, colors, space } from '@/theme';
 import { targetFor } from './deepLinks';
 import { notificationStyle } from './notificationStyle';
@@ -19,10 +19,9 @@ import { defaultPushApi, type InboxMessage, type NotificationSettings, type Push
 import { pushText } from './strings';
 
 const SETTINGS_QUERY_KEY = ['push', 'settings'] as const;
-const LOCALE: Record<Language, string> = { en: 'en-IN' };
 
 function when(iso: string, language: Language): string {
-  return new Intl.DateTimeFormat(LOCALE[language], {
+  return new Intl.DateTimeFormat(languageOption(language).locale, {
     timeZone: 'Asia/Kolkata',
     day: 'numeric',
     month: 'short',

@@ -10,7 +10,7 @@ import type { LegalHomeStatus, OtpProof } from '@/api/types';
 import { useAuth } from '@/auth/AuthProvider';
 import { Banner, Button, Card, HeroCard, LoadingState, Text } from '@/components';
 import { Checkbox } from '@/components/form';
-import { useI18n } from '@/i18n';
+import { LEGAL_LANGUAGE, useI18n } from '@/i18n';
 import { routes } from '@/navigation/routes';
 import { colors } from '@/theme';
 import { OtpCodeCard } from '../shared/OtpCodeCard';
@@ -25,7 +25,9 @@ export { htmlToText };
  * A running guarantee keeps the terms it was paid under.
  */
 export function UpdatedTerms({ profileId, legal }: { profileId: string; legal: LegalHomeStatus }) {
-  const { t, language } = useI18n();
+  const { t } = useI18n();
+  // What is sent to the server and recorded with an acceptance stays English (rev 193); only the screens change language.
+  const language = LEGAL_LANGUAGE;
   const api = useCustomerApi();
   const { account } = useAuth();
   const queryClient = useQueryClient();

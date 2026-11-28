@@ -31,6 +31,8 @@ export const routes = {
   privacy: '/privacy',
   deleteAccount: '/delete-account',
   settings: '/settings',
+  /** Settings → change the language (28 Nov). */
+  language: '/language',
   /** Agent C's inbox screen (customer/src/push/). */
   inbox: '/inbox',
 } as const;

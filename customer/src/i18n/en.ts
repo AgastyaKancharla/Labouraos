@@ -1,6 +1,6 @@
 /**
- * English — the only language of the customer app (Master Guide rev 193).
- * Keys are grouped by the
+ * English — the source language of the customer app. Kannada, Hindi, Telugu,
+ * Tamil and Malayalam are in ./locales (28 Nov). Keys are grouped by the
  * screen that owns them; shared words live under `common.*` and `form.*`.
  *
  * Written for people who read little: short sentences, everyday words.
@@ -15,6 +15,9 @@ export const en = {
   ...verifyEn,
   ...v2En,
   'common.brand': 'Laboura',
+  'language.title': 'Language',
+  'language.change': 'Change',
+  'language.continue': 'Continue',
   'common.back': 'Back',
   'common.retry': 'Try again',
   'common.loading': 'Loading…',

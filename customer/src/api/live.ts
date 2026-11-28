@@ -1,6 +1,5 @@
 import { deviceInfo, installationId } from '@/auth/installation';
 import type { SessionStore } from '@/auth/session';
-import { isLanguage } from '@/i18n/translate';
 import type { ApiClient } from './client';
 import type { CustomerApi } from './customerApi';
 import { isApiError } from './errors';
@@ -103,7 +102,8 @@ export function toAccount(w: WireAccount): CustomerAccount {
     phoneVerified: !!w.phoneVerified,
     phoneLast4: w.phone ? w.phone.replace(/\D/g, '').slice(-4) : null,
     phone: w.phone ? w.phone.replace(/\D/g, '').slice(-10) : null,
-    language: isLanguage(w.language) ? w.language : null,
+    // What the server keeps for the account is English (rev 193); the app's own choice stays on the phone.
+    language: w.language === 'en' ? 'en' : null,
     signInMethods: w.signInMethods ?? [],
     profiles: (w.profiles ?? []).map(toProfile),
     lastProfileId: w.lastProfileId ?? null,

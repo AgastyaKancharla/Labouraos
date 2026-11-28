@@ -83,9 +83,10 @@ describe('push: where a tap goes', () => {
     expect(targetFor(null)).toEqual({ route: routes.inbox, profileId: null });
   });
 
-  it('has every push and inbox word in English, and only English (rev 193)', () => {
-    expect(Object.keys(PUSH_STRINGS)).toEqual(['en']);
+  it('has every push and inbox word in English, and the other five languages translate only known words (28 Nov)', () => {
+    expect(Object.keys(PUSH_STRINGS).sort()).toEqual(['en', 'hi', 'kn', 'ml', 'ta', 'te']);
     for (const value of Object.values(PUSH_STRINGS.en)) expect(value.trim()).not.toBe('');
+    for (const dict of Object.values(PUSH_STRINGS)) for (const key of Object.keys(dict)) expect(Object.keys(PUSH_STRINGS.en)).toContain(key);
   });
 });
 

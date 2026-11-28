@@ -8,7 +8,7 @@ import type { RegisterResult } from '@/api/types';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppHeader, Banner, Button, Card, ErrorState, LoadingState, Screen, Text, TextField } from '@/components';
 import { Checkbox, MobileField, PinField, RadioGroup, SelectField, type Choice } from '@/components/form';
-import { useI18n } from '@/i18n';
+import { LEGAL_LANGUAGE, useI18n } from '@/i18n';
 import { colors } from '@/theme';
 import { clearDraft, useDraft } from '@/lib/drafts';
 import { rupees } from '@/lib/money';
@@ -27,7 +27,9 @@ const REWARD_PAISE = 20_000;
  * referring yourself.
  */
 export default function RegisterReferral() {
-  const { t, language } = useI18n();
+  const { t } = useI18n();
+  // What is sent to the server and recorded with an acceptance stays English (rev 193); only the screens change language.
+  const language = LEGAL_LANGUAGE;
   const api = useCustomerApi();
   const { account, refreshAccount, setActiveProfileId } = useAuth();
   const [draft, setDraft, ready] = useDraft('referral_partner', emptyReferral(language, account?.name ?? ''));

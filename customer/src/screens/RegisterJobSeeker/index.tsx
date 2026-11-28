@@ -9,7 +9,7 @@ import type { RegisterResult } from '@/api/types';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppHeader, Banner, Button, Card, ErrorState, LoadingState, Screen, Text, TextField } from '@/components';
 import { ChipPicker, DateField, MoneyField, NumberField, PinField, RadioGroup, Segmented, SelectField, addDays, todayKeyIst, type Choice } from '@/components/form';
-import { useI18n } from '@/i18n';
+import { LEGAL_LANGUAGE, useI18n } from '@/i18n';
 import { colors } from '@/theme';
 import { clearDraft, useDraft } from '@/lib/drafts';
 import { rupees } from '@/lib/money';
@@ -25,7 +25,9 @@ import { MAX_TRADES, OTHER_TRADE, checkAge, emptyJobSeeker, salaryHint, toJobSee
  * check and the ₹499 payment open in the secure sheet (SavedNextSteps).
  */
 export default function RegisterJobSeeker() {
-  const { t, language } = useI18n();
+  const { t } = useI18n();
+  // What is sent to the server and recorded with an acceptance stays English (rev 193); only the screens change language.
+  const language = LEGAL_LANGUAGE;
   const api = useCustomerApi();
   const { refreshAccount, setActiveProfileId } = useAuth();
   const [draft, setDraft, ready] = useDraft('job_seeker', emptyJobSeeker(language));

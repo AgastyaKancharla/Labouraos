@@ -1,8 +1,14 @@
 /**
- * Words of the push and inbox screens, in English (English only, Master
- * Guide rev 193). The notification texts themselves come from the server.
+ * Words of the push and inbox screens. English is the source; the other
+ * languages are in src/i18n/locales (28 Nov). The notification texts
+ * themselves come from the server, in English.
  */
 import type { Language } from '@/i18n';
+import { hiPush } from '@/i18n/locales/hi';
+import { knPush } from '@/i18n/locales/kn';
+import { mlPush } from '@/i18n/locales/ml';
+import { taPush } from '@/i18n/locales/ta';
+import { tePush } from '@/i18n/locales/te';
 
 const en = {
   'inbox.title': 'Messages',
@@ -33,7 +39,7 @@ const en = {
 
 export type PushKey = keyof typeof en;
 
-export const PUSH_STRINGS: Record<Language, Record<PushKey, string>> = { en };
+export const PUSH_STRINGS: { en: Record<PushKey, string> } & Record<Exclude<Language, 'en'>, Partial<Record<PushKey, string>>> = { en, kn: knPush, hi: hiPush, te: tePush, ta: taPush, ml: mlPush };
 
 export function pushText(language: Language, key: PushKey, params?: Record<string, string | number>): string {
   const template = PUSH_STRINGS[language]?.[key] ?? en[key];
