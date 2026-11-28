@@ -229,7 +229,7 @@ export const en = {
   'jobSeeker.aboveRange': 'Your lowest salary is above the usual pay, so offers may be fewer. For your guarantee, any offer of {max} or more counts as suitable.',
   'jobSeeker.sectionLast': 'Last question',
   'jobSeeker.save': 'Save and continue',
-  'jobSeeker.nextSteps': '1. Consent (tick what you agree to)\n2. Selfie with the live camera\n3. ID check (Aadhaar QR or another ID)\n4. Your guarantee terms and ₹499 payment, last',
+  'jobSeeker.nextSteps': '1. Consent (tick what you agree to)\n2. Selfie with the live camera\n3. Your guarantee terms and ₹499 payment\n4. ID check (Aadhaar QR or another ID)',
 
   'business.title': 'Register your business',
   'business.howItWorks': 'After you register, a Laboura agent visits your shop once. Candidates are shown after that visit and our approval.',

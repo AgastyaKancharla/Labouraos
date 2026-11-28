@@ -72,7 +72,7 @@ export function JobSeekerSteps({ token, openInBrowser, browserBusy, onFinished }
         testID="reg-code"
         title={t('reg.title')}
         intro={t('reg.intro')}
-        steps={[t('reg.step1'), t('reg.step2'), t('reg.step3'), t('reg.step4Plain')]}
+        steps={[t('reg.step1'), t('reg.step2'), t('reg.step4Plain'), t('reg.step3')]}
         maskedPhone={data.maskedPhone}
         warning={data.otpRequired && data.registrationComplete ? t('reg.alreadyComplete') : null}
         // A code that ran out while on a step (the status answers "locked" again).
@@ -137,8 +137,8 @@ function Resume({ status, onContinue }: { status: RegistrationOpen; onContinue: 
       <Card>
         <ListRow title={t('reg.step1')} trailing={<DoneChip done={status.steps.consent} />} />
         <ListRow title={t('reg.step2')} trailing={<DoneChip done={status.steps.selfie} />} />
-        <ListRow title={t('reg.step3')} trailing={<DoneChip done={status.steps.idCheck} />} />
-        <ListRow title={t('reg.step4', { amount: rupees(status.payment.amountPaise) })} trailing={<DoneChip done={status.steps.payment} label={status.steps.payment ? undefined : payLabel} />} last />
+        <ListRow title={t('reg.step4', { amount: rupees(status.payment.amountPaise) })} trailing={<DoneChip done={status.steps.payment} label={status.steps.payment ? undefined : payLabel} />} />
+        <ListRow title={t('reg.step3')} trailing={<DoneChip done={status.steps.idCheck} />} last />
       </Card>
       <Button label={t(next[status.currentStep] ?? 'rp.continue')} onPress={onContinue} testID="reg-resume-continue" />
     </View>
